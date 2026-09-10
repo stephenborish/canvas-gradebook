@@ -1,0 +1,536 @@
+/* Canvas Gradebook+ - gradebook styles.
+ *
+ * Every rule is scoped under a class this extension adds to <html>, so nothing
+ * here can leak onto other Canvas pages. Colours and type follow Canvas's own
+ * palette (brand #0374B5, ink #2D3B45, hairlines #C7CDD1); there is no
+ * extension branding anywhere in the grid. */
+
+html.cgp-on {
+  --cgp-ink: #2d3b45;
+  --cgp-muted: #6b7780;
+  --cgp-line: #c7cdd1;
+  --cgp-brand: #0374b5;
+  --cgp-comment: #0a72a8;
+  --cgp-missing: #b8452f;
+  --cgp-late: #b4761b;
+  --cgp-excused: #6b7780;
+  --cgp-ungraded: #2a7a5e;
+  --cgp-resub: #6b3fa0;
+  --cgp-sel: #0374b5;
+  --cgp-total-w: 84px;
+  --cgp-frozen-natural: 190px;
+  --cgp-frozen-w: 274px;
+}
+
+/* --cgp-student-w and --cgp-assignment-w are published on <html> for reference
+ * and for custom CSS. The extension does not set column widths through CSS:
+ * SlickGrid generates its own stylesheet of per-column offsets, so widths are
+ * changed through Canvas's own resize handles instead (see layout.js). */
+
+/* ------------------------------------------------------- in-cell indicators */
+
+/* Cells where I have left feedback also carry .cgp-has-comment. Nothing is
+ * styled from it by default; it is a hook for anyone who wants a stronger
+ * treatment than the bubble (e.g. a tinted background) in their own CSS. */
+
+html.cgp-on .slick-cell .cgp-marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+html.cgp-on .cgp-cmt {
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  width: 10px;
+  height: 10px;
+  color: var(--cgp-comment);
+  pointer-events: auto;
+  cursor: pointer;
+  line-height: 0;
+  opacity: 0.9;
+}
+html.cgp-on .cgp-cmt:hover { opacity: 1; }
+html.cgp-on .cgp-cmt svg { width: 10px; height: 10px; fill: currentColor; display: block; }
+
+/* A student replied after the instructor's last comment: hollow bubble. */
+html.cgp-on .cgp-cmt--reply { color: var(--cgp-resub); }
+html.cgp-on .cgp-cmt--reply svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
+
+html.cgp-on .cgp-cmt-count {
+  position: absolute;
+  top: 0;
+  right: 13px;
+  font-size: 9px;
+  line-height: 12px;
+  color: var(--cgp-comment);
+  font-weight: 700;
+  pointer-events: none;
+}
+
+html.cgp-on .cgp-dot {
+  position: absolute;
+  left: 3px;
+  bottom: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  pointer-events: auto;
+}
+html.cgp-on .cgp-dot--missing { background: var(--cgp-missing); }
+html.cgp-on .cgp-dot--late { background: var(--cgp-late); }
+html.cgp-on .cgp-dot--excused { background: transparent; border: 1px solid var(--cgp-excused); }
+html.cgp-on .cgp-dot--ungraded { background: var(--cgp-ungraded); }
+
+/* Resubmitted after grading: a small corner wedge, distinct from the bubble. */
+html.cgp-on .cgp-resub {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  border-top: 6px solid var(--cgp-resub);
+  border-right: 6px solid transparent;
+  pointer-events: auto;
+}
+
+/* Value written through the API while Canvas's own render is stale. */
+html.cgp-on .slick-cell.cgp-override > *:not(.cgp-marks):not(.cgp-val) { visibility: hidden; }
+html.cgp-on .cgp-val {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--cgp-ink);
+  z-index: 2;
+}
+html.cgp-on .slick-cell.cgp-pending-write .cgp-val { opacity: 0.55; }
+
+/* ------------------------------------------------------- cell selection */
+
+html.cgp-on .slick-cell.cgp-sel {
+  box-shadow: inset 0 0 0 2px var(--cgp-sel);
+  background-color: rgba(3, 116, 181, 0.06);
+}
+html.cgp-on .slick-cell.cgp-has-pending::after {
+  content: attr(data-cgp-pending);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--cgp-brand);
+  background: rgba(255, 255, 255, 0.82);
+  z-index: 4;
+}
+
+/* ------------------------------------------------------- frozen Total column */
+
+html.cgp-frozen-total .slick-pane-left { width: var(--cgp-frozen-w) !important; }
+html.cgp-frozen-total .slick-pane-left .slick-header,
+html.cgp-frozen-total .slick-header-left { width: var(--cgp-frozen-w) !important; }
+html.cgp-frozen-total .slick-pane-left .slick-viewport,
+html.cgp-frozen-total .slick-viewport-left { width: var(--cgp-frozen-w) !important; overflow-x: hidden !important; }
+html.cgp-frozen-total .slick-pane-right {
+  left: var(--cgp-frozen-w) !important;
+  width: calc(100% - var(--cgp-frozen-w)) !important;
+}
+
+html.cgp-frozen-total .cgp-total-header {
+  position: absolute;
+  top: 0;
+  left: var(--cgp-frozen-natural);
+  width: var(--cgp-total-w);
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--cgp-line);
+  border-bottom: 1px solid var(--cgp-line);
+  background: #f5f5f5;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--cgp-ink);
+  z-index: 5;
+}
+html.cgp-frozen-total .cgp-total-layer {
+  position: absolute;
+  top: 0;
+  left: var(--cgp-frozen-natural);
+  width: var(--cgp-total-w);
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+html.cgp-frozen-total .cgp-total-cell {
+  position: absolute;
+  left: 0;
+  width: var(--cgp-total-w);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--cgp-line);
+  border-bottom: 1px solid #e8eaec;
+  background: #fff;
+  font-size: 13px;
+  color: var(--cgp-ink);
+  pointer-events: auto;
+}
+html.cgp-frozen-total .cgp-total-cell--empty { color: var(--cgp-muted); }
+
+/* ------------------------------------------------------- compact layout */
+
+html.cgp-on .cgp-hidden,
+html.cgp-on .cgp-collapsed {
+  display: none !important;
+}
+
+html.cgp-max-height #breadcrumbs { margin-bottom: 2px !important; }
+html.cgp-max-height #content,
+html.cgp-max-height .ic-Layout-contentMain {
+  padding-top: 6px !important;
+  padding-bottom: 0 !important;
+}
+html.cgp-max-height #gradebook_grid {
+  height: calc(100vh - var(--cgp-grid-top, 200px) - 10px) !important;
+  min-height: 340px;
+}
+html.cgp-max-height .gradebook-header,
+html.cgp-max-height .gradebook_header { margin-bottom: 4px !important; }
+
+/* ------------------------------------------------------- header + alignment */
+
+html.cgp-narrow .slick-header-column { height: var(--cgp-header-h, 64px) !important; }
+html.cgp-narrow .slick-header-columns { height: var(--cgp-header-h, 64px) !important; }
+html.cgp-narrow .slick-header { height: auto !important; }
+
+html.cgp-narrow .slick-header-column[data-cgp-col="assignment"] .slick-column-name,
+html.cgp-narrow .slick-header-column[data-cgp-col="assignment"] .slick-column-name * {
+  white-space: normal !important;
+  word-break: break-word;
+  line-height: 1.18;
+}
+html.cgp-narrow .slick-header-column[data-cgp-col="assignment"] .slick-column-name a,
+html.cgp-narrow .slick-header-column[data-cgp-col="assignment"] .assignment-name {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+html.cgp-center .slick-header-column[data-cgp-col="assignment"] .slick-column-name,
+html.cgp-center .slick-header-column[data-cgp-col="assignment"] .Gradebook__ColumnHeaderContent,
+html.cgp-center .slick-header-column[data-cgp-col="assignment"] .Gradebook__ColumnHeaderDetail,
+html.cgp-center .slick-header-column[data-cgp-col="total"] .slick-column-name {
+  text-align: center !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+html.cgp-center .slick-header-column[data-cgp-col="assignment"] .assignment-points-possible,
+html.cgp-center .slick-header-column[data-cgp-col="assignment"] .Gradebook__ColumnHeaderDetailLine {
+  text-align: center !important;
+  display: block;
+  font-size: 11px;
+  color: var(--cgp-muted);
+}
+
+/* The due-date line we add under the title/points in an assignment header. */
+html.cgp-on .slick-header-column {
+  position: relative; /* .cgp-due anchors to whichever header cell it's in */
+}
+html.cgp-on .cgp-due {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 3px;
+  text-align: center;
+  font-size: 10.5px;
+  line-height: 1.2;
+  color: var(--cgp-muted);
+  padding: 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+html.cgp-center .slick-cell[data-cgp-col="assignment"] { text-align: center !important; }
+html.cgp-center .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell,
+html.cgp-center .slick-cell[data-cgp-col="assignment"] .gradebook-cell {
+  justify-content: center !important;
+  text-align: center !important;
+}
+html.cgp-center .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content { justify-content: center !important; }
+/* Student names stay left aligned. */
+html.cgp-on .slick-cell[data-cgp-col="student"],
+html.cgp-on .slick-header-column[data-cgp-col="student"] .slick-column-name { text-align: left !important; }
+
+/* ------------------------------------------------------- comment popover */
+
+html.cgp-on .cgp-pop {
+  position: fixed;
+  z-index: 100000;
+  display: none;
+  max-height: 340px;
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 10px 12px 12px;
+  background: #fff;
+  border: 1px solid var(--cgp-line);
+  border-radius: 3px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.14);
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--cgp-ink);
+  line-height: 1.4;
+}
+html.cgp-on .cgp-pop--on { display: block; }
+html.cgp-on .cgp-pop__head {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e8eaec;
+  margin-bottom: 6px;
+}
+html.cgp-on .cgp-pop__who { font-weight: 700; }
+html.cgp-on .cgp-pop__what { color: var(--cgp-muted); }
+html.cgp-on .cgp-pop__list { list-style: none; margin: 0; padding: 0; }
+html.cgp-on .cgp-pop__item { padding: 5px 0; border-bottom: 1px solid #f0f1f2; }
+html.cgp-on .cgp-pop__item:last-child { border-bottom: 0; }
+html.cgp-on .cgp-pop__item--mine .cgp-pop__author { color: var(--cgp-comment); }
+html.cgp-on .cgp-pop__item--mine { padding-left: 6px; border-left: 2px solid var(--cgp-comment); }
+html.cgp-on .cgp-pop__meta { display: flex; justify-content: space-between; gap: 8px; }
+html.cgp-on .cgp-pop__author { font-weight: 700; }
+html.cgp-on .cgp-pop__date { color: var(--cgp-muted); }
+html.cgp-on .cgp-pop__text { white-space: pre-wrap; margin-top: 1px; }
+html.cgp-on .cgp-pop__empty { color: var(--cgp-muted); padding: 2px 0 6px; }
+html.cgp-on .cgp-pop__reply { margin-top: 8px; }
+html.cgp-on .cgp-pop__input {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 5px 6px;
+  border: 1px solid var(--cgp-line);
+  border-radius: 3px;
+  resize: vertical;
+}
+html.cgp-on .cgp-pop__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+html.cgp-on .cgp-pop__link { color: var(--cgp-brand); text-decoration: none; }
+html.cgp-on .cgp-pop__link:hover { text-decoration: underline; }
+html.cgp-on .cgp-pop__save {
+  font: inherit;
+  padding: 3px 10px;
+  color: #fff;
+  background: var(--cgp-brand);
+  border: 1px solid var(--cgp-brand);
+  border-radius: 3px;
+  cursor: pointer;
+}
+html.cgp-on .cgp-pop__save[disabled] { opacity: 0.6; cursor: default; }
+
+/* ------------------------------------------------------- course switcher */
+
+html.cgp-on .cgp-crumb-toggle {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  margin-left: 2px;
+  color: inherit;
+  cursor: pointer;
+  line-height: 1;
+  vertical-align: middle;
+}
+html.cgp-on .cgp-crumb-toggle svg { width: 9px; height: 6px; display: block; }
+html.cgp-on .cgp-crumb-toggle:hover { color: var(--cgp-brand); }
+html.cgp-on .cgp-crumb-toggle:focus-visible { outline: 2px solid var(--cgp-brand); outline-offset: 2px; }
+
+html.cgp-on .cgp-course-menu {
+  position: fixed;
+  z-index: 100001;
+  display: none;
+  box-sizing: border-box;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid var(--cgp-line);
+  border-radius: 3px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.14);
+  font-size: 13px;
+  color: var(--cgp-ink);
+}
+html.cgp-on .cgp-course-menu--on { display: block; }
+html.cgp-on .cgp-course-menu__filter {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 5px 7px;
+  border: 1px solid var(--cgp-line);
+  border-radius: 3px;
+}
+html.cgp-on .cgp-course-menu__list { max-height: 320px; overflow: auto; margin-top: 5px; }
+html.cgp-on .cgp-course-menu__item {
+  display: flex;
+  flex-direction: column;
+  padding: 5px 7px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+html.cgp-on .cgp-course-menu__item.is-active { background: #eef6fb; }
+html.cgp-on .cgp-course-menu__item.is-current .cgp-course-menu__name { font-weight: 700; }
+html.cgp-on .cgp-course-menu__term { color: var(--cgp-muted); font-size: 11px; }
+html.cgp-on .cgp-course-menu__empty { padding: 8px 7px; color: var(--cgp-muted); }
+
+/* ------------------------------------------------------- transient message */
+
+html.cgp-on .cgp-toast,
+html.cgp-speedgrader .cgp-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 100002;
+  max-width: 520px;
+  padding: 7px 13px;
+  border-radius: 3px;
+  background: #2d3b45;
+  color: #fff;
+  font-size: 12.5px;
+  line-height: 1.35;
+  opacity: 0;
+  visibility: hidden;
+}
+html.cgp-on .cgp-toast--on,
+html.cgp-speedgrader .cgp-toast--on { opacity: 1; visibility: visible; }
+html.cgp-on .cgp-toast--error,
+html.cgp-speedgrader .cgp-toast--error { background: #9b2c1c; }
+
+@media (prefers-reduced-motion: no-preference) {
+  html.cgp-on .cgp-toast { transition: opacity 120ms linear; }
+}
+
+/* v1.0.2 header repair: Canvas's current Gradebook can absolutely-position
+ * pieces of its assignment header. When columns are narrowed that causes the
+ * title and points line to occupy the same vertical space. Normalize the
+ * assignment header into a simple centered vertical stack. */
+html.cgp-narrow .slick-header-column[data-cgp-col="assignment"] {
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+html.cgp-narrow .slick-header-column[data-cgp-col="assignment"] > .slick-column-name,
+html.cgp-narrow .slick-header-column[data-cgp-col="assignment"] .Gradebook__ColumnHeaderContent {
+  box-sizing: border-box !important;
+  min-height: 0 !important;
+  height: 100% !important;
+}
+html.cgp-center .slick-header-column[data-cgp-col="assignment"] .Gradebook__ColumnHeaderContent {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-start !important;
+  gap: 3px !important;
+  padding-top: 5px !important;
+  padding-bottom: 4px !important;
+}
+html.cgp-center .slick-header-column[data-cgp-col="assignment"] .Gradebook__ColumnHeaderDetail,
+html.cgp-center .slick-header-column[data-cgp-col="assignment"] .Gradebook__ColumnHeaderDetailLine,
+html.cgp-center .slick-header-column[data-cgp-col="assignment"] .assignment-points-possible {
+  position: static !important;
+  inset: auto !important;
+  margin: 0 !important;
+  flex: 0 0 auto !important;
+  line-height: 1.15 !important;
+}
+html.cgp-center .slick-header-column[data-cgp-col="assignment"] .slick-column-name a,
+html.cgp-center .slick-header-column[data-cgp-col="assignment"] .assignment-name {
+  line-height: 1.2 !important;
+  max-height: 2.4em !important;
+  margin: 0 auto !important;
+  text-align: center !important;
+}
+
+/* Make the most important signal visible without competing with the grade. */
+html.cgp-on .cgp-cmt {
+  top: 2px;
+  right: 3px;
+  width: 12px;
+  height: 12px;
+}
+html.cgp-on .cgp-cmt svg { width: 12px; height: 12px; }
+
+
+/* v1.0.3: stable compact assignment headers. Canvas's original title/detail
+ * elements remain in the DOM for behavior/accessibility, but their painted text
+ * is hidden so it cannot overlap the extension's single layout layer. */
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] {
+  position: relative !important;
+  height: var(--cgp-header-h, 72px) !important;
+  overflow: hidden !important;
+}
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] > *:not(.cgp-header-label):not(.slick-resizable-handle) {
+  visibility: hidden !important;
+}
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] > .slick-resizable-handle {
+  visibility: visible !important;
+}
+html.cgp-on .cgp-header-label {
+  visibility: visible !important;
+  position: absolute !important;
+  inset: 0 5px 0 5px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 3px !important;
+  box-sizing: border-box !important;
+  pointer-events: none !important;
+  text-align: center !important;
+  overflow: hidden !important;
+  z-index: 3 !important;
+}
+html.cgp-on .cgp-header-title {
+  width: 100%;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.18;
+  font-weight: 500;
+  color: #2d3b45;
+}
+html.cgp-on .cgp-header-points {
+  width: 100%;
+  min-height: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10.5px;
+  line-height: 1.2;
+  font-weight: 400;
+  color: #6b7780;
+  text-align: center;
+}
+/* Never display the legacy extension-added due-date line; the teacher asked
+ * for assignment title + points only, and old synced settings may still have
+ * showAssignmentDueDate=true from a prior version. */
+html.cgp-on .cgp-due { display: none !important; }
+
+/* Keep marker geometry from affecting SlickGrid measurements. */
+html.cgp-on .slick-cell > .cgp-marks,
+html.cgp-on .slick-cell > .cgp-val { box-sizing: border-box !important; }

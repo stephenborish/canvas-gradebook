@@ -1,0 +1,251 @@
+/* Canvas Gradebook+ - shared utilities, settings and diagnostics.
+ * Loaded first in every content-script entry. Nothing here touches the DOM or the
+ * chrome.* APIs at load time, so the pure logic can also be loaded inside a Node
+ * vm for unit tests. */
+(function () {
+  'use strict';
+  var CGP = (globalThis.CGP = globalThis.CGP || {});
+  if (CGP.util) return;
+
+  CGP.VERSION = '1.0.3';
+
+  CGP.DEFAULTS = {
+    // layout
+    narrowColumns: true,
+    assignmentColumnWidth: 124,
+    studentColumnWidth: 190,
+    hideCanvasUtilityControls: true,
+    maximizeHeight: true,
+    frozenTotal: true,
+    centerAssignmentColumns: true,
+    showAssignmentDueDate: false,
+    // indicators
+    commentIndicator: true,
+    showCommentCount: true,
+    statusIndicators: true,
+    resubmissionIndicator: true,
+    commentPopover: true,
+    // input
+    enableM: true,
+    enableE: true,
+    enableL: true,
+    spreadsheetNavigation: true,
+    bulkPaste: true,
+    multiCellSelection: true,
+    bulkConfirmThreshold: 25,
+    // extras
+    courseSwitcher: true,
+    speedgraderDrafts: true,
+    snippets: [
+      { trigger: 'evidence', text: 'Good claim - now tie it back to the evidence in your data so the reasoning is complete.' },
+      { trigger: 'units', text: 'Check your units and significant figures; the value is right but the label is missing.' },
+      { trigger: 'nice', text: 'Nicely done. Your reasoning here is clear and well supported.' }
+    ],
+    prefetchAllAssignments: true,
+    diagnostics: false
+  };
+
+  var util = (CGP.util = {});
+
+  util.sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+
+  util.debounce = function (fn, wait) {
+    var t = null, lastArgs = null;
+    return function () {
+      lastArgs = Array.prototype.slice.call(arguments);
+      if (t) clearTimeout(t);
+      t = setTimeout(function () { t = null; fn.apply(null, lastArgs); }, wait);
+    };
+  };
+
+  /* Coalesces many triggers into one animation-frame callback. All painting goes
+   * through this so MutationObserver bursts cannot become a render loop. */
+  util.rafBatch = function (fn, label) {
+    var scheduled = false;
+    return function () {
+      if (scheduled) return;
+      scheduled = true;
+      var run = function () {
+        scheduled = false;
+        try { fn(); } catch (e) { CGP.diag.error((label || 'paint') + '.failed', { message: String(e && e.message) }); }
+      };
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run); else setTimeout(run, 16);
+    };
+  };
+
+  /* Promise pool: bounds concurrent Canvas requests. */
+  util.pool = function (limit) {
+    var active = 0, queue = [];
+    function next() {
+      if (active >= limit || !queue.length) return;
+      var job = queue.shift();
+      active++;
+      Promise.resolve().then(job.task).then(
+        function (v) { active--; job.res(v); next(); },
+        function (e) { active--; job.rej(e); next(); }
+      );
+    }
+    return function (task) {
+      return new Promise(function (res, rej) { queue.push({ task: task, res: res, rej: rej }); next(); });
+    };
+  };
+
+  util.chunk = function (arr, n) {
+    var out = [];
+    for (var i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+    return out;
+  };
+
+  util.clampNum = function (v, lo, hi, fallback) {
+    var n = Number(v);
+    if (!isFinite(n)) return fallback;
+    return Math.min(hi, Math.max(lo, n));
+  };
+
+  util.escapeHtml = function (s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  };
+
+  util.cookie = function (name, cookieString) {
+    var src = typeof cookieString === 'string' ? cookieString
+      : (typeof document !== 'undefined' ? document.cookie : '');
+    var re = new RegExp('(?:^|;\\s*)' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)');
+    var m = re.exec(src || '');
+    if (!m) return null;
+    try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; }
+  };
+
+  util.courseIdFromPath = function (pathname) {
+    var m = /\/courses\/(\d+)/.exec(String(pathname || ''));
+    return m ? m[1] : null;
+  };
+
+  util.fmtPercent = function (score) {
+    if (score === null || score === undefined || score === '') return '\u2014';
+    var n = Number(score);
+    if (!isFinite(n)) return '\u2014';
+    return (Math.round(n * 100) / 100) + '%';
+  };
+
+  util.fmtDateTime = function (iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    try {
+      return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    } catch (e) { return d.toISOString().slice(0, 16).replace('T', ' '); }
+  };
+
+  /* ---------------------------------------------------------------- settings */
+
+  function sanitizeSettings(raw) {
+    var out = {};
+    var d = CGP.DEFAULTS;
+    var src = raw && typeof raw === 'object' ? raw : {};
+    Object.keys(d).forEach(function (k) {
+      var v = src[k];
+      if (v === undefined) { out[k] = d[k]; return; }
+      if (typeof d[k] === 'boolean') { out[k] = !!v; return; }
+      if (typeof d[k] === 'number') {
+        if (k === 'assignmentColumnWidth') out[k] = Math.round(util.clampNum(v, 70, 260, d[k]));
+        else if (k === 'studentColumnWidth') out[k] = Math.round(util.clampNum(v, 120, 400, d[k]));
+        else if (k === 'bulkConfirmThreshold') out[k] = Math.round(util.clampNum(v, 1, 2000, d[k]));
+        else out[k] = util.clampNum(v, -1e9, 1e9, d[k]);
+        return;
+      }
+      if (k === 'snippets') {
+        out[k] = (Array.isArray(v) ? v : []).map(function (s) {
+          return {
+            trigger: String((s && s.trigger) || '').trim().replace(/^\//, '').replace(/[^\w-]/g, '').slice(0, 32),
+            text: String((s && s.text) || '').slice(0, 4000)
+          };
+        }).filter(function (s) { return s.trigger && s.text; }).slice(0, 60);
+        return;
+      }
+      out[k] = v;
+    });
+    return out;
+  }
+  CGP.sanitizeSettings = sanitizeSettings;
+
+  CGP.settings = {
+    values: sanitizeSettings({}),
+    _cbs: [],
+    STORAGE_KEY: 'cgp.settings',
+    load: function () {
+      var self = this;
+      if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.sync) {
+        return Promise.resolve(self.values);
+      }
+      return chrome.storage.sync.get(self.STORAGE_KEY).then(function (got) {
+        self.values = sanitizeSettings(got && got[self.STORAGE_KEY]);
+        CGP.diag.enabled = !!self.values.diagnostics;
+        if (chrome.storage.onChanged && !self._bound) {
+          self._bound = true;
+          chrome.storage.onChanged.addListener(function (changes, area) {
+            if (area !== 'sync' || !changes[self.STORAGE_KEY]) return;
+            self.values = sanitizeSettings(changes[self.STORAGE_KEY].newValue);
+            CGP.diag.enabled = !!self.values.diagnostics;
+            self._cbs.forEach(function (cb) { try { cb(self.values); } catch (e) { /* ignore */ } });
+          });
+        }
+        return self.values;
+      }, function () { return self.values; });
+    },
+    save: function (patch) {
+      var next = sanitizeSettings(Object.assign({}, this.values, patch || {}));
+      this.values = next;
+      if (typeof chrome === 'undefined' || !chrome.storage) return Promise.resolve(next);
+      var payload = {}; payload[this.STORAGE_KEY] = next;
+      return chrome.storage.sync.set(payload).then(function () { return next; });
+    },
+    onChange: function (cb) { this._cbs.push(cb); }
+  };
+
+  /* ------------------------------------------------------------ diagnostics */
+
+  var flushTimer = null;
+  CGP.diag = {
+    enabled: false,
+    counters: Object.create(null),
+    facts: Object.create(null),
+    events: [],
+    maxEvents: 160,
+    bump: function (k, n) { this.counters[k] = (this.counters[k] || 0) + (n === undefined ? 1 : n); this._flushSoon(); },
+    set: function (k, v) { this.facts[k] = v; this._flushSoon(); },
+    log: function (k, data) { this._push('info', k, data); },
+    warn: function (k, data) { this._push('warn', k, data); },
+    error: function (k, data) { this.counters.errors = (this.counters.errors || 0) + 1; this._push('error', k, data); },
+    _push: function (level, k, data) {
+      this.events.push({ t: Date.now(), level: level, k: k, data: data === undefined ? null : data });
+      if (this.events.length > this.maxEvents) this.events.shift();
+      if (this.enabled && typeof console !== 'undefined') {
+        var fn = level === 'error' ? 'error' : (level === 'warn' ? 'warn' : 'log');
+        try { console[fn]('[Gradebook+]', k, data === undefined ? '' : data); } catch (e) { /* ignore */ }
+      }
+      this._flushSoon();
+    },
+    snapshot: function () {
+      var page = '';
+      try { page = typeof location !== 'undefined' ? location.origin + location.pathname : ''; } catch (e) { page = ''; }
+      return {
+        version: CGP.VERSION, at: Date.now(), page: page,
+        counters: Object.assign({}, this.counters),
+        facts: Object.assign({}, this.facts),
+        events: this.events.slice(-90)
+      };
+    },
+    _flushSoon: function () {
+      var self = this;
+      if (!self.enabled) return;
+      if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
+      if (flushTimer) return;
+      flushTimer = setTimeout(function () {
+        flushTimer = null;
+        try { chrome.storage.local.set({ 'cgp.diag': self.snapshot() }); } catch (e) { /* ignore */ }
+      }, 1500);
+    }
+  };
+})();

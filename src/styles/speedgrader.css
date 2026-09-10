@@ -1,0 +1,15 @@
+/* Canvas Gradebook+ - SpeedGrader styles.
+ * One quiet line under Canvas's own comment box. Nothing else is added. */
+
+html.cgp-speedgrader .cgp-draft-note {
+  display: none;
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #6b7780;
+}
+html.cgp-speedgrader .cgp-draft-note--on { display: block; }
+html.cgp-speedgrader .cgp-draft-note--warn {
+  color: #9b2c1c;
+  font-weight: 700;
+}

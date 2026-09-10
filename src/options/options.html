@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Canvas Gradebook+ settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main class="page">
+    <header class="page__head">
+      <h1>Canvas Gradebook+</h1>
+      <p class="page__lede">Defaults are already set for normal grading. Change something here only if you want to.</p>
+    </header>
+
+    <section class="card" aria-labelledby="h-layout">
+      <h2 id="h-layout">Layout</h2>
+      <div class="row">
+        <label class="row__label" for="assignmentColumnWidth">Assignment column width</label>
+        <div class="row__control">
+          <input id="assignmentColumnWidth" type="number" min="70" max="260" step="5">
+          <span class="unit">px</span>
+          <p class="hint">100&ndash;120 px fits two lines of title and keeps many assignments on screen.</p>
+        </div>
+      </div>
+      <div class="row">
+        <label class="row__label" for="studentColumnWidth">Student column width</label>
+        <div class="row__control">
+          <input id="studentColumnWidth" type="number" min="120" max="400" step="5">
+          <span class="unit">px</span>
+        </div>
+      </div>
+      <div class="row row--check">
+        <input id="narrowColumns" type="checkbox">
+        <label for="narrowColumns">Narrow the assignment columns and wrap titles onto two lines</label>
+      </div>
+      <div class="row row--check">
+        <input id="centerAssignmentColumns" type="checkbox">
+        <label for="centerAssignmentColumns">Center assignment titles, points and grades</label>
+      </div>
+      <div class="row row--check">
+        <input id="frozenTotal" type="checkbox">
+        <label for="frozenTotal">Keep Total frozen beside the student name</label>
+      </div>
+      <div class="row row--check">
+        <input id="showAssignmentDueDate" type="checkbox">
+        <label for="showAssignmentDueDate">Show each assignment's due date under its points in the header</label>
+      </div>
+      <div class="row row--check">
+        <input id="hideCanvasUtilityControls" type="checkbox">
+        <label for="hideCanvasUtilityControls">Collapse Canvas's search, filter, Import/Export/Sync and View Options strip
+          <span class="hint">Alt+Shift+H brings it back for the current page.</span>
+        </label>
+      </div>
+      <div class="row row--check">
+        <input id="maximizeHeight" type="checkbox">
+        <label for="maximizeHeight">Give the grid the full height of the window</label>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="h-indicators">
+      <h2 id="h-indicators">Cell indicators</h2>
+      <div class="row row--check">
+        <input id="commentIndicator" type="checkbox">
+        <label for="commentIndicator">Show a comment bubble where <strong>I</strong> have left feedback</label>
+      </div>
+      <div class="row row--check">
+        <input id="showCommentCount" type="checkbox">
+        <label for="showCommentCount">Show a count when I have left more than one comment</label>
+      </div>
+      <div class="row row--check">
+        <input id="statusIndicators" type="checkbox">
+        <label for="statusIndicators">Show missing / late / excused / needs-grading dots</label>
+      </div>
+      <div class="row row--check">
+        <input id="resubmissionIndicator" type="checkbox">
+        <label for="resubmissionIndicator">Mark cells where the student resubmitted after grading</label>
+      </div>
+      <div class="row row--check">
+        <input id="commentPopover" type="checkbox">
+        <label for="commentPopover">Clicking the bubble opens the comment thread in place</label>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="h-input">
+      <h2 id="h-input">Grading input</h2>
+      <div class="row row--check">
+        <input id="enableM" type="checkbox">
+        <label for="enableM"><kbd>M</kbd> enters 0 and marks the submission Missing</label>
+      </div>
+      <div class="row row--check">
+        <input id="enableE" type="checkbox">
+        <label for="enableE"><kbd>E</kbd> marks the submission Excused</label>
+      </div>
+      <div class="row row--check">
+        <input id="enableL" type="checkbox">
+        <label for="enableL"><kbd>L</kbd> marks the submission Late</label>
+      </div>
+      <div class="row row--check">
+        <input id="spreadsheetNavigation" type="checkbox">
+        <label for="spreadsheetNavigation">Enter / Shift+Enter / Tab / Shift+Tab / arrows move between grade cells</label>
+      </div>
+      <div class="row row--check">
+        <input id="multiCellSelection" type="checkbox">
+        <label for="multiCellSelection">Cmd/Ctrl-click and Shift-click select several cells</label>
+      </div>
+      <div class="row row--check">
+        <input id="bulkPaste" type="checkbox">
+        <label for="bulkPaste">Paste a block of grades from Excel or Google Sheets</label>
+      </div>
+      <div class="row">
+        <label class="row__label" for="bulkConfirmThreshold">Confirm bulk operations above</label>
+        <div class="row__control">
+          <input id="bulkConfirmThreshold" type="number" min="1" max="2000" step="1">
+          <span class="unit">cells</span>
+          <p class="hint">Smaller everyday operations apply immediately with no dialog.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="h-snippets">
+      <h2 id="h-snippets">Comment snippets</h2>
+      <p class="hint">In SpeedGrader or the gradebook comment popover, type <kbd>/trigger</kbd> then press <kbd>Tab</kbd>.
+        One snippet per block: first line is the trigger, the rest is the comment.</p>
+      <textarea id="snippets" rows="10" spellcheck="false"></textarea>
+      <p class="hint">Example:</p>
+      <pre class="sample">evidence
+Good claim - now tie it back to the evidence in your data.
+
+units
+Check your units and significant figures.</pre>
+    </section>
+
+    <section class="card" aria-labelledby="h-course">
+      <h2 id="h-course">Course switching and other Canvas domains</h2>
+      <div class="row row--check">
+        <input id="courseSwitcher" type="checkbox">
+        <label for="courseSwitcher">Turn the course name in the Canvas breadcrumb into a gradebook switcher</label>
+      </div>
+      <div class="row row--check">
+        <input id="speedgraderDrafts" type="checkbox">
+        <label for="speedgraderDrafts">Protect unsent SpeedGrader comment drafts</label>
+      </div>
+      <div class="row row--check">
+        <input id="prefetchAllAssignments" type="checkbox">
+        <label for="prefetchAllAssignments">Warm every assignment column in the background so indicators appear everywhere</label>
+      </div>
+      <div class="row">
+        <label class="row__label" for="customDomain">Self-hosted Canvas domain</label>
+        <div class="row__control">
+          <input id="customDomain" type="text" placeholder="canvas.myschool.edu" autocomplete="off">
+          <button id="grantDomain" type="button" class="btn">Enable here</button>
+          <p class="hint">Only needed if your Canvas is not on instructure.com.</p>
+          <p id="domainList" class="hint"></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="h-diag">
+      <h2 id="h-diag">Diagnostics</h2>
+      <div class="row row--check">
+        <input id="diagnostics" type="checkbox">
+        <label for="diagnostics">Record diagnostics while the gradebook is open</label>
+      </div>
+      <p class="hint">Counts and ids only. Student names, grades and comment text are never written to the log.</p>
+      <div class="diag__actions">
+        <button id="refreshDiag" type="button" class="btn">Refresh</button>
+        <button id="clearDiag" type="button" class="btn btn--quiet">Clear</button>
+      </div>
+      <pre id="diagOut" class="diag">Diagnostics off.</pre>
+    </section>
+
+    <footer class="page__foot">
+      <button id="save" type="button" class="btn btn--primary">Save changes</button>
+      <button id="reset" type="button" class="btn btn--quiet">Restore defaults</button>
+      <span id="status" class="status" role="status" aria-live="polite"></span>
+    </footer>
+  </main>
+  <script src="../core/util.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

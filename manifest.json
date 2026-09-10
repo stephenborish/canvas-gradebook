@@ -1,0 +1,89 @@
+{
+  "manifest_version": 3,
+  "name": "Canvas Gradebook+",
+  "version": "1.0.3",
+  "description": "In-place upgrades to the Canvas instructor Gradebook: instructor-comment indicators, keyboard grading, bulk paste, and a frozen Student + Total column.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://*.instructure.com/*"
+  ],
+  "optional_host_permissions": [
+    "*://*/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Canvas Gradebook+ settings",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_ui": {
+    "page": "src/options/options.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.instructure.com/courses/*"
+      ],
+      "js": [
+        "src/core/util.js",
+        "src/core/canvas-api.js",
+        "src/core/grade-ops.js",
+        "src/core/clipboard-matrix.js",
+        "src/core/comment-analysis.js",
+        "src/core/grid-map.js",
+        "src/core/totals.js",
+        "src/core/snippets.js",
+        "src/core/ui.js",
+        "src/core/model.js",
+        "src/gradebook/dom-adapter.js",
+        "src/gradebook/cell-registry.js",
+        "src/gradebook/indicators.js",
+        "src/gradebook/writer.js",
+        "src/gradebook/selection.js",
+        "src/gradebook/keyboard.js",
+        "src/gradebook/bulk-paste.js",
+        "src/gradebook/frozen-total.js",
+        "src/gradebook/layout.js",
+        "src/gradebook/comment-popover.js",
+        "src/gradebook/course-switcher.js",
+        "src/speedgrader/content.js",
+        "src/gradebook/content.js"
+      ],
+      "css": [
+        "src/styles/gradebook.css",
+        "src/styles/speedgrader.css"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true,
+      "match_about_blank": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/page/env-bridge.js"
+      ],
+      "matches": [
+        "*://*.instructure.com/*"
+      ]
+    }
+  ]
+}
