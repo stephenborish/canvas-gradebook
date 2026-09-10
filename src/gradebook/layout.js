@@ -75,7 +75,7 @@
     root.classList.toggle('cgp-max-height', !!s.maximizeHeight);
     root.style.setProperty('--cgp-student-w', s.studentColumnWidth + 'px');
     root.style.setProperty('--cgp-assignment-w', s.assignmentColumnWidth + 'px');
-    var headerH = s.narrowColumns ? 72 : 48;
+    var headerH = (s.narrowColumns ? 72 : 48) + (s.showAssignmentDueDate ? 14 : 0);
     root.style.setProperty('--cgp-header-h', headerH + 'px');
 
     if (s.hideCanvasUtilityControls) this.hideControls();
@@ -310,28 +310,36 @@
    * Canvas's own title/points elements use several positioning systems across
    * Gradebook variants; squeezing them into narrow columns caused the overlap
    * shown in the user's screenshot. We leave Canvas's header cell/events intact
-   * but visually replace only its text with a stable two-line title + points row. */
+   * but visually replace only its text with a stable title + points (+ due
+   * date, when enabled) stack. Interactive elements Canvas renders in the same
+   * cell (its column options/"..." menu trigger) are left alone entirely -
+   * see the CSS for exactly what stays visible - so they still work on hover. */
   P.decorateHeaders = function (model) {
+    var showDue = this.settings.values.showAssignmentDueDate;
     var headers = this.adapter.refreshColumns();
     headers.forEach(function (h) {
       if (!h.el) return;
-      var oldDue = h.el.querySelector(':scope > .cgp-due');
-      if (oldDue) oldDue.remove();
       var oldLabel = h.el.querySelector(':scope > .cgp-header-label');
       if (h.type === 'assignment' && h.assignmentId) {
         var a = model ? model.assignment(h.assignmentId) : null;
         if (a) {
-          var tooltip = a.name + (a.pointsPossible === null || a.pointsPossible === undefined ? '' : ' — ' + a.pointsPossible + ' pts');
+          var pointsText = (a.pointsPossible === null || a.pointsPossible === undefined) ? '' : (a.pointsPossible + ' pts');
+          var dueText = showDue ? CGP.util.fmtDueDate(a.dueAt, a.hasMultipleDueDates) : '';
+          var tooltip = a.name + (pointsText ? ' — ' + pointsText : '') + (dueText ? ' — ' + dueText : '');
           h.el.setAttribute('title', tooltip);
           if (!oldLabel) {
             oldLabel = document.createElement('div');
             oldLabel.className = 'cgp-header-label';
-            oldLabel.innerHTML = '<div class="cgp-header-title"></div><div class="cgp-header-points"></div>';
+            oldLabel.innerHTML = '<div class="cgp-header-title"></div><div class="cgp-header-points"></div><div class="cgp-header-due"></div>';
             h.el.appendChild(oldLabel);
           }
           oldLabel.querySelector('.cgp-header-title').textContent = a.name;
-          oldLabel.querySelector('.cgp-header-points').textContent =
-            (a.pointsPossible === null || a.pointsPossible === undefined) ? '' : (a.pointsPossible + ' pts');
+          oldLabel.querySelector('.cgp-header-points').textContent = pointsText;
+          var dueEl = oldLabel.querySelector('.cgp-header-due');
+          if (dueEl) {
+            dueEl.textContent = dueText;
+            dueEl.hidden = !dueText;
+          }
         }
       } else if (oldLabel) {
         oldLabel.remove();

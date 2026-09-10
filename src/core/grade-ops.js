@@ -61,9 +61,19 @@
   /**
    * Canvas API form parameters + the optimistic local patch for a parsed token.
    * Returns null for SKIP / INVALID (callers must not write those).
+   *
+   * opts.wasMissing - true when the cell being written to is currently marked
+   * Missing (an explicit late_policy_status, not merely a computed one). A
+   * teacher who types a real grade means it, and Canvas does not clear a
+   * manually-applied Missing status just because a grade showed up afterward -
+   * it keeps showing the red "Missing" pill until something explicitly clears
+   * it. So an ordinary grade write (NUMBER/PERCENT/LETTER) also clears the
+   * status here, once, instead of leaving it for the teacher to hunt down.
+   * MISSING/EXCUSED/LATE are explicit status commands and are left alone.
    */
-  function operationFor(parsed) {
+  function operationFor(parsed, opts) {
     if (!parsed) return null;
+    opts = opts || {};
     switch (parsed.kind) {
       case KIND.MISSING: {
         var score = (parsed.score === undefined || parsed.score === null) ? 0 : Number(parsed.score);
@@ -105,24 +115,22 @@
           patch: { score: null, enteredScore: null, grade: null, missing: false, late: false, excused: false, workflowState: 'unsubmitted' },
           display: '\u2013'
         };
-      case KIND.NUMBER:
-        return {
-          kind: parsed.kind,
-          summary: String(parsed.value),
-          // Deliberately no late_policy_status: a plain 0 is an ordinary zero.
-          form: { 'submission[posted_grade]': String(parsed.value) },
-          patch: { score: Number(parsed.value), enteredScore: Number(parsed.value), grade: String(parsed.value), excused: false, workflowState: 'graded' },
-          display: String(parsed.value)
-        };
+      case KIND.NUMBER: {
+        // Deliberately no late_policy_status by default: a plain 0 is an
+        // ordinary zero, and an already-Late submission should stay Late
+        // after grading. Missing is the one status a real grade always ends.
+        var numberForm = { 'submission[posted_grade]': String(parsed.value) };
+        var numberPatch = { score: Number(parsed.value), enteredScore: Number(parsed.value), grade: String(parsed.value), excused: false, workflowState: 'graded' };
+        if (opts.wasMissing) { numberForm['submission[late_policy_status]'] = 'none'; numberPatch.missing = false; }
+        return { kind: parsed.kind, summary: String(parsed.value), form: numberForm, patch: numberPatch, display: String(parsed.value) };
+      }
       case KIND.PERCENT:
-      case KIND.LETTER:
-        return {
-          kind: parsed.kind,
-          summary: String(parsed.value),
-          form: { 'submission[posted_grade]': String(parsed.value) },
-          patch: { grade: String(parsed.value), excused: false, workflowState: 'graded' },
-          display: String(parsed.value)
-        };
+      case KIND.LETTER: {
+        var gradeForm = { 'submission[posted_grade]': String(parsed.value) };
+        var gradePatch = { grade: String(parsed.value), excused: false, workflowState: 'graded' };
+        if (opts.wasMissing) { gradeForm['submission[late_policy_status]'] = 'none'; gradePatch.missing = false; }
+        return { kind: parsed.kind, summary: String(parsed.value), form: gradeForm, patch: gradePatch, display: String(parsed.value) };
+      }
       default:
         return null;
     }

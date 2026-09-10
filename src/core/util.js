@@ -7,7 +7,7 @@
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.util) return;
 
-  CGP.VERSION = '1.0.3';
+  CGP.VERSION = '1.1.0';
 
   CGP.DEFAULTS = {
     // layout
@@ -18,11 +18,10 @@
     maximizeHeight: true,
     frozenTotal: true,
     centerAssignmentColumns: true,
-    showAssignmentDueDate: false,
+    showAssignmentDueDate: true,
     // indicators
     commentIndicator: true,
     showCommentCount: true,
-    statusIndicators: true,
     resubmissionIndicator: true,
     commentPopover: true,
     // input
@@ -136,6 +135,18 @@
     try {
       return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     } catch (e) { return d.toISOString().slice(0, 16).replace('T', ' '); }
+  };
+
+  /** One short line for an assignment header: "Due Sep 12, 11:59 PM", "Multiple
+   * due dates" for differentiated assignments, or "No due date". */
+  util.fmtDueDate = function (iso, hasMultipleDueDates) {
+    if (hasMultipleDueDates) return 'Multiple due dates';
+    if (!iso) return 'No due date';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    try {
+      return 'Due ' + d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    } catch (e) { return 'Due ' + d.toISOString().slice(0, 16).replace('T', ' '); }
   };
 
   /* ---------------------------------------------------------------- settings */

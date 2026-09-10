@@ -7,16 +7,18 @@
 
 html.cgp-on {
   --cgp-ink: #2d3b45;
+  --cgp-ink-strong: #1a232b;
   --cgp-muted: #6b7780;
   --cgp-line: #c7cdd1;
   --cgp-brand: #0374b5;
+  --cgp-brand-dark: #045486;
+  --cgp-brand-wash: #eef6fb;
   --cgp-comment: #0a72a8;
-  --cgp-missing: #b8452f;
-  --cgp-late: #b4761b;
-  --cgp-excused: #6b7780;
-  --cgp-ungraded: #2a7a5e;
   --cgp-resub: #6b3fa0;
   --cgp-sel: #0374b5;
+  --cgp-surface: #fff;
+  --cgp-shadow: 0 4px 16px rgba(19, 33, 44, 0.16), 0 1px 3px rgba(19, 33, 44, 0.08);
+  --cgp-radius: 8px;
   --cgp-total-w: 84px;
   --cgp-frozen-natural: 190px;
   --cgp-frozen-w: 274px;
@@ -40,64 +42,79 @@ html.cgp-on .slick-cell .cgp-marks {
   z-index: 3;
 }
 
+/* Top-LEFT corner, deliberately: Canvas draws its own "open in SpeedGrader /
+ * Grade Detail Tray" arrow in the top-right of a selected cell, and a marker
+ * sharing that corner was covering (clipping) it. A small filled circle reads
+ * clearly against any grade text or Canvas's own hover/selection tinting -
+ * much easier to spot at a glance than a bare glyph. */
 html.cgp-on .cgp-cmt {
   position: absolute;
-  top: 1px;
-  right: 2px;
-  width: 10px;
-  height: 10px;
-  color: var(--cgp-comment);
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--cgp-comment);
+  color: #fff;
   pointer-events: auto;
   cursor: pointer;
   line-height: 0;
-  opacity: 0.9;
+  box-shadow: 0 1px 2px rgba(19, 33, 44, 0.35);
+  transition: transform 100ms ease, box-shadow 100ms ease;
 }
-html.cgp-on .cgp-cmt:hover { opacity: 1; }
-html.cgp-on .cgp-cmt svg { width: 10px; height: 10px; fill: currentColor; display: block; }
+html.cgp-on .cgp-cmt svg { width: 8px; height: 8px; fill: currentColor; display: block; }
+html.cgp-on .cgp-cmt:hover {
+  transform: scale(1.14);
+  box-shadow: 0 2px 5px rgba(19, 33, 44, 0.45);
+}
 
-/* A student replied after the instructor's last comment: hollow bubble. */
-html.cgp-on .cgp-cmt--reply { color: var(--cgp-resub); }
+/* A student replied after the instructor's last comment: hollow, purple ring. */
+html.cgp-on .cgp-cmt--reply {
+  background: #fff;
+  color: var(--cgp-resub);
+  box-shadow: inset 0 0 0 1.6px var(--cgp-resub), 0 1px 2px rgba(19, 33, 44, 0.25);
+}
 html.cgp-on .cgp-cmt--reply svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
 
 html.cgp-on .cgp-cmt-count {
   position: absolute;
   top: 0;
-  right: 13px;
+  left: 15px;
   font-size: 9px;
-  line-height: 12px;
+  line-height: 13px;
   color: var(--cgp-comment);
   font-weight: 700;
   pointer-events: none;
 }
 
-html.cgp-on .cgp-dot {
-  position: absolute;
-  left: 3px;
-  bottom: 3px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  pointer-events: auto;
-}
-html.cgp-on .cgp-dot--missing { background: var(--cgp-missing); }
-html.cgp-on .cgp-dot--late { background: var(--cgp-late); }
-html.cgp-on .cgp-dot--excused { background: transparent; border: 1px solid var(--cgp-excused); }
-html.cgp-on .cgp-dot--ungraded { background: var(--cgp-ungraded); }
-
-/* Resubmitted after grading: a small corner wedge, distinct from the bubble. */
+/* Resubmitted after grading: a small corner wedge in the bottom-right, well
+ * clear of both the comment bubble (top-left) and Canvas's own controls
+ * (top-right). */
 html.cgp-on .cgp-resub {
   position: absolute;
-  top: 0;
-  left: 0;
+  bottom: 0;
+  right: 0;
   width: 0;
   height: 0;
-  border-top: 6px solid var(--cgp-resub);
-  border-right: 6px solid transparent;
+  border-bottom: 7px solid var(--cgp-resub);
+  border-left: 7px solid transparent;
   pointer-events: auto;
 }
 
-/* Value written through the API while Canvas's own render is stale. */
-html.cgp-on .slick-cell.cgp-override > *:not(.cgp-marks):not(.cgp-val) { visibility: hidden; }
+/* Value written through the API while Canvas's own render is stale. Canvas's
+ * own per-cell "open in SpeedGrader / Grade Detail Tray" control is left
+ * alone (:has(...) below) even here, so a cell we just graded never loses
+ * that control just because our optimistic value is covering its old text. */
+html.cgp-on .slick-cell.cgp-override > *:not(.cgp-marks):not(.cgp-val):not(:has(button, a, [role="button"], [aria-haspopup])) {
+  visibility: hidden;
+}
+html.cgp-on .slick-cell.cgp-override > *:has(button, a, [role="button"], [aria-haspopup]) {
+  position: relative;
+  z-index: 3;
+}
 html.cgp-on .cgp-val {
   position: absolute;
   inset: 0;
@@ -114,7 +131,8 @@ html.cgp-on .slick-cell.cgp-pending-write .cgp-val { opacity: 0.55; }
 
 html.cgp-on .slick-cell.cgp-sel {
   box-shadow: inset 0 0 0 2px var(--cgp-sel);
-  background-color: rgba(3, 116, 181, 0.06);
+  background-color: rgba(3, 116, 181, 0.08);
+  transition: background-color 80ms ease;
 }
 html.cgp-on .slick-cell.cgp-has-pending::after {
   content: attr(data-cgp-pending);
@@ -124,8 +142,9 @@ html.cgp-on .slick-cell.cgp-has-pending::after {
   align-items: center;
   justify-content: center;
   font-size: 13px;
-  color: var(--cgp-brand);
-  background: rgba(255, 255, 255, 0.82);
+  font-weight: 600;
+  color: var(--cgp-brand-dark, var(--cgp-brand));
+  background: rgba(255, 255, 255, 0.85);
   z-index: 4;
 }
 
@@ -153,10 +172,11 @@ html.cgp-frozen-total .cgp-total-header {
   justify-content: center;
   border-left: 1px solid var(--cgp-line);
   border-bottom: 1px solid var(--cgp-line);
-  background: #f5f5f5;
+  background: var(--cgp-brand-wash);
   font-size: 12px;
   font-weight: 700;
-  color: var(--cgp-ink);
+  letter-spacing: 0.2px;
+  color: var(--cgp-ink-strong);
   z-index: 5;
 }
 html.cgp-frozen-total .cgp-total-layer {
@@ -242,24 +262,8 @@ html.cgp-center .slick-header-column[data-cgp-col="assignment"] .Gradebook__Colu
   color: var(--cgp-muted);
 }
 
-/* The due-date line we add under the title/points in an assignment header. */
 html.cgp-on .slick-header-column {
-  position: relative; /* .cgp-due anchors to whichever header cell it's in */
-}
-html.cgp-on .cgp-due {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 3px;
-  text-align: center;
-  font-size: 10.5px;
-  line-height: 1.2;
-  color: var(--cgp-muted);
-  padding: 0 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  pointer-events: none;
+  position: relative; /* .cgp-header-label anchors to whichever header cell it's in */
 }
 
 html.cgp-center .slick-cell[data-cgp-col="assignment"] { text-align: center !important; }
@@ -269,9 +273,23 @@ html.cgp-center .slick-cell[data-cgp-col="assignment"] .gradebook-cell {
   text-align: center !important;
 }
 html.cgp-center .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content { justify-content: center !important; }
-/* Student names stay left aligned. */
+/* Student names stay left aligned, and read as the anchor of the row: larger
+ * and higher-contrast than a plain grade, so a name is never the hardest
+ * thing on the screen to read at a glance. */
 html.cgp-on .slick-cell[data-cgp-col="student"],
 html.cgp-on .slick-header-column[data-cgp-col="student"] .slick-column-name { text-align: left !important; }
+html.cgp-on .slick-cell[data-cgp-col="student"] {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: var(--cgp-ink-strong) !important;
+  letter-spacing: 0.1px;
+}
+html.cgp-on .slick-cell[data-cgp-col="student"] a,
+html.cgp-on .slick-cell[data-cgp-col="student"] a:visited {
+  color: var(--cgp-ink-strong) !important;
+  font-weight: 600 !important;
+}
+html.cgp-on .slick-cell[data-cgp-col="student"] a:hover { color: var(--cgp-brand-dark) !important; }
 
 /* ------------------------------------------------------- comment popover */
 
@@ -282,93 +300,166 @@ html.cgp-on .cgp-pop {
   max-height: 340px;
   overflow: auto;
   box-sizing: border-box;
-  padding: 10px 12px 12px;
-  background: #fff;
+  padding: 12px 14px 14px;
+  background: var(--cgp-surface);
   border: 1px solid var(--cgp-line);
-  border-radius: 3px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.14);
+  border-radius: var(--cgp-radius);
+  box-shadow: var(--cgp-shadow);
   font-family: inherit;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--cgp-ink);
-  line-height: 1.4;
+  line-height: 1.45;
 }
 html.cgp-on .cgp-pop--on { display: block; }
 html.cgp-on .cgp-pop__head {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding-bottom: 6px;
+  padding-bottom: 8px;
   border-bottom: 1px solid #e8eaec;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
-html.cgp-on .cgp-pop__who { font-weight: 700; }
+html.cgp-on .cgp-pop__who { font-weight: 700; color: var(--cgp-ink-strong); font-size: 13px; }
 html.cgp-on .cgp-pop__what { color: var(--cgp-muted); }
 html.cgp-on .cgp-pop__list { list-style: none; margin: 0; padding: 0; }
-html.cgp-on .cgp-pop__item { padding: 5px 0; border-bottom: 1px solid #f0f1f2; }
+html.cgp-on .cgp-pop__item { padding: 6px 0; border-bottom: 1px solid #f0f1f2; }
 html.cgp-on .cgp-pop__item:last-child { border-bottom: 0; }
 html.cgp-on .cgp-pop__item--mine .cgp-pop__author { color: var(--cgp-comment); }
-html.cgp-on .cgp-pop__item--mine { padding-left: 6px; border-left: 2px solid var(--cgp-comment); }
+html.cgp-on .cgp-pop__item--mine { padding-left: 8px; border-left: 2px solid var(--cgp-comment); border-radius: 2px; }
 html.cgp-on .cgp-pop__meta { display: flex; justify-content: space-between; gap: 8px; }
 html.cgp-on .cgp-pop__author { font-weight: 700; }
 html.cgp-on .cgp-pop__date { color: var(--cgp-muted); }
-html.cgp-on .cgp-pop__text { white-space: pre-wrap; margin-top: 1px; }
+html.cgp-on .cgp-pop__text { white-space: pre-wrap; margin-top: 2px; }
 html.cgp-on .cgp-pop__empty { color: var(--cgp-muted); padding: 2px 0 6px; }
-html.cgp-on .cgp-pop__reply { margin-top: 8px; }
+html.cgp-on .cgp-pop__reply { margin-top: 10px; }
 html.cgp-on .cgp-pop__input {
   width: 100%;
   box-sizing: border-box;
   font: inherit;
-  padding: 5px 6px;
+  padding: 6px 8px;
   border: 1px solid var(--cgp-line);
-  border-radius: 3px;
+  border-radius: 5px;
   resize: vertical;
+  transition: border-color 100ms ease, box-shadow 100ms ease;
+}
+html.cgp-on .cgp-pop__input:focus {
+  outline: none;
+  border-color: var(--cgp-brand);
+  box-shadow: 0 0 0 3px rgba(3, 116, 181, 0.15);
 }
 html.cgp-on .cgp-pop__actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 6px;
+  margin-top: 8px;
 }
-html.cgp-on .cgp-pop__link { color: var(--cgp-brand); text-decoration: none; }
-html.cgp-on .cgp-pop__link:hover { text-decoration: underline; }
+html.cgp-on .cgp-pop__link { color: var(--cgp-brand); text-decoration: none; font-weight: 600; }
+html.cgp-on .cgp-pop__link:hover { color: var(--cgp-brand-dark); text-decoration: underline; }
 html.cgp-on .cgp-pop__save {
   font: inherit;
-  padding: 3px 10px;
+  font-weight: 600;
+  padding: 5px 12px;
   color: #fff;
   background: var(--cgp-brand);
   border: 1px solid var(--cgp-brand);
-  border-radius: 3px;
+  border-radius: 5px;
   cursor: pointer;
+  transition: background 100ms ease, transform 100ms ease;
 }
-html.cgp-on .cgp-pop__save[disabled] { opacity: 0.6; cursor: default; }
+html.cgp-on .cgp-pop__save:hover { background: var(--cgp-brand-dark); }
+html.cgp-on .cgp-pop__save:active { transform: scale(0.97); }
+html.cgp-on .cgp-pop__save[disabled] { opacity: 0.6; cursor: default; transform: none; }
+
+/* ------------------------------------------------------- comment hover preview */
+
+/* A quiet, read-only glance at the latest comment - distinct from the click
+ * popover above it (smaller, no border-radius-matching input, no buttons) so
+ * the two are never mistaken for each other. */
+html.cgp-on .cgp-preview {
+  position: fixed;
+  z-index: 99999;
+  display: none;
+  box-sizing: border-box;
+  max-height: 200px;
+  overflow: hidden;
+  padding: 8px 10px;
+  background: var(--cgp-ink-strong);
+  color: #fff;
+  border-radius: 6px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.28);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+html.cgp-on .cgp-preview--on { display: block; }
+html.cgp-on .cgp-preview__meta { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+html.cgp-on .cgp-preview__author { font-weight: 700; }
+html.cgp-on .cgp-preview__count { color: rgba(255, 255, 255, 0.65); font-size: 11px; }
+html.cgp-on .cgp-preview__text {
+  white-space: pre-wrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+html.cgp-on .cgp-preview__hint {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 10.5px;
+}
 
 /* ------------------------------------------------------- course switcher */
 
+/* A larger, labeled, pill-shaped control - not just a caret - so it reads
+ * immediately as "click me to switch courses" instead of blending into the
+ * breadcrumb as decoration. */
 html.cgp-on .cgp-crumb-toggle {
   appearance: none;
-  background: none;
-  border: 0;
-  padding: 0 2px;
-  margin-left: 2px;
-  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--cgp-brand-wash);
+  border: 1px solid rgba(3, 116, 181, 0.28);
+  border-radius: 999px;
+  padding: 3px 10px 3px 9px;
+  margin-left: 8px;
+  color: var(--cgp-brand-dark);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
-  line-height: 1;
+  line-height: 1.5;
   vertical-align: middle;
+  transition: background 100ms ease, box-shadow 100ms ease, transform 100ms ease;
 }
-html.cgp-on .cgp-crumb-toggle svg { width: 9px; height: 6px; display: block; }
-html.cgp-on .cgp-crumb-toggle:hover { color: var(--cgp-brand); }
+html.cgp-on .cgp-crumb-toggle__label { white-space: nowrap; }
+html.cgp-on .cgp-crumb-toggle svg { width: 9px; height: 6px; display: block; flex: 0 0 auto; }
+html.cgp-on .cgp-crumb-toggle:hover {
+  background: #dcedf8;
+  box-shadow: 0 1px 3px rgba(3, 116, 181, 0.25);
+}
+html.cgp-on .cgp-crumb-toggle:active { transform: scale(0.97); }
 html.cgp-on .cgp-crumb-toggle:focus-visible { outline: 2px solid var(--cgp-brand); outline-offset: 2px; }
+html.cgp-on .cgp-crumb-toggle[aria-expanded="true"] {
+  background: var(--cgp-brand);
+  border-color: var(--cgp-brand);
+  color: #fff;
+}
 
 html.cgp-on .cgp-course-menu {
   position: fixed;
   z-index: 100001;
   display: none;
   box-sizing: border-box;
-  padding: 6px;
-  background: #fff;
+  padding: 7px;
+  background: var(--cgp-surface);
   border: 1px solid var(--cgp-line);
-  border-radius: 3px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.14);
+  border-radius: var(--cgp-radius);
+  box-shadow: var(--cgp-shadow);
   font-size: 13px;
   color: var(--cgp-ink);
 }
@@ -377,19 +468,26 @@ html.cgp-on .cgp-course-menu__filter {
   width: 100%;
   box-sizing: border-box;
   font: inherit;
-  padding: 5px 7px;
+  padding: 6px 8px;
   border: 1px solid var(--cgp-line);
-  border-radius: 3px;
+  border-radius: 5px;
+  transition: border-color 100ms ease, box-shadow 100ms ease;
 }
-html.cgp-on .cgp-course-menu__list { max-height: 320px; overflow: auto; margin-top: 5px; }
+html.cgp-on .cgp-course-menu__filter:focus {
+  outline: none;
+  border-color: var(--cgp-brand);
+  box-shadow: 0 0 0 3px rgba(3, 116, 181, 0.15);
+}
+html.cgp-on .cgp-course-menu__list { max-height: 320px; overflow: auto; margin-top: 6px; }
 html.cgp-on .cgp-course-menu__item {
   display: flex;
   flex-direction: column;
-  padding: 5px 7px;
-  border-radius: 3px;
+  padding: 6px 8px;
+  border-radius: 5px;
   cursor: pointer;
+  transition: background 80ms ease;
 }
-html.cgp-on .cgp-course-menu__item.is-active { background: #eef6fb; }
+html.cgp-on .cgp-course-menu__item.is-active { background: var(--cgp-brand-wash); }
 html.cgp-on .cgp-course-menu__item.is-current .cgp-course-menu__name { font-weight: 700; }
 html.cgp-on .cgp-course-menu__term { color: var(--cgp-muted); font-size: 11px; }
 html.cgp-on .cgp-course-menu__empty { padding: 8px 7px; color: var(--cgp-muted); }
@@ -404,12 +502,13 @@ html.cgp-speedgrader .cgp-toast {
   transform: translateX(-50%);
   z-index: 100002;
   max-width: 520px;
-  padding: 7px 13px;
-  border-radius: 3px;
-  background: #2d3b45;
+  padding: 8px 14px;
+  border-radius: 7px;
+  background: var(--cgp-ink-strong, #1a232b);
   color: #fff;
   font-size: 12.5px;
   line-height: 1.35;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
   opacity: 0;
   visibility: hidden;
 }
@@ -473,32 +572,46 @@ html.cgp-on .cgp-cmt svg { width: 12px; height: 12px; }
 
 /* v1.0.3: stable compact assignment headers. Canvas's original title/detail
  * elements remain in the DOM for behavior/accessibility, but their painted text
- * is hidden so it cannot overlap the extension's single layout layer. */
+ * is hidden so it cannot overlap the extension's single layout layer.
+ *
+ * The one exception is anything Canvas uses to render an interactive control
+ * in that same header cell - most importantly its column "..." options menu
+ * trigger (Message Students Who..., Set Default Grade, Curve Grades, sorting,
+ * etc). That must stay exactly as Canvas built it - own visibility, own
+ * hover-to-reveal, own click handling - or the menu simply stops existing. */
 html.cgp-on .slick-header-column[data-cgp-col="assignment"] {
   position: relative !important;
   height: var(--cgp-header-h, 72px) !important;
-  overflow: hidden !important;
+  overflow: visible !important;
 }
-html.cgp-on .slick-header-column[data-cgp-col="assignment"] > *:not(.cgp-header-label):not(.slick-resizable-handle) {
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] >
+  *:not(.cgp-header-label):not(.slick-resizable-handle):not(:has(button, [role="button"], [role="menu"], [aria-haspopup])) {
   visibility: hidden !important;
 }
 html.cgp-on .slick-header-column[data-cgp-col="assignment"] > .slick-resizable-handle {
   visibility: visible !important;
 }
+/* A wrapper Canvas built around its options-menu trigger is left visible by
+ * the rule above; make sure it also paints above our label instead of behind
+ * it, so the button Canvas reveals on hover is never hidden underneath our text. */
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] > *:has(button, [role="button"], [role="menu"], [aria-haspopup]) {
+  position: relative !important;
+  z-index: 6 !important;
+}
 html.cgp-on .cgp-header-label {
   visibility: visible !important;
   position: absolute !important;
-  inset: 0 5px 0 5px !important;
+  inset: 0 22px 0 5px !important;
   display: flex !important;
   flex-direction: column !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 3px !important;
+  gap: 2px !important;
   box-sizing: border-box !important;
   pointer-events: none !important;
   text-align: center !important;
   overflow: hidden !important;
-  z-index: 3 !important;
+  z-index: 2 !important;
 }
 html.cgp-on .cgp-header-title {
   width: 100%;
@@ -511,8 +624,8 @@ html.cgp-on .cgp-header-title {
   overflow-wrap: anywhere;
   font-size: 12px;
   line-height: 1.18;
-  font-weight: 500;
-  color: #2d3b45;
+  font-weight: 600;
+  color: var(--cgp-ink-strong, #1a232b);
 }
 html.cgp-on .cgp-header-points {
   width: 100%;
@@ -523,13 +636,25 @@ html.cgp-on .cgp-header-points {
   font-size: 10.5px;
   line-height: 1.2;
   font-weight: 400;
-  color: #6b7780;
+  color: var(--cgp-muted);
   text-align: center;
 }
-/* Never display the legacy extension-added due-date line; the teacher asked
- * for assignment title + points only, and old synced settings may still have
- * showAssignmentDueDate=true from a prior version. */
-html.cgp-on .cgp-due { display: none !important; }
+/* The assignment's due date, read straight from Canvas's own assignment data.
+ * A third, quieter line under title + points; hidden entirely (no reserved
+ * space) when the setting is off or an assignment has no fixed due date text. */
+html.cgp-on .cgp-header-due {
+  width: 100%;
+  min-height: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 9.5px;
+  line-height: 1.15;
+  font-weight: 500;
+  color: var(--cgp-brand-dark, var(--cgp-brand));
+  text-align: center;
+}
+html.cgp-on .cgp-header-due[hidden] { display: none !important; }
 
 /* Keep marker geometry from affecting SlickGrid measurements. */
 html.cgp-on .slick-cell > .cgp-marks,

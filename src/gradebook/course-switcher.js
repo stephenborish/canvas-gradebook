@@ -40,7 +40,11 @@
     btn.setAttribute('aria-expanded', 'false');
     btn.setAttribute('aria-label', 'Switch course gradebook');
     btn.title = 'Switch course gradebook';
-    btn.innerHTML = '<svg viewBox="0 0 10 6" aria-hidden="true"><path d="M0.6 0.9 5 5.2 9.4 0.9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+    // A bare caret next to the breadcrumb was easy to miss entirely. A small
+    // labeled, pill-shaped button reads as "a control" at a glance instead of
+    // looking like part of the page furniture.
+    btn.innerHTML = '<span class="cgp-crumb-toggle__label">Switch course</span>' +
+      '<svg viewBox="0 0 10 6" aria-hidden="true"><path d="M0.6 0.9 5 5.2 9.4 0.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
     crumbLink.insertAdjacentElement('afterend', btn);
     this.toggle = btn;
 

@@ -35,6 +35,13 @@
     this.requestPaint = ctx.requestPaint;
     this._editorWatch = new WeakMap();
     this._refreshTimers = new Map();
+    // "assignmentId:userId" cells where the M shortcut's own native-commit-then-
+    // API-write sequence is in flight. Their focusout must NOT trigger the
+    // ordinary reconcile-from-Canvas path below: that path re-reads whatever
+    // Canvas has and, seeing a graded submission still flagged Missing,
+    // deliberately clears the status - which is exactly the status M just
+    // asked for. The M flow already keeps the model truthful on its own.
+    this._nativeMPending = new Set();
   }
 
   var P = KeyboardGradingController.prototype;
@@ -69,6 +76,7 @@
     var now = String(el.value === undefined ? '' : el.value);
     if (now === watch.value) return;
     if (!watch.assignmentId || !watch.userId) return;
+    if (this._nativeMPending.has(watch.assignmentId + ':' + watch.userId)) return;
     this.scheduleReconcile(watch.assignmentId, watch.userId);
   };
 
@@ -82,6 +90,12 @@
       self.model.patchCell(assignmentId, userId, { override: null }, { silent: true });
       self.model.refreshCell(assignmentId, userId).then(function () {
         self.model.queueTotalRefresh(userId);
+        if (self.requestPaint) self.requestPaint();
+        // Canvas just committed a grade through its own editor. If that left
+        // the submission both graded and still flagged Missing, a teacher who
+        // just typed a real grade does not mean to keep that status - clear it.
+        return self.writer.clearStaleMissing(assignmentId, userId);
+      }).then(function () {
         if (self.requestPaint) self.requestPaint();
       });
     }, 1200));
@@ -227,11 +241,20 @@
     var self = this;
     var nativeEditor = info ? this.adapter.editorInput(info.el) : null;
     var nativeM = token === 'M' && nativeEditor && scope && scope.length === 1;
+    var pendingKey = nativeM ? (scope[0].assignmentId + ':' + scope[0].userId) : null;
     if (nativeM) {
       // Keep SlickGrid in charge of its own editor lifecycle. Write the visible
       // zero through Canvas's editor, commit it natively, then use the API to
       // guarantee the Missing status. Never send Escape: on this Canvas build
       // that tears down pane geometry and makes the grid jump.
+      //
+      // That native "0" commit fires a focusout the reconcile-from-Canvas path
+      // in onFocusOut would normally act on - and seeing a graded submission
+      // still flagged Missing, it would "helpfully" clear the very status M is
+      // about to ask for. Mark this cell as ours until our own write below
+      // settles (cleared in every exit path), so reconciliation stands down
+      // for it and never fights the shortcut it is itself the cause of.
+      this._nativeMPending.add(pendingKey);
       this.adapter.setEditorValue(nativeEditor, '0');
       this.adapter.sendKey(nativeEditor, 'Enter', 13);
       CGP.diag.bump('keyboard.m.nativeCommit');
@@ -240,6 +263,7 @@
       return { assignmentId: t.assignmentId, userId: t.userId, token: token };
     }));
     if (built.invalid.length && !built.targets.length) {
+      if (pendingKey) this._nativeMPending.delete(pendingKey);
       CGP.ui.error('"' + token + '" is not a grade Canvas will accept.');
       return;
     }
@@ -248,7 +272,10 @@
     if (count > threshold) {
       var label = CGP.gradeOps.describe(built.targets[0].parsed.kind);
       var ok = window.confirm('Apply ' + label + ' to ' + count + ' cells in this course?');
-      if (!ok) return;
+      if (!ok) {
+        if (pendingKey) this._nativeMPending.delete(pendingKey);
+        return;
+      }
     }
     var doWrite = function () {
       return self.writer.apply(built.targets, { announce: count > 1, noOptimistic: !!nativeM });
@@ -257,6 +284,7 @@
       setTimeout(function () { resolve(doWrite()); }, 220);
     }) : doWrite();
     writePromise.then(function () {
+      if (pendingKey) self._nativeMPending.delete(pendingKey);
       if (self.requestPaint) self.requestPaint();
     });
   };

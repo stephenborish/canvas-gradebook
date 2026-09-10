@@ -1,14 +1,20 @@
 /* Canvas Gradebook+ - in-cell indicators.
  *
  * Highest priority feature: a small speech bubble in every grade cell where
- * *this instructor* has written a student-facing comment. Also paints subtle
- * status dots (missing / late / excused / needs grading) and a resubmission
- * corner, plus the value overlay used after an API write so the cell shows the
+ * *this instructor* has written a student-facing comment, plus a resubmission
+ * corner and the value overlay used after an API write so the cell shows the
  * truth without a page reload.
+ *
+ * The bubble lives in the cell's top-LEFT corner deliberately: Canvas's own
+ * per-cell "open in SpeedGrader / Grade Detail Tray" arrow renders in the
+ * top-right, and a marker sitting on top of it was clipping that control.
  *
  * Painting rules that keep Canvas intact:
  *   - markers are absolutely positioned inside the cell, never resize anything
  *   - a paint signature means unchanged cells are not touched on rerender
+ *   - the signature always includes which submission the cell represents, so
+ *     a DOM node Canvas recycles for a different student/assignment while
+ *     scrolling is never mistaken for "unchanged" and skipped
  *   - our own nodes are ignored by the MutationObserver, so no render loops */
 (function () {
   'use strict';
@@ -24,27 +30,36 @@
     this.registry = ctx.registry;
     this.settings = ctx.settings;
     this.onCommentClick = ctx.onCommentClick || function () {};
+    this.onCommentHover = ctx.onCommentHover || function () {};
+    this.onCommentLeave = ctx.onCommentLeave || function () {};
     this.requested = new Set();
+    this._hoverIcon = null;
   }
 
   var P = IndicatorController.prototype;
 
   P.signatureFor = function (info, rec) {
-    if (!rec) return 'none';
+    // Identity comes first: SlickGrid recycles cell elements for a different
+    // student/assignment as rows and columns virtualize, and every other
+    // field here can coincidentally match the previous occupant (e.g. two
+    // ungraded, comment-free cells). Without the identity, a repaint would be
+    // skipped as "unchanged" and the wrong cell would keep showing stale
+    // marks - or a real comment bubble would silently fail to appear - until
+    // the whole page was reloaded.
+    var id = (info.assignmentId || '') + ':' + (info.studentId || '');
+    if (!rec) return id + '|none';
     var c = rec.comments || {};
     return [
+      id,
       c.instructorCount || 0,
       c.studentRepliedAfter ? 1 : 0,
-      rec.missing ? 1 : 0,
-      rec.late ? 1 : 0,
-      rec.excused ? 1 : 0,
-      rec.workflowState || '',
       rec.gradeMatchesCurrent === false ? 1 : 0,
+      rec.gradedAt ? 1 : 0,
       rec.pending ? 1 : 0,
       rec.override === null || rec.override === undefined ? '' : rec.override,
       this.settings.values.commentIndicator ? 1 : 0,
       this.settings.values.showCommentCount ? 1 : 0,
-      this.settings.values.statusIndicators ? 1 : 0
+      this.settings.values.resubmissionIndicator ? 1 : 0
     ].join('|');
   };
 
@@ -91,21 +106,9 @@
       var tip = CGP.commentAnalysis.tooltip(comments);
       var cls = 'cgp-cmt' + (comments.studentRepliedAfter ? ' cgp-cmt--reply' : '');
       parts.push('<span class="' + cls + '" role="button" tabindex="-1" aria-label="' +
-        CGP.util.escapeHtml(tip) + '" title="' + CGP.util.escapeHtml(tip) + '">' + BUBBLE + '</span>');
+        CGP.util.escapeHtml(tip) + '">' + BUBBLE + '</span>');
       if (s.showCommentCount && comments.instructorCount > 1) {
         parts.push('<span class="cgp-cmt-count" aria-hidden="true">' + comments.instructorCount + '</span>');
-      }
-    }
-
-    if (s.statusIndicators && rec) {
-      var status = null;
-      if (rec.excused) status = 'excused';
-      else if (rec.missing) status = 'missing';
-      else if (rec.late) status = 'late';
-      else if (rec.workflowState === 'submitted' || (rec.submittedAt && !rec.gradedAt)) status = 'ungraded';
-      if (status) {
-        parts.push('<span class="cgp-dot cgp-dot--' + status + '" title="' +
-          status.charAt(0).toUpperCase() + status.slice(1) + '"></span>');
       }
     }
 
@@ -152,6 +155,14 @@
   };
 
   P.paint = function () {
+    // A repaint can replace the exact bubble element the pointer is sitting
+    // over (its parent cell's marks host is rebuilt from scratch), which
+    // never fires mouseout. Left alone, the hover preview would be stuck open
+    // pointing at a comment that is no longer under the cursor.
+    if (this._hoverIcon && !this._hoverIcon.isConnected) {
+      this._hoverIcon = null;
+      this.onCommentLeave();
+    }
     if (!this.model.ready) {
       // Still tag columns so alignment/centering works before data arrives.
       var early = this.adapter.visibleCells();
@@ -199,13 +210,43 @@
       // Keep Canvas from entering cell-edit mode behind the popover.
       e.preventDefault();
       e.stopPropagation();
+      self.onCommentLeave(); // the click-through popover replaces any preview
       var info = self.adapter.cellInfo(icon);
       if (info && info.assignmentId && info.studentId) self.onCommentClick(info);
     }, true);
   };
 
+  /* A quick, read-only preview on hover - separate from the click-to-reply
+   * popover - so seeing what was said does not require opening anything.
+   * mouseover/mouseout (not mouseenter/mouseleave) bubble, so one delegated
+   * listener covers every bubble the grid ever paints, including ones added
+   * after this binds. */
+  P.bindCommentHover = function () {
+    var self = this;
+    document.addEventListener('mouseover', function (e) {
+      var icon = e.target && e.target.closest ? e.target.closest('.cgp-cmt') : null;
+      if (!icon || icon === self._hoverIcon) return;
+      self._hoverIcon = icon;
+      var info = self.adapter.cellInfo(icon);
+      if (info && info.assignmentId && info.studentId) self.onCommentHover(info);
+    }, false);
+    document.addEventListener('mouseout', function (e) {
+      var icon = e.target && e.target.closest ? e.target.closest('.cgp-cmt') : null;
+      if (!icon || icon !== self._hoverIcon) return;
+      if (e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('.cgp-cmt') === icon) return;
+      self._hoverIcon = null;
+      self.onCommentLeave();
+    }, false);
+    // A bubble that scrolls out from under the pointer (or disappears on
+    // repaint) never fires mouseout - close on any scroll instead of trusting it.
+    this.adapter.viewports().forEach(function (vp) {
+      vp.addEventListener('scroll', function () { self._hoverIcon = null; self.onCommentLeave(); }, { passive: true });
+    });
+  };
+
   P.start = function () {
     this.bindCommentClicks();
+    this.bindCommentHover();
   };
 
   CGP.IndicatorController = IndicatorController;

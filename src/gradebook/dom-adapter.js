@@ -145,8 +145,7 @@
    * line stripped, for the last-resort name match against the model. */
   P.headerTitleText = function (el) {
     var clone = el.cloneNode(true);
-    var handle = clone.querySelector('.slick-resizable-handle, .cgp-due');
-    if (handle) handle.remove();
+    Array.prototype.slice.call(clone.querySelectorAll('.slick-resizable-handle, .cgp-header-label')).forEach(function (n) { n.remove(); });
     var text = (clone.textContent || '').replace(/\s+/g, ' ').trim();
     text = text.replace(/\bout of\s+[\d.]+\s*$/i, '').replace(/[\u2014-]\s*[\d.]+\s*pts?\.?\s*$/i, '').trim();
     return text;
