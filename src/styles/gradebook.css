@@ -193,18 +193,28 @@ html.cgp-on .slick-cell .Grid__GradeCell__Content textarea {
 /* Fallback for any grade-cell markup without that named hook: whenever an
  * editable cell holds both a text input and a button - whatever Canvas calls
  * them - lay them out in a row instead of letting them land on the same
- * pixels. Skipped when Grid__GradeCell is present so the two rules never
- * both flex the same content. */
-html.cgp-on .slick-cell:has(input):has(button):not(:has(.Grid__GradeCell)) {
+ * pixels. Skipped entirely when Grid__GradeCell is present so the two rules
+ * never both flex the same content.
+ *
+ * Flexing only works on the element whose DIRECT children are the input and
+ * the button - flexing .slick-cell itself does nothing for a variant that
+ * nests them a level or two deeper, since only .slick-cell's own immediate
+ * child becomes a flex item and the input/button inside it are untouched by
+ * that flex context. So this targets whichever element - the cell itself, or
+ * any wrapper inside it - actually holds both as direct children. */
+html.cgp-on .slick-cell:not(:has(.Grid__GradeCell)):has(> input):has(> button),
+html.cgp-on .slick-cell:not(:has(.Grid__GradeCell)) *:has(> input):has(> button) {
   display: flex !important;
   align-items: center !important;
 }
-html.cgp-on .slick-cell:has(input):has(button):not(:has(.Grid__GradeCell)) input {
+html.cgp-on .slick-cell:not(:has(.Grid__GradeCell)):has(> input):has(> button) > input,
+html.cgp-on .slick-cell:not(:has(.Grid__GradeCell)) *:has(> input):has(> button) > input {
   flex: 1 1 auto !important;
   min-width: 0 !important;
   width: auto !important;
 }
-html.cgp-on .slick-cell:has(input):has(button):not(:has(.Grid__GradeCell)) button {
+html.cgp-on .slick-cell:not(:has(.Grid__GradeCell)):has(> input):has(> button) > button,
+html.cgp-on .slick-cell:not(:has(.Grid__GradeCell)) *:has(> input):has(> button) > button {
   flex: 0 0 auto !important;
 }
 
@@ -350,14 +360,21 @@ html.cgp-on .slick-header-column[data-cgp-col="assignment"] [aria-haspopup],
 html.cgp-on .slick-header-column[data-cgp-col="assignment"] [aria-haspopup] * {
   visibility: visible !important;
 }
-/* Whatever wrapper Canvas built around its options-menu trigger must paint
+/* Whatever wrapper Canvas built around its options-menu trigger should paint
  * above our label, so the button Canvas reveals on hover is never hidden
- * underneath our text. */
+ * underneath our text - but only the stacking order changes here. Forcing
+ * `position: relative` would overwrite a control that's already absolutely
+ * or fixed positioned (a real pattern for a popup menu anchored to the
+ * viewport), displacing the trigger or rendering its menu in the wrong
+ * place. z-index alone is a no-op on a still-`static` element, but our label
+ * already carries `pointer-events: none` and reserves a 22px gap on this
+ * side (see .cgp-header-label below) for exactly this control, so the
+ * button stays clickable and visually clear either way; this is best-effort
+ * polish on top of that, never load-bearing for it. */
 html.cgp-on .slick-header-column[data-cgp-col="assignment"] button,
 html.cgp-on .slick-header-column[data-cgp-col="assignment"] [role="button"],
 html.cgp-on .slick-header-column[data-cgp-col="assignment"] [role="menu"],
 html.cgp-on .slick-header-column[data-cgp-col="assignment"] [aria-haspopup] {
-  position: relative !important;
   z-index: 6 !important;
 }
 html.cgp-on .cgp-header-label {
