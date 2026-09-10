@@ -77,7 +77,8 @@
       return Promise.resolve();
     }
 
-    var op = CGP.gradeOps.operationFor(target.parsed);
+    var currentRec = this.model.cell(assignmentId, userId);
+    var op = CGP.gradeOps.operationFor(target.parsed, { wasMissing: !!(currentRec && currentRec.missing) });
     if (!op) { result.skipped++; return Promise.resolve(); }
 
     var dupKey = CGP.gradeOps.opKey(target);
@@ -132,6 +133,31 @@
       out.push({ assignmentId: item.assignmentId, userId: item.userId, parsed: parsed, token: item.token });
     });
     return { targets: out, invalid: invalid };
+  };
+
+  /** Canvas leaves a manually-applied Missing status in place even once a real
+   * grade exists on the submission (it only clears it when the status is
+   * explicitly reset). Called after any grade committed through Canvas's own
+   * editor is re-read from the API: if it turns out to still carry both a
+   * real grade and Missing, that combination is exactly the "stuck" state
+   * teachers hit, so this quietly clears the status once, with no optimistic
+   * flash and no toast - it is bookkeeping, not something the teacher asked for. */
+  P.clearStaleMissing = function (assignmentId, userId) {
+    var self = this;
+    var rec = this.model.cell(assignmentId, userId);
+    if (!rec || !rec.missing || rec.excused || !rec.gradedAt) return Promise.resolve(null);
+    var dupKey = String(assignmentId) + ':' + String(userId) + ':unstick-missing';
+    if (this.inflight.has(dupKey)) return Promise.resolve(null);
+    this.inflight.add(dupKey);
+    return this.api.updateSubmission(this.model.courseId, assignmentId, userId, { 'submission[late_policy_status]': 'none' })
+      .then(function (submission) {
+        self.model.applySubmission(submission);
+        CGP.diag.bump('write.missingAutoCleared');
+      }, function (err) {
+        CGP.diag.warn('write.missingAutoClearFailed', { assignmentId: assignmentId, status: err && err.status });
+      }).then(function () {
+        self.inflight.delete(dupKey);
+      });
   };
 
   P.addComment = function (assignmentId, userId, text) {

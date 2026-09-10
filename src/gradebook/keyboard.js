@@ -83,6 +83,12 @@
       self.model.refreshCell(assignmentId, userId).then(function () {
         self.model.queueTotalRefresh(userId);
         if (self.requestPaint) self.requestPaint();
+        // Canvas just committed a grade through its own editor. If that left
+        // the submission both graded and still flagged Missing, a teacher who
+        // just typed a real grade does not mean to keep that status - clear it.
+        return self.writer.clearStaleMissing(assignmentId, userId);
+      }).then(function () {
+        if (self.requestPaint) self.requestPaint();
       });
     }, 1200));
   };

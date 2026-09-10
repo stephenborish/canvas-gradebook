@@ -77,7 +77,9 @@
 
     var indicators = new CGP.IndicatorController({
       model: model, adapter: adapter, registry: registry, settings: settings,
-      onCommentClick: function (info) { popover.open(info); }
+      onCommentClick: function (info) { popover.open(info); },
+      onCommentHover: function (info) { popover.showPreview(info); },
+      onCommentLeave: function () { popover.hidePreview(); }
     });
     var selection = new CGP.SelectionController({
       adapter: adapter, model: model, settings: settings, requestPaint: requestPaint

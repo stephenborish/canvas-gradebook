@@ -4,7 +4,11 @@
  * existing thread, instructor comments distinguished from student replies, and
  * a reply box that writes through the Canvas API. No modal, no side panel, no
  * navigation away from the gradebook. It closes on Escape, on an outside click
- * and when the grid scrolls, so it never becomes persistent furniture. */
+ * and when the grid scrolls, so it never becomes persistent furniture.
+ *
+ * Hovering the bubble (without clicking) shows a smaller, read-only preview of
+ * the most recent comment instead - a fast "what did I say here" glance that
+ * never steals focus and never needs a click just to check. */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
@@ -50,9 +54,9 @@
       if (e.key === 'Escape') { e.stopPropagation(); self.close(); }
     }, true);
     this.adapter.viewports().forEach(function (vp) {
-      vp.addEventListener('scroll', function () { if (self.current) self.close(); }, { passive: true });
+      vp.addEventListener('scroll', function () { if (self.current) self.close(); self.hidePreview(); }, { passive: true });
     });
-    window.addEventListener('resize', function () { if (self.current) self.close(); });
+    window.addEventListener('resize', function () { if (self.current) self.close(); self.hidePreview(); });
   };
 
   P.close = function () {
@@ -64,6 +68,7 @@
     if (!this.settings.values.commentPopover) return;
     var rec = this.model.cell(info.assignmentId, info.studentId);
     if (!rec) return;
+    this.hidePreview();
     this.current = { assignmentId: info.assignmentId, userId: info.studentId };
     var el = this.ensureEl();
     el.innerHTML = this.render(rec, info);
@@ -162,6 +167,65 @@
     var left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 12);
     var below = rect.bottom + 6;
     var estimated = Math.min(el.scrollHeight || 240, 340);
+    var top = (below + estimated > window.innerHeight - 8) ? Math.max(8, rect.top - estimated - 6) : below;
+    el.style.left = Math.round(left) + 'px';
+    el.style.top = Math.round(top) + 'px';
+  };
+
+  /* ------------------------------------------------------- hover preview */
+
+  P.ensurePreviewEl = function () {
+    if (this.previewEl && this.previewEl.isConnected) return this.previewEl;
+    var el = document.createElement('div');
+    el.className = 'cgp-preview';
+    el.setAttribute('role', 'tooltip');
+    document.body.appendChild(el);
+    this.previewEl = el;
+    return el;
+  };
+
+  P.showPreview = function (info) {
+    if (!this.settings.values.commentIndicator) return;
+    if (this.current) return; // the full thread is already open; do not layer a preview on it
+    var rec = this.model.cell(info.assignmentId, info.studentId);
+    var comments = rec && rec.comments;
+    if (!rec || !comments || !comments.hasInstructorComment) return;
+    var list = (rec.commentList || []).slice().sort(function (a, b) {
+      return Date.parse(a.created_at || 0) - Date.parse(b.created_at || 0);
+    });
+    var last = list[list.length - 1];
+    if (!last) return;
+
+    var authorId = CGP.commentAnalysis.authorId(last);
+    var mine = authorId === String(this.model.instructorId);
+    var name = mine ? 'You' : ((last.author_name || (last.author && last.author.display_name)) || 'Student');
+    var text = String(last.comment || '');
+    var snippet = text.length > 180 ? text.slice(0, 177) + '…' : text;
+
+    var el = this.ensurePreviewEl();
+    el.innerHTML =
+      '<div class="cgp-preview__meta">' +
+      '<span class="cgp-preview__author">' + CGP.util.escapeHtml(name) + '</span>' +
+      (comments.instructorCount > 1 ? '<span class="cgp-preview__count">' + comments.instructorCount + ' comments</span>' : '') +
+      '</div>' +
+      '<div class="cgp-preview__text">' + CGP.util.escapeHtml(snippet || '—') + '</div>' +
+      '<div class="cgp-preview__hint">Click to read the full thread and reply</div>';
+    el.classList.add('cgp-preview--on');
+    this.positionPreview(info.el);
+  };
+
+  P.hidePreview = function () {
+    if (this.previewEl) this.previewEl.classList.remove('cgp-preview--on');
+  };
+
+  P.positionPreview = function (cellEl) {
+    var el = this.previewEl;
+    var rect = cellEl.getBoundingClientRect();
+    var width = 240;
+    el.style.width = width + 'px';
+    var left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 12);
+    var estimated = Math.min(el.scrollHeight || 90, 200);
+    var below = rect.bottom + 6;
     var top = (below + estimated > window.innerHeight - 8) ? Math.max(8, rect.top - estimated - 6) : below;
     el.style.left = Math.round(left) + 'px';
     el.style.top = Math.round(top) + 'px';

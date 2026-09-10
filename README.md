@@ -107,16 +107,17 @@ along with the empty wrappers it leaves behind, and the grid takes the full heig
 Press **Alt+Shift+H** to bring Canvas's controls back for the current page. Turn the whole
 behaviour off permanently in the options page.
 
-### Status and resubmission dots
+### Resubmission indicator
 
-Small, quiet dots in the corner of the cell: red = missing, amber = late, grey outline =
-excused, green = submitted but ungraded. A purple corner wedge means the student resubmitted
-after you graded (Canvas's `grade_matches_current_submission`).
+A small purple corner wedge means the student resubmitted after you graded (Canvas's
+`grade_matches_current_submission`). Missing / late / excused status is Canvas's own gradebook
+chrome and is left entirely alone here - no duplicate dots to keep in sync with it.
 
 ### Course switching
 
-The course name in Canvas's breadcrumb grows a small caret. Click it for a filterable list of
-the courses you teach and jump straight to another gradebook. The list is cached for 30 minutes.
+The course name in Canvas's breadcrumb grows a noticeably larger, pill-shaped **Switch course**
+button. Click it for a filterable list of the courses you teach and jump straight to another
+gradebook. The list is cached for 30 minutes.
 
 ### SpeedGrader draft protection
 
@@ -287,6 +288,16 @@ Two things that no longer happen, as of this fix:
 - Chrome / Edge (Chromium 116+). Not tested in Firefox, which needs a different manifest.
 
 ## Version
+
+1.1.0 - fixes a stale-signature bug where a comment bubble could silently fail to (re)appear
+after Canvas recycled its cell element while scrolling; adds a read-only hover preview of the
+latest comment alongside the existing click-to-reply popover; moves in-cell markers to corners
+Canvas's own SpeedGrader/Grade Detail Tray arrow and column options menu don't use, and stops
+hiding those Canvas controls outright; re-enables assignment due dates in the header (now on by
+default); auto-clears a Missing status left over once a submission is actually graded; makes the
+course switcher a labeled, pill-shaped button instead of a bare caret; removes the missing/
+late/excused/needs-grading status dots entirely (Canvas already shows this itself); and gives
+student names a larger, higher-contrast treatment plus a broader visual pass across the grid.
 
 1.0.1 - fixes M/E/L sometimes reaching Canvas's own editor, broadens column/row/comment-box
 detection with several fallbacks plus name-based matching, adds assignment due dates to
