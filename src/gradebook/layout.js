@@ -313,7 +313,12 @@
    * but visually replace only its text with a stable title + points (+ due
    * date, when enabled) stack. Interactive elements Canvas renders in the same
    * cell (its column options/"..." menu trigger) are left alone entirely -
-   * see the CSS for exactly what stays visible - so they still work on hover. */
+   * see the CSS for exactly what stays visible - so they still work on hover.
+   * The CSS hides every native descendant of the header cell and re-shows only
+   * this label plus real interactive controls (by tag/role, at any nesting
+   * depth) - not "whichever wrapper happens to contain a button" - because
+   * Canvas sometimes puts its title text and its menu button inside the same
+   * wrapper, and the older, coarser rule was un-hiding both together. */
   P.decorateHeaders = function (model) {
     var showDue = this.settings.values.showAssignmentDueDate;
     var headers = this.adapter.refreshColumns();

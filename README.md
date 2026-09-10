@@ -289,6 +289,20 @@ Two things that no longer happen, as of this fix:
 
 ## Version
 
+1.1.1 - fixes real-Canvas rendering bugs reported against 1.1.0: the assignment header's
+title/points/due-date text overlapping itself (the CSS that kept a native header wrapper
+visible whenever it contained Canvas's column-options button was un-hiding the title text
+right along with it - now every native node is hidden and only the actual button, by tag/role,
+is shown again, at any nesting depth); Canvas's own "open in SpeedGrader / Grade Detail Tray"
+arrow overlapping the grade input in edit mode on narrowed columns (the input and the arrow
+now get an explicit flex layout instead of stacking on the same pixels); the comment bubble
+rendering on top of Canvas's own status icon or tray arrow and, worse, sometimes intercepting
+their click (the bubble now lives in the one corner - bottom-left - Canvas's grade cell never
+draws into, instead of alternating between the two top corners Canvas already uses); and the
+course switcher's filled, oversized pill reading as bolted-on furniture next to the breadcrumb
+(now a quiet ghost-style control that inherits the breadcrumb's own type size and only gains a
+background on hover/open).
+
 1.1.0 - fixes a stale-signature bug where a comment bubble could silently fail to (re)appear
 after Canvas recycled its cell element while scrolling; adds a read-only hover preview of the
 latest comment alongside the existing click-to-reply popover; moves in-cell markers to corners

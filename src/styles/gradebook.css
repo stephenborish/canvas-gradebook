@@ -42,17 +42,24 @@ html.cgp-on .slick-cell .cgp-marks {
   z-index: 3;
 }
 
-/* Top-LEFT corner, deliberately: Canvas draws its own "open in SpeedGrader /
- * Grade Detail Tray" arrow in the top-right of a selected cell, and a marker
- * sharing that corner was covering (clipping) it. A small filled circle reads
- * clearly against any grade text or Canvas's own hover/selection tinting -
- * much easier to spot at a glance than a bare glyph. */
+/* Bottom-LEFT corner, deliberately: Canvas's own grade cell reserves BOTH top
+ * corners for itself - the status icon (late clock / missing "?" / excused)
+ * that renders inline at the cell's leading edge, and the "open in
+ * SpeedGrader / Grade Detail Tray" arrow button that renders at the trailing
+ * edge. A marker in either top corner ends up drawn on top of one of those,
+ * which both looks wrong AND can steal the click: if our bubble and Canvas's
+ * own tray-toggle button occupy the same pixels, whichever one is visually on
+ * top is the one that receives the click, and Canvas's own control winning
+ * that fight is exactly what opens its editor instead of our comment thread.
+ * Bottom-left is the one corner Canvas's grade cell never draws into (the
+ * resubmission wedge below deliberately claims bottom-right instead, so the
+ * two markers this extension adds never collide with each other either). */
 html.cgp-on .cgp-cmt {
   position: absolute;
-  top: 2px;
+  bottom: 2px;
   left: 2px;
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -65,7 +72,7 @@ html.cgp-on .cgp-cmt {
   box-shadow: 0 1px 2px rgba(19, 33, 44, 0.35);
   transition: transform 100ms ease, box-shadow 100ms ease;
 }
-html.cgp-on .cgp-cmt svg { width: 8px; height: 8px; fill: currentColor; display: block; }
+html.cgp-on .cgp-cmt svg { width: 7px; height: 7px; fill: currentColor; display: block; }
 html.cgp-on .cgp-cmt:hover {
   transform: scale(1.14);
   box-shadow: 0 2px 5px rgba(19, 33, 44, 0.45);
@@ -81,18 +88,18 @@ html.cgp-on .cgp-cmt--reply svg { fill: none; stroke: currentColor; stroke-width
 
 html.cgp-on .cgp-cmt-count {
   position: absolute;
-  top: 0;
+  bottom: 1px;
   left: 15px;
   font-size: 9px;
-  line-height: 13px;
+  line-height: 12px;
   color: var(--cgp-comment);
   font-weight: 700;
   pointer-events: none;
 }
 
-/* Resubmitted after grading: a small corner wedge in the bottom-right, well
- * clear of both the comment bubble (top-left) and Canvas's own controls
- * (top-right). */
+/* Resubmitted after grading: a small corner wedge in the bottom-right, clear
+ * of both the comment bubble (bottom-left) and Canvas's own controls (which
+ * live along the top edge). */
 html.cgp-on .cgp-resub {
   position: absolute;
   bottom: 0;
@@ -146,6 +153,69 @@ html.cgp-on .slick-cell.cgp-has-pending::after {
   color: var(--cgp-brand-dark, var(--cgp-brand));
   background: rgba(255, 255, 255, 0.85);
   z-index: 4;
+}
+
+/* ------------------------------------------------------- grade cell editor layout */
+
+/* Canvas's own edit-mode grade cell is an input sitting next to a small
+ * trailing button - the arrow that opens the Grade Detail Tray - inside a
+ * wrapper Canvas names Grid__GradeCell. Nothing gave that wrapper a layout
+ * telling the input to make room for the button, so narrowing the column
+ * (this extension's own doing) left the arrow sitting on top of the input's
+ * right edge instead of beside it. A simple row flex - input flexible, the
+ * icon containers fixed-width - fixes that without touching anything Canvas
+ * renders inside them. */
+html.cgp-on .slick-cell .Grid__GradeCell {
+  display: flex !important;
+  align-items: center !important;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box !important;
+}
+html.cgp-on .slick-cell .Grid__GradeCell__StartContainer,
+html.cgp-on .slick-cell .Grid__GradeCell__EndContainer {
+  flex: 0 0 auto !important;
+  display: flex;
+  align-items: center;
+}
+html.cgp-on .slick-cell .Grid__GradeCell__Content {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  overflow: hidden;
+}
+html.cgp-on .slick-cell .Grid__GradeCell__Content input,
+html.cgp-on .slick-cell .Grid__GradeCell__Content textarea {
+  width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+
+/* Fallback for any grade-cell markup without that named hook: whenever an
+ * editable cell holds both a text input and a button - whatever Canvas calls
+ * them - lay them out in a row instead of letting them land on the same
+ * pixels. Skipped entirely when Grid__GradeCell is present so the two rules
+ * never both flex the same content.
+ *
+ * Flexing only works on the element whose DIRECT children are the input and
+ * the button - flexing .slick-cell itself does nothing for a variant that
+ * nests them a level or two deeper, since only .slick-cell's own immediate
+ * child becomes a flex item and the input/button inside it are untouched by
+ * that flex context. So this targets whichever element - the cell itself, or
+ * any wrapper inside it - actually holds both as direct children. */
+html.cgp-on .slick-cell:not(:has(.Grid__GradeCell)):has(> input):has(> button),
+html.cgp-on .slick-cell:not(:has(.Grid__GradeCell)) *:has(> input):has(> button) {
+  display: flex !important;
+  align-items: center !important;
+}
+html.cgp-on .slick-cell:not(:has(.Grid__GradeCell)):has(> input):has(> button) > input,
+html.cgp-on .slick-cell:not(:has(.Grid__GradeCell)) *:has(> input):has(> button) > input {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  width: auto !important;
+}
+html.cgp-on .slick-cell:not(:has(.Grid__GradeCell)):has(> input):has(> button) > button,
+html.cgp-on .slick-cell:not(:has(.Grid__GradeCell)) *:has(> input):has(> button) > button {
+  flex: 0 0 auto !important;
 }
 
 /* ------------------------------------------------------- frozen Total column */
@@ -231,40 +301,139 @@ html.cgp-narrow .slick-header-column { height: var(--cgp-header-h, 64px) !import
 html.cgp-narrow .slick-header-columns { height: var(--cgp-header-h, 64px) !important; }
 html.cgp-narrow .slick-header { height: auto !important; }
 
-html.cgp-narrow .slick-header-column[data-cgp-col="assignment"] .slick-column-name,
-html.cgp-narrow .slick-header-column[data-cgp-col="assignment"] .slick-column-name * {
-  white-space: normal !important;
-  word-break: break-word;
-  line-height: 1.18;
-}
-html.cgp-narrow .slick-header-column[data-cgp-col="assignment"] .slick-column-name a,
-html.cgp-narrow .slick-header-column[data-cgp-col="assignment"] .assignment-name {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-html.cgp-center .slick-header-column[data-cgp-col="assignment"] .slick-column-name,
-html.cgp-center .slick-header-column[data-cgp-col="assignment"] .Gradebook__ColumnHeaderContent,
-html.cgp-center .slick-header-column[data-cgp-col="assignment"] .Gradebook__ColumnHeaderDetail,
+/* Assignment headers get their own consolidated wrap/clamp/center treatment
+ * further down, alongside the rule that hides Canvas's native title/points
+ * text - the two have to live together or the "wrap this" rules here would
+ * be styling text nobody sees. The Total column's own header has no such
+ * replacement label, so it still needs its alignment set directly. */
 html.cgp-center .slick-header-column[data-cgp-col="total"] .slick-column-name {
   text-align: center !important;
   align-items: center !important;
   justify-content: center !important;
 }
-html.cgp-center .slick-header-column[data-cgp-col="assignment"] .assignment-points-possible,
-html.cgp-center .slick-header-column[data-cgp-col="assignment"] .Gradebook__ColumnHeaderDetailLine {
-  text-align: center !important;
-  display: block;
-  font-size: 11px;
-  color: var(--cgp-muted);
-}
 
 html.cgp-on .slick-header-column {
   position: relative; /* .cgp-header-label anchors to whichever header cell it's in */
 }
+
+/* Stable, compact assignment headers. Canvas's original title/points/detail
+ * elements remain in the DOM for behavior/accessibility, but their painted
+ * text is hidden so it cannot overlap the single title + points (+ due date)
+ * stack this extension draws in its place.
+ *
+ * The one exception is anything Canvas uses to render an interactive control
+ * in that same header cell - most importantly its column "..." options menu
+ * trigger (Message Students Who..., Set Default Grade, Curve Grades, sorting,
+ * etc). That must stay exactly as Canvas built it - own visibility, own
+ * hover-to-reveal, own click handling - or the menu simply stops existing. */
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] {
+  position: relative !important;
+  height: var(--cgp-header-h, 72px) !important;
+  overflow: visible !important;
+}
+/* Hide every native descendant first - not just direct children, and by
+ * visibility (which inherits) rather than display, so Canvas's own layout
+ * math and hover-to-reveal logic for its column menu keep working - then
+ * explicitly re-show only the handful of nodes that are actually ours or are
+ * a real interactive control. An earlier version instead kept an entire
+ * wrapper visible whenever it contained a button, on the theory that Canvas
+ * always isolates its options-menu trigger in its own element; in practice
+ * Canvas sometimes puts the title text and the menu button inside the SAME
+ * wrapper, so that rule was un-hiding the title text right along with the
+ * button - which is exactly the overlapping "HW #1 / HW #1 Scientific..."
+ * double text reported against it. Because visibility resets independently
+ * on any descendant, this version hides the title no matter how deeply
+ * Canvas nests it alongside the button. */
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] * {
+  visibility: hidden !important;
+}
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] .cgp-header-label,
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] .cgp-header-label *,
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] .slick-resizable-handle,
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] button,
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] button *,
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] [role="button"],
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] [role="button"] *,
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] [role="menu"],
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] [role="menu"] *,
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] [aria-haspopup],
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] [aria-haspopup] * {
+  visibility: visible !important;
+}
+/* Whatever wrapper Canvas built around its options-menu trigger should paint
+ * above our label, so the button Canvas reveals on hover is never hidden
+ * underneath our text - but only the stacking order changes here. Forcing
+ * `position: relative` would overwrite a control that's already absolutely
+ * or fixed positioned (a real pattern for a popup menu anchored to the
+ * viewport), displacing the trigger or rendering its menu in the wrong
+ * place. z-index alone is a no-op on a still-`static` element, but our label
+ * already carries `pointer-events: none` and reserves a 22px gap on this
+ * side (see .cgp-header-label below) for exactly this control, so the
+ * button stays clickable and visually clear either way; this is best-effort
+ * polish on top of that, never load-bearing for it. */
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] button,
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] [role="button"],
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] [role="menu"],
+html.cgp-on .slick-header-column[data-cgp-col="assignment"] [aria-haspopup] {
+  z-index: 6 !important;
+}
+html.cgp-on .cgp-header-label {
+  visibility: visible !important;
+  position: absolute !important;
+  inset: 0 22px 0 5px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 2px !important;
+  box-sizing: border-box !important;
+  pointer-events: none !important;
+  text-align: center !important;
+  overflow: hidden !important;
+  z-index: 2 !important;
+}
+html.cgp-on .cgp-header-title {
+  width: 100%;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.18;
+  font-weight: 600;
+  color: var(--cgp-ink-strong, #1a232b);
+}
+html.cgp-on .cgp-header-points {
+  width: 100%;
+  min-height: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10.5px;
+  line-height: 1.2;
+  font-weight: 400;
+  color: var(--cgp-muted);
+  text-align: center;
+}
+/* The assignment's due date, read straight from Canvas's own assignment data.
+ * A third, quieter line under title + points; hidden entirely (no reserved
+ * space) when the setting is off or an assignment has no fixed due date text. */
+html.cgp-on .cgp-header-due {
+  width: 100%;
+  min-height: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 9.5px;
+  line-height: 1.15;
+  font-weight: 500;
+  color: var(--cgp-brand-dark, var(--cgp-brand));
+  text-align: center;
+}
+html.cgp-on .cgp-header-due[hidden] { display: none !important; }
 
 html.cgp-center .slick-cell[data-cgp-col="assignment"] { text-align: center !important; }
 html.cgp-center .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell,
@@ -414,40 +583,44 @@ html.cgp-on .cgp-preview__hint {
 
 /* ------------------------------------------------------- course switcher */
 
-/* A larger, labeled, pill-shaped control - not just a caret - so it reads
- * immediately as "click me to switch courses" instead of blending into the
- * breadcrumb as decoration. */
+/* A labeled control, not a bare caret, so it still reads as "click me to
+ * switch courses" - but sized and colored to sit *inside* Canvas's breadcrumb
+ * rather than announce itself as an add-on. A solid filled pill next to plain
+ * breadcrumb text read as visibly foreign furniture; this instead borrows the
+ * breadcrumb's own font size/line-height (via `inherit`) and stays visually
+ * quiet - text plus a caret, no fill or border - until hover or open state
+ * earns it a background, the same way Canvas's own inline text controls
+ * behave. */
 html.cgp-on .cgp-crumb-toggle {
   appearance: none;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  background: var(--cgp-brand-wash);
-  border: 1px solid rgba(3, 116, 181, 0.28);
-  border-radius: 999px;
-  padding: 3px 10px 3px 9px;
-  margin-left: 8px;
+  gap: 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 1px 7px;
+  margin-left: 6px;
   color: var(--cgp-brand-dark);
   font: inherit;
-  font-size: 12px;
+  font-size: inherit;
   font-weight: 600;
   cursor: pointer;
-  line-height: 1.5;
-  vertical-align: middle;
-  transition: background 100ms ease, box-shadow 100ms ease, transform 100ms ease;
+  line-height: inherit;
+  vertical-align: baseline;
+  transition: background 100ms ease, border-color 100ms ease;
 }
 html.cgp-on .cgp-crumb-toggle__label { white-space: nowrap; }
-html.cgp-on .cgp-crumb-toggle svg { width: 9px; height: 6px; display: block; flex: 0 0 auto; }
+html.cgp-on .cgp-crumb-toggle svg { width: 8px; height: 5px; display: block; flex: 0 0 auto; }
 html.cgp-on .cgp-crumb-toggle:hover {
-  background: #dcedf8;
-  box-shadow: 0 1px 3px rgba(3, 116, 181, 0.25);
+  background: var(--cgp-brand-wash);
+  border-color: rgba(3, 116, 181, 0.22);
 }
 html.cgp-on .cgp-crumb-toggle:active { transform: scale(0.97); }
 html.cgp-on .cgp-crumb-toggle:focus-visible { outline: 2px solid var(--cgp-brand); outline-offset: 2px; }
 html.cgp-on .cgp-crumb-toggle[aria-expanded="true"] {
-  background: var(--cgp-brand);
-  border-color: var(--cgp-brand);
-  color: #fff;
+  background: var(--cgp-brand-wash);
+  border-color: rgba(3, 116, 181, 0.4);
 }
 
 html.cgp-on .cgp-course-menu {
@@ -520,141 +693,6 @@ html.cgp-speedgrader .cgp-toast--error { background: #9b2c1c; }
 @media (prefers-reduced-motion: no-preference) {
   html.cgp-on .cgp-toast { transition: opacity 120ms linear; }
 }
-
-/* v1.0.2 header repair: Canvas's current Gradebook can absolutely-position
- * pieces of its assignment header. When columns are narrowed that causes the
- * title and points line to occupy the same vertical space. Normalize the
- * assignment header into a simple centered vertical stack. */
-html.cgp-narrow .slick-header-column[data-cgp-col="assignment"] {
-  box-sizing: border-box !important;
-  overflow: hidden !important;
-}
-html.cgp-narrow .slick-header-column[data-cgp-col="assignment"] > .slick-column-name,
-html.cgp-narrow .slick-header-column[data-cgp-col="assignment"] .Gradebook__ColumnHeaderContent {
-  box-sizing: border-box !important;
-  min-height: 0 !important;
-  height: 100% !important;
-}
-html.cgp-center .slick-header-column[data-cgp-col="assignment"] .Gradebook__ColumnHeaderContent {
-  display: flex !important;
-  flex-direction: column !important;
-  justify-content: flex-start !important;
-  gap: 3px !important;
-  padding-top: 5px !important;
-  padding-bottom: 4px !important;
-}
-html.cgp-center .slick-header-column[data-cgp-col="assignment"] .Gradebook__ColumnHeaderDetail,
-html.cgp-center .slick-header-column[data-cgp-col="assignment"] .Gradebook__ColumnHeaderDetailLine,
-html.cgp-center .slick-header-column[data-cgp-col="assignment"] .assignment-points-possible {
-  position: static !important;
-  inset: auto !important;
-  margin: 0 !important;
-  flex: 0 0 auto !important;
-  line-height: 1.15 !important;
-}
-html.cgp-center .slick-header-column[data-cgp-col="assignment"] .slick-column-name a,
-html.cgp-center .slick-header-column[data-cgp-col="assignment"] .assignment-name {
-  line-height: 1.2 !important;
-  max-height: 2.4em !important;
-  margin: 0 auto !important;
-  text-align: center !important;
-}
-
-/* Make the most important signal visible without competing with the grade. */
-html.cgp-on .cgp-cmt {
-  top: 2px;
-  right: 3px;
-  width: 12px;
-  height: 12px;
-}
-html.cgp-on .cgp-cmt svg { width: 12px; height: 12px; }
-
-
-/* v1.0.3: stable compact assignment headers. Canvas's original title/detail
- * elements remain in the DOM for behavior/accessibility, but their painted text
- * is hidden so it cannot overlap the extension's single layout layer.
- *
- * The one exception is anything Canvas uses to render an interactive control
- * in that same header cell - most importantly its column "..." options menu
- * trigger (Message Students Who..., Set Default Grade, Curve Grades, sorting,
- * etc). That must stay exactly as Canvas built it - own visibility, own
- * hover-to-reveal, own click handling - or the menu simply stops existing. */
-html.cgp-on .slick-header-column[data-cgp-col="assignment"] {
-  position: relative !important;
-  height: var(--cgp-header-h, 72px) !important;
-  overflow: visible !important;
-}
-html.cgp-on .slick-header-column[data-cgp-col="assignment"] >
-  *:not(.cgp-header-label):not(.slick-resizable-handle):not(:has(button, [role="button"], [role="menu"], [aria-haspopup])) {
-  visibility: hidden !important;
-}
-html.cgp-on .slick-header-column[data-cgp-col="assignment"] > .slick-resizable-handle {
-  visibility: visible !important;
-}
-/* A wrapper Canvas built around its options-menu trigger is left visible by
- * the rule above; make sure it also paints above our label instead of behind
- * it, so the button Canvas reveals on hover is never hidden underneath our text. */
-html.cgp-on .slick-header-column[data-cgp-col="assignment"] > *:has(button, [role="button"], [role="menu"], [aria-haspopup]) {
-  position: relative !important;
-  z-index: 6 !important;
-}
-html.cgp-on .cgp-header-label {
-  visibility: visible !important;
-  position: absolute !important;
-  inset: 0 22px 0 5px !important;
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 2px !important;
-  box-sizing: border-box !important;
-  pointer-events: none !important;
-  text-align: center !important;
-  overflow: hidden !important;
-  z-index: 2 !important;
-}
-html.cgp-on .cgp-header-title {
-  width: 100%;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  font-size: 12px;
-  line-height: 1.18;
-  font-weight: 600;
-  color: var(--cgp-ink-strong, #1a232b);
-}
-html.cgp-on .cgp-header-points {
-  width: 100%;
-  min-height: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 10.5px;
-  line-height: 1.2;
-  font-weight: 400;
-  color: var(--cgp-muted);
-  text-align: center;
-}
-/* The assignment's due date, read straight from Canvas's own assignment data.
- * A third, quieter line under title + points; hidden entirely (no reserved
- * space) when the setting is off or an assignment has no fixed due date text. */
-html.cgp-on .cgp-header-due {
-  width: 100%;
-  min-height: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 9.5px;
-  line-height: 1.15;
-  font-weight: 500;
-  color: var(--cgp-brand-dark, var(--cgp-brand));
-  text-align: center;
-}
-html.cgp-on .cgp-header-due[hidden] { display: none !important; }
 
 /* Keep marker geometry from affecting SlickGrid measurements. */
 html.cgp-on .slick-cell > .cgp-marks,
