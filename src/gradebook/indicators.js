@@ -5,9 +5,13 @@
  * corner and the value overlay used after an API write so the cell shows the
  * truth without a page reload.
  *
- * The bubble lives in the cell's top-LEFT corner deliberately: Canvas's own
- * per-cell "open in SpeedGrader / Grade Detail Tray" arrow renders in the
- * top-right, and a marker sitting on top of it was clipping that control.
+ * The bubble lives in the cell's bottom-LEFT corner deliberately: Canvas's
+ * own grade cell already claims both top corners for itself - its status
+ * icon (late/missing/excused) at the leading edge and its "open in
+ * SpeedGrader / Grade Detail Tray" arrow at the trailing edge - and a marker
+ * sharing either one was both visually clipping that control and, worse,
+ * sometimes intercepting its click. The resubmission wedge below claims
+ * bottom-right, so the two markers this extension draws never collide either.
  *
  * Painting rules that keep Canvas intact:
  *   - markers are absolutely positioned inside the cell, never resize anything
