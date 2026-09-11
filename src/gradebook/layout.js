@@ -311,6 +311,20 @@
             CGP.diag.warn('layout.columnResizeUnavailable', { type: item.type });
             throw new Error('resize-unavailable');
           }
+          // The drag missed its target width. This batch can take seconds to
+          // work through every column, so by the time a later column's turn
+          // comes its width may already have moved on from what was measured
+          // when the batch was planned - and dragResize computes its distance
+          // from that same measurement. Driving the handle the wrong distance
+          // is exactly how a column ends up jammed against SlickGrid's own
+          // minimum width instead of ours: too narrow to read anything in.
+          // One corrective pass, re-measured fresh right now, fixes that
+          // instead of leaving the column at whatever width the miss landed
+          // on.
+          return self.dragResize(item).then(function (ok2) {
+            if (ok2) applied++;
+            else CGP.diag.warn('layout.columnResizeMissed', { type: item.type, want: item.want });
+          });
         });
       });
     });
@@ -325,9 +339,17 @@
     var handle = item.el.querySelector('.slick-resizable-handle');
     if (!handle) return Promise.resolve(false);
     var rect = item.el.getBoundingClientRect();
+    // Measured now, not whenever this resize batch was planned - the column
+    // may have already been dragged once (a corrective retry) or the batch
+    // may simply have reached it seconds after `item.have` was snapshotted.
+    // Computing the distance to travel from a width that no longer matches
+    // reality is what drives the handle too far and jams the column against
+    // SlickGrid's own minimum width.
+    var have = Math.round(rect.width);
     var y = Math.round(rect.top + rect.height / 2);
     var startX = Math.round(rect.right - 1);
-    var delta = item.want - item.have;
+    var delta = item.want - have;
+    if (!delta) return Promise.resolve(true);
     var step = delta > 0 ? 3 : -3;
 
     function fire(node, type, x) {

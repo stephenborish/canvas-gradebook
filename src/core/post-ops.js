@@ -13,11 +13,22 @@
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.postOps) return;
 
-  /** Is there anything on this submission a student could be shown? */
+  /* Is there anything on this submission a student could be shown?
+   *
+   * This has to match Canvas's own "postable" scope exactly - score present
+   * AND workflow_state "graded" (or excused) - not just "does the gradebook
+   * currently display a score". A quiz with a manually-graded question is the
+   * common case that splits those two: while a question still needs review
+   * the submission carries a partial auto-graded score in the gradebook, but
+   * its workflow_state is "pending_review", and Canvas's own
+   * postAssignmentGrades(gradedOnly: true) skips it outright. Counting it
+   * here anyway is exactly what used to inflate the button's number and then
+   * post nothing for it - "0 of N grades posted" when a whole column was
+   * sitting in that state. */
   function hasGrade(rec) {
     if (!rec) return false;
     if (rec.excused) return true;
-    if (rec.gradedAt) return true;
+    if (rec.workflowState !== 'graded') return false;
     if (rec.score !== null && rec.score !== undefined) return true;
     return rec.grade !== null && rec.grade !== undefined && String(rec.grade) !== '';
   }
