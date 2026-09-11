@@ -23,6 +23,7 @@
     commentIndicator: true,
     showCommentCount: true,
     resubmissionIndicator: true,
+    submissionIndicator: true,
     commentPopover: true,
     // input
     enableM: true,
@@ -32,10 +33,12 @@
     bulkPaste: true,
     multiCellSelection: true,
     doubleClickOpensTray: true,
+    hideGradeCellArrow: true,
     rowHoverHighlight: true,
     bulkConfirmThreshold: 25,
     // extras
     courseSwitcher: true,
+    studentSearch: true,
     speedgraderDrafts: true,
     snippets: [
       { trigger: 'evidence', text: 'Good claim - now tie it back to the evidence in your data so the reasoning is complete.' },

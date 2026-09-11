@@ -15,6 +15,9 @@ html.cgp-on {
   --cgp-brand-wash: #eef6fb;
   --cgp-comment: #0a72a8;
   --cgp-resub: #6b3fa0;
+  --cgp-submitted: #0b7a45;
+  --cgp-submitted-dark: #095f36;
+  --cgp-nosub: #98a3ab;
   --cgp-sel: #0374b5;
   --cgp-surface: #fff;
   --cgp-shadow: 0 4px 16px rgba(19, 33, 44, 0.16), 0 1px 3px rgba(19, 33, 44, 0.08);
@@ -151,6 +154,125 @@ html.cgp-on .cgp-cmt-count {
   pointer-events: none;
   text-shadow: 0 0 2px #fff, 0 0 2px #fff;
 }
+
+/* ---------------------------------------------- submission marker (top-right)
+
+ * Says, at a glance and without opening anything, whether this student has
+ * actually handed something in - and is a direct link into SpeedGrader for
+ * exactly this student and assignment.
+ *
+ * The top-right corner is free because this extension now hides Canvas's own
+ * tray arrow there (see .cgp-hide-arrow below); double-clicking the cell does
+ * what that arrow did. The two states share one silhouette on purpose - the
+ * glyph shape tells you WHAT kind of thing is expected (a file, a text entry,
+ * a URL, a recording), and filled-versus-outlined tells you whether it is
+ * there yet - so a column can be read down in one pass without decoding two
+ * unrelated icons. */
+html.cgp-on .cgp-sub {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 17px;
+  height: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border-radius: 5px;
+  pointer-events: auto;
+  cursor: pointer;
+  text-decoration: none !important;
+  line-height: 0;
+  transition: transform 110ms ease, box-shadow 110ms ease, background 110ms ease;
+}
+/* Same generous, invisible hit area as the comment bubble. */
+html.cgp-on .cgp-sub::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 7px;
+}
+html.cgp-on .slick-cell:has(input:not([type="hidden"])) .cgp-sub::after { inset: 0; }
+html.cgp-on .cgp-sub svg {
+  width: 11px;
+  height: 11px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Handed in: a solid, confident badge. */
+html.cgp-on .cgp-sub--in {
+  background: var(--cgp-submitted);
+  color: #fff;
+  box-shadow: 0 0 0 1.5px #fff, 0 1px 3px rgba(19, 33, 44, 0.32);
+}
+html.cgp-on .cgp-sub--in svg { stroke-width: 1.6; }
+/* Nothing handed in: the same shape, hollow and quiet, so a screenful of them
+ * never shouts. It is still a link - an empty submission is a thing a teacher
+ * often wants to open and look at. */
+html.cgp-on .cgp-sub--out {
+  background: transparent;
+  color: var(--cgp-nosub);
+  box-shadow: inset 0 0 0 1.3px currentColor;
+  opacity: 0.75;
+}
+html.cgp-on .cgp-sub:hover {
+  transform: scale(1.16);
+  box-shadow: 0 0 0 1.5px #fff, 0 3px 7px rgba(19, 33, 44, 0.42);
+}
+html.cgp-on .cgp-sub--in:hover { background: var(--cgp-submitted-dark); }
+html.cgp-on .cgp-sub--out:hover {
+  opacity: 1;
+  color: var(--cgp-brand-dark);
+  background: #fff;
+  box-shadow: inset 0 0 0 1.3px currentColor, 0 0 0 1.5px #fff, 0 3px 7px rgba(19, 33, 44, 0.3);
+}
+html.cgp-on .cgp-sub:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1.5px #fff, var(--cgp-focus-ring);
+}
+
+/* ------------------------------------------- Canvas's own grade-cell arrow
+
+ * Hidden, not removed. Canvas renders a small arrow inside the active grade
+ * cell that opens the Grade Detail Tray; it eats space in an already narrow
+ * cell and crowds the value. Double-clicking anywhere in the cell now presses
+ * that exact button instead (cell-actions.js), so the action is untouched -
+ * only the pixels are gone.
+ *
+ * This is the standard visually-hidden clip rather than `display: none`
+ * deliberately: the button stays laid out, focusable-by-script and, above
+ * all, clickable by the double-click handler, and Canvas's own React tree is
+ * not asked to reason about a box with no geometry. The class is only applied
+ * when double-click-to-open is itself enabled, so the arrow can never be the
+ * only way in and also hidden. */
+html.cgp-hide-arrow .slick-cell .Grid__GradeCell__EndContainer button,
+html.cgp-hide-arrow .slick-cell .Grid__GradeCell__Options button {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  border: 0 !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  pointer-events: none !important;
+}
+/* With its only child clipped away, the container should not keep reserving
+ * width next to the value. */
+html.cgp-hide-arrow .slick-cell .Grid__GradeCell__EndContainer {
+  flex-basis: 0 !important;
+  min-width: 0 !important;
+}
+/* When the arrow is left visible, step the submission marker aside in the one
+ * state where Canvas actually draws it, rather than stacking the two. */
+html.cgp-on:not(.cgp-hide-arrow) .slick-cell.active .cgp-sub { right: 22px; }
 
 /* Resubmitted after grading: a small corner wedge in the bottom-right, clear
  * of both the comment bubble (bottom-left) and Canvas's own controls (which
@@ -942,9 +1064,54 @@ html.cgp-on .cgp-course-menu__item {
   transition: background 80ms ease;
 }
 html.cgp-on .cgp-course-menu__item.is-active { background: var(--cgp-brand-wash); }
+html.cgp-on .cgp-course-menu__item:hover { background: var(--cgp-brand-wash); }
 html.cgp-on .cgp-course-menu__item.is-current .cgp-course-menu__name { font-weight: 700; }
 html.cgp-on .cgp-course-menu__term { color: var(--cgp-muted); font-size: 11px; }
 html.cgp-on .cgp-course-menu__empty { padding: 8px 7px; color: var(--cgp-muted); }
+
+/* ------------------------------------------------------- find a student */
+
+/* The search shares the course switcher's control and menu styling on
+ * purpose: two differently-shaped controls sitting next to each other in the
+ * breadcrumb would read as two unrelated add-ons rather than one pair. Only
+ * the magnifier and a slightly wider menu distinguish it. */
+html.cgp-on .cgp-find-student__glyph {
+  width: 12px;
+  height: 12px;
+  display: block;
+  flex: 0 0 auto;
+}
+html.cgp-on .cgp-student-menu .cgp-course-menu__filter { font-size: 13px; }
+html.cgp-on .cgp-student-hit .cgp-course-menu__name { font-weight: 600; }
+html.cgp-on .cgp-student-hit .cgp-course-menu__term {
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The row the search landed on. A brief, unmistakable flash - this is the
+ * answer to "where is that student" and it has to survive the eye arriving a
+ * beat after the scroll does - then it fades out and leaves the grid alone.
+ * Painted as a tint layer like every other highlight, so a Late or Missing
+ * cell in the flashed row keeps its own colour underneath. */
+html.cgp-on .slick-row.cgp-row-flash > .slick-cell,
+html.cgp-on .cgp-total-cell.cgp-row-flash {
+  background-image: linear-gradient(rgba(3, 116, 181, 0.22), rgba(3, 116, 181, 0.22));
+}
+html.cgp-on .slick-row.cgp-row-flash > .slick-cell[data-cgp-col="student"] {
+  box-shadow: inset 3px 0 0 var(--cgp-brand);
+}
+@media (prefers-reduced-motion: no-preference) {
+  html.cgp-on .slick-row.cgp-row-flash > .slick-cell,
+  html.cgp-on .cgp-total-cell.cgp-row-flash {
+    animation: cgp-row-flash 3s ease-out 1 both;
+  }
+  @keyframes cgp-row-flash {
+    0%, 55% { background-image: linear-gradient(rgba(3, 116, 181, 0.22), rgba(3, 116, 181, 0.22)); }
+    100% { background-image: linear-gradient(rgba(3, 116, 181, 0), rgba(3, 116, 181, 0)); }
+  }
+}
 
 /* ------------------------------------------------------- transient message */
 

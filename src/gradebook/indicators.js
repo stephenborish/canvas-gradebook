@@ -28,6 +28,32 @@
   var BUBBLE = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
     '<path d="M2.2 2.9c0-.9.7-1.6 1.6-1.6h8.4c.9 0 1.6.7 1.6 1.6v5.6c0 .9-.7 1.6-1.6 1.6H7.5L4.3 13v-2.9h-.5c-.9 0-1.6-.7-1.6-1.6V2.9z"/></svg>';
 
+  /* Submission glyphs. One silhouette per kind of thing a student can hand in,
+   * drawn on a 16x16 grid as strokes so the same path reads correctly both
+   * filled-in (submitted) and outlined (nothing handed in yet). */
+  var SUB_GLYPHS = {
+    online_upload: '<path d="M4.2 2.2h4.6l3 3v8.6H4.2z"/><path d="M8.6 2.4v3.1h3"/>',
+    student_annotation: '<path d="M4.2 2.2h4.6l3 3v8.6H4.2z"/><path d="M8.6 2.4v3.1h3"/>',
+    online_text_entry: '<path d="M3.2 3.4h9.6M3.2 6.4h9.6M3.2 9.4h9.6M3.2 12.4h5.6"/>',
+    online_url: '<path d="M6.6 9.4a2.6 2.6 0 0 0 3.7 0l2-2a2.6 2.6 0 1 0-3.7-3.7l-.8.8"/>' +
+      '<path d="M9.4 6.6a2.6 2.6 0 0 0-3.7 0l-2 2a2.6 2.6 0 1 0 3.7 3.7l.8-.8"/>',
+    media_recording: '<circle cx="8" cy="8" r="5.6"/><path d="M6.8 5.7l3.8 2.3-3.8 2.3z"/>',
+    discussion_topic: '<path d="M2.6 4.2a1.6 1.6 0 0 1 1.6-1.6h7.6a1.6 1.6 0 0 1 1.6 1.6v4.6a1.6 1.6 0 0 1-1.6 1.6H7.4L4.6 13v-2.6a1.6 1.6 0 0 1-2-1.6z"/>',
+    online_quiz: '<path d="M3.4 2.8h9.2v10.4H3.4z"/><path d="M5.6 7.4l1.6 1.6 3.2-3.2"/>',
+    basic_lti_launch: '<path d="M3.4 2.8h9.2v10.4H3.4z"/><path d="M6.2 8h3.6M8 6.2v3.6"/>'
+  };
+
+  var SUB_LABELS = {
+    online_upload: 'file upload',
+    student_annotation: 'annotated document',
+    online_text_entry: 'text entry',
+    online_url: 'website URL',
+    media_recording: 'media recording',
+    discussion_topic: 'discussion post',
+    online_quiz: 'quiz',
+    basic_lti_launch: 'external tool'
+  };
+
   function IndicatorController(ctx) {
     this.model = ctx.model;
     this.adapter = ctx.adapter;
@@ -51,7 +77,14 @@
     // marks - or a real comment bubble would silently fail to appear - until
     // the whole page was reloaded.
     var id = (info.assignmentId || '') + ':' + (info.studentId || '');
-    if (!rec) return id + '|none';
+    // Whether this column's submissions have arrived is part of what a cell
+    // shows, not just of what we know: the submission marker deliberately
+    // stays away until they have, so "not loaded" and "loaded, nothing to
+    // show" must be two different signatures or the marker would never appear
+    // on a cell that had no record at the moment of its first paint.
+    var loaded = this.model.loadedAssignments.has(String(info.assignmentId)) ? 'L' : '-';
+    if (!rec) return id + '|none|' + loaded;
+    
     var c = rec.comments || {};
     return [
       id,
@@ -61,7 +94,11 @@
       rec.gradedAt ? 1 : 0,
       rec.pending ? 1 : 0,
       rec.override === null || rec.override === undefined ? '' : rec.override,
+      loaded,
+      rec.submittedAt ? 1 : 0,
+      rec.submissionType || '',
       this.settings.values.commentIndicator ? 1 : 0,
+      this.settings.values.submissionIndicator ? 1 : 0,
       this.settings.values.showCommentCount ? 1 : 0,
       this.settings.values.resubmissionIndicator ? 1 : 0
     ].join('|');
@@ -99,6 +136,8 @@
       !cell.querySelector(':scope > .cgp-marks > .cgp-cmt')) return false;
     if (cell.classList.contains('cgp-has-resub') &&
       !cell.querySelector(':scope > .cgp-marks > .cgp-resub')) return false;
+    if (cell.classList.contains('cgp-has-sub') &&
+      !cell.querySelector(':scope > .cgp-marks > .cgp-sub')) return false;
     if (cell.classList.contains('cgp-override') &&
       !cell.querySelector(':scope > .cgp-val')) return false;
     return true;
@@ -143,6 +182,10 @@
       }
     }
 
+    var sub = s.submissionIndicator ? this.model.submissionState(info.assignmentId, info.studentId) : null;
+    var showSub = !!sub;
+    if (showSub) parts.push(this.submissionMarkup(sub, info));
+
     var showResub = !!(s.resubmissionIndicator && rec && rec.gradedAt && rec.gradeMatchesCurrent === false);
     if (showResub) {
       parts.push('<span class="cgp-resub" title="Resubmitted after grading"></span>');
@@ -151,6 +194,7 @@
     host.innerHTML = parts.join('');
     cell.classList.toggle('cgp-has-comment', !!showComment);
     cell.classList.toggle('cgp-has-resub', !!showResub);
+    cell.classList.toggle('cgp-has-sub', !!showSub);
     cell.classList.toggle('cgp-pending-write', !!(rec && rec.pending));
 
     // Value overlay: only used when we wrote through the API and Canvas's own
@@ -179,6 +223,52 @@
     }
 
     if (comments && comments.hasInstructorComment) CGP.diag.bump('paint.commentIcons');
+  };
+
+  /* The submission marker: a link straight into SpeedGrader for exactly this
+   * student and assignment.
+   *
+   * It is a real anchor, not a span with a click handler, so it behaves the
+   * way a link should - middle-click, cmd-click, "open in new tab", the status
+   * bar preview - and so no popup blocker is involved. It opens in a new tab
+   * deliberately: a teacher scanning the grid should not lose their scroll
+   * position in it just to look at one submission. */
+  P.speedGraderHref = function (assignmentId, studentId) {
+    return '/courses/' + encodeURIComponent(String(this.model.courseId)) +
+      '/gradebook/speed_grader?assignment_id=' + encodeURIComponent(String(assignmentId)) +
+      '&student_id=' + encodeURIComponent(String(studentId));
+  };
+
+  P.submissionMarkup = function (sub, info) {
+    var glyph = SUB_GLYPHS[sub.kind] || SUB_GLYPHS.online_upload;
+    var what = SUB_LABELS[sub.kind] || 'submission';
+    var tip;
+    if (sub.excused) tip = 'Excused. Opens SpeedGrader.';
+    else if (sub.submitted) {
+      tip = 'Submitted ' + (CGP.util.fmtDateTime(sub.submittedAt) || 'online') + ' \u2014 ' + what +
+        (sub.attempt > 1 ? ' (attempt ' + sub.attempt + ')' : '') + '. Opens SpeedGrader.';
+    } else {
+      tip = 'Nothing submitted yet \u2014 expects a ' + what + '. Opens SpeedGrader.';
+    }
+    var cls = 'cgp-sub ' + (sub.submitted ? 'cgp-sub--in' : 'cgp-sub--out');
+    return '<a class="' + cls + '" href="' + CGP.util.escapeHtml(this.speedGraderHref(info.assignmentId, info.studentId)) +
+      '" target="_blank" rel="noopener" title="' + CGP.util.escapeHtml(tip) + '" aria-label="' +
+      CGP.util.escapeHtml(tip) + '"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
+      glyph + '</svg></a>';
+  };
+
+  /* Canvas opens its own grade editor on mousedown anywhere in a cell. The
+   * marker is inside the cell, so without this the editor would spring open
+   * behind the SpeedGrader tab every single time. The click itself is left
+   * completely alone - only the gesture Canvas listens for is stopped - so the
+   * anchor navigates exactly as a link should, modifier keys included. */
+  P.bindSubmissionClicks = function () {
+    document.addEventListener('mousedown', function (e) {
+      var link = e.target && e.target.closest ? e.target.closest('.cgp-sub') : null;
+      if (!link) return;
+      e.stopPropagation();
+      CGP.diag.bump('paint.submissionOpened');
+    }, true);
   };
 
   P.canvasCellText = function (cell) {
@@ -280,6 +370,7 @@
   P.start = function () {
     this.bindCommentClicks();
     this.bindCommentHover();
+    this.bindSubmissionClicks();
   };
 
   CGP.IndicatorController = IndicatorController;

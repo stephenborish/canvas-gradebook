@@ -174,6 +174,24 @@
   P.loadCourses = function () {
     var self = this;
     if (this.courses) return Promise.resolve(this.courses);
+    return CGP.teachingCourseList(this.api).then(function (list) {
+      self.courses = list;
+      return list;
+    });
+  };
+
+  /* The instructor's own teaching course list - names and terms only, no
+   * student data - shared by the course switcher and the cross-course student
+   * search so the two never duplicate the request or the 30 minute cache.
+   * One in-flight promise is reused as well, so opening both controls at once
+   * is still a single fetch. */
+  var inFlight = null;
+  var memo = null;
+
+  CGP.teachingCourseList = function (api) {
+    if (memo) return Promise.resolve(memo);
+    if (inFlight) return inFlight;
+
     var fromCache = function () {
       if (typeof chrome === 'undefined' || !chrome.storage) return Promise.resolve(null);
       return chrome.storage.local.get(CACHE_KEY).then(function (got) {
@@ -183,9 +201,10 @@
         return box.courses || null;
       }).catch(function () { return null; });
     };
-    return fromCache().then(function (cached) {
+
+    inFlight = fromCache().then(function (cached) {
       if (cached && cached.length) return cached;
-      return self.api.teachingCourses().then(function (courses) {
+      return api.teachingCourses().then(function (courses) {
         var slim = (courses || []).map(function (c) {
           return {
             id: String(c.id), name: c.name || '', course_code: c.course_code || '',
@@ -203,7 +222,15 @@
         CGP.diag.error('switcher.loadFailed', { status: err && err.status });
         return [];
       });
+    }).then(function (list) {
+      memo = list;
+      inFlight = null;
+      return list;
+    }, function (err) {
+      inFlight = null;
+      throw err;
     });
+    return inFlight;
   };
 
   CGP.CourseSwitcher = CourseSwitcher;

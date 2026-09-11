@@ -12,6 +12,11 @@
  *     reimplemented - so whatever it opens today is what a double-click opens,
  *     with no URL guessing on our part.
  *
+ *     Because of that, the arrow itself is hidden by default (the CSS keeps it
+ *     in the DOM and clickable, it just stops taking up pixels in an already
+ *     narrow cell). This gesture is then the way in, which is why openTray
+ *     below refuses to fail silently.
+ *
  *     The arrow is rendered by Canvas only once the cell is active, and the
  *     first click of the double-click is what activates it, so the control may
  *     not exist yet at the moment the dblclick fires. We poll a few frames for
@@ -44,6 +49,7 @@
   function CellActionsController(ctx) {
     this.adapter = ctx.adapter;
     this.settings = ctx.settings;
+    this.courseId = ctx.courseId ? String(ctx.courseId) : null;
     this._hoverTop = null;
   }
 
@@ -63,8 +69,14 @@
     return null;
   };
 
-  /** Click Canvas's control, retrying while its editor is still rendering. */
-  P.openTray = function (cell, triesLeft) {
+  /** Click Canvas's control, retrying while its editor is still rendering.
+   *
+   * The fallback matters more than it looks: with the arrow hidden (the
+   * default), double-click is the ONLY way in, so "Canvas's markup was not
+   * what we expected" must not become a dead end. If no control turns up,
+   * open SpeedGrader for this exact submission instead - the same place the
+   * arrow's tray is a shortcut to - rather than silently doing nothing. */
+  P.openTray = function (cell, info, triesLeft) {
     var self = this;
     if (!cell.isConnected) return;
     var control = this.trayControl(cell);
@@ -77,10 +89,16 @@
       return;
     }
     if (triesLeft > 0) {
-      setTimeout(function () { self.openTray(cell, triesLeft - 1); }, 90);
+      setTimeout(function () { self.openTray(cell, info, triesLeft - 1); }, 90);
       return;
     }
     CGP.diag.warn('cellActions.trayControlMissing');
+    if (!this.courseId || !info || !info.assignmentId || !info.studentId) return;
+    var url = '/courses/' + encodeURIComponent(this.courseId) +
+      '/gradebook/speed_grader?assignment_id=' + encodeURIComponent(String(info.assignmentId)) +
+      '&student_id=' + encodeURIComponent(String(info.studentId));
+    window.open(url, '_blank', 'noopener');
+    CGP.diag.bump('cellActions.speedGraderFallback');
   };
 
   P.bindDoubleClick = function () {
@@ -90,7 +108,7 @@
       var target = e.target;
       if (!target || !target.closest) return;
       // Our own affordances keep their own gestures.
-      if (target.closest('.cgp-cmt, .cgp-pop, .cgp-preview, .cgp-course-menu')) return;
+      if (target.closest('.cgp-cmt, .cgp-sub, .cgp-pop, .cgp-preview, .cgp-course-menu')) return;
       // A double-click that landed on Canvas's arrow already did this.
       if (target.closest('button, [role="button"], a[href]')) return;
       var cell = target.closest('.slick-cell');
@@ -99,7 +117,7 @@
       if (!info || info.columnType !== 'assignment' || !info.assignmentId || !info.studentId) return;
       // Only suppress the text-selection default; Canvas keeps the event.
       e.preventDefault();
-      self.openTray(cell, 8);
+      self.openTray(cell, info, 8);
     }, true);
   };
 
