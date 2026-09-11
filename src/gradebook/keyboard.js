@@ -1,7 +1,9 @@
 /* Canvas Gradebook+ - keyboard grading and spreadsheet navigation.
  *
- * M = grade 0 + Missing status, in one keystroke, written to Canvas.
- * E = Excused. L = Late. Typing 0 is still an ordinary zero.
+ * M = grade 0 + Missing status, in one keystroke, written to Canvas; pressed
+ * again on the same cell it switches Missing to Late and takes the 0 back out.
+ * E = Excused. L = Late, and L again removes it. Typing 0 is still an
+ * ordinary zero.
  * Shortcuts only fire when a real editable grade cell is active (or cells are
  * multi-selected); typing anywhere else on Canvas is never intercepted.
  *

@@ -88,36 +88,43 @@ html.cgp-on .slick-cell .cgp-marks {
  * this extension paints still never collide with each other either. */
 html.cgp-on .cgp-cmt {
   position: absolute;
-  bottom: 2px;
-  right: 2px;
-  width: 15px;
-  height: 15px;
+  bottom: 1px;
+  right: 1px;
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  background: var(--cgp-comment);
-  color: #fff;
+  /* The bubble is the glyph itself, drawn big and blue - not a small white
+   * mark inside a coloured disc. The disc was the problem: at this size the
+   * ring around the glyph ate most of the space, leaving a speck of white in
+   * the middle that read as a dot rather than as a comment. A solid silhouette
+   * with a white outline is legible at a glance on every background Canvas
+   * paints behind it, including its own coloured status cells. */
+  background: none;
+  color: var(--cgp-comment);
   pointer-events: auto;
   cursor: pointer;
   line-height: 0;
-  /* The white ring is what makes the bubble legible on Canvas's own coloured
-   * status cells (pink Missing, blue Late, yellow Excused) instead of nearly
-   * dissolving into them, which is why it is not just a drop shadow. */
-  box-shadow: 0 0 0 1.5px #fff, 0 1px 3px rgba(19, 33, 44, 0.4);
-  transition: transform 110ms ease, box-shadow 110ms ease, background 110ms ease;
+  /* Stands in for the old white ring: it traces the glyph's real outline, so
+   * the bubble stays readable on the pink Missing / blue Late / yellow Excused
+   * cells without a disc around it. */
+  filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 1.5px #fff)
+    drop-shadow(0 1px 1.5px rgba(19, 33, 44, 0.35));
+  transition: transform 110ms ease, filter 110ms ease, color 110ms ease;
 }
-/* A generous, invisible hit area around the bubble. The painted dot stays
- * small enough to leave the grade itself alone, but hovering or clicking it
- * no longer demands pixel accuracy - which was the whole complaint. It is
- * fully transparent, and events on a pseudo-element are reported against the
- * element that owns it, so the existing .cgp-cmt hover/click delegation sees
- * the bubble either way. */
+/* An invisible margin of hit area around the bubble, so hovering or clicking
+ * it does not demand pixel accuracy. It is smaller than it once was only
+ * because the bubble itself is now considerably bigger, and the two together
+ * still cover more than the old dot plus its halo did. It is fully
+ * transparent, and events on a pseudo-element are reported against the element
+ * that owns it, so the existing .cgp-cmt hover/click delegation sees the
+ * bubble either way. */
 html.cgp-on .cgp-cmt::after {
   content: "";
   position: absolute;
-  inset: -5px;
-  border-radius: 50%;
+  inset: -3px;
+  border-radius: 6px;
 }
 /* Both right-hand markers in one cell: the submission badge at the top and the
  * comment bubble at the bottom. A grid row is only ~35px tall, so the generous
@@ -125,37 +132,47 @@ html.cgp-on .cgp-cmt::after {
  * clicks meant for the lower. Where they share a cell, each keeps a halo only
  * as big as the gap allows. */
 html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt::after,
-html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-sub::after { inset: -2px; }
+html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-sub::after { inset: -1px; }
+/* Same cell, same reason: a grid row is ~35px, and the submission badge plus a
+ * full-size bubble would not both fit between its edges. The bubble gives up a
+ * few pixels rather than crowding the badge - it is still far larger than the
+ * dot it replaced. */
+html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt {
+  width: 17px;
+  height: 17px;
+  bottom: 0;
+}
+html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt svg { width: 15px; height: 15px; }
 /* While a cell is actually being typed into, pull the hit area back to the
  * painted dot so it cannot swallow a click meant to place the caret. */
 html.cgp-on .slick-cell:has(input:not([type="hidden"])) .cgp-cmt::after { inset: 0; }
-html.cgp-on .cgp-cmt svg { width: 9px; height: 9px; fill: currentColor; display: block; }
+html.cgp-on .cgp-cmt svg { width: 18px; height: 18px; fill: currentColor; display: block; }
 html.cgp-on .cgp-cmt:hover {
-  transform: scale(1.18);
-  background: var(--cgp-brand-dark);
-  box-shadow: 0 0 0 1.5px #fff, 0 3px 7px rgba(19, 33, 44, 0.45);
+  transform: scale(1.15);
+  color: var(--cgp-brand-dark);
+  filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 1.5px #fff)
+    drop-shadow(0 2px 3px rgba(19, 33, 44, 0.45));
 }
 html.cgp-on .cgp-cmt:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 1.5px #fff, var(--cgp-focus-ring);
+  border-radius: 3px;
+  box-shadow: var(--cgp-focus-ring);
 }
 
-/* A student replied after the instructor's last comment: hollow, purple ring. */
-html.cgp-on .cgp-cmt--reply {
-  background: #fff;
-  color: var(--cgp-resub);
-  box-shadow: inset 0 0 0 2px var(--cgp-resub), 0 0 0 1.5px #fff, 0 1px 3px rgba(19, 33, 44, 0.3);
-}
-html.cgp-on .cgp-cmt--reply:hover {
-  background: #fff;
-  box-shadow: inset 0 0 0 2px var(--cgp-resub), 0 0 0 1.5px #fff, 0 3px 7px rgba(19, 33, 44, 0.4);
-}
-html.cgp-on .cgp-cmt--reply svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
+/* A student replied after the instructor's last comment. That fact is worth
+ * knowing, but it is NOT worth a second colour: every comment bubble is the
+ * same blue, so the eye can find "there is feedback here" in one pass down the
+ * column instead of sorting two marks apart. The reply still shows up - in the
+ * bubble's tooltip and in the hover preview - and the class is kept as a hook
+ * for anyone who wants their own treatment in custom CSS. */
+html.cgp-on .cgp-cmt--reply { color: var(--cgp-comment); }
+html.cgp-on .cgp-cmt--reply:hover { color: var(--cgp-brand-dark); }
+html.cgp-on .cgp-cmt--reply svg { fill: currentColor; stroke: none; }
 
 html.cgp-on .cgp-cmt-count {
   position: absolute;
   bottom: 2px;
-  right: 19px;
+  right: 22px;
   font-size: 9.5px;
   line-height: 16px;
   color: var(--cgp-comment);
@@ -322,6 +339,15 @@ html.cgp-on .cgp-val {
   z-index: 2;
 }
 html.cgp-on .slick-cell.cgp-pending-write .cgp-val { opacity: 0.55; }
+/* The moment a cell is actually being typed into, the overlay gets out of the
+ * way completely: Canvas's editor is the truth now, and an overlay covering it
+ * would both hide the caret and show the value being replaced. This is what
+ * lets a teacher type a real grade straight into a cell whose score was just
+ * taken away (a clear, or the second M that turns Missing into Late). */
+html.cgp-on .slick-cell:has(input:not([type="hidden"])) > .cgp-val { display: none; }
+html.cgp-on .slick-cell.cgp-override:has(input:not([type="hidden"])) > *:not(.cgp-marks):not(.cgp-val) {
+  visibility: visible;
+}
 
 /* ------------------------------------------------------- cell selection */
 

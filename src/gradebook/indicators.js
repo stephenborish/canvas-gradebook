@@ -1,7 +1,9 @@
 /* Canvas Gradebook+ - in-cell indicators.
  *
- * Highest priority feature: a small speech bubble in every grade cell where
- * *this instructor* has written a student-facing comment, plus a resubmission
+ * Highest priority feature: a blue speech bubble in every grade cell where
+ * *this instructor* has written a student-facing comment - one colour and one
+ * size for all of them, whether or not the student has replied, so a column
+ * can be scanned for feedback in a single pass - plus a resubmission
  * corner and the value overlay used after an API write so the cell shows the
  * truth without a page reload.
  *

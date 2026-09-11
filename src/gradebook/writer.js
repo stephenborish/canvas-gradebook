@@ -114,6 +114,20 @@
       // toggle off. Canvas also reports late: true for anything simply handed
       // in after the due date, and "un-late" is not a thing that can mean.
       wasLate: !!(currentRec && currentRec.latePolicyStatus === 'late'),
+      // Same distinction for the M toggle: only a status somebody actually
+      // applied can be toggled off. Canvas reports missing: true for anything
+      // merely past due and unsubmitted, and a first M on such a cell must
+      // still APPLY the status rather than flip it to Late.
+      wasExplicitMissing: !!(currentRec && currentRec.latePolicyStatus === 'missing'),
+      // What the toggle is allowed to erase. A submission can reach us already
+      // flagged Missing AND holding a real grade (marked Missing in the Grade
+      // Detail Tray, graded afterwards - Canvas leaves both standing), and
+      // that grade is not M's to delete. enteredScore is what the teacher
+      // actually typed; score can already have a late-policy deduction in it.
+      currentScore: currentRec
+        ? (currentRec.enteredScore === null || currentRec.enteredScore === undefined
+          ? currentRec.score : currentRec.enteredScore)
+        : null,
       missingBecomesLate: this.settings.values.missingBecomesLate !== false
     });
     if (!op) { result.skipped++; return Promise.resolve(); }
@@ -123,6 +137,9 @@
     // from one identical token, and keying on the token alone would let the
     // in-flight guard swallow the second one.
     var dupKey = CGP.gradeOps.opKey(target) + ':' + op.summary;
+    // Writes that hand Canvas an empty posted_grade are removing the score,
+    // not leaving it alone; what the cell should read afterwards differs.
+    var clearsGrade = op.form['submission[posted_grade]'] === '';
     if (this.inflight.has(dupKey)) {
       CGP.diag.bump('write.inflightSuppressed');
       return Promise.resolve();
@@ -143,13 +160,24 @@
         // the status it promised is actually on the record. Letting it run
         // loose also let it escape the request pool and the in-flight guard,
         // so during a bulk M it could race a later edit to the same cell.
-        var verified = op.kind === CGP.gradeOps.KIND.MISSING
+        // Only the M that APPLIES Missing is worth verifying; the second M
+        // is a toggle whose whole point is that the status goes away.
+        var verified = (op.kind === CGP.gradeOps.KIND.MISSING && !op.toggledOff)
           ? self.confirmMissing(assignmentId, userId, rec)
           : Promise.resolve(rec);
         return verified.then(function (finalRec) {
           var shown = finalRec || rec;
           if (shown && !opts.noOptimistic) {
-            var display = shown.excused ? 'EX' : (shown.grade === null || shown.grade === undefined ? null : String(shown.grade));
+            var display;
+            if (shown.excused) display = 'EX';
+            // Canvas spells "no grade" as null on some submissions and as an
+            // empty string on others; both mean the cell has nothing to show.
+            else if (shown.grade !== null && shown.grade !== undefined && String(shown.grade) !== '') display = String(shown.grade);
+            // No grade left, because this write deliberately took one away
+            // (a clear, or the second M turning Missing into Late). Dropping
+            // the overlay here would uncover the grade Canvas still has
+            // painted in the cell, so the score would appear to come back.
+            else display = clearsGrade ? '\u2013' : null;
             self.model.patchCell(assignmentId, userId, { pending: false, override: display });
           } else if (!opts.noOptimistic) {
             self.model.patchCell(assignmentId, userId, { pending: false });
