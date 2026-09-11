@@ -42,6 +42,26 @@ suite('grade shortcuts (M / E / L / 0)', (test) => {
     a.eq(op.patch.grade, null, 'so any grade can be typed into the cell');
   });
 
+  test('the M toggle keeps a real grade that was sitting on a Missing submission', () => {
+    // Canvas lets a teacher mark a submission Missing in the Grade Detail Tray
+    // and then grade it; both stand. That 8 is not M's to delete.
+    const op = ops().operationFor(ops().parseToken('M'), { wasExplicitMissing: true, currentScore: 8 });
+    a.form(op.form, { 'submission[late_policy_status]': 'late' }, 'grade-preserving toggle form');
+    a.lacksKey(op.form, 'submission[posted_grade]', 'a grade nobody asked to undo must survive');
+    a.eq(op.keptGrade, true);
+    a.eq(op.patch.missing, false);
+    a.eq(op.patch.late, true);
+    a.eq(op.display, null, 'the grade text is left exactly as it is');
+  });
+
+  test('the M toggle does clear the 0 M itself wrote', () => {
+    [0, '0', null, undefined].forEach((held) => {
+      const op = ops().operationFor(ops().parseToken('M'), { wasExplicitMissing: true, currentScore: held });
+      a.eq(op.form['submission[posted_grade]'], '', 'clears score ' + String(held));
+      a.eq(op.keptGrade, undefined);
+    });
+  });
+
   test('M on a cell Canvas merely computes as missing still APPLIES the status', () => {
     // Canvas reports missing: true for anything past due and not handed in.
     // Only a status somebody actually applied is a thing M can toggle off.

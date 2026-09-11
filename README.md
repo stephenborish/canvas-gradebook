@@ -72,6 +72,11 @@ already marked Late simply removes that status. Only a status *somebody applied*
 toggled — Canvas reports `missing` for anything merely past due and not handed in, and a first
 `M` on such a cell still applies the status rather than flipping it.
 
+Only the `0` that `M` itself writes is `M`'s to take away. A submission can be flagged Missing
+*and* carry a real grade — Canvas lets you mark it Missing in the Grade Detail Tray and grade
+it afterwards, and leaves both standing — and toggling that one changes the status to Late
+while the grade stays exactly where it is.
+
 These are writes to the Canvas record, not local decoration. `M` sends the score and
 `late_policy_status=missing` in a single request, so the submission reads as Missing in the
 Grade Detail Tray, in SpeedGrader and on the student's own grades page. Canvas's editor is
@@ -310,8 +315,9 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-65 assertions covering the parts where being wrong would be expensive: `M` → 0 + Missing and
-`M` again → Late with the score cleared, `E` → Excused, `L` → Late and `L` again → not Late,
+67 assertions covering the parts where being wrong would be expensive: `M` → 0 + Missing and
+`M` again → Late with the score cleared (but a real grade left alone), `E` → Excused,
+`L` → Late and `L` again → not Late,
 a grade on a Missing submission → Late,
 plain `0` is *not* Missing, letter-grade exceptions, clipboard
 matrix parsing (TSV / column / spaced / ragged / CRLF), clipboard-to-cell mapping and its

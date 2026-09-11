@@ -119,6 +119,15 @@
       // merely past due and unsubmitted, and a first M on such a cell must
       // still APPLY the status rather than flip it to Late.
       wasExplicitMissing: !!(currentRec && currentRec.latePolicyStatus === 'missing'),
+      // What the toggle is allowed to erase. A submission can reach us already
+      // flagged Missing AND holding a real grade (marked Missing in the Grade
+      // Detail Tray, graded afterwards - Canvas leaves both standing), and
+      // that grade is not M's to delete. enteredScore is what the teacher
+      // actually typed; score can already have a late-policy deduction in it.
+      currentScore: currentRec
+        ? (currentRec.enteredScore === null || currentRec.enteredScore === undefined
+          ? currentRec.score : currentRec.enteredScore)
+        : null,
       missingBecomesLate: this.settings.values.missingBecomesLate !== false
     });
     if (!op) { result.skipped++; return Promise.resolve(); }

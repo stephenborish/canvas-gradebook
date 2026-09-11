@@ -101,6 +101,11 @@
    * Missing status. M is a toggle too: the second press turns Missing into
    * Late and takes the 0 back out, so the teacher can type a real grade.
    *
+   * opts.currentScore - the score already on that cell, which decides whether
+   * the M toggle may clear it. Only the score M itself writes (the
+   * missingScore, 0 by default) is M's to remove; a real grade a teacher
+   * entered on a submission Canvas had flagged Missing survives the toggle.
+   *
    * EXCUSED is an explicit status command and is left alone.
    */
   function operationFor(parsed, opts) {
@@ -121,6 +126,28 @@
         // cell behave like the second and toggle a status that was never
         // applied.
         if (opts.wasExplicitMissing) {
+          // ...but only the score M itself puts there is M's to take away.
+          // A submission can arrive from Canvas already flagged Missing AND
+          // carrying a real grade - a teacher marked it Missing in the Grade
+          // Detail Tray and graded it afterwards, which Canvas allows and
+          // leaves standing. Deleting that grade would be destroying work
+          // nobody asked to undo, so a non-zero score survives the toggle and
+          // only the status changes. What M writes is the missingScore (0 by
+          // default), so that is what a toggle is willing to clear.
+          var held = opts.currentScore;
+          var clearable = held === null || held === undefined || held === '' ||
+            Number(held) === Number(parsed.score === undefined || parsed.score === null ? 0 : parsed.score);
+          if (!clearable) {
+            return {
+              kind: parsed.kind,
+              toggledOff: true,
+              keptGrade: true,
+              summary: 'Missing \u2192 Late (grade kept)',
+              form: { 'submission[late_policy_status]': 'late' },
+              patch: { missing: false, late: true, latePolicyStatus: 'late' },
+              display: null // status only; the grade stays exactly as it is
+            };
+          }
           return {
             kind: parsed.kind,
             toggledOff: true,
