@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Canvas Gradebook+",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "In-place upgrades to the Canvas instructor Gradebook: instructor-comment indicators, keyboard grading, bulk paste, and a frozen Student + Total column.",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -46,6 +46,7 @@
         "src/core/util.js",
         "src/core/canvas-api.js",
         "src/core/grade-ops.js",
+        "src/core/post-ops.js",
         "src/core/clipboard-matrix.js",
         "src/core/comment-analysis.js",
         "src/core/grid-map.js",
@@ -63,6 +64,7 @@
         "src/gradebook/bulk-paste.js",
         "src/gradebook/frozen-total.js",
         "src/gradebook/layout.js",
+        "src/gradebook/post-grades.js",
         "src/gradebook/comment-popover.js",
         "src/gradebook/course-switcher.js",
         "src/gradebook/student-search.js",

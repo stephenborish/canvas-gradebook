@@ -68,6 +68,11 @@
           published: a.published !== false,
           anonymous: !!a.anonymize_students,
           moderated: !!a.moderated_grading,
+          // Manual posting policy: grades stay hidden from students until the
+          // teacher posts them. Not load-bearing for the Post button (that is
+          // decided per submission, from posted_at), but it is what explains
+          // WHY a column has hidden grades, so it rides along in the tooltip.
+          postManually: !!a.post_manually,
           omitFromFinal: !!a.omit_from_final_grade,
           dueAt: a.due_at || null,
           hasMultipleDueDates: !!a.has_overrides || !!a.all_dates,
@@ -214,6 +219,8 @@
       ? CGP.commentAnalysis.analyze(comments, { instructorId: this.instructorId, instructorNames: this.instructorNames, studentId: userId })
       : (prev.comments || CGP.commentAnalysis.analyze([], { instructorId: this.instructorId, instructorNames: this.instructorNames, studentId: userId }));
 
+    var postedKnown = Object.prototype.hasOwnProperty.call(sub, 'posted_at');
+
     var rec = {
       assignmentId: assignmentId,
       userId: userId,
@@ -228,6 +235,14 @@
       workflowState: sub.workflow_state || null,
       submittedAt: sub.submitted_at || null,
       gradedAt: sub.graded_at || null,
+      // posted_at is Canvas's record of whether the student can see this
+      // grade yet: null means it is still hidden from them. Canvas omits the
+      // field on some payloads (and on builds old enough not to have posting
+      // policies), so whether we were TOLD is tracked separately - a missing
+      // field must never be read as "hidden", or every graded cell would look
+      // unposted. See core/post-ops.js.
+      postedAt: postedKnown ? (sub.posted_at || null) : (prev.postedAt === undefined ? null : prev.postedAt),
+      postedAtKnown: postedKnown || prev.postedAtKnown === true,
       gradeMatchesCurrent: sub.grade_matches_current_submission !== false,
       attempt: sub.attempt === undefined ? null : sub.attempt,
       submissionType: sub.submission_type === undefined ? (prev.submissionType || null) : sub.submission_type,
@@ -274,6 +289,39 @@
       attempt: (rec && rec.attempt) || 0,
       excused: !!(rec && rec.excused)
     };
+  };
+
+  /* Every submission record this model holds for one assignment column.
+   * Only students still in the model are included, so a record left behind by
+   * someone who has since been unenrolled cannot keep a Post button alive. */
+  GradebookModel.prototype.recordsForAssignment = function (assignmentId) {
+    var self = this;
+    var out = [];
+    this.studentOrder.forEach(function (uid) {
+      var rec = self.cells.get(self.key(assignmentId, uid));
+      if (rec) out.push(rec);
+    });
+    return out;
+  };
+
+  /* The students in one column whose grades are graded here but still hidden
+   * from them. Empty until the column's submissions have actually loaded: a
+   * column we know nothing about has nothing to post. */
+  GradebookModel.prototype.pendingPosts = function (assignmentId) {
+    var id = String(assignmentId);
+    if (!this.loadedAssignments.has(id)) return [];
+    return CGP.postOps.pendingFor(this.recordsForAssignment(id));
+  };
+
+  /* Re-read one assignment column from Canvas, replacing what we hold.
+   * Used after posting grades, where the thing that changed (posted_at on
+   * every submission in the column) is not in any response we already have. */
+  GradebookModel.prototype.reloadAssignment = function (assignmentId) {
+    var id = String(assignmentId);
+    if (!this.assignments.has(id)) return Promise.resolve(null);
+    this.loadedAssignments.delete(id);
+    this.pendingAssignments.delete(id);
+    return this.ensureAssignments([id]);
   };
 
   GradebookModel.prototype.cell = function (assignmentId, userId) {

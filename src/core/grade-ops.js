@@ -235,6 +235,38 @@
     }
   }
 
+  /* The one status a grade cell is currently in, as this extension understands
+   * it, derived from the record the model holds right now - including a record
+   * an optimistic write has only just patched.
+   *
+   * This is what lets M and L show their designation the instant they are
+   * pressed. Canvas paints late/missing/excused colours from its OWN in-page
+   * store, which our API write never touches, so without a status of our own
+   * the cell keeps whatever colour Canvas last rendered until the page is
+   * reloaded - the reported "M and L do nothing until I refresh".
+   *
+   * Returns:
+   *   'excused' | 'missing' | 'late'  - a status we manage and paint
+   *   'none'                          - we know there is no status
+   *   'extended' or any other string  - a status Canvas knows and we do not;
+   *                                     callers leave those cells alone
+   *   null                            - nothing is known about this cell yet
+   *
+   * Excused wins over everything: Canvas shows an excused submission as
+   * excused even when it also arrived late. Both the raw late_policy_status
+   * and Canvas's derived booleans are consulted, because a submission handed
+   * in after its due date is late (late: true) with no explicit status at all.
+   */
+  function cellStatus(rec) {
+    if (!rec) return null;
+    var explicit = rec.latePolicyStatus || null;
+    if (rec.excused) return 'excused';
+    if (explicit && explicit !== 'none' && explicit !== 'missing' && explicit !== 'late') return explicit;
+    if (rec.missing || explicit === 'missing') return 'missing';
+    if (rec.late || explicit === 'late') return 'late';
+    return 'none';
+  }
+
   function describe(kind) {
     switch (kind) {
       case KIND.MISSING: return 'Missing';
@@ -269,6 +301,11 @@
     KIND: KIND,
     parseToken: parseToken,
     operationFor: operationFor,
+    cellStatus: cellStatus,
+    /* The statuses this extension is willing to paint and to correct on a
+     * cell. Anything else Canvas renders (dropped, extended, resubmitted) is
+     * Canvas's business and is never touched. */
+    PAINTED_STATUSES: ['missing', 'late', 'excused'],
     describe: describe,
     opKey: opKey,
     dedupe: dedupe,

@@ -36,6 +36,7 @@
     bulkPaste: true,
     multiCellSelection: true,
     doubleClickOpensTray: true,
+    postGradesButton: true,
     hideGradeCellArrow: true,
     rowHoverHighlight: true,
     bulkConfirmThreshold: 25,

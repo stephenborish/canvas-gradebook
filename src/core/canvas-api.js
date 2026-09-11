@@ -74,7 +74,10 @@
       'X-Requested-With': 'XMLHttpRequest'
     };
     var body;
-    if (opts.form) {
+    if (opts.json) {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify(opts.json);
+    } else if (opts.form) {
       headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8';
       var sp = new URLSearchParams();
       Object.keys(opts.form).forEach(function (k) {
@@ -229,6 +232,94 @@
 
   CanvasApi.prototype.addComment = function (courseId, assignmentId, userId, text) {
     return this.updateSubmission(courseId, assignmentId, userId, { 'comment[text_comment]': text });
+  };
+
+  /* ------------------------------------------------------- posting grades */
+
+  /* Canvas's GraphQL endpoint, same session and same CSRF token as the REST
+   * calls above. Only used for the one thing Canvas's REST API has no verb
+   * for: posting (unhiding) an assignment's grades. GraphQL answers 200 with
+   * an "errors" array rather than an HTTP error, so that is checked here
+   * instead of being left to look like success. */
+  CanvasApi.prototype.graphql = function (query, variables) {
+    return this.request('/api/graphql', {
+      method: 'POST',
+      json: { query: query, variables: variables || {} },
+      retries: 1
+    }).then(function (r) {
+      var data = r.data || {};
+      if (data.errors && data.errors.length) {
+        var first = data.errors[0] || {};
+        throw new CanvasApiError('Canvas GraphQL: ' + (first.message || 'request rejected'), {
+          graphql: true, message: first.message || null
+        });
+      }
+      return data.data || null;
+    });
+  };
+
+  var POST_GRADES_MUTATION =
+    'mutation PostAssignmentGrades($assignmentId: ID!, $gradedOnly: Boolean) {' +
+    '  postAssignmentGrades(input: {assignmentId: $assignmentId, gradedOnly: $gradedOnly}) {' +
+    '    progress { _id state }' +
+    '    errors { attribute message }' +
+    '  }' +
+    '}';
+
+  /* Post every grade in one assignment column to the students.
+   *
+   * This is Canvas's own "Post grades" action, reached the same way Canvas's
+   * own Gradebook reaches it. It returns a Progress job id: Canvas posts the
+   * submissions in the background, so the caller has to wait for that job
+   * before the new posted_at timestamps can be read back.
+   *
+   * gradedOnly (default true) is the same choice Canvas's own tray offers:
+   * post the grades that exist, and leave ungraded submissions hidden rather
+   * than showing students an empty grade they were not waiting for.
+   */
+  CanvasApi.prototype.postAssignmentGrades = function (assignmentId, opts) {
+    opts = opts || {};
+    return this.graphql(POST_GRADES_MUTATION, {
+      assignmentId: String(assignmentId),
+      gradedOnly: opts.gradedOnly === undefined ? true : !!opts.gradedOnly
+    }).then(function (data) {
+      var payload = (data && data.postAssignmentGrades) || {};
+      if (payload.errors && payload.errors.length) {
+        throw new CanvasApiError('Canvas refused to post these grades: ' +
+          (payload.errors[0].message || 'unknown reason'), { message: payload.errors[0].message || null });
+      }
+      return payload.progress || null;
+    });
+  };
+
+  CanvasApi.prototype.progress = function (progressId) {
+    return this.get('/api/v1/progress/' + encodeURIComponent(String(progressId)));
+  };
+
+  /* Wait for a Canvas Progress job to finish.
+   *
+   * Polls on a gentle backoff and gives up rather than waiting forever; a job
+   * we stopped watching is not a job that failed, so the caller treats a
+   * timeout as "probably done, re-read the column and see" rather than as an
+   * error shown to the teacher. */
+  CanvasApi.prototype.waitForProgress = function (progressId, opts) {
+    var self = this;
+    opts = opts || {};
+    var maxTries = opts.maxTries || 20;
+    function attempt(n) {
+      return self.progress(progressId).then(function (p) {
+        var state = (p && p.workflow_state) || '';
+        if (state === 'completed') return { done: true, progress: p };
+        if (state === 'failed') {
+          throw new CanvasApiError('Canvas could not finish posting these grades', {
+            message: (p && p.message) || null
+          });
+        }
+        if (n + 1 >= maxTries) return { done: false, progress: p };
+        return util.sleep(Math.min(2000, 300 + n * 200)).then(function () { return attempt(n + 1); });
+      });
+    }
+    return attempt(0);
   };
 
   /* The student roster for one course, names only.

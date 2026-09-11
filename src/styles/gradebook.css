@@ -349,6 +349,67 @@ html.cgp-on .slick-cell.cgp-override:has(input:not([type="hidden"])) > *:not(.cg
   visibility: visible;
 }
 
+/* ------------------------------------------ late / missing / excused status */
+
+/* Canvas colours these cells from its own in-page store, which nothing this
+ * extension writes ever reaches - so after pressing M or L the designation
+ * used to appear only after a full page reload. indicators.js now keeps a
+ * cgp-status-* class on every grade cell whose submission we actually know
+ * about, and these rules are what makes that visible.
+ *
+ * Two deliberate choices:
+ *
+ *  - The colour is a TINT (background-image, per the tinting note at the top
+ *    of this file) plus a solid bar down the leading edge, never a flat
+ *    background-color. Canvas's own colour - including the custom status
+ *    colours a teacher can set in Canvas's own status settings - keeps
+ *    painting underneath it.
+ *  - It stands down completely on any cell Canvas is ALREADY painting for the
+ *    same status (:not(.missing) and friends, checked both on the cell and on
+ *    Canvas's own grade-cell node inside it). So a gradebook Canvas has caught
+ *    up with looks exactly as it always did; what these rules paint is the
+ *    window between writing a status and Canvas hearing about it, which for a
+ *    cell the teacher never reloads is forever. */
+html.cgp-on {
+  --cgp-missing-tint: rgba(255, 116, 96, 0.20);
+  --cgp-missing-edge: #cf4a3f;
+  --cgp-late-tint: rgba(3, 116, 181, 0.14);
+  --cgp-late-edge: #0374b5;
+  --cgp-excused-tint: rgba(214, 158, 15, 0.18);
+  --cgp-excused-edge: #a8790c;
+}
+
+html.cgp-on .slick-cell.cgp-status-missing:not(.missing):not(:has(> .missing)) {
+  background-image: linear-gradient(var(--cgp-missing-tint), var(--cgp-missing-tint));
+}
+html.cgp-on .slick-cell.cgp-status-late:not(.late):not(:has(> .late)) {
+  background-image: linear-gradient(var(--cgp-late-tint), var(--cgp-late-tint));
+}
+html.cgp-on .slick-cell.cgp-status-excused:not(.excused):not(:has(> .excused)) {
+  background-image: linear-gradient(var(--cgp-excused-tint), var(--cgp-excused-tint));
+}
+
+/* The bar reads at a glance down a whole column and, unlike the tint, it is
+ * drawn whether or not Canvas has caught up - so one status always looks like
+ * one status, never like two slightly different shades of pink. It sits on the
+ * leading edge, below our markers and above Canvas's own cell content, and is
+ * a pseudo-element so it costs no DOM and cannot intercept a click. */
+html.cgp-on .slick-cell.cgp-status-missing::before,
+html.cgp-on .slick-cell.cgp-status-late::before,
+html.cgp-on .slick-cell.cgp-status-excused::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  z-index: 1;
+  pointer-events: none;
+}
+html.cgp-on .slick-cell.cgp-status-missing::before { background: var(--cgp-missing-edge); }
+html.cgp-on .slick-cell.cgp-status-late::before { background: var(--cgp-late-edge); }
+html.cgp-on .slick-cell.cgp-status-excused::before { background: var(--cgp-excused-edge); }
+
 /* ------------------------------------------------------- cell selection */
 
 html.cgp-on .slick-cell.cgp-sel {
@@ -702,6 +763,53 @@ html.cgp-on .cgp-header-due {
   text-align: center;
 }
 html.cgp-on .cgp-header-due[hidden] { display: none !important; }
+
+/* ------------------------------------------------- post-grades header button */
+
+/* Shown only on columns that are actually holding grades back from students
+ * (see gradebook/post-grades.js), so its presence is information in itself: a
+ * header with no button has nothing hidden. It takes a strip along the bottom
+ * of the header, and the title/points/due label gives that strip up rather
+ * than being drawn underneath it - see .cgp-has-post below. */
+html.cgp-on .slick-header-column .cgp-post {
+  visibility: visible !important;
+  position: absolute !important;
+  left: 4px;
+  right: 4px;
+  bottom: 2px;
+  height: 15px;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 4px;
+  border: 1px solid var(--cgp-brand-dark);
+  border-radius: 3px;
+  background: var(--cgp-brand);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  z-index: 7 !important;
+}
+html.cgp-on .slick-header-column .cgp-post:hover { background: var(--cgp-brand-dark); }
+html.cgp-on .slick-header-column .cgp-post:focus-visible {
+  outline: none;
+  box-shadow: var(--cgp-focus-ring);
+}
+html.cgp-on .slick-header-column .cgp-post[disabled] {
+  cursor: default;
+  opacity: 0.7;
+}
+html.cgp-on .slick-header-column.cgp-has-post .cgp-header-label {
+  inset: 0 22px 17px 5px !important;
+}
 
 /* ==================================================== grid surface ======== */
 

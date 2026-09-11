@@ -17,6 +17,7 @@ const ROOT = path.resolve(__dirname, '..');
 const CORE_FILES = [
   'src/core/util.js',
   'src/core/grade-ops.js',
+  'src/core/post-ops.js',
   'src/core/clipboard-matrix.js',
   'src/core/comment-analysis.js',
   'src/core/grid-map.js',
