@@ -32,14 +32,25 @@
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.CellActionsController) return;
 
-  /* Ordered most-specific first. Everything here is a control CANVAS renders
-   * inside the grade cell; our own markers live under .cgp-marks and are
-   * excluded explicitly below. */
+  /* Ordered most-specific first. Every entry names a control that IS
+   * identifiably Canvas's open-this-submission affordance - by the container
+   * Canvas reserves for it, by its test id, or by its label. Our own markers
+   * live under .cgp-marks and are excluded explicitly below.
+   *
+   * There is deliberately no "any button in the cell" catch-all. A grade cell
+   * can hold other controls (a similarity-score link, a status affordance),
+   * and a catch-all both clicks the wrong one and short-circuits the polling
+   * below: on the first attempt the arrow often does not exist yet, so
+   * matching some unrelated control would stop us waiting for the real one.
+   * When nothing here matches, openTray navigates to SpeedGrader itself
+   * rather than guessing at a control. */
   var TRAY_SELECTORS = [
     '.Grid__GradeCell__Options button',
     '.Grid__GradeCell__Options [role="button"]',
     'button[data-testid*="grade-detail-tray" i]',
+    'button[data-testid*="submission-tray" i]',
     'button[aria-label*="grade detail" i]',
+    'button[aria-label*="submission detail" i]',
     'button[title*="grade detail" i]',
     'a[href*="speed_grader" i]',
     '.Grid__GradeCell__EndContainer button',
@@ -55,18 +66,30 @@
 
   var P = CellActionsController.prototype;
 
-  /** Canvas's own "open this submission" control inside one grade cell. */
+  /** Canvas's own "open this submission" control inside one grade cell, or
+   * null when this cell holds nothing we can positively identify as one. */
   P.trayControl = function (cell) {
     for (var i = 0; i < TRAY_SELECTORS.length; i++) {
       var el = cell.querySelector(TRAY_SELECTORS[i]);
       if (el && !el.closest('.cgp-marks')) return el;
     }
-    // Last resort: any control Canvas put in the cell that is not one of ours.
-    var all = cell.querySelectorAll('button, [role="button"], a[href]');
-    for (var j = 0; j < all.length; j++) {
-      if (!all[j].closest('.cgp-marks')) return all[j];
-    }
     return null;
+  };
+
+  /* Is this element still the cell we were asked to open?
+   *
+   * SlickGrid recycles cell elements as rows and columns virtualise, so a
+   * cell that is still `isConnected` a few hundred milliseconds later can by
+   * then belong to a completely different student or assignment - which is
+   * exactly the window openTray's polling sits in. Clicking whatever control
+   * the new occupant has would open the wrong person's submission, so the
+   * identity captured at double-click time is rechecked before every attempt
+   * and the whole gesture is abandoned if the grid moved under it. */
+  P.stillSameCell = function (cell, info) {
+    if (!cell || !cell.isConnected) return false;
+    var now = this.adapter.cellInfo(cell);
+    return !!(now && String(now.assignmentId) === String(info.assignmentId) &&
+      String(now.studentId) === String(info.studentId));
   };
 
   /** Click Canvas's control, retrying while its editor is still rendering.
@@ -75,10 +98,15 @@
    * default), double-click is the ONLY way in, so "Canvas's markup was not
    * what we expected" must not become a dead end. If no control turns up,
    * open SpeedGrader for this exact submission instead - the same place the
-   * arrow's tray is a shortcut to - rather than silently doing nothing. */
+   * arrow's tray is a shortcut to - rather than silently doing nothing. That
+   * fallback uses the identity captured at double-click time, and every
+   * attempt first confirms the cell still holds it. */
   P.openTray = function (cell, info, triesLeft) {
     var self = this;
-    if (!cell.isConnected) return;
+    if (!info || !this.stillSameCell(cell, info)) {
+      CGP.diag.bump('cellActions.cellRecycled');
+      return;
+    }
     var control = this.trayControl(cell);
     if (control) {
       // A plain native click: Canvas's own React handler is what we want to
@@ -93,7 +121,7 @@
       return;
     }
     CGP.diag.warn('cellActions.trayControlMissing');
-    if (!this.courseId || !info || !info.assignmentId || !info.studentId) return;
+    if (!this.courseId || !info.assignmentId || !info.studentId) return;
     var url = '/courses/' + encodeURIComponent(this.courseId) +
       '/gradebook/speed_grader?assignment_id=' + encodeURIComponent(String(info.assignmentId)) +
       '&student_id=' + encodeURIComponent(String(info.studentId));
