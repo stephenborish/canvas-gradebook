@@ -6,9 +6,14 @@
  * navigation away from the gradebook. It closes on Escape, on an outside click
  * and when the grid scrolls, so it never becomes persistent furniture.
  *
- * Hovering the bubble (without clicking) shows a smaller, read-only preview of
- * the most recent comment instead - a fast "what did I say here" glance that
- * never steals focus and never needs a click just to check. */
+ * Hovering the bubble (without clicking) shows a smaller preview of the most
+ * recent comment instead - a fast "what did I say here" glance that never
+ * steals focus and never needs a click just to check. That preview is itself a
+ * target: the pointer can travel from the bubble into it (it survives a short
+ * grace period rather than vanishing the instant the bubble is left), and
+ * clicking it opens Canvas's own Grade Detail Tray - the side pane - for that
+ * submission, which is where the full thread, the status controls and the
+ * rubric live. */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
@@ -20,9 +25,16 @@
     this.writer = ctx.writer;
     this.settings = ctx.settings;
     this.requestPaint = ctx.requestPaint;
+    // How the preview opens Canvas's side pane. Injected rather than
+    // reimplemented: cell-actions.js already knows how to find and press
+    // Canvas's own control for one cell, including waiting for it to render
+    // and refusing to act on a cell the grid recycled underneath it.
+    this.openSidePane = ctx.openSidePane || null;
     this.el = null;
     this.current = null;
     this._bound = false;
+    this._previewInfo = null;
+    this._previewHideTimer = null;
   }
 
   var P = CommentPopoverController.prototype;
@@ -176,15 +188,61 @@
 
   P.ensurePreviewEl = function () {
     if (this.previewEl && this.previewEl.isConnected) return this.previewEl;
+    var self = this;
     var el = document.createElement('div');
     el.className = 'cgp-preview';
-    el.setAttribute('role', 'tooltip');
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-label', 'Latest submission comment');
+    // The pointer is allowed to leave the bubble and land here: while it is
+    // over the preview, the pending hide is cancelled, so the preview can be
+    // read at leisure and clicked. Leaving it closes it for real.
+    el.addEventListener('mouseenter', function () { self.cancelPreviewHide(); });
+    el.addEventListener('mouseleave', function () { self.hidePreview(); });
+    el.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      self.openPaneFromPreview();
+    });
     document.body.appendChild(el);
     this.previewEl = el;
     return el;
   };
 
+  /* Open Canvas's Grade Detail Tray for the submission the preview is showing.
+   *
+   * Canvas only renders the control that opens the tray inside the ACTIVE
+   * cell, so the cell is activated first and the press is handed to
+   * cell-actions, which polls for that control to appear and falls back to
+   * SpeedGrader if this Canvas build has no such button. */
+  P.openPaneFromPreview = function () {
+    var info = this._previewInfo;
+    this.hidePreview();
+    if (!info || !info.el || !info.el.isConnected) return;
+    if (!this.openSidePane) { this.open(info); return; }   // no tray available: the in-place thread instead
+    this.adapter.activateCell(info.el);
+    this.openSidePane(info);
+    CGP.diag.bump('preview.sidePaneOpened');
+  };
+
+  P.cancelPreviewHide = function () {
+    if (this._previewHideTimer) { clearTimeout(this._previewHideTimer); this._previewHideTimer = null; }
+  };
+
+  /* Leaving the bubble does not close the preview immediately: the pointer
+   * needs a moment to cross the few pixels between the bubble and the preview
+   * without the thing it is travelling towards disappearing on the way. */
+  P.hidePreviewSoon = function () {
+    var self = this;
+    this.cancelPreviewHide();
+    this._previewHideTimer = setTimeout(function () {
+      self._previewHideTimer = null;
+      if (self.previewEl && self.previewEl.matches(':hover')) return;
+      self.hidePreview();
+    }, 220);
+  };
+
   P.showPreview = function (info) {
+    this.cancelPreviewHide();
     if (!this.settings.values.commentIndicator) return;
     if (this.current) return; // the full thread is already open; do not layer a preview on it
     var rec = this.model.cell(info.assignmentId, info.studentId);
@@ -209,12 +267,15 @@
       (comments.instructorCount > 1 ? '<span class="cgp-preview__count">' + comments.instructorCount + ' comments</span>' : '') +
       '</div>' +
       '<div class="cgp-preview__text">' + CGP.util.escapeHtml(snippet || '—') + '</div>' +
-      '<div class="cgp-preview__hint">Click to read the full thread and reply</div>';
+      '<div class="cgp-preview__hint">Click to open this submission in Canvas\u2019s side pane</div>';
     el.classList.add('cgp-preview--on');
+    this._previewInfo = info;
     this.positionPreview(info.el);
   };
 
   P.hidePreview = function () {
+    this.cancelPreviewHide();
+    this._previewInfo = null;
     if (this.previewEl) this.previewEl.classList.remove('cgp-preview--on');
   };
 

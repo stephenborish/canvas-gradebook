@@ -43,6 +43,45 @@ suite('grade shortcuts (M / E / L / 0)', (test) => {
     a.eq(op.display, null, 'no display override for a status-only write');
   });
 
+  test('L on a submission already marked Late removes the status instead', () => {
+    const op = ops().operationFor(ops().parseToken('L'), { wasLate: true });
+    a.form(op.form, { 'submission[late_policy_status]': 'none' }, 'L toggle-off form');
+    a.lacksKey(op.form, 'submission[posted_grade]', 'un-marking Late must not change the grade');
+    a.eq(op.patch.late, false);
+    a.eq(op.toggledOff, true);
+    // ...and the round trip leaves the submission exactly as it started.
+    a.eq(ops().operationFor(ops().parseToken('L'), { wasLate: false }).patch.late, true);
+  });
+
+  test('grading a Missing submission ends Missing and records Late', () => {
+    const op = ops().operationFor(ops().parseToken('7'), { wasMissing: true });
+    a.form(op.form, {
+      'submission[posted_grade]': '7',
+      'submission[late_policy_status]': 'late'
+    }, 'graded-after-missing form');
+    a.eq(op.patch.missing, false, 'Missing must not survive a real grade');
+    a.eq(op.patch.late, true, 'work that was Missing and is now graded came in late');
+
+    // Letter and percent grades take the same route.
+    a.eq(ops().operationFor(ops().parseToken('B+'), { wasMissing: true })
+      .form['submission[late_policy_status]'], 'late');
+    a.eq(ops().operationFor(ops().parseToken('80%'), { wasMissing: true })
+      .form['submission[late_policy_status]'], 'late');
+  });
+
+  test('with missingBecomesLate off, grading a Missing submission just clears it', () => {
+    const op = ops().operationFor(ops().parseToken('7'), { wasMissing: true, missingBecomesLate: false });
+    a.eq(op.form['submission[late_policy_status]'], 'none');
+    a.eq(op.patch.missing, false);
+    a.eq(op.patch.late, false);
+  });
+
+  test('a grade on a submission that was never Missing leaves late policy alone', () => {
+    const op = ops().operationFor(ops().parseToken('7'), { wasMissing: false });
+    a.lacksKey(op.form, 'submission[late_policy_status]',
+      'an ordinary grade must not restate a status Canvas already holds');
+  });
+
   test('a plain 0 is an ordinary zero, NOT missing', () => {
     const parsed = ops().parseToken('0');
     a.eq(parsed.kind, ops().KIND.NUMBER);
