@@ -18,6 +18,7 @@ suite('grade shortcuts (M / E / L / 0)', (test) => {
     }, 'M form');
     a.eq(op.patch.score, 0, 'optimistic score');
     a.eq(op.patch.missing, true, 'optimistic missing flag');
+    a.eq(op.patch.latePolicyStatus, 'missing');
     a.eq(op.patch.excused, false);
   });
 
@@ -40,6 +41,7 @@ suite('grade shortcuts (M / E / L / 0)', (test) => {
     a.form(op.form, { 'submission[late_policy_status]': 'late' }, 'L form');
     a.lacksKey(op.form, 'submission[posted_grade]', 'late must not change the grade');
     a.eq(op.patch.late, true);
+    a.eq(op.patch.latePolicyStatus, 'late');
     a.eq(op.display, null, 'no display override for a status-only write');
   });
 
@@ -49,6 +51,7 @@ suite('grade shortcuts (M / E / L / 0)', (test) => {
     a.lacksKey(op.form, 'submission[posted_grade]', 'un-marking Late must not change the grade');
     a.eq(op.patch.late, false);
     a.eq(op.toggledOff, true);
+    a.eq(op.patch.latePolicyStatus, null, 'the raw status the next toggle reads must not stay stale');
     // ...and the round trip leaves the submission exactly as it started.
     a.eq(ops().operationFor(ops().parseToken('L'), { wasLate: false }).patch.late, true);
   });

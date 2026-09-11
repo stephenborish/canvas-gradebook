@@ -66,6 +66,7 @@
     form['submission[late_policy_status]'] = toLate ? 'late' : 'none';
     patch.missing = false;
     patch.late = toLate;
+    patch.latePolicyStatus = toLate ? 'late' : null;
   }
 
   /**
@@ -85,6 +86,11 @@
    * status is Late, not "no status at all". opts.missingBecomesLate (default
    * true) is what turns that on; set it false and the status is merely
    * cleared, which is what Canvas itself would leave behind.
+   *
+   * Every patch that changes a status also carries latePolicyStatus, not just
+   * the derived missing/late booleans: that raw field is what decides the next
+   * write's meaning (the L toggle reads it), so leaving it stale would make an
+   * optimistic record contradict itself.
    *
    * opts.wasLate - true when the cell already carries an explicit Late status.
    * The L shortcut is a toggle, so on such a cell it REMOVES the status
@@ -108,7 +114,8 @@
           },
           patch: {
             score: score, enteredScore: score, grade: String(score),
-            missing: true, late: false, excused: false, workflowState: 'graded'
+            missing: true, late: false, excused: false, workflowState: 'graded',
+            latePolicyStatus: 'missing'
           },
           display: String(score)
         };
@@ -128,7 +135,7 @@
             toggledOff: true,
             summary: 'Late removed',
             form: { 'submission[late_policy_status]': 'none' },
-            patch: { late: false },
+            patch: { late: false, latePolicyStatus: null },
             display: null // status only; the grade text is unchanged
           };
         }
@@ -136,7 +143,7 @@
           kind: parsed.kind,
           summary: 'Late',
           form: { 'submission[late_policy_status]': 'late' },
-          patch: { late: true, missing: false },
+          patch: { late: true, missing: false, latePolicyStatus: 'late' },
           display: null // status only; the grade text is unchanged
         };
       case KIND.CLEAR:
@@ -144,7 +151,7 @@
           kind: parsed.kind,
           summary: 'Cleared',
           form: { 'submission[posted_grade]': '', 'submission[late_policy_status]': 'none' },
-          patch: { score: null, enteredScore: null, grade: null, missing: false, late: false, excused: false, workflowState: 'unsubmitted' },
+          patch: { score: null, enteredScore: null, grade: null, missing: false, late: false, excused: false, latePolicyStatus: null, workflowState: 'unsubmitted' },
           display: '\u2013'
         };
       case KIND.NUMBER: {

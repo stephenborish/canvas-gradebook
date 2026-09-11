@@ -17,6 +17,10 @@
     this.settings = ctx.settings;
     this.inflight = new Set();
     this.gate = CGP.util.pool(3);
+    // One chain per cell, so two writes for the SAME submission never overlap
+    // (see serialize below). Different cells still run concurrently, bounded
+    // by the pool.
+    this.chains = new Map();
   }
 
   var P = GradeWriter.prototype;
@@ -33,7 +37,9 @@
     var result = { ok: 0, failed: 0, skipped: 0, errors: [] };
 
     return Promise.all(ops.map(function (target) {
-      return self.gate(function () { return self.writeOne(target, result, opts); });
+      return self.serialize(target.assignmentId, target.userId, function () {
+        return self.gate(function () { return self.writeOne(target, result, opts); });
+      });
     })).then(function () {
       if (result.failed) {
         var first = result.errors[0] || {};
@@ -47,6 +53,30 @@
       CGP.diag.bump('write.failed', result.failed);
       return result;
     });
+  };
+
+  /* Run one cell's writes strictly in order.
+   *
+   * Two writes for one submission must never be in flight together, because
+   * each one decides WHAT to write from the submission's current status. The
+   * L toggle is the sharp case: press L twice quickly and the second press has
+   * to see the state the first one produced, or it computes the same operation
+   * again - the same form, the same duplicate key - and is suppressed as a
+   * repeat, leaving the submission toggled once instead of back where it
+   * started. Queueing behind the first write means the second one reads the
+   * status Canvas actually returned and correctly does the inverse.
+   *
+   * The chain is dropped once it drains so this map cannot grow with every
+   * cell ever written to in a long session. */
+  P.serialize = function (assignmentId, userId, task) {
+    var self = this;
+    var key = String(assignmentId) + ':' + String(userId);
+    var prior = this.chains.get(key) || Promise.resolve();
+    var next = prior.then(task, task);
+    this.chains.set(key, next.then(function () { }, function () { }));
+    var mine = this.chains.get(key);
+    mine.then(function () { if (self.chains.get(key) === mine) self.chains.delete(key); });
+    return next;
   };
 
   P.writeOne = function (target, result, opts) {
@@ -109,15 +139,24 @@
     return this.api.updateSubmission(this.model.courseId, assignmentId, userId, op.form)
       .then(function (submission) {
         var rec = self.model.applySubmission(submission);
-        if (op.kind === CGP.gradeOps.KIND.MISSING) self.confirmMissing(assignmentId, userId, rec);
-        if (rec && !opts.noOptimistic) {
-          var display = rec.excused ? 'EX' : (rec.grade === null || rec.grade === undefined ? null : String(rec.grade));
-          self.model.patchCell(assignmentId, userId, { pending: false, override: display });
-        } else if (!opts.noOptimistic) {
-          self.model.patchCell(assignmentId, userId, { pending: false });
-        }
-        self.model.queueTotalRefresh(userId);
-        result.ok++;
+        // Awaited, not fired and forgotten: the write is not finished until
+        // the status it promised is actually on the record. Letting it run
+        // loose also let it escape the request pool and the in-flight guard,
+        // so during a bulk M it could race a later edit to the same cell.
+        var verified = op.kind === CGP.gradeOps.KIND.MISSING
+          ? self.confirmMissing(assignmentId, userId, rec)
+          : Promise.resolve(rec);
+        return verified.then(function (finalRec) {
+          var shown = finalRec || rec;
+          if (shown && !opts.noOptimistic) {
+            var display = shown.excused ? 'EX' : (shown.grade === null || shown.grade === undefined ? null : String(shown.grade));
+            self.model.patchCell(assignmentId, userId, { pending: false, override: display });
+          } else if (!opts.noOptimistic) {
+            self.model.patchCell(assignmentId, userId, { pending: false });
+          }
+          self.model.queueTotalRefresh(userId);
+          result.ok++;
+        });
       }, function (err) {
         self.model.restoreCell(assignmentId, userId, snapshot);
         result.failed++;

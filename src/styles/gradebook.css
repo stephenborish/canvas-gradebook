@@ -1008,9 +1008,12 @@ html.cgp-on .cgp-pop__save[disabled] { opacity: 0.6; cursor: default; transform:
 
 /* ------------------------------------------------------- comment hover preview */
 
-/* A quiet, read-only glance at the latest comment - distinct from the click
- * popover above it (smaller, no border-radius-matching input, no buttons) so
- * the two are never mistaken for each other. */
+/* A quick glance at the latest comment - distinct from the click popover above
+ * it (smaller, no input, no buttons) so the two are never mistaken for each
+ * other. Unlike a tooltip it is a TARGET: the pointer can travel into it and
+ * click it to open Canvas's side pane for that submission
+ * (comment-popover.js), which is why it takes pointer events rather than
+ * letting them fall through to the grid. */
 html.cgp-on .cgp-preview {
   position: fixed;
   z-index: 99999;
@@ -1026,13 +1029,10 @@ html.cgp-on .cgp-preview {
   font-family: inherit;
   font-size: 12px;
   line-height: 1.4;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
 }
 html.cgp-on .cgp-preview--on { display: block; }
-/* The preview is a target, not a tooltip: the pointer can travel into it and
- * click it to open Canvas's side pane for that submission (comment-popover.js),
- * so it has to accept the pointer and say so. */
-html.cgp-on .cgp-preview { cursor: pointer; }
 html.cgp-on .cgp-preview:hover { background: var(--cgp-ink); }
 html.cgp-on .cgp-preview:hover .cgp-preview__hint { color: rgba(255, 255, 255, 0.9); }
 html.cgp-on .cgp-preview__meta { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
