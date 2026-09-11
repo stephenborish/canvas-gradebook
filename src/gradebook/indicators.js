@@ -77,6 +77,33 @@
     return host;
   };
 
+  /* Is what we last painted into this cell still actually there?
+   *
+   * The paint signature alone is not enough. Canvas owns the inside of every
+   * cell, and it rewrites that HTML wholesale in two very ordinary situations:
+   * opening its grade editor (SlickGrid empties the active cell node before
+   * mounting the editor) and closing it again (the cell is re-rendered from
+   * Canvas's own formatter). Both wipe out the .cgp-marks host - and therefore
+   * the comment bubble - while leaving the cell ELEMENT, and so its recorded
+   * signature, untouched. The next paint pass would then see "signature
+   * unchanged" and skip the cell, so a bubble destroyed by clicking into the
+   * cell stayed gone until something unrelated happened to change that cell's
+   * data. That is exactly the reported "click a cell with a comment icon, move
+   * away, the icon is gone forever" behaviour.
+   *
+   * Canvas rewrites the cell's contents but never its class list, so the
+   * classes we set alongside the markup are a reliable record of what SHOULD
+   * be inside. Where they disagree with what is, the cell is repainted. */
+  P.marksIntact = function (cell) {
+    if (cell.classList.contains('cgp-has-comment') &&
+      !cell.querySelector(':scope > .cgp-marks > .cgp-cmt')) return false;
+    if (cell.classList.contains('cgp-has-resub') &&
+      !cell.querySelector(':scope > .cgp-marks > .cgp-resub')) return false;
+    if (cell.classList.contains('cgp-override') &&
+      !cell.querySelector(':scope > .cgp-val')) return false;
+    return true;
+  };
+
   P.paintCell = function (info) {
     var s = this.settings.values;
     var cell = info.el;
@@ -98,7 +125,7 @@
 
     var rec = this.model.cell(info.assignmentId, info.studentId);
     var sig = this.signatureFor(info, rec);
-    if (!this.registry.needsPaint(cell, sig)) return;
+    if (!this.registry.needsPaint(cell, sig) && this.marksIntact(cell)) return;
     this.registry.markPainted(cell, sig);
 
     var host = this.marksHost(cell);
@@ -116,12 +143,14 @@
       }
     }
 
-    if (s.resubmissionIndicator && rec && rec.gradedAt && rec.gradeMatchesCurrent === false) {
+    var showResub = !!(s.resubmissionIndicator && rec && rec.gradedAt && rec.gradeMatchesCurrent === false);
+    if (showResub) {
       parts.push('<span class="cgp-resub" title="Resubmitted after grading"></span>');
     }
 
     host.innerHTML = parts.join('');
     cell.classList.toggle('cgp-has-comment', !!showComment);
+    cell.classList.toggle('cgp-has-resub', !!showResub);
     cell.classList.toggle('cgp-pending-write', !!(rec && rec.pending));
 
     // Value overlay: only used when we wrote through the API and Canvas's own

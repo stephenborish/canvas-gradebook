@@ -39,6 +39,10 @@
         <label for="centerAssignmentColumns">Center assignment titles, points and grades</label>
       </div>
       <div class="row row--check">
+        <input id="rowHoverHighlight" type="checkbox">
+        <label for="rowHoverHighlight">Highlight the whole row under the pointer, across the frozen columns too</label>
+      </div>
+      <div class="row row--check">
         <input id="frozenTotal" type="checkbox">
         <label for="frozenTotal">Keep Total frozen beside the student name</label>
       </div>
@@ -103,6 +107,12 @@
       <div class="row row--check">
         <input id="bulkPaste" type="checkbox">
         <label for="bulkPaste">Paste a block of grades from Excel or Google Sheets</label>
+      </div>
+      <div class="row row--check">
+        <input id="doubleClickOpensTray" type="checkbox">
+        <label for="doubleClickOpensTray">Double-clicking a grade cell opens it, the same as Canvas's own arrow button
+          <span class="hint">Whatever that arrow opens on your Canvas &ndash; the Grade Detail Tray, or SpeedGrader &ndash; is what a double-click opens.</span>
+        </label>
       </div>
       <div class="row">
         <label class="row__label" for="bulkConfirmThreshold">Confirm bulk operations above</label>

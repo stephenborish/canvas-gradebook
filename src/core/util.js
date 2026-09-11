@@ -31,6 +31,8 @@
     spreadsheetNavigation: true,
     bulkPaste: true,
     multiCellSelection: true,
+    doubleClickOpensTray: true,
+    rowHoverHighlight: true,
     bulkConfirmThreshold: 25,
     // extras
     courseSwitcher: true,

@@ -84,6 +84,7 @@
     var selection = new CGP.SelectionController({
       adapter: adapter, model: model, settings: settings, requestPaint: requestPaint
     });
+    var cellActions = new CGP.CellActionsController({ adapter: adapter, settings: settings });
     var frozen = new CGP.FrozenTotalController({ adapter: adapter, model: model, settings: settings });
     var keyboard = new CGP.KeyboardGradingController({
       adapter: adapter, model: model, writer: writer, selection: selection,
@@ -136,6 +137,7 @@
       }
       indicators.start();
       selection.start();
+      cellActions.start();
       keyboard.start();
       paste.start();
       frozen.start();

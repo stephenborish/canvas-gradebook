@@ -22,7 +22,31 @@ html.cgp-on {
   --cgp-total-w: 84px;
   --cgp-frozen-natural: 190px;
   --cgp-frozen-w: 274px;
+
+  /* Grid surface. Every one of these is a *tint* laid over whatever Canvas
+   * already painted (see the background-image note below), never a flat
+   * colour, so Canvas's own late / missing / excused / dropped cell colours
+   * survive underneath all of them. */
+  --cgp-hairline: #e6e9ec;
+  --cgp-hairline-strong: #d3d8dc;
+  --cgp-row-hover: rgba(3, 116, 181, 0.07);
+  --cgp-row-sel: rgba(3, 116, 181, 0.13);
+  --cgp-header-top: #fdfefe;
+  --cgp-header-bottom: #eaeef1;
+  --cgp-focus-ring: 0 0 0 3px rgba(3, 116, 181, 0.22);
 }
+
+/* Tinting rule used throughout this file.
+ *
+ * Canvas colours its own cells with `background-color` - the pale blue behind
+ * a Late grade, the pink behind a Missing one, the yellow behind Excused, the
+ * grey behind a dropped score. Those colours carry real meaning, so nothing
+ * in this stylesheet may overwrite them. A `background-image` of a flat
+ * gradient paints as a separate layer ON TOP of the background-color, so row
+ * striping, hover and selection can all read clearly while the status colour
+ * still shows through. That is why highlight rules below use
+ * `background-image: linear-gradient(<tint>, <tint>)` and not
+ * `background: <tint>`. */
 
 /* --cgp-student-w and --cgp-assignment-w are published on <html> for reference
  * and for custom CSS. The extension does not set column widths through CSS:
@@ -35,11 +59,14 @@ html.cgp-on {
  * styled from it by default; it is a hook for anyone who wants a stronger
  * treatment than the bubble (e.g. a tinted background) in their own CSS. */
 
+/* Sits above Canvas's own cell content - including its open grade editor - so
+ * a comment bubble stays both visible and clickable while a cell is being
+ * typed into, rather than vanishing the moment the teacher clicks the cell. */
 html.cgp-on .slick-cell .cgp-marks {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 3;
+  z-index: 6;
 }
 
 /* Bottom-LEFT corner, deliberately: Canvas's own grade cell reserves BOTH top
@@ -56,10 +83,10 @@ html.cgp-on .slick-cell .cgp-marks {
  * two markers this extension adds never collide with each other either). */
 html.cgp-on .cgp-cmt {
   position: absolute;
-  bottom: 2px;
-  left: 2px;
-  width: 12px;
-  height: 12px;
+  bottom: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -69,32 +96,60 @@ html.cgp-on .cgp-cmt {
   pointer-events: auto;
   cursor: pointer;
   line-height: 0;
-  box-shadow: 0 1px 2px rgba(19, 33, 44, 0.35);
-  transition: transform 100ms ease, box-shadow 100ms ease;
+  /* The white ring is what makes the bubble legible on Canvas's own coloured
+   * status cells (pink Missing, blue Late, yellow Excused) instead of nearly
+   * dissolving into them, which is why it is not just a drop shadow. */
+  box-shadow: 0 0 0 1.5px #fff, 0 1px 3px rgba(19, 33, 44, 0.4);
+  transition: transform 110ms ease, box-shadow 110ms ease, background 110ms ease;
 }
-html.cgp-on .cgp-cmt svg { width: 7px; height: 7px; fill: currentColor; display: block; }
+/* A generous, invisible hit area around the bubble. The painted dot stays
+ * small enough to leave the grade itself alone, but hovering or clicking it
+ * no longer demands pixel accuracy - which was the whole complaint. It is
+ * fully transparent, and events on a pseudo-element are reported against the
+ * element that owns it, so the existing .cgp-cmt hover/click delegation sees
+ * the bubble either way. */
+html.cgp-on .cgp-cmt::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+}
+/* While a cell is actually being typed into, pull the hit area back to the
+ * painted dot so it cannot swallow a click meant to place the caret. */
+html.cgp-on .slick-cell:has(input:not([type="hidden"])) .cgp-cmt::after { inset: 0; }
+html.cgp-on .cgp-cmt svg { width: 9px; height: 9px; fill: currentColor; display: block; }
 html.cgp-on .cgp-cmt:hover {
-  transform: scale(1.14);
-  box-shadow: 0 2px 5px rgba(19, 33, 44, 0.45);
+  transform: scale(1.18);
+  background: var(--cgp-brand-dark);
+  box-shadow: 0 0 0 1.5px #fff, 0 3px 7px rgba(19, 33, 44, 0.45);
+}
+html.cgp-on .cgp-cmt:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1.5px #fff, var(--cgp-focus-ring);
 }
 
 /* A student replied after the instructor's last comment: hollow, purple ring. */
 html.cgp-on .cgp-cmt--reply {
   background: #fff;
   color: var(--cgp-resub);
-  box-shadow: inset 0 0 0 1.6px var(--cgp-resub), 0 1px 2px rgba(19, 33, 44, 0.25);
+  box-shadow: inset 0 0 0 2px var(--cgp-resub), 0 0 0 1.5px #fff, 0 1px 3px rgba(19, 33, 44, 0.3);
+}
+html.cgp-on .cgp-cmt--reply:hover {
+  background: #fff;
+  box-shadow: inset 0 0 0 2px var(--cgp-resub), 0 0 0 1.5px #fff, 0 3px 7px rgba(19, 33, 44, 0.4);
 }
 html.cgp-on .cgp-cmt--reply svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
 
 html.cgp-on .cgp-cmt-count {
   position: absolute;
-  bottom: 1px;
-  left: 15px;
-  font-size: 9px;
-  line-height: 12px;
+  bottom: 3px;
+  left: 20px;
+  font-size: 9.5px;
+  line-height: 16px;
   color: var(--cgp-comment);
   font-weight: 700;
   pointer-events: none;
+  text-shadow: 0 0 2px #fff, 0 0 2px #fff;
 }
 
 /* Resubmitted after grading: a small corner wedge in the bottom-right, clear
@@ -106,8 +161,8 @@ html.cgp-on .cgp-resub {
   right: 0;
   width: 0;
   height: 0;
-  border-bottom: 7px solid var(--cgp-resub);
-  border-left: 7px solid transparent;
+  border-bottom: 8px solid var(--cgp-resub);
+  border-left: 8px solid transparent;
   pointer-events: auto;
 }
 
@@ -138,8 +193,11 @@ html.cgp-on .slick-cell.cgp-pending-write .cgp-val { opacity: 0.55; }
 
 html.cgp-on .slick-cell.cgp-sel {
   box-shadow: inset 0 0 0 2px var(--cgp-sel);
-  background-color: rgba(3, 116, 181, 0.08);
-  transition: background-color 80ms ease;
+  /* A tint layer, not a background-color - see the tinting note at the top.
+   * Selecting a Missing cell must not erase the fact that it is Missing. */
+  background-image: linear-gradient(var(--cgp-row-sel), var(--cgp-row-sel));
+  border-radius: 3px;
+  z-index: 4;
 }
 html.cgp-on .slick-cell.cgp-has-pending::after {
   content: attr(data-cgp-pending);
@@ -240,9 +298,8 @@ html.cgp-frozen-total .cgp-total-header {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-left: 1px solid var(--cgp-line);
-  border-bottom: 1px solid var(--cgp-line);
-  background: var(--cgp-brand-wash);
+  border-left: 1px solid var(--cgp-hairline-strong);
+  background: linear-gradient(180deg, var(--cgp-header-top), var(--cgp-header-bottom));
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.2px;
@@ -266,14 +323,20 @@ html.cgp-frozen-total .cgp-total-cell {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-left: 1px solid var(--cgp-line);
-  border-bottom: 1px solid #e8eaec;
+  border-left: 1px solid var(--cgp-hairline-strong);
+  border-bottom: 1px solid var(--cgp-hairline);
   background: #fff;
   font-size: 13px;
-  color: var(--cgp-ink);
+  font-weight: 700;
+  color: var(--cgp-ink-strong);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
   pointer-events: auto;
 }
-html.cgp-frozen-total .cgp-total-cell--empty { color: var(--cgp-muted); }
+html.cgp-frozen-total .cgp-total-cell--empty { color: var(--cgp-muted); font-weight: 500; }
+html.cgp-frozen-total .cgp-total-cell.cgp-row-hover {
+  background-image: linear-gradient(var(--cgp-row-hover), var(--cgp-row-hover));
+}
 
 /* ------------------------------------------------------- compact layout */
 
@@ -435,18 +498,103 @@ html.cgp-on .cgp-header-due {
 }
 html.cgp-on .cgp-header-due[hidden] { display: none !important; }
 
-html.cgp-center .slick-cell[data-cgp-col="assignment"] { text-align: center !important; }
+/* ==================================================== grid surface ======== */
+
+/* Everything from here to the comment popover is about how the grid READS:
+ * where a value sits inside its cell, how the header separates from the body,
+ * what the row under the pointer looks like, and what an open editor looks
+ * like. Canvas's own SlickGrid leaves a grade sitting on the cell's text
+ * baseline near the top-left, which is what made a screenful of numbers look
+ * like loose debris rather than a table. */
+
+/* ------------------------------------------------------- cell centering */
+
+/* Vertical centering is unconditional: a value floating off the top edge of
+ * its own cell is not a preference, it is a bug. Horizontal centering stays
+ * tied to the existing "Center assignment titles, points and grades" setting
+ * (html.cgp-center), which is on by default.
+ *
+ * Making the cell itself the flex container is what does the vertical work.
+ * The markers this extension paints (.cgp-marks, .cgp-val) are absolutely
+ * positioned, so they are out of flow and unaffected by it.
+ *
+ * The direction is COLUMN, deliberately. A row flex container would lay any
+ * cell Canvas builds out of more than one element - a student cell that
+ * stacks a name over a section, say - side by side instead of stacked, which
+ * is a layout change, not a centering one. In a column container the children
+ * keep stacking exactly as they did, and justify-content simply centers the
+ * stack as a group inside the cell's height. For the same reason the children
+ * are NOT allowed to grow: a stretched child would fill the height and put
+ * its text right back at the top. The one child that does still fill the
+ * cell is Canvas's own .Grid__GradeCell (it carries height:100% from the
+ * editor-layout rules above), and that one centers its own contents. */
+html.cgp-on .slick-cell[data-cgp-col="assignment"],
+html.cgp-on .slick-cell[data-cgp-col="total"],
+html.cgp-on .slick-cell[data-cgp-col="group"],
+html.cgp-on .slick-cell[data-cgp-col="student"] {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  line-height: 1.25 !important;
+}
+html.cgp-on .slick-cell[data-cgp-col="assignment"] > *:not(.cgp-marks):not(.cgp-val),
+html.cgp-on .slick-cell[data-cgp-col="total"] > *:not(.cgp-marks):not(.cgp-val),
+html.cgp-on .slick-cell[data-cgp-col="group"] > *:not(.cgp-marks):not(.cgp-val),
+html.cgp-on .slick-cell[data-cgp-col="student"] > *:not(.cgp-marks):not(.cgp-val) {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Horizontal centering rides on text-align rather than align-items, because
+ * the children above are full width; align-items would have nothing to move. */
+html.cgp-center .slick-cell[data-cgp-col="assignment"],
+html.cgp-center .slick-cell[data-cgp-col="total"],
+html.cgp-center .slick-cell[data-cgp-col="group"] {
+  text-align: center !important;
+}
 html.cgp-center .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell,
-html.cgp-center .slick-cell[data-cgp-col="assignment"] .gradebook-cell {
+html.cgp-center .slick-cell[data-cgp-col="assignment"] .gradebook-cell,
+html.cgp-center .slick-cell[data-cgp-col="total"] .gradebook-cell {
   justify-content: center !important;
   text-align: center !important;
 }
-html.cgp-center .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content { justify-content: center !important; }
+html.cgp-center .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Grades themselves: tabular figures so a column of numbers lines up digit
+ * for digit instead of drifting, and a weight that separates a real score
+ * from Canvas's em-dash placeholder. */
+html.cgp-on .slick-cell[data-cgp-col="assignment"],
+html.cgp-on .slick-cell[data-cgp-col="total"] {
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: var(--cgp-ink-strong) !important;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+html.cgp-on .slick-cell[data-cgp-col="total"] {
+  font-weight: 700 !important;
+  color: var(--cgp-ink-strong) !important;
+}
+
+/* ------------------------------------------------------- student column */
+
 /* Student names stay left aligned, and read as the anchor of the row: larger
  * and higher-contrast than a plain grade, so a name is never the hardest
- * thing on the screen to read at a glance. */
+ * thing on the screen to read at a glance. The name is still a link to that
+ * student's grades page - only the underline is gone, because two dozen
+ * underlined names stacked down the frozen column is the single noisiest
+ * thing on the screen. Hover keeps the affordance with colour instead. */
 html.cgp-on .slick-cell[data-cgp-col="student"],
-html.cgp-on .slick-header-column[data-cgp-col="student"] .slick-column-name { text-align: left !important; }
+html.cgp-on .slick-header-column[data-cgp-col="student"] .slick-column-name {
+  text-align: left !important;
+}
 html.cgp-on .slick-cell[data-cgp-col="student"] {
   font-size: 14px !important;
   font-weight: 600 !important;
@@ -454,11 +602,144 @@ html.cgp-on .slick-cell[data-cgp-col="student"] {
   letter-spacing: 0.1px;
 }
 html.cgp-on .slick-cell[data-cgp-col="student"] a,
+html.cgp-on .slick-cell[data-cgp-col="student"] a:link,
+html.cgp-on .slick-cell[data-cgp-col="student"] a:visited,
+html.cgp-on .slick-cell[data-cgp-col="student"] a:hover,
+html.cgp-on .slick-cell[data-cgp-col="student"] a:focus,
+html.cgp-on .slick-cell[data-cgp-col="student"] a:active {
+  text-decoration: none !important;
+  border-bottom: 0 !important;
+}
+html.cgp-on .slick-cell[data-cgp-col="student"] a,
 html.cgp-on .slick-cell[data-cgp-col="student"] a:visited {
   color: var(--cgp-ink-strong) !important;
   font-weight: 600 !important;
+  cursor: pointer;
+  transition: color 90ms ease;
 }
-html.cgp-on .slick-cell[data-cgp-col="student"] a:hover { color: var(--cgp-brand-dark) !important; }
+html.cgp-on .slick-cell[data-cgp-col="student"] a:hover { color: var(--cgp-brand) !important; }
+/* Keyboard users still get a visible target, since the underline is gone. */
+html.cgp-on .slick-cell[data-cgp-col="student"] a:focus-visible {
+  outline: 2px solid var(--cgp-brand);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* ------------------------------------------------------- rows and rules */
+
+html.cgp-on .slick-cell {
+  border-right: 1px solid var(--cgp-hairline) !important;
+  border-bottom: 1px solid var(--cgp-hairline) !important;
+}
+/* The seam between the frozen pane and the scrolling one is a real boundary
+ * and should look like one, not like another column rule. */
+html.cgp-on .slick-pane-left .slick-row > .slick-cell:last-child,
+html.cgp-on .slick-header-left .slick-header-column:last-child {
+  border-right: 1px solid var(--cgp-hairline-strong) !important;
+}
+
+/* Row under the pointer, lit across BOTH panes. The class is put on every
+ * row element sharing a style.top by cell-actions.js, because SlickGrid
+ * splits one record into one element per frozen pane and a plain :hover
+ * would light only the half the cursor happens to be over. Tint layer, so
+ * Canvas's own status colours stay readable underneath (see top of file). */
+html.cgp-on .slick-row.cgp-row-hover > .slick-cell {
+  background-image: linear-gradient(var(--cgp-row-hover), var(--cgp-row-hover));
+}
+html.cgp-on .slick-row.cgp-row-hover > .slick-cell[data-cgp-col="student"] {
+  box-shadow: inset 3px 0 0 var(--cgp-brand);
+}
+
+/* ------------------------------------------------------- the active cell */
+
+html.cgp-on .slick-cell.active {
+  box-shadow: inset 0 0 0 2px var(--cgp-brand), 0 2px 8px rgba(19, 33, 44, 0.14) !important;
+  border-radius: 4px;
+  z-index: 5 !important;
+}
+
+/* ------------------------------------------------------- the grade editor */
+
+/* Canvas's editor is a bare, browser-default text box wedged against the
+ * cell's edges next to its arrow button, which is why a selected cell looked
+ * broken rather than focused. Give it the cell's own geometry: inset from
+ * the borders, centered like the value it is replacing, and carrying the
+ * focus ring instead of the browser's default outline. */
+html.cgp-on .slick-cell input[type="text"],
+html.cgp-on .slick-cell input[type="number"],
+html.cgp-on .slick-cell input:not([type]),
+html.cgp-on .slick-cell textarea {
+  box-sizing: border-box !important;
+  height: 24px !important;
+  min-height: 24px !important;
+  margin: 0 !important;
+  padding: 0 6px !important;
+  font: inherit !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 22px !important;
+  color: var(--cgp-ink-strong) !important;
+  background: #fff !important;
+  border: 1px solid var(--cgp-brand) !important;
+  border-radius: 4px !important;
+  box-shadow: none !important;
+  outline: none !important;
+  font-variant-numeric: tabular-nums;
+}
+html.cgp-center .slick-cell[data-cgp-col="assignment"] input,
+html.cgp-center .slick-cell[data-cgp-col="assignment"] textarea {
+  text-align: center !important;
+}
+html.cgp-on .slick-cell input:focus,
+html.cgp-on .slick-cell textarea:focus {
+  border-color: var(--cgp-brand) !important;
+  box-shadow: var(--cgp-focus-ring) !important;
+}
+/* The "/5" out-of label Canvas prints beside the input while editing. */
+html.cgp-on .slick-cell .Grid__GradeCell__Content {
+  gap: 4px;
+  color: var(--cgp-muted);
+  font-size: 11px;
+}
+/* Canvas's trailing arrow button: a proper, reachable target rather than a
+ * glyph pressed against the cell border. Double-clicking anywhere in the
+ * cell now presses this same button (cell-actions.js). */
+html.cgp-on .slick-cell .Grid__GradeCell__EndContainer button,
+html.cgp-on .slick-cell .Grid__GradeCell__Options button {
+  border-radius: 4px;
+  transition: background 90ms ease, color 90ms ease;
+}
+html.cgp-on .slick-cell .Grid__GradeCell__EndContainer button:hover,
+html.cgp-on .slick-cell .Grid__GradeCell__Options button:hover {
+  background: var(--cgp-brand-wash);
+  color: var(--cgp-brand-dark);
+}
+
+/* ------------------------------------------------------- header surface */
+
+html.cgp-on .slick-header-columns {
+  background: linear-gradient(180deg, var(--cgp-header-top), var(--cgp-header-bottom)) !important;
+}
+html.cgp-on .slick-header {
+  border-bottom: 2px solid var(--cgp-brand) !important;
+  box-shadow: 0 1px 4px rgba(19, 33, 44, 0.07);
+}
+html.cgp-on .slick-header-column {
+  background: transparent !important;
+  border-right: 1px solid var(--cgp-hairline-strong) !important;
+  border-bottom: 0 !important;
+  transition: background 90ms ease;
+}
+html.cgp-on .slick-header-column:hover {
+  background: rgba(3, 116, 181, 0.06) !important;
+}
+html.cgp-on .slick-header-column[data-cgp-col="student"] .slick-column-name,
+html.cgp-on .slick-header-column[data-cgp-col="total"] .slick-column-name {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--cgp-ink-strong);
+}
 
 /* ------------------------------------------------------- comment popover */
 

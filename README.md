@@ -97,10 +97,30 @@ The Total percentage is drawn beside the student name in Canvas's own frozen pan
 visible no matter how far right you scroll. The values come from Canvas's enrollment scores —
 weighting, drop rules and grading schemes are Canvas's own arithmetic, never recomputed here.
 
+### Open a submission by double-clicking its cell
+
+Canvas puts a small arrow button inside a grade cell while you are editing it; that arrow opens
+the Grade Detail Tray (or SpeedGrader, depending on your Canvas). Double-clicking anywhere in
+the cell now presses that same button, so you get a whole-cell target instead of a ~14px one.
+Canvas's own control is clicked - nothing about what it opens is reimplemented or guessed here.
+
 ### Compact, readable layout
 
 Assignment columns are narrowed to ~110px with two-line wrapped, centered titles and centered
-points; grades are centered; student names stay left-aligned. Canvas's utility strip (student
+points. Every grade sits in the middle of its cell both horizontally and vertically, in tabular
+figures so a column of numbers lines up digit for digit; student names stay left-aligned and
+vertically centered, and are no longer underlined (they are still links to that student's
+grades page - hover turns them Canvas blue). The row under the pointer lights up across the
+frozen pane and the scrolling pane together, including the frozen Total column. The header gets
+a gradient and a brand-coloured rule so it reads as a header, and Canvas's bare grade input
+becomes a properly inset, centered, focus-ringed box instead of a browser-default text field
+jammed against the cell borders.
+
+Every one of those highlights is painted as a tint *over* Canvas's own cell colour, so the
+pale blue behind a Late grade, the pink behind a Missing one and the yellow behind an Excused
+one all still show through.
+
+Canvas's utility strip (student
 and assignment search, filters, Apply Filters, Sync, Import, Export, View Options) is collapsed
 along with the empty wrappers it leaves behind, and the grid takes the full height of the window.
 
@@ -190,6 +210,7 @@ src/gradebook/
   indicators.js                   bubbles, counts, status dots, value overrides
   writer.js                       optimistic writes with rollback, dedupe, error reporting
   selection.js                    multi-cell selection
+  cell-actions.js                 double-click -> Canvas's own tray arrow; two-pane row hover
   keyboard.js                     M / E / L, navigation, editor reconciliation
   bulk-paste.js                   validate-then-write clipboard application
   frozen-total.js                 the synchronized Total column in the frozen pane
@@ -288,6 +309,20 @@ Two things that no longer happen, as of this fix:
 - Chrome / Edge (Chromium 116+). Not tested in Firefox, which needs a different manifest.
 
 ## Version
+
+1.2.0 - a visual pass over the grid plus the cell behaviours reported against 1.1.1. Grades and
+student names are now centered vertically (and grades horizontally) inside their cells instead
+of sitting on the cell's text baseline near the top-left; student names lost their underline but
+kept their link; the comment bubble is bigger, carries a white ring so it stays legible on
+Canvas's coloured status cells, and has a generous invisible hit area so hovering it no longer
+demands pixel accuracy; a comment bubble destroyed by Canvas rewriting the cell (which is what
+opening and closing its grade editor does) is now repainted instead of staying gone until the
+page reloads - the paint signature alone could not see that the markup had been wiped, so
+painted state is verified against the DOM; double-clicking a grade cell presses Canvas's own
+tray arrow; Canvas's in-cell grade input is styled as a real, inset, centered, focus-ringed
+field; and the header, column rules, active cell, selection and Total column were reworked,
+with every highlight painted as a tint over Canvas's own status colours rather than replacing
+them.
 
 1.1.1 - fixes real-Canvas rendering bugs reported against 1.1.0: the assignment header's
 title/points/due-date text overlapping itself (the CSS that kept a native header wrapper
