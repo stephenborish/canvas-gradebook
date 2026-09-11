@@ -57,7 +57,7 @@ suite('grades waiting to be posted', (test) => {
   const ops = () => CGP.postOps;
   const rec = (over) => Object.assign({
     userId: '1', postedAtKnown: true, postedAt: null,
-    score: 9, grade: '9', gradedAt: '2026-02-02T00:00:00Z'
+    score: 9, grade: '9', gradedAt: '2026-02-02T00:00:00Z', workflowState: 'graded'
   }, over || {});
 
   test('a graded, unposted submission is waiting', () => {
@@ -78,6 +78,15 @@ suite('grades waiting to be posted', (test) => {
 
   test('a zero is a grade', () => {
     a.eq(ops().needsPost(rec({ score: 0, grade: '0' })), true);
+  });
+
+  test('a quiz question still pending review is not - Canvas will not post it either', () => {
+    // The gradebook can show a partial auto-graded score while a submission
+    // still needs a manual look (a quiz's essay question, most commonly).
+    // Canvas's own postAssignmentGrades(gradedOnly: true) only posts
+    // workflow_state "graded", so counting this one would inflate the
+    // button's number and then post nothing for it.
+    a.eq(ops().needsPost(rec({ workflowState: 'pending_review' })), false);
   });
 
   test('a Canvas build that never told us stays silent rather than guessing', () => {
