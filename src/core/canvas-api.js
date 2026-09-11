@@ -231,6 +231,19 @@
     return this.updateSubmission(courseId, assignmentId, userId, { 'comment[text_comment]': text });
   };
 
+  /* The student roster for one course, names only.
+   *
+   * Used by the cross-course student search. Deliberately NOT cached to disk:
+   * this is a list of real students' names, and the only things this extension
+   * ever persists are settings, SpeedGrader drafts and the diagnostics
+   * snapshot. Rosters live in memory for the life of the page and no longer. */
+  CanvasApi.prototype.courseStudents = function (courseId) {
+    return this.getAll('/api/v1/courses/' + courseId + '/users', {
+      'enrollment_type[]': ['student'],
+      'enrollment_state[]': ['active', 'invited']
+    }, { maxPages: 6 });
+  };
+
   CanvasApi.prototype.teachingCourses = function () {
     return this.getAll('/api/v1/courses', {
       enrollment_state: 'active',

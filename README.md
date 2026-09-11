@@ -97,10 +97,66 @@ The Total percentage is drawn beside the student name in Canvas's own frozen pan
 visible no matter how far right you scroll. The values come from Canvas's enrollment scores —
 weighting, drop rules and grading schemes are Canvas's own arithmetic, never recomputed here.
 
+### Submission indicator, one click from SpeedGrader
+
+Every grade cell for an assignment Canvas accepts online shows a small badge in its top-right
+corner: **solid green** means the student has handed something in, **hollow grey** means they
+have not. The glyph tells you what kind of thing the assignment wants — a file, a text entry, a
+URL, a media recording, a discussion post, a quiz — so a column reads in one pass. Hovering
+gives you the submission time and the attempt number.
+
+Clicking the badge opens **that student's submission in SpeedGrader**, in a new tab, so you keep
+your place in the grid. It is a real link, so cmd-click, middle-click and "copy link address"
+all behave the way you'd expect.
+
+Assignments marked *on paper* or *no submission* get no badge at all: there is no such thing as
+a missing online submission for those, and a grid full of hollow badges on them would be noise
+that is also wrong. A cell whose column has not finished loading shows no badge either, rather
+than claiming "nothing submitted" when the truth simply hasn't arrived.
+
+### Open a submission by double-clicking its cell
+
+Canvas puts a small arrow button inside a grade cell while you are editing it; that arrow opens
+the Grade Detail Tray (or SpeedGrader, depending on your Canvas). **That arrow is now hidden**,
+and double-clicking anywhere in the cell presses it instead — a whole-cell target rather than a
+~14px one, and the cell gets its width back. Canvas's own control is clicked, so nothing about
+what it opens is reimplemented or guessed. The button is only hidden, never removed, and only
+while double-click is switched on, so the action can never become unreachable; if Canvas ever
+ships markup where the button can't be found, double-click falls back to opening SpeedGrader for
+that exact submission rather than doing nothing.
+
+### Find a student across every course you teach
+
+Next to the course switcher in the Canvas breadcrumb: **Find student**. Type a name, pick the
+student — the list shows which course each match is in — and Canvas opens that course's
+gradebook with their row scrolled to and briefly highlighted. If the student is in the gradebook
+you're already looking at, it just scrolls there without reloading anything.
+
+Matching is by word, in any order, so "tommy newnam", "newnam tommy" and "new tom" all find the
+same student.
+
+Rosters are read from Canvas the first time you open the search — never on page load, so a
+teacher who doesn't use it never pays for it — a handful of courses at a time, and are held **in
+memory for that page only**. They are lists of real students' names, and this extension does not
+write those to the device; open the search in a new tab and it reads them again.
+
 ### Compact, readable layout
 
 Assignment columns are narrowed to ~110px with two-line wrapped, centered titles and centered
-points; grades are centered; student names stay left-aligned. Canvas's utility strip (student
+points. Every grade sits in the middle of its cell both horizontally and vertically, in tabular
+figures so a column of numbers lines up digit for digit; student names stay left-aligned and
+vertically centered, and are no longer underlined (they are still links to that student's
+grades page - hover turns them Canvas blue). The row under the pointer lights up across the
+frozen pane and the scrolling pane together, including the frozen Total column. The header gets
+a gradient and a brand-coloured rule so it reads as a header, and Canvas's bare grade input
+becomes a properly inset, centered, focus-ringed box instead of a browser-default text field
+jammed against the cell borders.
+
+Every one of those highlights is painted as a tint *over* Canvas's own cell colour, so the
+pale blue behind a Late grade, the pink behind a Missing one and the yellow behind an Excused
+one all still show through.
+
+Canvas's utility strip (student
 and assignment search, filters, Apply Filters, Sync, Import, Export, View Options) is collapsed
 along with the empty wrappers it leaves behind, and the grid takes the full height of the window.
 
@@ -162,6 +218,9 @@ Student names, grades and comment text are never written to the log — only cou
   your Canvas domain.
 - Settings sync through your Chrome profile (`chrome.storage.sync`); SpeedGrader drafts and the
   diagnostics snapshot stay on the device (`chrome.storage.local`).
+- Student data is never persisted. The cross-course student search holds its rosters in memory
+  for the life of the page and no longer; the only thing cached on disk from Canvas is your own
+  list of course names and terms, for 30 minutes.
 
 ---
 
@@ -190,12 +249,14 @@ src/gradebook/
   indicators.js                   bubbles, counts, status dots, value overrides
   writer.js                       optimistic writes with rollback, dedupe, error reporting
   selection.js                    multi-cell selection
+  cell-actions.js                 double-click -> Canvas's own tray arrow; two-pane row hover
   keyboard.js                     M / E / L, navigation, editor reconciliation
   bulk-paste.js                   validate-then-write clipboard application
   frozen-total.js                 the synchronized Total column in the frozen pane
   layout.js                       compaction, column widths, header decoration
   comment-popover.js              in-place comment thread and reply
-  course-switcher.js              breadcrumb course dropdown
+  course-switcher.js              breadcrumb course dropdown + shared teaching-course list
+  student-search.js               cross-course student search (rosters in memory only)
   content.js                      bootstrap, single rAF paint pass, observers
 
 src/speedgrader/content.js        comment draft autosave
@@ -288,6 +349,28 @@ Two things that no longer happen, as of this fix:
 - Chrome / Edge (Chromium 116+). Not tested in Firefox, which needs a different manifest.
 
 ## Version
+
+1.3.0 - Canvas's in-cell tray arrow is hidden (its action moves entirely onto double-click, with
+a SpeedGrader fallback so the gesture can never dead-end); every online-submission cell gains a
+badge saying whether the student has actually handed something in, what kind of thing the
+assignment expects, and links straight to that student's submission in SpeedGrader; and the
+breadcrumb gains a **Find student** search across every course you teach, which jumps to the
+right gradebook and highlights the student's row on arrival. Rosters for that search are read
+lazily and held in memory only - never written to the device.
+
+1.2.0 - a visual pass over the grid plus the cell behaviours reported against 1.1.1. Grades and
+student names are now centered vertically (and grades horizontally) inside their cells instead
+of sitting on the cell's text baseline near the top-left; student names lost their underline but
+kept their link; the comment bubble is bigger, carries a white ring so it stays legible on
+Canvas's coloured status cells, and has a generous invisible hit area so hovering it no longer
+demands pixel accuracy; a comment bubble destroyed by Canvas rewriting the cell (which is what
+opening and closing its grade editor does) is now repainted instead of staying gone until the
+page reloads - the paint signature alone could not see that the markup had been wiped, so
+painted state is verified against the DOM; double-clicking a grade cell presses Canvas's own
+tray arrow; Canvas's in-cell grade input is styled as a real, inset, centered, focus-ringed
+field; and the header, column rules, active cell, selection and Total column were reworked,
+with every highlight painted as a tint over Canvas's own status colours rather than replacing
+them.
 
 1.1.1 - fixes real-Canvas rendering bugs reported against 1.1.0: the assignment header's
 title/points/due-date text overlapping itself (the CSS that kept a native header wrapper

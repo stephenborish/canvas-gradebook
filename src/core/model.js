@@ -70,7 +70,13 @@
           moderated: !!a.moderated_grading,
           omitFromFinal: !!a.omit_from_final_grade,
           dueAt: a.due_at || null,
-          hasMultipleDueDates: !!a.has_overrides || !!a.all_dates
+          hasMultipleDueDates: !!a.has_overrides || !!a.all_dates,
+          // What Canvas will accept as a submission for this assignment. Drives
+          // the in-cell submission marker: an assignment marked "on paper" or
+          // "no submission" has nothing to submit online, so marking it "not
+          // submitted" would be a lie rather than information.
+          submissionTypes: Array.isArray(a.submission_types) ? a.submission_types.slice()
+            : (a.submission_types ? [String(a.submission_types)] : [])
         });
       });
       self.assignmentOrder = Array.from(self.assignments.keys());
@@ -224,6 +230,7 @@
       gradedAt: sub.graded_at || null,
       gradeMatchesCurrent: sub.grade_matches_current_submission !== false,
       attempt: sub.attempt === undefined ? null : sub.attempt,
+      submissionType: sub.submission_type === undefined ? (prev.submissionType || null) : sub.submission_type,
       redoRequest: !!sub.redo_request,
       comments: analysis,
       commentList: comments ? comments.filter(function (c) { return c && c.draft !== true; }) : (prev.commentList || null),
@@ -233,6 +240,40 @@
     this.cells.set(k, rec);
     if (!opts.silent) this.emit('cell', { assignmentId: assignmentId, userId: userId, record: rec });
     return rec;
+  };
+
+  /* What the submission marker in a grade cell should say.
+   *
+   * Returns null when the assignment cannot be submitted online at all - an
+   * on-paper test, or an assignment Canvas records with no submission type -
+   * because there is no such thing as a missing online submission for those,
+   * and a grid full of "not submitted" markers on them would be noise that is
+   * also wrong. Returns null too when the column's submissions have not
+   * loaded yet, so a cell never claims "nothing submitted" purely because the
+   * data has not arrived. */
+  var ONLINE_TYPES = [
+    'online_upload', 'online_text_entry', 'online_url', 'online_quiz',
+    'discussion_topic', 'media_recording', 'student_annotation', 'basic_lti_launch'
+  ];
+
+  GradebookModel.prototype.submissionState = function (assignmentId, userId) {
+    var a = this.assignment(assignmentId);
+    if (!a) return null;
+    var types = a.submissionTypes || [];
+    var online = types.filter(function (t) { return ONLINE_TYPES.indexOf(t) >= 0; });
+    if (!online.length) return null;
+    if (!this.loadedAssignments.has(String(assignmentId))) return null;
+    var rec = this.cell(assignmentId, userId);
+    var submittedType = rec && rec.submissionType ? rec.submissionType : null;
+    return {
+      submitted: !!(rec && rec.submittedAt),
+      submittedAt: (rec && rec.submittedAt) || null,
+      // What was actually handed in, falling back to what the assignment asks
+      // for when nothing has been handed in yet.
+      kind: submittedType && ONLINE_TYPES.indexOf(submittedType) >= 0 ? submittedType : online[0],
+      attempt: (rec && rec.attempt) || 0,
+      excused: !!(rec && rec.excused)
+    };
   };
 
   GradebookModel.prototype.cell = function (assignmentId, userId) {

@@ -66,6 +66,11 @@
     var switcher = new CGP.CourseSwitcher({ api: api, courseId: courseId, settings: settings });
     switcher.start();
 
+    // Started after the switcher so it can seat itself to the right of it in
+    // the breadcrumb rather than between the course name and its own control.
+    var studentSearch = new CGP.StudentSearch({ api: api, courseId: courseId, settings: settings });
+    studentSearch.start();
+
     var requestPaint = function () { paint(); };
 
     var popover = new CGP.CommentPopoverController({
@@ -84,6 +89,7 @@
     var selection = new CGP.SelectionController({
       adapter: adapter, model: model, settings: settings, requestPaint: requestPaint
     });
+    var cellActions = new CGP.CellActionsController({ adapter: adapter, settings: settings, courseId: courseId });
     var frozen = new CGP.FrozenTotalController({ adapter: adapter, model: model, settings: settings });
     var keyboard = new CGP.KeyboardGradingController({
       adapter: adapter, model: model, writer: writer, selection: selection,
@@ -93,6 +99,74 @@
       adapter: adapter, model: model, writer: writer, selection: selection,
       settings: settings, requestPaint: requestPaint
     });
+
+    /* Scroll to one student's row and flash it.
+     *
+     * Used when arriving from the cross-course student search, and when that
+     * search picks someone who is already in this gradebook. Rows are matched
+     * by the student link Canvas puts in the frozen pane rather than by
+     * computing a top from rowIndex * rowHeight, because the two disagree by a
+     * pixel on some Canvas builds and a highlight on the wrong row is worse
+     * than none. Both panes (and the frozen Total overlay) share a style.top,
+     * so lighting all of them lights the whole row. */
+    function rowPartsForStudent(userId) {
+      var rows = document.querySelectorAll('.grid-canvas > .slick-row');
+      var top = null;
+      for (var i = 0; i < rows.length; i++) {
+        if (String(adapter.studentIdFromRow(rows[i]) || '') === String(userId)) { top = rows[i].style.top; break; }
+      }
+      if (top === null) return [];
+      var parts = document.querySelectorAll('.grid-canvas > .slick-row, .cgp-total-cell');
+      var out = [];
+      for (var j = 0; j < parts.length; j++) {
+        if (parts[j].style && parts[j].style.top === top) out.push(parts[j]);
+      }
+      return out;
+    }
+
+    function flashStudent(userId) {
+      var parts = rowPartsForStudent(userId);
+      if (!parts.length) return false;
+      parts.forEach(function (el) { el.classList.add('cgp-row-flash'); });
+      setTimeout(function () {
+        parts.forEach(function (el) { el.classList.remove('cgp-row-flash'); });
+      }, 3200);
+      return true;
+    }
+
+    CGP.revealStudent = function (userId) {
+      var uid = String(userId);
+      adapter.refreshRows();
+      var idx = adapter.rowIndexForStudent(uid);
+      if (idx !== null) {
+        adapter.scrollRowIntoView(idx);
+        setTimeout(function () { flashStudent(uid); }, 240);
+        return;
+      }
+      // Not rendered: the row is somewhere off screen, so walk the grid to
+      // learn the off-screen row identities before scrolling to it.
+      var count = Math.max(model.studentOrder.length, 50);
+      adapter.ensureRowsMapped(0, count).then(function () {
+        var found = adapter.rowIndexForStudent(uid);
+        if (found === null) {
+          CGP.ui.error('That student is not in this gradebook\u2019s current view \u2014 a Canvas filter or section may be hiding them.');
+          CGP.diag.warn('revealStudent.notInGrid');
+          return;
+        }
+        adapter.scrollRowIntoView(found);
+        setTimeout(function () { flashStudent(uid); }, 240);
+      });
+    };
+
+    /* Arriving from the search in another course: the target student rides in
+     * on the URL hash. It is stripped immediately so reloading or bookmarking
+     * the page does not keep re-triggering the jump. */
+    function consumeStudentHash() {
+      var m = /^#cgp-student=(\d+)/.exec(location.hash || '');
+      if (!m) return null;
+      try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
+      return m[1];
+    }
 
     var painting = false;
     var paint = CGP.util.rafBatch(function () {
@@ -136,6 +210,7 @@
       }
       indicators.start();
       selection.start();
+      cellActions.start();
       keyboard.start();
       paste.start();
       frozen.start();
@@ -186,9 +261,12 @@
       model.on('cell', paint);
       model.on('totals', paint);
 
+      var jumpTo = consumeStudentHash();
+
       return model.init().then(function () {
         CGP.diag.log('model.ready', model.stats());
         if (adapter._lastUnresolvedColumns) adapter.reconcileColumnsWithModel(model);
+        if (jumpTo) setTimeout(function () { CGP.revealStudent(jumpTo); }, 350);
 
         // Do not wait for a later paint/scroll cycle to discover comments. Load
         // the assignment columns that are on screen right now immediately.

@@ -73,6 +73,9 @@
     root.classList.toggle('cgp-narrow', !!s.narrowColumns);
     root.classList.toggle('cgp-center', !!s.centerAssignmentColumns);
     root.classList.toggle('cgp-max-height', !!s.maximizeHeight);
+    // Never hide Canvas's tray arrow unless double-click-to-open is there to
+    // replace it; otherwise the action would have no way in at all.
+    root.classList.toggle('cgp-hide-arrow', !!(s.hideGradeCellArrow && s.doubleClickOpensTray));
     root.style.setProperty('--cgp-student-w', s.studentColumnWidth + 'px');
     root.style.setProperty('--cgp-assignment-w', s.assignmentColumnWidth + 'px');
     var headerH = (s.narrowColumns ? 72 : 48) + (s.showAssignmentDueDate ? 14 : 0);
@@ -132,6 +135,7 @@
     Array.prototype.slice.call(document.querySelectorAll('#content button, #content [role="button"]')).forEach(function (btn) {
       if (btn.closest('.slick-header') || btn.closest('.grid-canvas') || btn.closest('#breadcrumbs')) return;
       if (btn.closest('.cgp-course-menu') || btn.classList.contains('cgp-crumb-toggle')) return;
+      if (btn.classList.contains('cgp-find-student')) return;
       var label = ((btn.textContent || '') + ' ' + (btn.getAttribute('aria-label') || '') + ' ' +
         (btn.getAttribute('title') || '')).trim().toLowerCase().replace(/\s+/g, ' ');
       if (!label) return;

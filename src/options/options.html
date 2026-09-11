@@ -39,6 +39,10 @@
         <label for="centerAssignmentColumns">Center assignment titles, points and grades</label>
       </div>
       <div class="row row--check">
+        <input id="rowHoverHighlight" type="checkbox">
+        <label for="rowHoverHighlight">Highlight the whole row under the pointer, across the frozen columns too</label>
+      </div>
+      <div class="row row--check">
         <input id="frozenTotal" type="checkbox">
         <label for="frozenTotal">Keep Total frozen beside the student name</label>
       </div>
@@ -73,6 +77,14 @@
         <label for="resubmissionIndicator">Mark cells where the student resubmitted after grading</label>
       </div>
       <div class="row row--check">
+        <input id="submissionIndicator" type="checkbox">
+        <label for="submissionIndicator">Show whether the student has handed anything in, and link it to SpeedGrader
+          <span class="hint">A solid badge means submitted, a hollow one means nothing yet; the glyph shows what kind of
+            submission the assignment asks for. Clicking it opens that student's submission in SpeedGrader in a new tab.
+            Only shown for assignments Canvas accepts online submissions for.</span>
+        </label>
+      </div>
+      <div class="row row--check">
         <input id="commentPopover" type="checkbox">
         <label for="commentPopover">Clicking the bubble opens the comment thread in place</label>
       </div>
@@ -104,6 +116,19 @@
         <input id="bulkPaste" type="checkbox">
         <label for="bulkPaste">Paste a block of grades from Excel or Google Sheets</label>
       </div>
+      <div class="row row--check">
+        <input id="hideGradeCellArrow" type="checkbox">
+        <label for="hideGradeCellArrow">Hide Canvas's arrow button inside the grade cell
+          <span class="hint">The arrow's action stays available through double-click, below. Ignored unless
+            double-click is also on, so the tray can never become unreachable.</span>
+        </label>
+      </div>
+      <div class="row row--check">
+        <input id="doubleClickOpensTray" type="checkbox">
+        <label for="doubleClickOpensTray">Double-clicking a grade cell opens it, the same as Canvas's own arrow button
+          <span class="hint">Whatever that arrow opens on your Canvas &ndash; the Grade Detail Tray, or SpeedGrader &ndash; is what a double-click opens.</span>
+        </label>
+      </div>
       <div class="row">
         <label class="row__label" for="bulkConfirmThreshold">Confirm bulk operations above</label>
         <div class="row__control">
@@ -132,6 +157,14 @@ Check your units and significant figures.</pre>
       <div class="row row--check">
         <input id="courseSwitcher" type="checkbox">
         <label for="courseSwitcher">Turn the course name in the Canvas breadcrumb into a gradebook switcher</label>
+      </div>
+      <div class="row row--check">
+        <input id="studentSearch" type="checkbox">
+        <label for="studentSearch">Add a "Find student" search to the breadcrumb, across every course you teach
+          <span class="hint">Type a name, pick the student, and Canvas opens that course's gradebook with their row
+            scrolled to and highlighted. Rosters are read from Canvas only when you open the search and are held in
+            memory for that page only &mdash; never written to the device.</span>
+        </label>
       </div>
       <div class="row row--check">
         <input id="speedgraderDrafts" type="checkbox">
