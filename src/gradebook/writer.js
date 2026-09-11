@@ -17,6 +17,10 @@
     this.settings = ctx.settings;
     this.inflight = new Set();
     this.gate = CGP.util.pool(3);
+    // One chain per cell, so two writes for the SAME submission never overlap
+    // (see serialize below). Different cells still run concurrently, bounded
+    // by the pool.
+    this.chains = new Map();
   }
 
   var P = GradeWriter.prototype;
@@ -33,7 +37,9 @@
     var result = { ok: 0, failed: 0, skipped: 0, errors: [] };
 
     return Promise.all(ops.map(function (target) {
-      return self.gate(function () { return self.writeOne(target, result, opts); });
+      return self.serialize(target.assignmentId, target.userId, function () {
+        return self.gate(function () { return self.writeOne(target, result, opts); });
+      });
     })).then(function () {
       if (result.failed) {
         var first = result.errors[0] || {};
@@ -47,6 +53,30 @@
       CGP.diag.bump('write.failed', result.failed);
       return result;
     });
+  };
+
+  /* Run one cell's writes strictly in order.
+   *
+   * Two writes for one submission must never be in flight together, because
+   * each one decides WHAT to write from the submission's current status. The
+   * L toggle is the sharp case: press L twice quickly and the second press has
+   * to see the state the first one produced, or it computes the same operation
+   * again - the same form, the same duplicate key - and is suppressed as a
+   * repeat, leaving the submission toggled once instead of back where it
+   * started. Queueing behind the first write means the second one reads the
+   * status Canvas actually returned and correctly does the inverse.
+   *
+   * The chain is dropped once it drains so this map cannot grow with every
+   * cell ever written to in a long session. */
+  P.serialize = function (assignmentId, userId, task) {
+    var self = this;
+    var key = String(assignmentId) + ':' + String(userId);
+    var prior = this.chains.get(key) || Promise.resolve();
+    var next = prior.then(task, task);
+    this.chains.set(key, next.then(function () { }, function () { }));
+    var mine = this.chains.get(key);
+    mine.then(function () { if (self.chains.get(key) === mine) self.chains.delete(key); });
+    return next;
   };
 
   P.writeOne = function (target, result, opts) {
@@ -78,10 +108,21 @@
     }
 
     var currentRec = this.model.cell(assignmentId, userId);
-    var op = CGP.gradeOps.operationFor(target.parsed, { wasMissing: !!(currentRec && currentRec.missing) });
+    var op = CGP.gradeOps.operationFor(target.parsed, {
+      wasMissing: !!(currentRec && currentRec.missing),
+      // Only an explicitly applied Late status is a thing the L shortcut can
+      // toggle off. Canvas also reports late: true for anything simply handed
+      // in after the due date, and "un-late" is not a thing that can mean.
+      wasLate: !!(currentRec && currentRec.latePolicyStatus === 'late'),
+      missingBecomesLate: this.settings.values.missingBecomesLate !== false
+    });
     if (!op) { result.skipped++; return Promise.resolve(); }
 
-    var dupKey = CGP.gradeOps.opKey(target);
+    // The op, not just the token, is what identifies this write: pressing L
+    // twice on one cell is two DIFFERENT writes (apply Late, then remove it)
+    // from one identical token, and keying on the token alone would let the
+    // in-flight guard swallow the second one.
+    var dupKey = CGP.gradeOps.opKey(target) + ':' + op.summary;
     if (this.inflight.has(dupKey)) {
       CGP.diag.bump('write.inflightSuppressed');
       return Promise.resolve();
@@ -98,14 +139,24 @@
     return this.api.updateSubmission(this.model.courseId, assignmentId, userId, op.form)
       .then(function (submission) {
         var rec = self.model.applySubmission(submission);
-        if (rec && !opts.noOptimistic) {
-          var display = rec.excused ? 'EX' : (rec.grade === null || rec.grade === undefined ? null : String(rec.grade));
-          self.model.patchCell(assignmentId, userId, { pending: false, override: display });
-        } else if (!opts.noOptimistic) {
-          self.model.patchCell(assignmentId, userId, { pending: false });
-        }
-        self.model.queueTotalRefresh(userId);
-        result.ok++;
+        // Awaited, not fired and forgotten: the write is not finished until
+        // the status it promised is actually on the record. Letting it run
+        // loose also let it escape the request pool and the in-flight guard,
+        // so during a bulk M it could race a later edit to the same cell.
+        var verified = op.kind === CGP.gradeOps.KIND.MISSING
+          ? self.confirmMissing(assignmentId, userId, rec)
+          : Promise.resolve(rec);
+        return verified.then(function (finalRec) {
+          var shown = finalRec || rec;
+          if (shown && !opts.noOptimistic) {
+            var display = shown.excused ? 'EX' : (shown.grade === null || shown.grade === undefined ? null : String(shown.grade));
+            self.model.patchCell(assignmentId, userId, { pending: false, override: display });
+          } else if (!opts.noOptimistic) {
+            self.model.patchCell(assignmentId, userId, { pending: false });
+          }
+          self.model.queueTotalRefresh(userId);
+          result.ok++;
+        });
       }, function (err) {
         self.model.restoreCell(assignmentId, userId, snapshot);
         result.failed++;
@@ -116,6 +167,48 @@
       }).then(function () {
         self.inflight.delete(dupKey);
       });
+  };
+
+  /* Did Missing actually take?
+   *
+   * M is a promise about the Canvas record, not about how the cell looks here:
+   * the submission has to read as Missing in the Grade Detail Tray, in
+   * SpeedGrader and on the student's own grades page. Canvas normally applies
+   * the status from the same request that carries the grade, but a late policy
+   * or another write finishing after ours can leave the score behind without
+   * it - which looks, from the gradebook, exactly like "M only typed a zero".
+   *
+   * So the response is checked rather than assumed. If the submission came
+   * back without the status, it is asked for once more on its own, and if
+   * Canvas still refuses, the teacher is told plainly instead of being left
+   * with a silent 0. */
+  P.confirmMissing = function (assignmentId, userId, rec) {
+    var self = this;
+    if (self.isMissing(rec)) return Promise.resolve(rec);
+    CGP.diag.warn('write.missingNotAppliedFirstTry', { assignmentId: assignmentId });
+    return this.api.updateSubmission(this.model.courseId, assignmentId, userId,
+      { 'submission[late_policy_status]': 'missing' })
+      .then(function (submission) {
+        var fresh = self.model.applySubmission(submission);
+        if (self.isMissing(fresh)) {
+          CGP.diag.bump('write.missingAppliedOnRetry');
+          return fresh;
+        }
+        CGP.diag.error('write.missingRefused', { assignmentId: assignmentId });
+        CGP.ui.error('Canvas saved the grade but would not mark this submission Missing. ' +
+          'Its own late policy may be overriding the status.');
+        return fresh;
+      }, function (err) {
+        CGP.diag.error('write.missingRetryFailed', { assignmentId: assignmentId, status: err && err.status });
+        CGP.ui.error('Canvas saved the grade but rejected the Missing status' +
+          (err && err.status ? ' (' + err.status + ')' : '') + '.');
+        return rec;
+      });
+  };
+
+  /** Canvas reports the status both ways; either one means Missing stuck. */
+  P.isMissing = function (rec) {
+    return !!(rec && (rec.missing || rec.latePolicyStatus === 'missing'));
   };
 
   /** Build write targets from raw tokens, honouring per-assignment grading type. */
@@ -140,19 +233,29 @@
    * explicitly reset). Called after any grade committed through Canvas's own
    * editor is re-read from the API: if it turns out to still carry both a
    * real grade and Missing, that combination is exactly the "stuck" state
-   * teachers hit, so this quietly clears the status once, with no optimistic
-   * flash and no toast - it is bookkeeping, not something the teacher asked for. */
-  P.clearStaleMissing = function (assignmentId, userId) {
+   * teachers hit, so this resolves the status once, with no optimistic flash
+   * and no toast - it is bookkeeping, not something the teacher asked for.
+   *
+   * It resolves to Late rather than to no status at all: work that was
+   * Missing and has now been graded arrived after its due date, and that is
+   * what Late records. (Set "Grading a Missing submission marks it Late" off
+   * in the options page to merely clear the status instead.) This is the same
+   * rule grade-ops applies to grades written through this extension; it is
+   * repeated here for grades the teacher committed through Canvas's own
+   * editor, which never pass through gradeOps at all. */
+  P.resolveStaleMissing = function (assignmentId, userId) {
     var self = this;
     var rec = this.model.cell(assignmentId, userId);
     if (!rec || !rec.missing || rec.excused || !rec.gradedAt) return Promise.resolve(null);
+    var toLate = this.settings.values.missingBecomesLate !== false;
     var dupKey = String(assignmentId) + ':' + String(userId) + ':unstick-missing';
     if (this.inflight.has(dupKey)) return Promise.resolve(null);
     this.inflight.add(dupKey);
-    return this.api.updateSubmission(this.model.courseId, assignmentId, userId, { 'submission[late_policy_status]': 'none' })
+    return this.api.updateSubmission(this.model.courseId, assignmentId, userId,
+      { 'submission[late_policy_status]': toLate ? 'late' : 'none' })
       .then(function (submission) {
         self.model.applySubmission(submission);
-        CGP.diag.bump('write.missingAutoCleared');
+        CGP.diag.bump(toLate ? 'write.missingBecameLate' : 'write.missingAutoCleared');
       }, function (err) {
         CGP.diag.warn('write.missingAutoClearFailed', { assignmentId: assignmentId, status: err && err.status });
       }).then(function () {

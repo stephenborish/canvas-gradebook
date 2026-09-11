@@ -25,7 +25,10 @@
     resubmissionIndicator: true,
     submissionIndicator: true,
     commentPopover: true,
+    // reading
+    gradeFontSize: 16,
     // input
+    missingBecomesLate: true,
     enableM: true,
     enableE: true,
     enableL: true,
@@ -168,6 +171,7 @@
         if (k === 'assignmentColumnWidth') out[k] = Math.round(util.clampNum(v, 70, 260, d[k]));
         else if (k === 'studentColumnWidth') out[k] = Math.round(util.clampNum(v, 120, 400, d[k]));
         else if (k === 'bulkConfirmThreshold') out[k] = Math.round(util.clampNum(v, 1, 2000, d[k]));
+        else if (k === 'gradeFontSize') out[k] = Math.round(util.clampNum(v, 11, 24, d[k]));
         else out[k] = util.clampNum(v, -1e9, 1e9, d[k]);
         return;
       }

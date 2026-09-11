@@ -93,8 +93,10 @@
         if (self.requestPaint) self.requestPaint();
         // Canvas just committed a grade through its own editor. If that left
         // the submission both graded and still flagged Missing, a teacher who
-        // just typed a real grade does not mean to keep that status - clear it.
-        return self.writer.clearStaleMissing(assignmentId, userId);
+        // just typed a real grade does not mean to keep that status - the work
+        // came in, late. Hand it to the writer, which switches Missing to Late
+        // (or merely clears it, per the setting).
+        return self.writer.resolveStaleMissing(assignmentId, userId);
       }).then(function () {
         if (self.requestPaint) self.requestPaint();
       });
@@ -237,27 +239,50 @@
     return [{ assignmentId: info.assignmentId, userId: info.studentId }];
   };
 
+  /* Close Canvas's open editor without letting it write anything.
+   *
+   * SlickGrid only saves on Enter when the editor's value actually CHANGED, so
+   * committing the value the editor already holds closes it through Canvas's
+   * own lifecycle and sends no grade of its own. Escape would also close it,
+   * but on this Canvas build Escape tears down pane geometry and makes the
+   * whole grid jump, which is why it is not used.
+   *
+   * This matters for correctness, not just tidiness. M is one write - grade 0
+   * AND status Missing, in a single API request. Letting Canvas commit its own
+   * "0" first put two writes for the same submission in flight at once, and
+   * whichever Canvas's server finished last won: when its plain grade write
+   * landed after ours, it left the submission graded 0 with the Missing status
+   * gone again. That is the "M just enters a zero, Canvas never shows Missing"
+   * report. Now nothing but our own request ever writes the cell. */
+  P.closeEditorWithoutWriting = function (input) {
+    if (!input) return false;
+    // Whatever the editor held when it opened is the value that commits to
+    // nothing. That is usually what is in it now, but not if the teacher typed
+    // a digit or two before pressing the shortcut - and committing THOSE would
+    // write a grade nobody asked for. The focusin watcher already recorded the
+    // opening value for exactly this kind of question.
+    var watch = this._editorWatch.get(input);
+    var original = watch ? watch.value : String(input.value === undefined ? '' : input.value);
+    this.adapter.setEditorValue(input, original);   // value unchanged: SlickGrid saves nothing
+    this.adapter.sendKey(input, 'Enter', 13);
+    return true;
+  };
+
   P.applyToken = function (token, scope, info) {
     var self = this;
     var nativeEditor = info ? this.adapter.editorInput(info.el) : null;
-    var nativeM = token === 'M' && nativeEditor && scope && scope.length === 1;
-    var pendingKey = nativeM ? (scope[0].assignmentId + ':' + scope[0].userId) : null;
-    if (nativeM) {
-      // Keep SlickGrid in charge of its own editor lifecycle. Write the visible
-      // zero through Canvas's editor, commit it natively, then use the API to
-      // guarantee the Missing status. Never send Escape: on this Canvas build
-      // that tears down pane geometry and makes the grid jump.
-      //
-      // That native "0" commit fires a focusout the reconcile-from-Canvas path
-      // in onFocusOut would normally act on - and seeing a graded submission
-      // still flagged Missing, it would "helpfully" clear the very status M is
-      // about to ask for. Mark this cell as ours until our own write below
-      // settles (cleared in every exit path), so reconciliation stands down
-      // for it and never fights the shortcut it is itself the cause of.
+    var singleCell = scope && scope.length === 1;
+    var pendingKey = (nativeEditor && singleCell) ? (scope[0].assignmentId + ':' + scope[0].userId) : null;
+    if (nativeEditor && singleCell) {
+      // Closing the editor fires a focusout that the reconcile-from-Canvas path
+      // in onFocusOut would otherwise act on - and seeing a graded submission
+      // flagged Missing, it would "helpfully" resolve that status, which is
+      // exactly the status M just asked for. Mark this cell as ours until our
+      // own write below settles (cleared in every exit path), so reconciliation
+      // stands down for it and never fights the shortcut that caused it.
       this._nativeMPending.add(pendingKey);
-      this.adapter.setEditorValue(nativeEditor, '0');
-      this.adapter.sendKey(nativeEditor, 'Enter', 13);
-      CGP.diag.bump('keyboard.m.nativeCommit');
+      this.closeEditorWithoutWriting(nativeEditor);
+      CGP.diag.bump('keyboard.editorClosedForShortcut');
     }
     var built = this.writer.targetsFromTokens(scope.map(function (t) {
       return { assignmentId: t.assignmentId, userId: t.userId, token: token };
@@ -277,13 +302,7 @@
         return;
       }
     }
-    var doWrite = function () {
-      return self.writer.apply(built.targets, { announce: count > 1, noOptimistic: !!nativeM });
-    };
-    var writePromise = nativeM ? new Promise(function (resolve) {
-      setTimeout(function () { resolve(doWrite()); }, 220);
-    }) : doWrite();
-    writePromise.then(function () {
+    self.writer.apply(built.targets, { announce: count > 1 }).then(function () {
       if (pendingKey) self._nativeMPending.delete(pendingKey);
       if (self.requestPaint) self.requestPaint();
     });

@@ -73,9 +73,14 @@
 
     var requestPaint = function () { paint(); };
 
+    var cellActions = new CGP.CellActionsController({ adapter: adapter, settings: settings, courseId: courseId });
+
     var popover = new CGP.CommentPopoverController({
       model: model, adapter: adapter, settings: settings, requestPaint: requestPaint,
-      writer: null // set below
+      writer: null, // set below
+      // Clicking the hover preview opens Canvas's own Grade Detail Tray for
+      // that submission, through the same code path double-click uses.
+      openSidePane: function (info) { cellActions.openTray(info.el, info, 8); }
     });
     var writer = new CGP.GradeWriter({ api: api, model: model, settings: settings });
     popover.writer = writer;
@@ -84,12 +89,12 @@
       model: model, adapter: adapter, registry: registry, settings: settings,
       onCommentClick: function (info) { popover.open(info); },
       onCommentHover: function (info) { popover.showPreview(info); },
-      onCommentLeave: function () { popover.hidePreview(); }
+      onCommentLeave: function () { popover.hidePreviewSoon(); },
+      onCommentDismiss: function () { popover.hidePreview(); }
     });
     var selection = new CGP.SelectionController({
       adapter: adapter, model: model, settings: settings, requestPaint: requestPaint
     });
-    var cellActions = new CGP.CellActionsController({ adapter: adapter, settings: settings, courseId: courseId });
     var frozen = new CGP.FrozenTotalController({ adapter: adapter, model: model, settings: settings });
     var keyboard = new CGP.KeyboardGradingController({
       adapter: adapter, model: model, writer: writer, selection: selection,

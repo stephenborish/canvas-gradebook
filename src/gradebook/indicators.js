@@ -5,13 +5,21 @@
  * corner and the value overlay used after an API write so the cell shows the
  * truth without a page reload.
  *
- * The bubble lives in the cell's bottom-LEFT corner deliberately: Canvas's
- * own grade cell already claims both top corners for itself - its status
- * icon (late/missing/excused) at the leading edge and its "open in
- * SpeedGrader / Grade Detail Tray" arrow at the trailing edge - and a marker
- * sharing either one was both visually clipping that control and, worse,
- * sometimes intercepting its click. The resubmission wedge below claims
- * bottom-right, so the two markers this extension draws never collide either.
+ * The bubble lives in the cell's bottom-RIGHT corner: on the trailing edge the
+ * bubbles line up in one vertical channel down the right of every column, so a
+ * screenful of them can be scanned in a single pass. It stays out of both TOP
+ * corners, which Canvas's own grade cell claims - its status icon
+ * (late/missing/excused) at the leading edge and its "open in SpeedGrader /
+ * Grade Detail Tray" arrow at the trailing edge - because a marker sharing
+ * either one both clips that control and can intercept its click. The
+ * resubmission wedge took over bottom-left in exchange, so the two markers
+ * this extension draws never collide either.
+ *
+ * Hovering the bubble shows a preview of the last comment, and that preview is
+ * clickable: it opens Canvas's own Grade Detail Tray (the side pane) for the
+ * submission. See comment-popover.js; the hover/leave callbacks below are what
+ * drive it, with leaving the bubble a SOFT close so the pointer can travel
+ * into the preview without it vanishing on the way.
  *
  * Painting rules that keep Canvas intact:
  *   - markers are absolutely positioned inside the cell, never resize anything
@@ -61,7 +69,11 @@
     this.settings = ctx.settings;
     this.onCommentClick = ctx.onCommentClick || function () {};
     this.onCommentHover = ctx.onCommentHover || function () {};
+    // Leaving the bubble is a SOFT close (the preview is itself hoverable and
+    // clickable, so the pointer is allowed to travel into it); scrolling and
+    // repainting are hard ones, where the thing the preview points at is gone.
     this.onCommentLeave = ctx.onCommentLeave || function () {};
+    this.onCommentDismiss = ctx.onCommentDismiss || this.onCommentLeave;
     this.requested = new Set();
     this._hoverIcon = null;
   }
@@ -284,7 +296,7 @@
     // pointing at a comment that is no longer under the cursor.
     if (this._hoverIcon && !this._hoverIcon.isConnected) {
       this._hoverIcon = null;
-      this.onCommentLeave();
+      this.onCommentLeave();   // soft: the pointer may by now be on the preview itself
     }
     if (!this.model.ready) {
       // Still tag columns so alignment/centering works before data arrives.
@@ -333,7 +345,7 @@
       // Keep Canvas from entering cell-edit mode behind the popover.
       e.preventDefault();
       e.stopPropagation();
-      self.onCommentLeave(); // the click-through popover replaces any preview
+      self.onCommentDismiss(); // the click-through popover replaces any preview
       var info = self.adapter.cellInfo(icon);
       if (info && info.assignmentId && info.studentId) self.onCommentClick(info);
     }, true);
@@ -347,6 +359,9 @@
   P.bindCommentHover = function () {
     var self = this;
     document.addEventListener('mouseover', function (e) {
+      // Inside the preview itself the bubble is still "hovered" as far as this
+      // feature is concerned; the preview manages its own close.
+      if (e.target && e.target.closest && e.target.closest('.cgp-preview')) return;
       var icon = e.target && e.target.closest ? e.target.closest('.cgp-cmt') : null;
       if (!icon || icon === self._hoverIcon) return;
       self._hoverIcon = icon;
@@ -357,13 +372,16 @@
       var icon = e.target && e.target.closest ? e.target.closest('.cgp-cmt') : null;
       if (!icon || icon !== self._hoverIcon) return;
       if (e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('.cgp-cmt') === icon) return;
+      // Heading into the preview is not leaving: that is the whole point of
+      // making it clickable.
+      if (e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('.cgp-preview')) return;
       self._hoverIcon = null;
       self.onCommentLeave();
     }, false);
     // A bubble that scrolls out from under the pointer (or disappears on
     // repaint) never fires mouseout - close on any scroll instead of trusting it.
     this.adapter.viewports().forEach(function (vp) {
-      vp.addEventListener('scroll', function () { self._hoverIcon = null; self.onCommentLeave(); }, { passive: true });
+      vp.addEventListener('scroll', function () { self._hoverIcon = null; self.onCommentDismiss(); }, { passive: true });
     });
   };
 

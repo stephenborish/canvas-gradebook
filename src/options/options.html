@@ -60,6 +60,15 @@
         <input id="maximizeHeight" type="checkbox">
         <label for="maximizeHeight">Give the grid the full height of the window</label>
       </div>
+      <div class="row">
+        <label class="row__label" for="gradeFontSize">Grade text size</label>
+        <div class="row__control">
+          <input id="gradeFontSize" type="number" min="11" max="24" step="1">
+          <span class="unit">px</span>
+          <p class="hint">Applies to the numbers in grade and Total cells &ndash; including the one you are typing,
+            which is drawn exactly as it will look once it is committed.</p>
+        </div>
+      </div>
     </section>
 
     <section class="card" aria-labelledby="h-indicators">
@@ -94,7 +103,10 @@
       <h2 id="h-input">Grading input</h2>
       <div class="row row--check">
         <input id="enableM" type="checkbox">
-        <label for="enableM"><kbd>M</kbd> enters 0 and marks the submission Missing</label>
+        <label for="enableM"><kbd>M</kbd> enters 0 and marks the submission Missing
+          <span class="hint">The status is written to Canvas itself, so the submission shows as Missing everywhere
+            &ndash; the Grade Detail Tray, SpeedGrader and the student&rsquo;s own grades page &ndash; not only here.</span>
+        </label>
       </div>
       <div class="row row--check">
         <input id="enableE" type="checkbox">
@@ -102,7 +114,17 @@
       </div>
       <div class="row row--check">
         <input id="enableL" type="checkbox">
-        <label for="enableL"><kbd>L</kbd> marks the submission Late</label>
+        <label for="enableL"><kbd>L</kbd> marks the submission Late, and un-marks one that is already Late
+          <span class="hint">A toggle: pressing <kbd>L</kbd> on a submission you have already marked Late removes that
+            status again. It never touches the grade either way.</span>
+        </label>
+      </div>
+      <div class="row row--check">
+        <input id="missingBecomesLate" type="checkbox">
+        <label for="missingBecomesLate">Grading a Missing submission marks it Late in Canvas
+          <span class="hint">Work that was Missing and has now been graded came in after it was due. Entering a score
+            removes the Missing status and records Late in its place. Turn this off to simply clear the status.</span>
+        </label>
       </div>
       <div class="row row--check">
         <input id="spreadsheetNavigation" type="checkbox">

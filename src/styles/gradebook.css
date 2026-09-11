@@ -72,24 +72,26 @@ html.cgp-on .slick-cell .cgp-marks {
   z-index: 6;
 }
 
-/* Bottom-LEFT corner, deliberately: Canvas's own grade cell reserves BOTH top
- * corners for itself - the status icon (late clock / missing "?" / excused)
- * that renders inline at the cell's leading edge, and the "open in
- * SpeedGrader / Grade Detail Tray" arrow button that renders at the trailing
- * edge. A marker in either top corner ends up drawn on top of one of those,
- * which both looks wrong AND can steal the click: if our bubble and Canvas's
- * own tray-toggle button occupy the same pixels, whichever one is visually on
- * top is the one that receives the click, and Canvas's own control winning
- * that fight is exactly what opens its editor instead of our comment thread.
- * Bottom-left is the one corner Canvas's grade cell never draws into (the
- * resubmission wedge below deliberately claims bottom-right instead, so the
- * two markers this extension adds never collide with each other either). */
+/* Bottom-RIGHT corner, deliberately: comments are the marker a teacher reaches
+ * for most, and on the trailing edge they line up in one vertical channel down
+ * the right-hand side of every column - so a screenful can be scanned in a
+ * single pass instead of the eye zig-zagging across each cell.
+ *
+ * It stays out of BOTH top corners, which Canvas's own grade cell reserves for
+ * itself: the status icon (late clock / missing "?" / excused) at the leading
+ * edge and the "open in SpeedGrader / Grade Detail Tray" arrow at the trailing
+ * edge. A marker in either one is drawn over a Canvas control, which both
+ * looks wrong AND can steal its click: whichever element is visually on top is
+ * the one that receives it, and Canvas's own control winning that fight is
+ * exactly what opens its editor instead of our comment thread. The
+ * resubmission wedge moved to bottom-left to make room, so the two markers
+ * this extension paints still never collide with each other either. */
 html.cgp-on .cgp-cmt {
   position: absolute;
-  bottom: 3px;
-  left: 3px;
-  width: 16px;
-  height: 16px;
+  bottom: 2px;
+  right: 2px;
+  width: 15px;
+  height: 15px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -117,6 +119,13 @@ html.cgp-on .cgp-cmt::after {
   inset: -5px;
   border-radius: 50%;
 }
+/* Both right-hand markers in one cell: the submission badge at the top and the
+ * comment bubble at the bottom. A grid row is only ~35px tall, so the generous
+ * halos would otherwise meet in the middle and the upper one would swallow
+ * clicks meant for the lower. Where they share a cell, each keeps a halo only
+ * as big as the gap allows. */
+html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt::after,
+html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-sub::after { inset: -2px; }
 /* While a cell is actually being typed into, pull the hit area back to the
  * painted dot so it cannot swallow a click meant to place the caret. */
 html.cgp-on .slick-cell:has(input:not([type="hidden"])) .cgp-cmt::after { inset: 0; }
@@ -145,8 +154,8 @@ html.cgp-on .cgp-cmt--reply svg { fill: none; stroke: currentColor; stroke-width
 
 html.cgp-on .cgp-cmt-count {
   position: absolute;
-  bottom: 3px;
-  left: 20px;
+  bottom: 2px;
+  right: 19px;
   font-size: 9.5px;
   line-height: 16px;
   color: var(--cgp-comment);
@@ -172,8 +181,8 @@ html.cgp-on .cgp-sub {
   position: absolute;
   top: 2px;
   right: 2px;
-  width: 17px;
-  height: 17px;
+  width: 16px;
+  height: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -274,17 +283,17 @@ html.cgp-hide-arrow .slick-cell .Grid__GradeCell__EndContainer {
  * state where Canvas actually draws it, rather than stacking the two. */
 html.cgp-on:not(.cgp-hide-arrow) .slick-cell.active .cgp-sub { right: 22px; }
 
-/* Resubmitted after grading: a small corner wedge in the bottom-right, clear
- * of both the comment bubble (bottom-left) and Canvas's own controls (which
+/* Resubmitted after grading: a small corner wedge in the bottom-left, clear
+ * of both the comment bubble (bottom-right) and Canvas's own controls (which
  * live along the top edge). */
 html.cgp-on .cgp-resub {
   position: absolute;
   bottom: 0;
-  right: 0;
+  left: 0;
   width: 0;
   height: 0;
   border-bottom: 8px solid var(--cgp-resub);
-  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
   pointer-events: auto;
 }
 
@@ -305,8 +314,11 @@ html.cgp-on .cgp-val {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
-  color: var(--cgp-ink);
+  font-size: var(--cgp-grade-font, 16px);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  color: var(--cgp-ink-strong);
   z-index: 2;
 }
 html.cgp-on .slick-cell.cgp-pending-write .cgp-val { opacity: 0.55; }
@@ -328,7 +340,7 @@ html.cgp-on .slick-cell.cgp-has-pending::after {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: var(--cgp-grade-font, 16px);
   font-weight: 600;
   color: var(--cgp-brand-dark, var(--cgp-brand));
   background: rgba(255, 255, 255, 0.85);
@@ -368,6 +380,46 @@ html.cgp-on .slick-cell .Grid__GradeCell__Content textarea {
   width: 100% !important;
   min-width: 0 !important;
   box-sizing: border-box !important;
+}
+
+/* What you type looks like what you get.
+ *
+ * Canvas's editor input inherits none of the cell's typography: it renders the
+ * number in the browser's default input font, at its own size, left aligned -
+ * so a grade visibly jumped and changed shape at the moment it was committed,
+ * and the value being typed was the smallest text on screen. These rules give
+ * the input the exact face, size, weight, figures and alignment the committed
+ * grade has, so the only thing that changes on Enter is that the caret goes
+ * away. Alignment follows the same setting the cell's does (html.cgp-center)
+ * rather than being centred unconditionally. */
+html.cgp-on .slick-cell[data-cgp-col="assignment"] input:not([type="hidden"]),
+html.cgp-on .slick-cell[data-cgp-col="assignment"] textarea,
+html.cgp-on .slick-cell[data-cgp-col="total"] input:not([type="hidden"]) {
+  font-family: inherit !important;
+  font-size: var(--cgp-grade-font, 16px) !important;
+  font-weight: 600 !important;
+  line-height: 1.25 !important;
+  color: var(--cgp-ink-strong) !important;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  padding: 0 2px !important;
+  height: auto !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+html.cgp-center .slick-cell[data-cgp-col="assignment"] input:not([type="hidden"]),
+html.cgp-center .slick-cell[data-cgp-col="assignment"] textarea,
+html.cgp-center .slick-cell[data-cgp-col="total"] input:not([type="hidden"]) {
+  text-align: center !important;
+}
+/* The cell itself already shows it is being edited (.slick-cell.active), so
+ * the input does not need a second box drawn inside that one. Focus stays
+ * visible: the active cell's own ring is what marks it. */
+html.cgp-on .slick-cell[data-cgp-col="assignment"] input:focus,
+html.cgp-on .slick-cell[data-cgp-col="assignment"] textarea:focus {
+  outline: none !important;
 }
 
 /* Fallback for any grade-cell markup without that named hook: whenever an
@@ -473,8 +525,13 @@ html.cgp-max-height .ic-Layout-contentMain {
   padding-top: 6px !important;
   padding-bottom: 0 !important;
 }
+/* A whole-pixel height computed in JS (layout.js). The old calc() against
+ * 100vh landed on fractional pixels, which put SlickGrid's "how many rows fit"
+ * arithmetic right on a boundary and made the last row on screen flicker in
+ * and out of the rendered range. The calc stays only as a fallback for the
+ * frame before the first measurement lands. */
 html.cgp-max-height #gradebook_grid {
-  height: calc(100vh - var(--cgp-grid-top, 200px) - 10px) !important;
+  height: var(--cgp-grid-h, calc(100vh - var(--cgp-grid-top, 200px) - 10px)) !important;
   min-height: 340px;
 }
 html.cgp-max-height .gradebook-header,
@@ -694,11 +751,18 @@ html.cgp-center .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content
  * from Canvas's em-dash placeholder. */
 html.cgp-on .slick-cell[data-cgp-col="assignment"],
 html.cgp-on .slick-cell[data-cgp-col="total"] {
-  font-size: 13px !important;
+  font-size: var(--cgp-grade-font, 16px) !important;
   font-weight: 600 !important;
   color: var(--cgp-ink-strong) !important;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
+}
+/* Canvas nests the score inside its own wrappers on several Gradebook builds,
+ * and some of them carry a font-size of their own that would otherwise win
+ * against the cell's. The markers this extension paints keep their own sizes. */
+html.cgp-on .slick-cell[data-cgp-col="assignment"] *:not(.cgp-marks):not(.cgp-marks *),
+html.cgp-on .slick-cell[data-cgp-col="total"] * {
+  font-size: inherit !important;
 }
 html.cgp-on .slick-cell[data-cgp-col="total"] {
   font-weight: 700 !important;
@@ -944,9 +1008,12 @@ html.cgp-on .cgp-pop__save[disabled] { opacity: 0.6; cursor: default; transform:
 
 /* ------------------------------------------------------- comment hover preview */
 
-/* A quiet, read-only glance at the latest comment - distinct from the click
- * popover above it (smaller, no border-radius-matching input, no buttons) so
- * the two are never mistaken for each other. */
+/* A quick glance at the latest comment - distinct from the click popover above
+ * it (smaller, no input, no buttons) so the two are never mistaken for each
+ * other. Unlike a tooltip it is a TARGET: the pointer can travel into it and
+ * click it to open Canvas's side pane for that submission
+ * (comment-popover.js), which is why it takes pointer events rather than
+ * letting them fall through to the grid. */
 html.cgp-on .cgp-preview {
   position: fixed;
   z-index: 99999;
@@ -962,9 +1029,12 @@ html.cgp-on .cgp-preview {
   font-family: inherit;
   font-size: 12px;
   line-height: 1.4;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
 }
 html.cgp-on .cgp-preview--on { display: block; }
+html.cgp-on .cgp-preview:hover { background: var(--cgp-ink); }
+html.cgp-on .cgp-preview:hover .cgp-preview__hint { color: rgba(255, 255, 255, 0.9); }
 html.cgp-on .cgp-preview__meta { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
 html.cgp-on .cgp-preview__author { font-weight: 700; }
 html.cgp-on .cgp-preview__count { color: rgba(255, 255, 255, 0.65); font-size: 11px; }

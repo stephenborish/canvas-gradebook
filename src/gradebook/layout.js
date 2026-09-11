@@ -62,6 +62,9 @@
     this._lastHidePass = 0;
     this.controlsHidden = false;
     this.applyGeometry = CGP.util.debounce(this._applyGeometry.bind(this), 120);
+    this._gridTop = null;
+    this._gridHeight = null;
+    this._selfResize = false;
   }
 
   var P = CompactLayoutController.prototype;
@@ -78,13 +81,17 @@
     root.classList.toggle('cgp-hide-arrow', !!(s.hideGradeCellArrow && s.doubleClickOpensTray));
     root.style.setProperty('--cgp-student-w', s.studentColumnWidth + 'px');
     root.style.setProperty('--cgp-assignment-w', s.assignmentColumnWidth + 'px');
+    root.style.setProperty('--cgp-grade-font', s.gradeFontSize + 'px');
     var headerH = (s.narrowColumns ? 72 : 48) + (s.showAssignmentDueDate ? 14 : 0);
     root.style.setProperty('--cgp-header-h', headerH + 'px');
 
     if (s.hideCanvasUtilityControls) this.hideControls();
     this.applyGeometry();
     this.bindShortcut();
-    window.addEventListener('resize', this.applyGeometry);
+    if (!this._resizeBound) {
+      this._resizeBound = this.onWindowResize.bind(this);
+      window.addEventListener('resize', this._resizeBound);
+    }
   };
 
   P.bindShortcut = function () {
@@ -218,25 +225,59 @@
     });
   };
 
+  /* Where the grid starts, and therefore how tall it is allowed to be.
+   *
+   * Both numbers are published as whole pixels and, crucially, only when they
+   * have actually CHANGED. Two things depended on that and neither was true
+   * before:
+   *
+   *  1. Nudging Canvas with a synthetic window resize re-entered this method
+   *     (it is itself bound to window resize), which nudged again, ~180ms
+   *     apart, forever. Every nudge makes SlickGrid recompute its viewport and
+   *     re-render, and the row on the boundary of the rendered range - the
+   *     LAST row on screen - is the one that gets added and removed each time.
+   *     That is exactly the "the last student blinks" behaviour: a feedback
+   *     loop, not a rendering quirk of that student's row.
+   *  2. The height was a CSS calc() against 100vh, so it landed on fractional
+   *     pixels; SlickGrid's "how many rows fit" arithmetic sat right on the
+   *     boundary and flipped the same last row in and out. Rounding down to a
+   *     whole pixel here settles it. */
   P._applyGeometry = function () {
     var grid = document.querySelector('#gradebook_grid') || this.adapter.gridRoot();
     if (!grid) return;
     var top = Math.round(grid.getBoundingClientRect().top + window.scrollY);
     if (!isFinite(top) || top < 0) return;
-    document.documentElement.style.setProperty('--cgp-grid-top', top + 'px');
+    var height = Math.max(340, Math.floor(window.innerHeight - top - 10));
+    if (top === this._gridTop && height === this._gridHeight) return;
+    this._gridTop = top;
+    this._gridHeight = height;
+    var root = document.documentElement;
+    root.style.setProperty('--cgp-grid-top', top + 'px');
+    root.style.setProperty('--cgp-grid-h', height + 'px');
     CGP.diag.set('gridTop', top);
+    CGP.diag.set('gridHeight', height);
     this.nudgeCanvasResize();
   };
 
-  /* Canvas recomputes its own viewport heights on resize; ask it to. */
+  /* Canvas recomputes its own viewport heights on resize; ask it to.
+   *
+   * The flag is not just a throttle: this controller listens for window
+   * resize itself, so without ignoring the event it is about to fire, the
+   * nudge would answer its own nudge indefinitely. */
   P.nudgeCanvasResize = function () {
     if (this._nudging) return;
     this._nudging = true;
     var self = this;
     setTimeout(function () {
-      self._nudging = false;
+      self._selfResize = true;
       try { window.dispatchEvent(new Event('resize')); } catch (e) { /* ignore */ }
+      setTimeout(function () { self._selfResize = false; self._nudging = false; }, 250);
     }, 60);
+  };
+
+  P.onWindowResize = function () {
+    if (this._selfResize) return;   // our own nudge, not the window actually changing
+    this.applyGeometry();
   };
 
   /* ------------------------------------------------------- column narrowing */

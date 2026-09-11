@@ -44,8 +44,13 @@ comment does not light up your cell.
 - Two or more of your comments show a small count beside the bubble.
 - If the student replied after your last comment, the bubble turns hollow and purple and the
   tooltip adds *student replied since*.
+- The bubble sits in the cell's bottom-right corner, so a column's bubbles line up in one
+  vertical channel down the right-hand edge and a screenful can be read in a single pass.
 - Click the bubble to read the whole thread in place, and reply without leaving the gradebook.
   A reply posted here updates the indicator immediately — no page reload.
+- Hovering the bubble previews the latest comment, and that preview is itself a target: the
+  pointer can travel into it, and clicking it opens Canvas's own Grade Detail Tray — the side
+  pane — for that submission.
 - Indicators survive Canvas's virtualized scrolling; they are repainted as rows and columns
   come back into view.
 
@@ -57,8 +62,22 @@ In any editable grade cell:
 | --- | --- |
 | `M` | grade `0` **and** status Missing, in one write |
 | `E` | Excused |
-| `L` | Late (grade untouched) |
+| `L` | Late (grade untouched) — pressed again on an already-Late submission, it removes the status |
 | `-` or `--` | clears the grade and resets the status |
+
+These are writes to the Canvas record, not local decoration. `M` sends the score and
+`late_policy_status=missing` in a single request, so the submission reads as Missing in the
+Grade Detail Tray, in SpeedGrader and on the student's own grades page. Canvas's editor is
+closed without committing anything of its own first, so there is never a second, plain grade
+write racing ours — that race is what used to leave a `0` behind with no Missing status. The
+response is then checked: if the status did not take, it is requested once more on its own, and
+if Canvas still refuses (a course late policy can override it) you are told, rather than being
+left with a silent zero.
+
+**Entering a score on a submission that was Missing** removes the Missing status and records
+**Late** in its place — the work came in, after it was due. That applies however the grade was
+typed, including through Canvas's own editor. Turn off *Grading a Missing submission marks it
+Late* in the options page to simply clear the status instead.
 
 A plain `0` stays an ordinary zero — it never becomes Missing. On letter-graded and
 GPA-scale assignments a bare `A`–`F` is treated as the letter grade it is, and the shortcuts
@@ -165,7 +184,7 @@ behaviour off permanently in the options page.
 
 ### Resubmission indicator
 
-A small purple corner wedge means the student resubmitted after you graded (Canvas's
+A small purple corner wedge in the cell's bottom-left means the student resubmitted after you graded (Canvas's
 `grade_matches_current_submission`). Missing / late / excused status is Canvas's own gradebook
 chrome and is left entirely alone here - no duplicate dots to keep in sync with it.
 
@@ -284,8 +303,9 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-56 assertions covering the parts where being wrong would be expensive: `M` → 0 + Missing,
-`E` → Excused, `L` → Late, plain `0` is *not* Missing, letter-grade exceptions, clipboard
+62 assertions covering the parts where being wrong would be expensive: `M` → 0 + Missing,
+`E` → Excused, `L` → Late and `L` again → not Late, a grade on a Missing submission → Late,
+plain `0` is *not* Missing, letter-grade exceptions, clipboard
 matrix parsing (TSV / column / spaced / ragged / CRLF), clipboard-to-cell mapping and its
 refusals, instructor-comment authorship (including drafts, other teachers, numeric vs string
 ids, student replies), comment cache updates after a save, bulk dedupe and last-write-wins,
@@ -349,6 +369,20 @@ Two things that no longer happen, as of this fix:
 - Chrome / Edge (Chromium 116+). Not tested in Firefox, which needs a different manifest.
 
 ## Version
+
+1.4.0 - fixes and adjustments reported against 1.3.0. The last student's row no longer blinks:
+publishing the grid's height on every synthetic resize re-entered the same window-resize
+listener that caused it, so the grid was being remeasured and re-rendered roughly five times a
+second forever, and the row on the edge of SlickGrid's rendered range flickered in and out with
+it; the geometry is now published only when it actually changes, and as a whole pixel rather
+than a fractional `calc()`. `M` no longer lets Canvas's own editor commit a competing grade
+write, and the Missing status is verified with Canvas after the fact instead of assumed.
+Entering a score on a Missing submission now switches it to Late rather than merely clearing
+the status. `L` became a toggle. The comment bubble moved to the cell's bottom-right (the
+resubmission wedge took over bottom-left), and its hover preview is now hoverable and clickable
+- clicking it opens Canvas's Grade Detail Tray for that submission. Grades are larger (a new
+**Grade text size** setting, 16px by default), and the grade you are typing is drawn in exactly
+the face, size, weight and alignment it will have once it is committed.
 
 1.3.0 - Canvas's in-cell tray arrow is hidden (its action moves entirely onto double-click, with
 a SpeedGrader fallback so the gesture can never dead-end); every online-submission cell gains a
