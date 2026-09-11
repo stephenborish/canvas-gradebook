@@ -97,13 +97,46 @@
    * instead of re-applying it; typing L twice leaves the submission exactly as
    * it started.
    *
-   * MISSING/EXCUSED are explicit status commands and are left alone.
+   * opts.wasExplicitMissing - true when the cell already carries an explicit
+   * Missing status. M is a toggle too: the second press turns Missing into
+   * Late and takes the 0 back out, so the teacher can type a real grade.
+   *
+   * EXCUSED is an explicit status command and is left alone.
    */
   function operationFor(parsed, opts) {
     if (!parsed) return null;
     opts = opts || {};
     switch (parsed.kind) {
       case KIND.MISSING: {
+        // Second press on a cell that already carries an explicit Missing
+        // status: M is a toggle, exactly like L. Missing gives way to Late -
+        // the work is no longer being called "never handed in", it is being
+        // called "handed in after the due date" - and the 0 that M itself
+        // wrote is taken back out, leaving the cell empty and ready for
+        // whatever grade the teacher wants to type into it.
+        //
+        // opts.wasExplicitMissing, not opts.wasMissing, is what decides this.
+        // Canvas reports missing: true for anything simply past due and not
+        // handed in, so keying off that would make the FIRST M on an overdue
+        // cell behave like the second and toggle a status that was never
+        // applied.
+        if (opts.wasExplicitMissing) {
+          return {
+            kind: parsed.kind,
+            toggledOff: true,
+            summary: 'Missing \u2192 Late',
+            form: {
+              'submission[posted_grade]': '',
+              'submission[late_policy_status]': 'late'
+            },
+            patch: {
+              score: null, enteredScore: null, grade: null,
+              missing: false, late: true, excused: false,
+              latePolicyStatus: 'late', workflowState: 'unsubmitted'
+            },
+            display: '\u2013'
+          };
+        }
         var score = (parsed.score === undefined || parsed.score === null) ? 0 : Number(parsed.score);
         return {
           kind: parsed.kind,

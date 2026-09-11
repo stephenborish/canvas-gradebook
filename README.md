@@ -60,10 +60,17 @@ In any editable grade cell:
 
 | Key | Result |
 | --- | --- |
-| `M` | grade `0` **and** status Missing, in one write |
+| `M` | grade `0` **and** status Missing, in one write — pressed again on the same cell it switches Missing to Late and takes the `0` back out |
 | `E` | Excused |
 | `L` | Late (grade untouched) — pressed again on an already-Late submission, it removes the status |
 | `-` or `--` | clears the grade and resets the status |
+
+Both status keys are toggles. `M` on a cell you have already marked Missing means "it turned
+up after all": the status becomes **Late**, the `0` that `M` wrote is removed, and the cell is
+left empty and ready for whatever grade you want to type into it. `L` on a cell you have
+already marked Late simply removes that status. Only a status *somebody applied* can be
+toggled — Canvas reports `missing` for anything merely past due and not handed in, and a first
+`M` on such a cell still applies the status rather than flipping it.
 
 These are writes to the Canvas record, not local decoration. `M` sends the score and
 `late_policy_status=missing` in a single request, so the submission reads as Missing in the
@@ -303,8 +310,9 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-62 assertions covering the parts where being wrong would be expensive: `M` → 0 + Missing,
-`E` → Excused, `L` → Late and `L` again → not Late, a grade on a Missing submission → Late,
+65 assertions covering the parts where being wrong would be expensive: `M` → 0 + Missing and
+`M` again → Late with the score cleared, `E` → Excused, `L` → Late and `L` again → not Late,
+a grade on a Missing submission → Late,
 plain `0` is *not* Missing, letter-grade exceptions, clipboard
 matrix parsing (TSV / column / spaced / ragged / CRLF), clipboard-to-cell mapping and its
 refusals, instructor-comment authorship (including drafts, other teachers, numeric vs string
