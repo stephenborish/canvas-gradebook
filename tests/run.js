@@ -10,5 +10,6 @@ harness.loadCore();
 require('./test-grade-ops');
 require('./test-clipboard-mapping');
 require('./test-comments-totals');
+require('./test-post-status');
 
 harness.run();

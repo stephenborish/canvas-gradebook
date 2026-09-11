@@ -95,6 +95,44 @@ A plain `0` stays an ordinary zero — it never becomes Missing. On letter-grade
 GPA-scale assignments a bare `A`–`F` is treated as the letter grade it is, and the shortcuts
 are available as `MISSING`, `EX`, `LATE` instead.
 
+**The designation appears the moment you press the key.** Canvas colours its late / missing /
+excused cells from its own in-page store, which a write to the Submissions API never reaches —
+so the cell used to keep whatever colour Canvas last rendered until the whole gradebook was
+reloaded. The extension now paints the status itself, from the record it holds, the instant a
+key is pressed: a tint plus a coloured bar down the leading edge of the cell. It also *removes*
+a status Canvas is still showing that the submission no longer has — the second `M` turning
+Missing into Late, `L` toggled off, a grade that resolved a Missing status.
+
+Where Canvas has caught up and is already painting that same status, the extension's tint
+stands down and Canvas's own colour (including custom status colours set in Canvas) is what you
+see. Statuses the extension does not manage — dropped, extended, Canvas's resubmitted shading —
+are never touched, and a column whose submissions have not loaded yet is left completely alone
+rather than being declared status-free.
+
+### Post grades from the column header
+
+With a manual posting policy — or after hiding grades by hand — Canvas keeps a grade to itself:
+you can see the score in the grid while the student still sees nothing. Canvas says so with a
+small crossed-out eye in the column header, and hides the fix in that column's `⋮` menu.
+
+Any assignment column currently holding grades students cannot see grows a **Post** button in
+its header, labelled with how many are waiting (`Post 12`). Press it and that column's grades
+go to the students immediately — the same action Canvas's own tray performs, through Canvas's
+own `postAssignmentGrades` mutation. Canvas posts in a background job, so the extension waits
+for that job, re-reads the column, and the button disappears by itself once nothing is hidden.
+
+Three things it deliberately does not do:
+
+- it never appears on a column with nothing to post, so the button is a statement of fact about
+  that column rather than decoration;
+- it posts graded submissions only, exactly like Canvas's own default, so students who have not
+  been graded yet are not handed an empty grade;
+- it never guesses: a column whose submissions have not loaded, or a Canvas build that does not
+  report whether a grade is posted, shows no button at all.
+
+Turn it off with *Show a Post button on columns holding grades students cannot see yet* in the
+options page.
+
 ### Spreadsheet navigation
 
 `Enter` / `Shift+Enter` move down / up. `Tab` / `Shift+Tab` move right / left. Arrow keys move
@@ -266,6 +304,7 @@ src/core/                         pure logic - no DOM, no chrome.* at load time
   util.js                         settings, defaults, sanitizing, diagnostics, small helpers
   canvas-api.js                   same-origin Canvas REST client (CSRF, pagination, retry, pooling)
   grade-ops.js                    token -> Canvas form params + optimistic patch (M / E / L / 0 ...)
+  post-ops.js                     which grades are still hidden from their students
   clipboard-matrix.js             TSV / column / spaced-column clipboard parsing
   comment-analysis.js             "did I author this comment" logic and thread analysis
   grid-map.js                     cell <-> (student_id, assignment_id) mapping maths
@@ -277,7 +316,7 @@ src/core/                         pure logic - no DOM, no chrome.* at load time
 src/gradebook/
   dom-adapter.js                  THE ONLY file that knows Canvas's grid markup
   cell-registry.js                element <-> cell identity, paint signatures
-  indicators.js                   bubbles, counts, status dots, value overrides
+  indicators.js                   bubbles, counts, late/missing/excused status, value overrides
   writer.js                       optimistic writes with rollback, dedupe, error reporting
   selection.js                    multi-cell selection
   cell-actions.js                 double-click -> Canvas's own tray arrow; two-pane row hover
@@ -285,6 +324,7 @@ src/gradebook/
   bulk-paste.js                   validate-then-write clipboard application
   frozen-total.js                 the synchronized Total column in the frozen pane
   layout.js                       compaction, column widths, header decoration
+  post-grades.js                  the per-column Post button and the posting job
   comment-popover.js              in-place comment thread and reply
   course-switcher.js              breadcrumb course dropdown + shared teaching-course list
   student-search.js               cross-course student search (rosters in memory only)
@@ -315,7 +355,7 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-67 assertions covering the parts where being wrong would be expensive: `M` → 0 + Missing and
+85 assertions covering the parts where being wrong would be expensive: `M` → 0 + Missing and
 `M` again → Late with the score cleared (but a real grade left alone), `E` → Excused,
 `L` → Late and `L` again → not Late,
 a grade on a Missing submission → Late,
@@ -323,7 +363,8 @@ plain `0` is *not* Missing, letter-grade exceptions, clipboard
 matrix parsing (TSV / column / spaced / ragged / CRLF), clipboard-to-cell mapping and its
 refusals, instructor-comment authorship (including drafts, other teachers, numeric vs string
 ids, student replies), comment cache updates after a save, bulk dedupe and last-write-wins,
-Total formatting and row alignment, and settings clamping.
+Total formatting and row alignment, the status a cell must show the instant `M` or `L` is
+pressed, which submissions count as still hidden from their students, and settings clamping.
 
 Syntax-check everything with:
 
@@ -380,9 +421,23 @@ Two things that no longer happen, as of this fix:
   before relying on it for reporting.
 - **Anonymous or moderated assignments** are refused for API writes, since the identity mapping
   a write depends on is deliberately hidden there.
+- **Posting grades uses Canvas's GraphQL endpoint** (`postAssignmentGrades`), which is what
+  Canvas's own Gradebook uses. On a Canvas build without that mutation the extension falls back
+  to the older "unmute this assignment" REST parameter, which posts the whole column rather
+  than only its graded submissions; it says so in the toast when it does. If both are refused,
+  nothing is changed and the column's own menu still works.
 - Chrome / Edge (Chromium 116+). Not tested in Firefox, which needs a different manifest.
 
 ## Version
+
+1.5.0 - the `M` and `L` designations now appear the instant the key is pressed. Canvas paints
+late / missing / excused cells from its own in-page store, which nothing written through the
+Submissions API ever reaches, so the colour only caught up on a full page reload; the extension
+paints the status itself from the record it holds, and clears a status Canvas is still showing
+that the submission no longer has. Any assignment column holding grades students cannot see yet
+grows a **Post** button in its header, labelled with how many are waiting, which posts that
+column's graded submissions immediately and then re-reads the column so the button retires
+itself.
 
 1.4.0 - fixes and adjustments reported against 1.3.0. The last student's row no longer blinks:
 publishing the grid's height on every synthetic resize re-entered the same window-resize

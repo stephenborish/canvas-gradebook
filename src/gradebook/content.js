@@ -100,6 +100,12 @@
       adapter: adapter, model: model, writer: writer, selection: selection,
       settings: settings, requestPaint: requestPaint
     });
+    // Header-level action: post the grades a column is still hiding from
+    // students. Painted with the headers, because that is where the state it
+    // reports (this column has N grades students cannot see) belongs.
+    var posting = new CGP.PostGradesController({
+      model: model, adapter: adapter, api: api, settings: settings, requestPaint: requestPaint
+    });
     var paste = new CGP.BulkPasteController({
       adapter: adapter, model: model, writer: writer, selection: selection,
       settings: settings, requestPaint: requestPaint
@@ -178,6 +184,7 @@
       painting = true;
       try {
         layout.decorateHeaders(model);
+        posting.paint();
         indicators.paint();
         selection.paint(registry.lastCells);
         frozen.paint();
@@ -311,7 +318,7 @@
       injectEnvBridge();
       CGP.gradebook = {
         model: model, adapter: adapter, layout: layout, selection: selection,
-        writer: writer, paint: paint, diag: CGP.diag
+        writer: writer, posting: posting, paint: paint, diag: CGP.diag
       };
     });
   }

@@ -100,6 +100,11 @@
     if (!rec) return id + '|none|' + loaded;
     
     var c = rec.comments || {};
+    // The status is part of what the cell LOOKS like now that we paint it
+    // ourselves (see syncStatus): without it here, pressing L on an already
+    // graded cell changes nothing else about the record, the signature would
+    // match, and the repaint would be skipped as "unchanged".
+    var status = CGP.gradeOps.cellStatus(rec) || '';
     return [
       id,
       c.instructorCount || 0,
@@ -114,7 +119,8 @@
       this.settings.values.commentIndicator ? 1 : 0,
       this.settings.values.submissionIndicator ? 1 : 0,
       this.settings.values.showCommentCount ? 1 : 0,
-      this.settings.values.resubmissionIndicator ? 1 : 0
+      this.settings.values.resubmissionIndicator ? 1 : 0,
+      status
     ].join('|');
   };
 
@@ -157,6 +163,69 @@
     return true;
   };
 
+  /* Keep the cell's late / missing / excused designation honest.
+   *
+   * Canvas paints those colours from its own in-page gradebook store. Every
+   * grade and status this extension writes goes straight to the Submissions
+   * API instead, which that store never hears about - so after pressing M or
+   * L the cell kept whatever Canvas had last rendered, and the designation
+   * only appeared once the whole gradebook was reloaded. That is the reported
+   * "the M and L buttons do nothing until I force refresh".
+   *
+   * Two halves, and both are needed:
+   *
+   *  1. Canvas's own status class is REMOVED when it contradicts what we know
+   *     (the second M turning Missing into Late, L toggled off, a grade that
+   *     resolved a Missing status). Left alone, Canvas's stale pink or blue
+   *     would keep insisting on a status the submission no longer has. The
+   *     class is cleared off the cell and off Canvas's own grade-cell node,
+   *     because different Canvas builds put it in different places.
+   *
+   *  2. Our own cgp-status-* class is added, and the stylesheet paints it as
+   *     a TINT plus an edge bar - never a flat background-color, so Canvas's
+   *     own colour (including a teacher's customised status colours) still
+   *     shows through where Canvas has caught up. The CSS stands the tint
+   *     down entirely on any cell Canvas is already painting for that same
+   *     status, so the grid looks exactly as it always did except where
+   *     Canvas is out of date.
+   *
+   * Statuses this extension does not manage (Canvas's dropped, extended and
+   * resubmitted shading) are never touched, and a cell whose column has not
+   * loaded yet is left completely alone rather than being declared status-free.
+   *
+   * This runs on every paint pass, ahead of the paint-signature shortcut:
+   * Canvas re-rendering a cell can put its stale class back without changing
+   * anything the signature is derived from. */
+  var PAINTED = CGP.gradeOps.PAINTED_STATUSES;
+
+  P.syncStatus = function (cell, rec) {
+    var status = CGP.gradeOps.cellStatus(rec);
+    // Unknown (nothing loaded for this cell yet) or a status Canvas owns and
+    // we do not: hands off entirely, including any class Canvas set.
+    var managed = status === 'none' || PAINTED.indexOf(status) >= 0;
+    if (!managed) {
+      if (cell.className.indexOf('cgp-status-') >= 0) {
+        PAINTED.forEach(function (name) { cell.classList.remove('cgp-status-' + name); });
+      }
+      return;
+    }
+    var canvasNodes = [cell];
+    var own = cell.querySelector(':scope > .Grid__GradeCell, :scope > .gradebook-cell');
+    if (own) canvasNodes.push(own);
+    PAINTED.forEach(function (name) {
+      var want = status === name;
+      cell.classList.toggle('cgp-status-' + name, want);
+      if (want) return;
+      // Canvas still calling this cell something it is not.
+      canvasNodes.forEach(function (node) {
+        if (node.classList.contains(name)) {
+          node.classList.remove(name);
+          CGP.diag.bump('paint.staleStatusCleared');
+        }
+      });
+    });
+  };
+
   P.paintCell = function (info) {
     var s = this.settings.values;
     var cell = info.el;
@@ -177,6 +246,14 @@
     if (info.columnType !== 'assignment' || !info.assignmentId || !info.studentId) return;
 
     var rec = this.model.cell(info.assignmentId, info.studentId);
+    // Ahead of the signature shortcut on purpose: Canvas can repaint its own
+    // status colour into a cell whose data (and therefore signature) has not
+    // changed at all.
+    // A record only speaks for its cell once the column has actually loaded -
+    // or while one of our own optimistic writes is riding on it, which is the
+    // whole point of the instant designation.
+    var known = this.model.loadedAssignments.has(String(info.assignmentId)) || !!(rec && rec.pending);
+    this.syncStatus(cell, known ? rec : null);
     var sig = this.signatureFor(info, rec);
     if (!this.registry.needsPaint(cell, sig) && this.marksIntact(cell)) return;
     this.registry.markPainted(cell, sig);
