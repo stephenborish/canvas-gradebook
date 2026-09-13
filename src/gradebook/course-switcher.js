@@ -32,6 +32,11 @@
     var crumbLink = this.findCrumbLink();
     if (!crumbLink) { CGP.diag.warn('switcher.noBreadcrumb'); return; }
     if (crumbLink.parentElement.querySelector('.cgp-crumb-toggle')) return;
+    // Keep this crumb's whole line - the course name plus Switch course and
+    // Find student, both added next to it - from wrapping (see the CSS for
+    // why that wrap is what actually misaligns the two controls).
+    var crumbItem = crumbLink.closest('li') || crumbLink.parentElement;
+    if (crumbItem) crumbItem.classList.add('cgp-crumb-item');
 
     var btn = document.createElement('button');
     btn.type = 'button';

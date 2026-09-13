@@ -156,9 +156,17 @@ Copy a range from Excel or Google Sheets, click the top-left destination cell, a
 
 ### Multi-cell selection
 
-`Cmd`/`Ctrl`-click cells to add them to a selection; `Shift`-click to extend a rectangle. Then
-press `M`, `E`, `L`, or type a number and press `Enter` to apply it to everything selected.
-`Escape` clears the selection. No toolbar appears; the selection is just an outline on the cells.
+`Cmd`/`Ctrl`-click cells to add them to a selection; `Shift`-click to extend a rectangle. A plain
+click doesn't select anything of its own, but it still sets the point the *next* Shift-click
+extends from, the same way a spreadsheet works — so clicking either end of a range first and
+Shift-clicking the other always builds the same rectangle, in either direction. Then press `M`,
+`E`, `L`, or type a number and press `Enter` to apply it to everything selected. `Escape` clears
+the selection. No toolbar appears; the selection is just an outline on the cells.
+
+Press `C` with one or more cells selected to add the same comment to every one of them at once —
+one small dialog, one Save, written as your own comment on each selected submission individually
+(so each student's thread reads exactly as if you'd typed it there yourself). `/snippet` + `Tab`
+works in it too.
 
 ### Student name + Total, frozen together
 
@@ -226,8 +234,11 @@ pale blue behind a Late grade, the pink behind a Missing one and the yellow behi
 one all still show through.
 
 Canvas's utility strip (student
-and assignment search, filters, Apply Filters, Sync, Import, Export, View Options) is collapsed
+and assignment search, filters, Sync, Import, Export, View Options) is collapsed
 along with the empty wrappers it leaves behind, and the grid takes the full height of the window.
+Apply Filters and Canvas's own gradebook-settings gear are never part of that collapse — the gear
+is moved to sit right beside Apply Filters so it's always one click away, whatever this setting is
+set to.
 
 Press **Alt+Shift+H** to bring Canvas's controls back for the current page. Turn the whole
 behaviour off permanently in the options page.
@@ -355,7 +366,7 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-85 assertions covering the parts where being wrong would be expensive: `M` → 0 + Missing and
+90 assertions covering the parts where being wrong would be expensive: `M` → 0 + Missing and
 `M` again → Late with the score cleared (but a real grade left alone), `E` → Excused,
 `L` → Late and `L` again → not Late,
 a grade on a Missing submission → Late,
@@ -364,7 +375,9 @@ matrix parsing (TSV / column / spaced / ragged / CRLF), clipboard-to-cell mappin
 refusals, instructor-comment authorship (including drafts, other teachers, numeric vs string
 ids, student replies), comment cache updates after a save, bulk dedupe and last-write-wins,
 Total formatting and row alignment, the status a cell must show the instant `M` or `L` is
-pressed, which submissions count as still hidden from their students, and settings clamping.
+pressed, which submissions count as still hidden from their students, settings clamping, and a
+column-wide fetch that was already in flight when a write landed on one of its cells never being
+allowed to overwrite that write once it lands.
 
 Syntax-check everything with:
 
@@ -429,6 +442,21 @@ Two things that no longer happen, as of this fix:
 - Chrome / Edge (Chromium 116+). Not tested in Firefox, which needs a different manifest.
 
 ## Version
+
+1.6.0 - fixes reported from real classroom use. Keyboard shortcuts (`M`/`E`/`L`, numbers, bulk
+paste) no longer silently revert a moment after they're applied: a column-wide submissions fetch
+that was already in flight when the write landed could land afterwards and overwrite it with the
+pre-write state, which looked exactly like "nothing happened until I refresh" - a manual reload
+only ever "fixed" it because a fresh page's own fetches always start after the write they follow,
+so they could never lose that race. Multi-cell selection now builds the same rectangle regardless
+of which end you click first: a plain click did not set a reference point for the next
+Shift-click, so only the order that happened to Cmd/Ctrl-click first actually worked. Selected
+cells can now take one comment all at once - press `C` with a selection to add the same text to
+every selected submission. The breadcrumb's "Switch course" and "Find student" controls no longer
+drop onto their own line out of alignment with the course name once both are present, and Find
+student's magnifier is no longer squashed down to a sliver by an overly-broad caret-sizing rule.
+Canvas's own gradebook-settings gear is now pinned beside Apply Filters and left out of the
+"collapse Canvas's utility strip" setting entirely, so it's always reachable without Alt+Shift+H.
 
 1.5.0 - the `M` and `L` designations now appear the instant the key is pressed. Canvas paints
 late / missing / excused cells from its own in-page store, which nothing written through the

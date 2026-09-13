@@ -91,7 +91,15 @@
     if (existing) return existing;
     var links = document.querySelectorAll('#breadcrumbs a[href*="/courses/"], .ic-app-crumbs a[href*="/courses/"]');
     for (var i = 0; i < links.length; i++) {
-      if (/\/courses\/\d+\/?$/.test(links[i].getAttribute('href') || '')) return links[i];
+      if (/\/courses\/\d+\/?$/.test(links[i].getAttribute('href') || '')) {
+        // Course switcher is off, so nothing has tagged this crumb yet - do
+        // it here instead. See course-switcher.js for why: without it, this
+        // button can wrap onto its own line, out of alignment with the
+        // course name it sits beside.
+        var li = links[i].closest('li') || links[i].parentElement;
+        if (li) li.classList.add('cgp-crumb-item');
+        return links[i];
+      }
     }
     return links.length ? links[links.length - 1] : null;
   };

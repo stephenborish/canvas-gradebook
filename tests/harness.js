@@ -22,7 +22,8 @@ const CORE_FILES = [
   'src/core/comment-analysis.js',
   'src/core/grid-map.js',
   'src/core/totals.js',
-  'src/core/snippets.js'
+  'src/core/snippets.js',
+  'src/core/model.js'
 ];
 
 function loadCore() {
