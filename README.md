@@ -236,8 +236,10 @@ one all still show through.
 Canvas's utility strip (student
 and assignment search, filters, Sync, Import, Export, View Options) is collapsed
 along with the empty wrappers it leaves behind, and the grid takes the full height of the window.
-Apply Filters and Canvas's own gradebook-settings gear are never part of that collapse — the gear
-is moved to sit right beside Apply Filters so it's always one click away, whatever this setting is
+Apply Filters and Canvas's own gradebook-settings gear are never part of that collapse — Canvas's
+real gear button is left exactly where it is (moving it would break its own click handling; see
+1.6.1 below), and a lookalike control that forwards its click to the real one sits right beside
+Apply Filters instead, so a settings control is always one click away, whatever this setting is
 set to.
 
 Press **Alt+Shift+H** to bring Canvas's controls back for the current page. Turn the whole
@@ -448,14 +450,17 @@ nothing but type a literal "c" into whatever grade cell was last focused: buildi
 with Cmd/Ctrl-click deliberately keeps Canvas from moving focus onto the clicked cells, so the
 teacher's previous grade editor stayed focused throughout, and the shortcut refused to fire
 whenever that focused element looked like a text input - which, in practice, was every time.
-The shortcut now always opens the bulk-comment dialog once a selection exists, regardless of
-what still happens to be focused. Canvas's own gradebook-settings gear also went dead after
-being pinned beside Apply Filters: pinning it worked by physically moving Canvas's real button
-into `<body>`, which silently breaks its click, because Canvas's gradebook is a React app whose
-event delegation depends on the button staying in the DOM subtree React actually rendered it
-into. The real gear is no longer touched or moved; a lookalike button sits beside Apply Filters
-instead and forwards its click to whatever Canvas's real settings control resolves to at that
-moment.
+The shortcut now opens the bulk-comment dialog once a selection exists, unless the focused text
+entry was itself focused after that selection was last built - which means a teacher who keeps
+grading or typing Notes elsewhere while an old selection quietly sits in the background still
+gets their own keystrokes, selection or not. Canvas's own gradebook-settings gear also went dead
+after being pinned beside Apply Filters: pinning it worked by physically moving Canvas's real
+button into `<body>`, which silently breaks its click, because Canvas's gradebook is a React app
+whose event delegation depends on the button staying in the DOM subtree React actually rendered
+it into. The real gear is no longer touched or moved - including staying out of whatever Canvas
+container the "collapse Canvas's utility strip" setting hides - and a lookalike button sits
+beside Apply Filters instead, forwarding its click to whatever Canvas's real settings control
+resolves to at that moment.
 
 1.6.0 - fixes reported from real classroom use. Keyboard shortcuts (`M`/`E`/`L`, numbers, bulk
 paste) no longer silently revert a moment after they're applied: a column-wide submissions fetch

@@ -38,6 +38,14 @@
     this.bulkComment = ctx.bulkComment || null;
     this._editorWatch = new WeakMap();
     this._refreshTimers = new Map();
+    // Timestamp of the most recent focusin on ANY text-entry element in the
+    // grid (grade cells and non-assignment ones like a Notes column alike),
+    // updated unconditionally in onFocusIn below. Compared against
+    // this.selection.changedAt by the C shortcut to tell "this editor is
+    // genuinely open right now, possibly opened after the selection" from
+    // "this is stale focus left over from before the selection was built" -
+    // see the C-shortcut branch in onKeyDown for why that distinction matters.
+    this._lastTextFocusAt = 0;
     // "assignmentId:userId" cells where the M shortcut's own native-commit-then-
     // API-write sequence is in flight. Their focusout must NOT trigger the
     // ordinary reconcile-from-Canvas path below: that path re-reads whatever
@@ -59,7 +67,11 @@
 
   P.onFocusIn = function (e) {
     var el = e.target;
-    if (!isTextEntry(el) || !el.closest) return;
+    if (!isTextEntry(el)) return;
+    // Recorded for every text-entry focus, not just assignment grade cells
+    // (a Notes/custom column input counts too) - see the C-shortcut branch.
+    this._lastTextFocusAt = Date.now();
+    if (!el.closest) return;
     var cell = el.closest('.slick-cell');
     if (!cell) return;
     var info = this.adapter.cellInfo(cell);
@@ -179,26 +191,43 @@
     // ---- C: bulk comment on the current selection -------------------------
     // Gated on having a live selection rather than on being inside a grade
     // cell, deliberately: C is a plain letter grade on letter-graded
-    // assignments, and this must never hijack that. A live selection (built
-    // with Cmd/Ctrl-click and Shift-click) is a separate, explicit gesture
-    // from having a cell open for editing, so there is no real ambiguity
-    // between "type a C into this open editor" and "comment on what I have
-    // selected" - once a selection exists, C always means the latter.
+    // assignments (and an ordinary character in a Notes/custom column), and
+    // this must never hijack either. A live selection (built with Cmd/Ctrl-
+    // click and Shift-click) is a separate, explicit gesture from having a
+    // cell open for editing, so once a selection exists C normally means
+    // "comment on what I have selected".
     //
-    // isTextEntry(target) must NOT also be required here. Building a
-    // selection with Cmd/Ctrl-click deliberately keeps Canvas from moving
-    // focus onto the clicked cells (see selection.js), so whatever grade
-    // input the teacher was last editing before starting the selection is
-    // still the focused element - and its "e.target" - when this keydown
-    // fires. Requiring !isTextEntry(target) then means this shortcut almost
-    // never fires with a real multi-cell selection: the reported bug was
-    // exactly this - C typed itself into that stray still-focused cell
-    // instead of opening the bulk-comment dialog.
+    // "Normally", not "always": requiring plain !isTextEntry(target) here
+    // breaks the shortcut almost entirely, because building a selection with
+    // Cmd/Ctrl-click deliberately keeps Canvas from moving focus onto the
+    // clicked cells (see selection.js) - so whatever text entry the teacher
+    // was last editing before starting the selection stays focused, and its
+    // element is still e.target when this keydown fires. That stale leftover
+    // focus is exactly what must be overridden - that was the reported bug.
+    //
+    // But a selection can also just sit there, quietly, for a while: nothing
+    // clears it except Escape or a later plain click, so a teacher can build
+    // one and then keep grading (or typing Notes) elsewhere entirely, via a
+    // fresh click or keyboard navigation, with the selection still live in
+    // the background. THAT keystroke must reach its own genuinely-focused,
+    // freshly-opened field, not be hijacked into commenting on a selection
+    // from ten minutes ago. The two situations differ in exactly one way:
+    // whether the currently-focused text entry was already open BEFORE the
+    // selection was last built (stale - hijack it) or was focused AFTER
+    // (fresh - it is what the teacher is looking at right now, leave it
+    // alone). _lastTextFocusAt (set in onFocusIn, for every text entry, not
+    // just assignment cells) against selection.changedAt is exactly that
+    // comparison.
     if (this.bulkComment && plain && key.length === 1 && key.toLowerCase() === 'c' && selectionSize > 0) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      this.bulkComment.open(this.selection.targets());
-      return;
+      var freshEdit = isTextEntry(target) && this._lastTextFocusAt > this.selection.changedAt;
+      if (!freshEdit) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        this.bulkComment.open(this.selection.targets());
+        return;
+      }
+      // else: fall through and let Canvas (or the Notes column) handle this
+      // literal "c" exactly as if there were no selection at all.
     }
 
     // ---- multi-cell numeric entry ---------------------------------------

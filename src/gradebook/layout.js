@@ -150,12 +150,23 @@
 
   P.candidates = function () {
     var found = [];
+    // Resolved fresh, once per call: Canvas's REAL settings button is never
+    // moved (see pinSettingsGear/ensureGearProxy), so it can still be sitting
+    // inside one of the whole-container CONTROL_SELECTORS entries below
+    // (#gradebook-actions and friends). Collapsing that container with
+    // display:none would take the real button down with it - invisible,
+    // zero-sized - even though the proxy beside Apply Filters still looks
+    // perfectly clickable and would go on dispatching synthetic clicks at it.
+    // That is exactly the failure this whole feature exists to prevent, so a
+    // container holding the real button is never a hide candidate here.
+    var realGear = this.findSettingsButton();
     var push = function (el) {
       // The settings-gear proxy (and, defensively, anything already inside
       // it) is never a hide candidate. It lives on <body>, outside every
       // selector above, so this never actually fires in practice - it is
       // just a defensive backstop. See pinSettingsGear/ensureGearProxy.
       if (el && (el.classList.contains('cgp-pinned-gear') || el.closest('.cgp-pinned-gear'))) return;
+      if (el && realGear && el.contains(realGear)) return;
       if (el && found.indexOf(el) < 0) found.push(el);
     };
 
@@ -205,13 +216,18 @@
     }
     // Fallback: anything actually labelled "settings" inside the gradebook's
     // own action area, in case this Canvas build uses none of the ids/test
-    // ids above.
+    // ids above. Scoped to containers the proxy never lives in (it is parked
+    // directly on <body>, never inside #gradebook-actions/.gradebook-menus/
+    // an EnhancedActionMenu), but the same exclusion is repeated anyway - a
+    // consistent, defended invariant beats one that merely happens to hold.
     var area = document.querySelectorAll(
       '#gradebook-actions button, .gradebook-menus button, [data-component="EnhancedActionMenu"] button');
     for (var j = 0; j < area.length; j++) {
-      var label = ((area[j].getAttribute('aria-label') || '') + ' ' +
-        (area[j].getAttribute('title') || '') + ' ' + (area[j].textContent || '')).toLowerCase();
-      if (label.indexOf('settings') >= 0) return area[j];
+      var candidate = area[j];
+      if (candidate.classList.contains('cgp-pinned-gear') || candidate.closest('.cgp-pinned-gear')) continue;
+      var label = ((candidate.getAttribute('aria-label') || '') + ' ' +
+        (candidate.getAttribute('title') || '') + ' ' + (candidate.textContent || '')).toLowerCase();
+      if (label.indexOf('settings') >= 0) return candidate;
     }
     return null;
   };
@@ -244,13 +260,11 @@
    * keeps its place in Canvas's own tree, and a Canvas re-render that hands
    * it a brand new node is simply found fresh on the next click. */
   P.pinSettingsGear = function () {
-    var gear = this.findSettingsButton();
-    if (gear) {
-      this._gearSeen = true;   // this Canvas build does expose the control
-      this.ensureGearProxy();
-    } else if (!this._gearSeen) {
-      return; // never located it here; nothing worth pinning yet
-    }
+    // Nothing to build the proxy from yet on a Canvas build that has never
+    // exposed the control; positionPinnedGear() itself already no-ops when
+    // there is no proxy (or an unconnected one), so there is nothing else to
+    // guard here once a proxy exists.
+    if (this.findSettingsButton()) this.ensureGearProxy();
     this.positionPinnedGear();
   };
 
@@ -283,6 +297,15 @@
       if (!real || real === btn || btn.contains(real)) {
         CGP.diag.warn('layout.settingsButtonMissing');
         CGP.ui.error('Gradebook+ couldn’t find Canvas’s settings button right now. Try reloading.');
+        return;
+      }
+      // Canvas disables the real button (e.g. while the gradebook is still
+      // loading) rather than removing it, so findSettingsButton() still
+      // resolves it - dispatching a click there would just silently do
+      // nothing, which is worse than telling the teacher to wait a moment.
+      if (real.disabled || real.getAttribute('aria-disabled') === 'true') {
+        CGP.diag.warn('layout.settingsButtonDisabled');
+        CGP.ui.error('Canvas’s settings button isn’t ready yet. Try again in a moment.');
         return;
       }
       self.adapter.activateCell(real);
