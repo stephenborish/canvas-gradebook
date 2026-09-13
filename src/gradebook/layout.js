@@ -56,8 +56,8 @@
   // everything else in the utility strip): a teacher needs this control
   // often enough - column sorting, arrangement, late/missing policies - that
   // it should stay reachable regardless of the "collapse Canvas's utility
-  // strip" setting, pinned next to Apply Filters instead of buried behind
-  // Alt+Shift+H. See pinSettingsGear.
+  // strip" setting. Used only to LOCATE the real control - see
+  // ensureGearProxy/pinSettingsGear for why it is never moved.
   var SETTINGS_SELECTORS = [
     '#gradebook_settings_modal_button',
     '#gradebook-settings',
@@ -151,9 +151,10 @@
   P.candidates = function () {
     var found = [];
     var push = function (el) {
-      // The pinned settings gear (and, defensively, anything already inside
-      // it) is never a hide candidate, however it happened to be found -
-      // that is the whole point of pinning it. See pinSettingsGear.
+      // The settings-gear proxy (and, defensively, anything already inside
+      // it) is never a hide candidate. It lives on <body>, outside every
+      // selector above, so this never actually fires in practice - it is
+      // just a defensive backstop. See pinSettingsGear/ensureGearProxy.
       if (el && (el.classList.contains('cgp-pinned-gear') || el.closest('.cgp-pinned-gear'))) return;
       if (el && found.indexOf(el) < 0) found.push(el);
     };
@@ -214,38 +215,72 @@
     return null;
   };
 
-  /* Move Canvas's own settings gear (the real control, not a copy) out to
-   * <body> and hold it fixed-position beside Apply Filters, rather than
-   * leaving it as an ordinary sibling wherever Apply Filters happens to live.
-   * That distinction matters: Canvas's utility strip is hidden largely by
-   * whole-container selectors (#gradebook-actions, .gradebook-menus and
-   * friends in CONTROL_SELECTORS) rather than by targeting every individual
-   * button, so a gear merely inserted next to Apply Filters could still end
-   * up INSIDE one of those containers - excluding the gear itself from
-   * candidates() does nothing when the thing actually being hidden is an
-   * ancestor several levels up. Parking it on <body> - the same pattern this
-   * file's siblings already use for the course-switcher menu and the comment
-   * popover - puts it somewhere hideControls() can never reach, regardless of
-   * where Canvas renders Apply Filters. Idempotent and cheap to call often:
-   * Canvas can re-render its action bar (which would otherwise move a FRESH
-   * copy of the gear back into that markup) at any point while the gradebook
-   * is open. */
+  /* Earlier versions of this relocated Canvas's own settings gear - the real
+   * control, not a copy - out to <body> and held it fixed-position there.
+   * That broke the button: Canvas's gradebook is a React app, and React's
+   * synthetic event system delegates from a listener bound once near the
+   * root it rendered into, matched against the event as it bubbles through
+   * the ACTUAL live DOM tree. Moving the gear out from under that root - or
+   * Canvas later reconciling a re-render against a child it no longer finds
+   * where it left it - stopped the click from ever reaching Canvas's own
+   * handler, which is exactly the "the gear button does nothing" report.
+   * Canvas's real control is now never touched or moved. A lookalike proxy
+   * button (ensureGearProxy) is parked on <body> and fixed-position beside
+   * Apply Filters instead, and merely forwards its click to whatever element
+   * findSettingsButton() resolves to at that moment - so Canvas's own gear
+   * keeps its place in Canvas's own tree, and a Canvas re-render that hands
+   * it a brand new node is simply found fresh on the next click. */
   P.pinSettingsGear = function () {
     var gear = this.findSettingsButton();
-    if (gear && gear.isConnected) {
-      gear.classList.add('cgp-pinned-gear');
-      gear.classList.remove('cgp-hidden', 'cgp-collapsed');
-      if (gear.parentElement !== document.body) document.body.appendChild(gear);
-      this._gearEl = gear;
+    if (gear) {
+      this._gearSeen = true;   // this Canvas build does expose the control
+      this.ensureGearProxy();
+    } else if (!this._gearSeen) {
+      return; // never located it here; nothing worth pinning yet
     }
     this.positionPinnedGear();
   };
 
-  /* Keep the parked gear glued to Apply Filters' current on-screen position.
-   * Cheap enough to call on every resize and on the periodic safety tick;
-   * does nothing when there is no gear to place or nothing to place it by. */
+  /* Build (once) the visible stand-in for Canvas's settings gear. Never the
+   * real button - see pinSettingsGear for why - just something that looks
+   * like a gear, sits beside Apply Filters, and re-finds + clicks the real
+   * control on demand. */
+  P.ensureGearProxy = function () {
+    if (this._gearProxy && this._gearProxy.isConnected) return this._gearProxy;
+    var self = this;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cgp-pinned-gear';
+    btn.setAttribute('aria-label', 'Gradebook settings');
+    btn.title = 'Gradebook settings';
+    btn.innerHTML =
+      '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">' +
+      '<path fill="currentColor" d="M11.4 2c.45 0 .83.32.9.76l.25 1.55c.5.18.96.42 1.38.71l1.47-.56a.9.9 0 0 1 1.06.36l1 1.66a.9.9 0 0 1-.18 1.14l-1.19 1.03c.04.3.06.6.06.9s-.02.6-.06.9l1.19 1.03a.9.9 0 0 1 .18 1.14l-1 1.66a.9.9 0 0 1-1.06.36l-1.47-.56c-.42.29-.88.53-1.38.71l-.25 1.55a.9.9 0 0 1-.9.76H9.6a.9.9 0 0 1-.9-.76l-.25-1.55a5.98 5.98 0 0 1-1.38-.71l-1.47.56a.9.9 0 0 1-1.06-.36l-1-1.66a.9.9 0 0 1 .18-1.14l1.19-1.03A6.2 6.2 0 0 1 4.85 10c0-.3.02-.6.06-.9L3.72 8.07a.9.9 0 0 1-.18-1.14l1-1.66a.9.9 0 0 1 1.06-.36l1.47.56c.42-.29.88-.53 1.38-.71l.25-1.55a.9.9 0 0 1 .9-.76ZM10 7.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6Z"/>' +
+      '</svg>';
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      // Re-resolved fresh rather than trusted from an earlier pass: Canvas
+      // can re-render its action bar (handing the settings control a brand
+      // new DOM node) at any point while the gradebook is open.
+      var real = self.findSettingsButton();
+      if (!real) {
+        CGP.diag.warn('layout.settingsButtonMissing');
+        CGP.ui.error('Gradebook+ couldn’t find Canvas’s settings button right now. Try reloading.');
+        return;
+      }
+      self.adapter.activateCell(real);
+    });
+    document.body.appendChild(btn);
+    this._gearProxy = btn;
+    return btn;
+  };
+
+  /* Keep the proxy glued to Apply Filters' current on-screen position. Cheap
+   * enough to call on every resize and on the periodic safety tick; does
+   * nothing when there is no proxy to place or nothing to place it by. */
   P.positionPinnedGear = function () {
-    var gear = this._gearEl;
+    var gear = this._gearProxy;
     if (!gear || !gear.isConnected) return;
     var anchor = this.findApplyFiltersButton();
     if (!anchor || !anchor.isConnected || anchor === gear) return;

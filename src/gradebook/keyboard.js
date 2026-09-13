@@ -177,15 +177,24 @@
     }
 
     // ---- C: bulk comment on the current selection -------------------------
-    // Gated on "not currently typing anywhere" rather than on being inside a
-    // grade cell, deliberately: C is a plain letter grade on letter-graded
+    // Gated on having a live selection rather than on being inside a grade
+    // cell, deliberately: C is a plain letter grade on letter-graded
     // assignments, and this must never hijack that. A live selection (built
     // with Cmd/Ctrl-click and Shift-click) is a separate, explicit gesture
     // from having a cell open for editing, so there is no real ambiguity
     // between "type a C into this open editor" and "comment on what I have
-    // selected".
-    if (this.bulkComment && plain && key.length === 1 && key.toLowerCase() === 'c' &&
-      !isTextEntry(target) && selectionSize > 0) {
+    // selected" - once a selection exists, C always means the latter.
+    //
+    // isTextEntry(target) must NOT also be required here. Building a
+    // selection with Cmd/Ctrl-click deliberately keeps Canvas from moving
+    // focus onto the clicked cells (see selection.js), so whatever grade
+    // input the teacher was last editing before starting the selection is
+    // still the focused element - and its "e.target" - when this keydown
+    // fires. Requiring !isTextEntry(target) then means this shortcut almost
+    // never fires with a real multi-cell selection: the reported bug was
+    // exactly this - C typed itself into that stray still-focused cell
+    // instead of opening the bulk-comment dialog.
+    if (this.bulkComment && plain && key.length === 1 && key.toLowerCase() === 'c' && selectionSize > 0) {
       e.preventDefault();
       e.stopImmediatePropagation();
       this.bulkComment.open(this.selection.targets());

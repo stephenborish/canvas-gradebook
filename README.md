@@ -443,6 +443,20 @@ Two things that no longer happen, as of this fix:
 
 ## Version
 
+1.6.1 - two fixes reported right after 1.6.0 shipped. Pressing `C` with cells selected did
+nothing but type a literal "c" into whatever grade cell was last focused: building a selection
+with Cmd/Ctrl-click deliberately keeps Canvas from moving focus onto the clicked cells, so the
+teacher's previous grade editor stayed focused throughout, and the shortcut refused to fire
+whenever that focused element looked like a text input - which, in practice, was every time.
+The shortcut now always opens the bulk-comment dialog once a selection exists, regardless of
+what still happens to be focused. Canvas's own gradebook-settings gear also went dead after
+being pinned beside Apply Filters: pinning it worked by physically moving Canvas's real button
+into `<body>`, which silently breaks its click, because Canvas's gradebook is a React app whose
+event delegation depends on the button staying in the DOM subtree React actually rendered it
+into. The real gear is no longer touched or moved; a lookalike button sits beside Apply Filters
+instead and forwards its click to whatever Canvas's real settings control resolves to at that
+moment.
+
 1.6.0 - fixes reported from real classroom use. Keyboard shortcuts (`M`/`E`/`L`, numbers, bulk
 paste) no longer silently revert a moment after they're applied: a column-wide submissions fetch
 that was already in flight when the write landed could land afterwards and overwrite it with the
