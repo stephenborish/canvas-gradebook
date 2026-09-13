@@ -1211,15 +1211,15 @@ html.cgp-on .cgp-crumb-item {
 
 /* Canvas's own gradebook-settings gear, relocated (not cloned - it is still
  * Canvas's real control) to sit beside Apply Filters so it stays reachable
- * even while the rest of Canvas's utility strip is collapsed. See
- * layout.js#pinSettingsGear. */
+ * even while the rest of Canvas's utility strip is collapsed. Position
+ * (fixed, tracking Apply Filters' own on-screen location) is set from
+ * layout.js#positionPinnedGear, not here - this only guarantees the gear
+ * itself renders once it's there. */
 html.cgp-on .cgp-pinned-gear {
   display: inline-flex !important;
   visibility: visible !important;
   align-items: center;
   justify-content: center;
-  vertical-align: middle;
-  margin-left: 8px;
 }
 
 /* ------------------------------------------------------- course switcher */

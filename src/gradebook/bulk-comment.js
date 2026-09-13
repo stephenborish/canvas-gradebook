@@ -25,6 +25,7 @@
     this.el = null;
     this.targets = [];
     this._bound = false;
+    this.busy = false;
   }
 
   var P = BulkCommentController.prototype;
@@ -122,6 +123,12 @@
     save.addEventListener('click', submit);
 
     function submit() {
+      // Focus stays in the textarea while saving, so Ctrl/Cmd+Enter pressed
+      // again (a double press, or a held-down key) would otherwise call
+      // submit() a second time and post the same comment twice to every
+      // selected cell - disabling only the Save button doesn't stop that,
+      // since this keyboard path never goes through it.
+      if (self.busy) return;
       var text = String(input.value || '').trim();
       if (!text) return;
       var targets = self.targets.slice();
@@ -130,6 +137,7 @@
         if (!window.confirm('Add this comment to ' + targets.length + ' cells?')) return;
       }
 
+      self.busy = true;
       save.disabled = true;
       save.textContent = 'Saving…';
       var gate = CGP.util.pool(3);
@@ -154,8 +162,18 @@
         }
         CGP.diag.bump('bulkComment.ok', ok);
         CGP.diag.bump('bulkComment.failed', failed);
+        self.busy = false;
         if (self.requestPaint) self.requestPaint();
         self.close();
+      }, function (err) {
+        // Every per-target write above already catches its own failure, so
+        // this should not fire - but if it ever does, the dialog must not be
+        // left permanently unusable because busy never got reset.
+        self.busy = false;
+        save.disabled = false;
+        save.textContent = 'Add to ' + targets.length + (targets.length === 1 ? ' cell' : ' cells');
+        CGP.diag.error('bulkComment.rejected', { message: String(err && err.message) });
+        CGP.ui.error('Something went wrong saving that comment. Nothing more was changed.');
       });
     }
     setTimeout(function () { input.focus(); }, 0);

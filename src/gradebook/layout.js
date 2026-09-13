@@ -214,21 +214,48 @@
     return null;
   };
 
-  /* Move Canvas's own settings gear (the real control, not a copy) to sit
-   * right beside Apply Filters, and mark it so it is never swept up by
-   * hideControls even when its original wrapper is. Idempotent and cheap to
-   * call often: Canvas can re-render its action bar (which would otherwise
-   * move the gear back to its original spot) at any point while the
-   * gradebook is open. */
+  /* Move Canvas's own settings gear (the real control, not a copy) out to
+   * <body> and hold it fixed-position beside Apply Filters, rather than
+   * leaving it as an ordinary sibling wherever Apply Filters happens to live.
+   * That distinction matters: Canvas's utility strip is hidden largely by
+   * whole-container selectors (#gradebook-actions, .gradebook-menus and
+   * friends in CONTROL_SELECTORS) rather than by targeting every individual
+   * button, so a gear merely inserted next to Apply Filters could still end
+   * up INSIDE one of those containers - excluding the gear itself from
+   * candidates() does nothing when the thing actually being hidden is an
+   * ancestor several levels up. Parking it on <body> - the same pattern this
+   * file's siblings already use for the course-switcher menu and the comment
+   * popover - puts it somewhere hideControls() can never reach, regardless of
+   * where Canvas renders Apply Filters. Idempotent and cheap to call often:
+   * Canvas can re-render its action bar (which would otherwise move a FRESH
+   * copy of the gear back into that markup) at any point while the gradebook
+   * is open. */
   P.pinSettingsGear = function () {
     var gear = this.findSettingsButton();
+    if (gear && gear.isConnected) {
+      gear.classList.add('cgp-pinned-gear');
+      gear.classList.remove('cgp-hidden', 'cgp-collapsed');
+      if (gear.parentElement !== document.body) document.body.appendChild(gear);
+      this._gearEl = gear;
+    }
+    this.positionPinnedGear();
+  };
+
+  /* Keep the parked gear glued to Apply Filters' current on-screen position.
+   * Cheap enough to call on every resize and on the periodic safety tick;
+   * does nothing when there is no gear to place or nothing to place it by. */
+  P.positionPinnedGear = function () {
+    var gear = this._gearEl;
     if (!gear || !gear.isConnected) return;
-    gear.classList.add('cgp-pinned-gear');
-    gear.classList.remove('cgp-hidden', 'cgp-collapsed');
     var anchor = this.findApplyFiltersButton();
     if (!anchor || !anchor.isConnected || anchor === gear) return;
-    if (gear.previousElementSibling === anchor && gear.parentElement === anchor.parentElement) return;
-    anchor.insertAdjacentElement('afterend', gear);
+    var rect = anchor.getBoundingClientRect();
+    if (!rect.width && !rect.height) return; // anchor not actually laid out yet
+    gear.style.position = 'fixed';
+    gear.style.left = Math.round(rect.right + 8) + 'px';
+    gear.style.top = Math.round(rect.top + rect.height / 2) + 'px';
+    gear.style.transform = 'translateY(-50%)';
+    gear.style.zIndex = '2147483000';
   };
 
   P.hideControls = function () {
@@ -361,6 +388,11 @@
   };
 
   P.onWindowResize = function () {
+    // Harmless either way, so it runs even on our own synthetic nudge below -
+    // unlike applyGeometry, repositioning a fixed-position element cannot
+    // itself trigger another resize event and so can never feed the loop
+    // that guard exists to prevent.
+    this.positionPinnedGear();
     if (this._selfResize) return;   // our own nudge, not the window actually changing
     this.applyGeometry();
   };
