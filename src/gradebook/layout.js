@@ -184,11 +184,24 @@
   };
 
   /* Find Canvas's own gradebook-settings gear and Apply Filters button,
-   * wherever this Canvas build currently renders them. */
+   * wherever this Canvas build currently renders them.
+   *
+   * Must never return the proxy itself (see ensureGearProxy). The proxy is
+   * deliberately labelled "Gradebook settings" for its own tooltip/aria-label,
+   * which is the exact text the last two SETTINGS_SELECTORS patterns
+   * (button[aria-label*=...], button[title*=...]) match against - so on a
+   * Canvas build where none of the earlier id/test-id selectors find the
+   * real button, document.querySelector() for those two would happily return
+   * our own proxy instead, since it is the only element in the whole
+   * document with that label. That is self-reference, not a find: the click
+   * handler below would then call activateCell() on the proxy, which fires
+   * this same click handler again, recursing until the stack overflows. */
   P.findSettingsButton = function () {
     for (var i = 0; i < SETTINGS_SELECTORS.length; i++) {
       var el = document.querySelector(SETTINGS_SELECTORS[i]);
-      if (el) return el.closest('button, [role="button"]') || el;
+      if (el && !el.classList.contains('cgp-pinned-gear') && !el.closest('.cgp-pinned-gear')) {
+        return el.closest('button, [role="button"]') || el;
+      }
     }
     // Fallback: anything actually labelled "settings" inside the gradebook's
     // own action area, in case this Canvas build uses none of the ids/test
@@ -264,7 +277,10 @@
       // can re-render its action bar (handing the settings control a brand
       // new DOM node) at any point while the gradebook is open.
       var real = self.findSettingsButton();
-      if (!real) {
+      // Belt-and-suspenders against the self-reference findSettingsButton()
+      // now guards against: never dispatch a click back onto this same proxy,
+      // which would just re-enter this handler and recurse.
+      if (!real || real === btn || btn.contains(real)) {
         CGP.diag.warn('layout.settingsButtonMissing');
         CGP.ui.error('Gradebook+ couldn’t find Canvas’s settings button right now. Try reloading.');
         return;
