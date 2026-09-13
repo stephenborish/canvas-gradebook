@@ -19,12 +19,9 @@
     '#gradebook-actions',
     '.gradebook-menus',
     '.gradebook_menu',
-    '#gradebook-settings',
-    '#gradebook_settings_modal_button',
     '[data-component="EnhancedActionMenu"]',
     '[data-component="ActionMenu"]',
     '[data-component="ViewOptionsMenu"]',
-    '[data-testid="gradebook-settings-button"]',
     '[data-testid="view-options-menu"]',
     '[data-testid="enhanced-actions-menu"]',
     '[data-testid="apply-filters-button"]',
@@ -51,7 +48,28 @@
 
   var BUTTON_LABELS = [
     'import', 'export', 'sync', 'sync to sis', 'view options', 'apply filters',
-    'gradebook settings', 'actions', 'export current gradebook view'
+    'actions', 'export current gradebook view'
+  ];
+
+  // Canvas's own gradebook-settings gear. Deliberately kept OUT of
+  // CONTROL_SELECTORS/BUTTON_LABELS above (it used to be hidden along with
+  // everything else in the utility strip): a teacher needs this control
+  // often enough - column sorting, arrangement, late/missing policies - that
+  // it should stay reachable regardless of the "collapse Canvas's utility
+  // strip" setting, pinned next to Apply Filters instead of buried behind
+  // Alt+Shift+H. See pinSettingsGear.
+  var SETTINGS_SELECTORS = [
+    '#gradebook_settings_modal_button',
+    '#gradebook-settings',
+    '[data-testid="gradebook-settings-button"]',
+    '[data-component="GradebookSettingsButton"]',
+    'button[aria-label*="gradebook settings" i]',
+    'button[title*="gradebook settings" i]'
+  ];
+
+  var APPLY_FILTERS_SELECTORS = [
+    '[data-testid="apply-filters-button"]',
+    'button[aria-label*="apply filters" i]'
   ];
 
   function CompactLayoutController(ctx) {
@@ -85,6 +103,11 @@
     var headerH = (s.narrowColumns ? 72 : 48) + (s.showAssignmentDueDate ? 14 : 0);
     root.style.setProperty('--cgp-header-h', headerH + 'px');
 
+    // Unconditional: the settings gear is pinned in place regardless of the
+    // "collapse Canvas's utility strip" setting, so a teacher who turns that
+    // setting off still finds it exactly where they left it, and one who
+    // leaves it on can still reach the gear without Alt+Shift+H.
+    this.pinSettingsGear();
     if (s.hideCanvasUtilityControls) this.hideControls();
     this.applyGeometry();
     this.bindShortcut();
@@ -127,7 +150,13 @@
 
   P.candidates = function () {
     var found = [];
-    var push = function (el) { if (el && found.indexOf(el) < 0) found.push(el); };
+    var push = function (el) {
+      // The pinned settings gear (and, defensively, anything already inside
+      // it) is never a hide candidate, however it happened to be found -
+      // that is the whole point of pinning it. See pinSettingsGear.
+      if (el && (el.classList.contains('cgp-pinned-gear') || el.closest('.cgp-pinned-gear'))) return;
+      if (el && found.indexOf(el) < 0) found.push(el);
+    };
 
     CONTROL_SELECTORS.forEach(function (sel) {
       Array.prototype.slice.call(document.querySelectorAll(sel)).forEach(push);
@@ -142,7 +171,7 @@
     Array.prototype.slice.call(document.querySelectorAll('#content button, #content [role="button"]')).forEach(function (btn) {
       if (btn.closest('.slick-header') || btn.closest('.grid-canvas') || btn.closest('#breadcrumbs')) return;
       if (btn.closest('.cgp-course-menu') || btn.classList.contains('cgp-crumb-toggle')) return;
-      if (btn.classList.contains('cgp-find-student')) return;
+      if (btn.classList.contains('cgp-find-student') || btn.classList.contains('cgp-pinned-gear')) return;
       var label = ((btn.textContent || '') + ' ' + (btn.getAttribute('aria-label') || '') + ' ' +
         (btn.getAttribute('title') || '')).trim().toLowerCase().replace(/\s+/g, ' ');
       if (!label) return;
@@ -153,10 +182,66 @@
     return found;
   };
 
+  /* Find Canvas's own gradebook-settings gear and Apply Filters button,
+   * wherever this Canvas build currently renders them. */
+  P.findSettingsButton = function () {
+    for (var i = 0; i < SETTINGS_SELECTORS.length; i++) {
+      var el = document.querySelector(SETTINGS_SELECTORS[i]);
+      if (el) return el.closest('button, [role="button"]') || el;
+    }
+    // Fallback: anything actually labelled "settings" inside the gradebook's
+    // own action area, in case this Canvas build uses none of the ids/test
+    // ids above.
+    var area = document.querySelectorAll(
+      '#gradebook-actions button, .gradebook-menus button, [data-component="EnhancedActionMenu"] button');
+    for (var j = 0; j < area.length; j++) {
+      var label = ((area[j].getAttribute('aria-label') || '') + ' ' +
+        (area[j].getAttribute('title') || '') + ' ' + (area[j].textContent || '')).toLowerCase();
+      if (label.indexOf('settings') >= 0) return area[j];
+    }
+    return null;
+  };
+
+  P.findApplyFiltersButton = function () {
+    for (var i = 0; i < APPLY_FILTERS_SELECTORS.length; i++) {
+      var el = document.querySelector(APPLY_FILTERS_SELECTORS[i]);
+      if (el) return el;
+    }
+    var buttons = document.querySelectorAll('#content button, #content [role="button"]');
+    for (var j = 0; j < buttons.length; j++) {
+      if ((buttons[j].textContent || '').trim().toLowerCase() === 'apply filters') return buttons[j];
+    }
+    return null;
+  };
+
+  /* Move Canvas's own settings gear (the real control, not a copy) to sit
+   * right beside Apply Filters, and mark it so it is never swept up by
+   * hideControls even when its original wrapper is. Idempotent and cheap to
+   * call often: Canvas can re-render its action bar (which would otherwise
+   * move the gear back to its original spot) at any point while the
+   * gradebook is open. */
+  P.pinSettingsGear = function () {
+    var gear = this.findSettingsButton();
+    if (!gear || !gear.isConnected) return;
+    gear.classList.add('cgp-pinned-gear');
+    gear.classList.remove('cgp-hidden', 'cgp-collapsed');
+    var anchor = this.findApplyFiltersButton();
+    if (!anchor || !anchor.isConnected || anchor === gear) return;
+    if (gear.previousElementSibling === anchor && gear.parentElement === anchor.parentElement) return;
+    anchor.insertAdjacentElement('afterend', gear);
+  };
+
   P.hideControls = function () {
     var now = Date.now();
     if (now - this._lastHidePass < 400) return;
     this._lastHidePass = now;
+
+    // Re-pin first: Canvas re-rendering its action bar between paint passes
+    // can put the gear back where it started, which candidates() would then
+    // (correctly, given where it is) leave alone - but "leave alone" only
+    // keeps it visible if it is back in its pinned spot, not orphaned in a
+    // wrapper this same pass is about to collapse.
+    this.pinSettingsGear();
 
     var self = this;
     var targets = this.candidates();

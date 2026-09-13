@@ -24,6 +24,10 @@
     this.loadedAssignments = new Set();
     this.pendingAssignments = new Map();
     this.commentVerifiedAssignments = new Set();
+    // "assignmentId:userId" -> Date.now() when a local write (a keyboard
+    // shortcut, bulk paste, or an added comment) most recently started on
+    // that cell. See markLocalWrite / applySubmission below.
+    this._writeStartedAt = new Map();
     this.ready = false;
     this._listeners = Object.create(null);
     this._totalQueue = new Set();
@@ -129,6 +133,10 @@
 
     var batches = util.chunk(wanted, 8);
     var jobs = batches.map(function (batch) {
+      // Stamped before the request goes out: whatever this fetch returns
+      // describes the column no earlier than this moment, so a local write
+      // that starts at or after it must win (see applySubmission).
+      var fetchStartedAt = Date.now();
       var job = self.api.submissionsForAssignments(self.courseId, batch).then(function (subs) {
         var payloadsWithComments = 0;
         var rawCommentCount = 0;
@@ -137,7 +145,7 @@
             payloadsWithComments++;
             rawCommentCount += s.submission_comments.length;
           }
-          self.applySubmission(s, { silent: true });
+          self.applySubmission(s, { silent: true, staleIfWrittenAfter: fetchStartedAt });
         });
         batch.forEach(function (id) { self.loadedAssignments.add(id); self.pendingAssignments.delete(id); });
         CGP.diag.set('submissionsLoaded', self.cells.size);
@@ -172,11 +180,12 @@
     if (!wanted.length) return Promise.resolve(null);
     return Promise.all(wanted.map(function (id) {
       self.commentVerifiedAssignments.add(id);
+      var fetchStartedAt = Date.now();
       return self.api.submissionsForAssignment(self.courseId, id).then(function (subs) {
         var raw = 0;
         (subs || []).forEach(function (sub) {
           if (Array.isArray(sub && sub.submission_comments)) raw += sub.submission_comments.length;
-          self.applySubmission(sub, { silent: true });
+          self.applySubmission(sub, { silent: true, staleIfWrittenAfter: fetchStartedAt });
         });
         CGP.diag.bump('comments.verifiedAssignments');
         CGP.diag.bump('comments.verifiedRaw', raw);
@@ -211,6 +220,28 @@
     var assignmentId = String(sub.assignment_id);
     var userId = String(sub.user_id);
     var k = this.key(assignmentId, userId);
+
+    // A column-wide (or comment-verification) fetch can still be in flight
+    // when a keyboard shortcut, bulk paste, or comment write lands on one of
+    // its cells. If that fetch was already running before the write started,
+    // its response reflects the pre-write server state - and applying it here
+    // would silently undo a write that already succeeded a moment earlier.
+    // That is the "M/E/L (or a comment) do nothing until I refresh" report:
+    // the write took, but a slower, already-in-flight read for the same
+    // column landed afterwards and quietly reverted it. A manual refresh
+    // "fixes" it only because every request it makes starts strictly after
+    // the write it follows, so this race never has a chance to occur.
+    // Refreshing never had special knowledge the live page lacked - it just
+    // couldn't lose this race. Skipping the stale response here means the
+    // live page doesn't have to either.
+    if (opts.staleIfWrittenAfter !== undefined) {
+      var writtenAt = this._writeStartedAt.get(k);
+      if (writtenAt && writtenAt >= opts.staleIfWrittenAfter) {
+        CGP.diag.bump('model.staleFetchSkipped');
+        return this.cells.get(k) || null;
+      }
+    }
+
     var prev = this.cells.get(k) || {};
 
     var comments = Array.isArray(sub.submission_comments) ? sub.submission_comments
@@ -322,6 +353,14 @@
     this.loadedAssignments.delete(id);
     this.pendingAssignments.delete(id);
     return this.ensureAssignments([id]);
+  };
+
+  /* Record that a local write to this cell is starting right now. Called
+   * before every optimistic patch (writer.js), so a background fetch already
+   * in flight for this cell's column can recognise, once it lands, that it
+   * is now stale. See applySubmission above. */
+  GradebookModel.prototype.markLocalWrite = function (assignmentId, userId) {
+    this._writeStartedAt.set(this.key(assignmentId, userId), Date.now());
   };
 
   GradebookModel.prototype.cell = function (assignmentId, userId) {

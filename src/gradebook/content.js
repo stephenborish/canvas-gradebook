@@ -85,6 +85,10 @@
     var writer = new CGP.GradeWriter({ api: api, model: model, settings: settings });
     popover.writer = writer;
 
+    var bulkComment = new CGP.BulkCommentController({
+      model: model, writer: writer, settings: settings, requestPaint: requestPaint
+    });
+
     var indicators = new CGP.IndicatorController({
       model: model, adapter: adapter, registry: registry, settings: settings,
       onCommentClick: function (info) { popover.open(info); },
@@ -98,7 +102,7 @@
     var frozen = new CGP.FrozenTotalController({ adapter: adapter, model: model, settings: settings });
     var keyboard = new CGP.KeyboardGradingController({
       adapter: adapter, model: model, writer: writer, selection: selection,
-      settings: settings, requestPaint: requestPaint
+      settings: settings, requestPaint: requestPaint, bulkComment: bulkComment
     });
     // Header-level action: post the grades a column is still hiding from
     // students. Painted with the headers, because that is where the state it
@@ -239,6 +243,11 @@
         if (model.ready && adapter._lastUnresolvedColumns) {
           adapter.reconcileColumnsWithModel(model);
         }
+        // Cheap and idempotent: catches Canvas re-rendering its action bar
+        // (which would otherwise move the settings gear back off its pinned
+        // spot) independently of whether the rest of the utility strip is
+        // being collapsed.
+        layout.pinSettingsGear();
         paint();
       }, 1500);
 
@@ -318,7 +327,7 @@
       injectEnvBridge();
       CGP.gradebook = {
         model: model, adapter: adapter, layout: layout, selection: selection,
-        writer: writer, posting: posting, paint: paint, diag: CGP.diag
+        writer: writer, posting: posting, bulkComment: bulkComment, paint: paint, diag: CGP.diag
       };
     });
   }

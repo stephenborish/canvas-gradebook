@@ -120,6 +120,18 @@
       if (!info) { return; }
       if (!modifierAdd && !modifierRange) {
         if (self.keys.size) self.clear({ silent: true });
+        // A plain click selects nothing of ours - Canvas activates the cell
+        // as usual - but it is still the reference point a teacher expects
+        // the NEXT Shift-click to extend a range from, the same way a
+        // spreadsheet works. Without this, the range's anchor exists only
+        // once a cell has been Cmd/Ctrl-clicked first, so a plain click on
+        // one row followed by Shift-click on another selected only the
+        // second row - a rectangle of one cell - and which row was clicked
+        // first (top or bottom) looked like it mattered, when really
+        // neither order actually built a range yet.
+        if (info.columnType === 'assignment' && info.rowIndex !== null && info.colIndex !== null) {
+          self.anchor = { rowIndex: info.rowIndex, colIndex: info.colIndex };
+        }
         return;
       }
       if (info.columnType !== 'assignment') return;

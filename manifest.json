@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Canvas Gradebook+",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Upgrades Canvas instructor Gradebook: instructor-comment indicators, keyboard shortcuts, and instant post.",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -66,6 +66,7 @@
         "src/gradebook/layout.js",
         "src/gradebook/post-grades.js",
         "src/gradebook/comment-popover.js",
+        "src/gradebook/bulk-comment.js",
         "src/gradebook/course-switcher.js",
         "src/gradebook/student-search.js",
         "src/speedgrader/content.js",

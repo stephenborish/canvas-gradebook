@@ -27,6 +27,7 @@ export const CONTENT_JS = [
   'src/gradebook/layout.js',
   'src/gradebook/post-grades.js',
   'src/gradebook/comment-popover.js',
+  'src/gradebook/bulk-comment.js',
   'src/gradebook/course-switcher.js',
   'src/gradebook/student-search.js',
   'src/speedgrader/content.js',

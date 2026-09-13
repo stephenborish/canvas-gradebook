@@ -52,6 +52,17 @@
       CGP.diag.bump('write.ok', result.ok);
       CGP.diag.bump('write.failed', result.failed);
       return result;
+    }, function (err) {
+      // writeOne is written to always resolve (its own network failures are
+      // caught and folded into result.failed), so this should not fire - but
+      // if some future change ever lets one throw, the caller (a keyboard
+      // shortcut, a paste) must still get its promise back and still get its
+      // repaint, rather than silently never hearing from apply() again. That
+      // silence is indistinguishable from "the shortcut did nothing until I
+      // refreshed the page".
+      CGP.diag.error('write.applyRejected', { message: String(err && err.message) });
+      CGP.ui.error('Something went wrong applying that. Nothing more was changed.');
+      return result;
     });
   };
 
@@ -106,6 +117,12 @@
       CGP.diag.warn('write.anonymousAssignmentSkipped', { assignmentId: assignmentId });
       return Promise.resolve();
     }
+
+    // Stamped before anything else: a column-wide fetch already in flight
+    // for this cell must be recognised as stale once it lands, or its
+    // pre-write response can silently overwrite what this write is about to
+    // record. See model.markLocalWrite / applySubmission.
+    this.model.markLocalWrite(assignmentId, userId);
 
     var currentRec = this.model.cell(assignmentId, userId);
     var op = CGP.gradeOps.operationFor(target.parsed, {
@@ -293,6 +310,7 @@
 
   P.addComment = function (assignmentId, userId, text) {
     var self = this;
+    this.model.markLocalWrite(assignmentId, userId);
     return this.api.addComment(this.model.courseId, assignmentId, userId, text).then(function (submission) {
       self.model.applyCommentWrite(assignmentId, userId, submission);
       CGP.diag.bump('comment.saved');

@@ -1123,6 +1123,9 @@ html.cgp-on .cgp-pop__actions {
   justify-content: space-between;
   margin-top: 8px;
 }
+/* The bulk-comment popover has no SpeedGrader link to balance against, so its
+ * one button sits on its own at the trailing edge instead of stranded left. */
+html.cgp-on .cgp-pop__actions--end { justify-content: flex-end; }
 html.cgp-on .cgp-pop__link { color: var(--cgp-brand); text-decoration: none; font-weight: 600; }
 html.cgp-on .cgp-pop__link:hover { color: var(--cgp-brand-dark); text-decoration: underline; }
 html.cgp-on .cgp-pop__save {
@@ -1188,6 +1191,37 @@ html.cgp-on .cgp-preview__hint {
   font-size: 10.5px;
 }
 
+/* ------------------------------------------------------- breadcrumb crumb */
+
+/* Canvas's breadcrumb list item wraps its own inline content - the course
+ * link plus whatever this extension adds after it (Switch course, Find
+ * student) - once that combined text no longer fits the item's own line box.
+ * The visible symptom is "Switch course" staying put on the first line while
+ * "Find student" drops to a second line of its own, out of alignment with
+ * everything above it, while the NEXT breadcrumb crumb (e.g. "Grades") flows
+ * up to share that same second line - normal inline wrapping, not a layout
+ * bug in either button. Keeping the crumb's own content on one line, even if
+ * that occasionally runs a little past where Canvas expected this crumb to
+ * end, keeps both added controls glued to the course name they sit beside. */
+html.cgp-on .cgp-crumb-item {
+  white-space: nowrap !important;
+}
+
+/* ------------------------------------------------------- pinned settings gear */
+
+/* Canvas's own gradebook-settings gear, relocated (not cloned - it is still
+ * Canvas's real control) to sit beside Apply Filters so it stays reachable
+ * even while the rest of Canvas's utility strip is collapsed. See
+ * layout.js#pinSettingsGear. */
+html.cgp-on .cgp-pinned-gear {
+  display: inline-flex !important;
+  visibility: visible !important;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  margin-left: 8px;
+}
+
 /* ------------------------------------------------------- course switcher */
 
 /* A labeled control, not a bare caret, so it still reads as "click me to
@@ -1218,7 +1252,14 @@ html.cgp-on .cgp-crumb-toggle {
   transition: background 100ms ease, border-color 100ms ease;
 }
 html.cgp-on .cgp-crumb-toggle__label { white-space: nowrap; }
-html.cgp-on .cgp-crumb-toggle svg { width: 8px; height: 5px; display: block; flex: 0 0 auto; }
+/* The plain caret used by the course switcher only - excluding
+ * .cgp-find-student here (rather than just listing its own svg size below)
+ * matters for more than tidiness: a bare ".cgp-crumb-toggle svg" selector is
+ * MORE specific than ".cgp-find-student__glyph" alone (one class plus one
+ * element beats one class), so without this exclusion this rule was the one
+ * that won and squashed the magnifying glass down to an 8x5px caret-sized
+ * sliver - the "search icon is extremely tiny" report. */
+html.cgp-on .cgp-crumb-toggle:not(.cgp-find-student) svg { width: 8px; height: 5px; display: block; flex: 0 0 auto; }
 html.cgp-on .cgp-crumb-toggle:hover {
   background: var(--cgp-brand-wash);
   border-color: rgba(3, 116, 181, 0.22);
