@@ -358,13 +358,17 @@
       self.hideKeyboardShortcutsButton();
       attempts++;
       var gear = self.findSettingsButton();
-      // When the utility strip is deliberately collapsed, Apply Filters is
-      // itself cgp-hidden and will never get a real rect to align against -
-      // stop polling immediately instead of burning the full budget.
-      var gearSettled = !gear || !gear.isConnected || gear.classList.contains('cgp-gear-aligned') ||
+      // A control that has not mounted yet is NOT settled - Canvas can still
+      // render it on a later tick, and start() runs before content.js's own
+      // grid-readiness wait, so "not found" on an early tick usually means
+      // "not there yet", not "never coming". Only an affirmative aligned/
+      // hidden state - or the deliberate-utility-collapse case below, where
+      // the gear provably never gets a real anchor to align against - counts
+      // as settled; everything else keeps polling until the budget runs out.
+      var gearSettled = (gear && gear.isConnected && gear.classList.contains('cgp-gear-aligned')) ||
         self.controlsHidden;
       var kbdBtn = self.findKeyboardShortcutsButton();
-      var kbdSettled = !kbdBtn || kbdBtn.classList.contains('cgp-hidden');
+      var kbdSettled = !!(kbdBtn && kbdBtn.classList.contains('cgp-hidden'));
       if ((gearSettled && kbdSettled) || attempts >= 30) { self._settling = false; return; }
       setTimeout(tick, 100);
     };
