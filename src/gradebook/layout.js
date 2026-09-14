@@ -411,6 +411,31 @@
     });
   };
 
+  /* A wrapper collapsed above only because it looked EMPTY at that moment -
+   * never one of the deliberate, direct cgp-hidden matches - can be wrong:
+   * Canvas can still be about to render real content into it asynchronously
+   * (a lazy-loaded filter panel, say), and nothing before this ever
+   * reconsidered a wrapper once collapsed. That made a false-positive
+   * permanent - hiding a control the teacher genuinely needs for the rest of
+   * the page's life, recoverable only via Alt+Shift+H or turning the whole
+   * setting off, neither of which a teacher has any reason to try for this.
+   * Cheap to run periodically (see content.js's safety tick): only wrappers
+   * already in `hidden` are ever considered, and un-collapsing one that
+   * really does have content now is always correct regardless of why it
+   * looked empty before. */
+  P.recheckCollapsedWrappers = function () {
+    var self = this;
+    var recovered = 0;
+    this.hidden.forEach(function (el) {
+      if (!el || !el.isConnected || !el.classList.contains('cgp-collapsed')) return;
+      if (self.hasVisibleSubstance(el)) {
+        el.classList.remove('cgp-collapsed');
+        recovered++;
+      }
+    });
+    if (recovered) CGP.diag.bump('layout.wrappersRecovered', recovered);
+  };
+
   /* Where the grid starts, and therefore how tall it is allowed to be.
    *
    * Both numbers are published as whole pixels and, crucially, only when they
@@ -513,8 +538,23 @@
           // instead of leaving the column at whatever width the miss landed
           // on.
           return self.dragResize(item).then(function (ok2) {
-            if (ok2) applied++;
-            else CGP.diag.warn('layout.columnResizeMissed', { type: item.type, want: item.want });
+            if (ok2) { applied++; return; }
+            CGP.diag.warn('layout.columnResizeMissed', { type: item.type, want: item.want });
+            // Two attempts at the target width both missed. This is Canvas's
+            // OWN real resize handle, so whatever odd width the failed drags
+            // left behind is not just a cosmetic glitch - Canvas persists it
+            // exactly as if the teacher had dragged it there themselves,
+            // including on their next login. Leaving it there with nothing
+            // but a diagnostics-only trace is worse than trying to put it
+            // back: drag it toward its ORIGINAL width instead, and only if
+            // that also fails, say so where the teacher can actually see it.
+            return self.dragResize({ el: item.el, want: item.have, type: item.type }).then(function (reverted) {
+              if (reverted) return;
+              if (self._resizeMissedNotified) return;
+              self._resizeMissedNotified = true;
+              CGP.ui.error('Gradebook+ couldn’t resize one or more columns to fit. ' +
+                'Check their widths in Canvas if they look off.');
+            });
           });
         });
       });

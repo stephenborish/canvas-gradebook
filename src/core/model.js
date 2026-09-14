@@ -31,6 +31,7 @@
     this.ready = false;
     this._listeners = Object.create(null);
     this._totalQueue = new Set();
+    this._totalRecheckPending = new Set();
     this._flushTotals = util.debounce(this._doFlushTotals.bind(this), 900);
   }
 
@@ -363,6 +364,19 @@
     this._writeStartedAt.set(this.key(assignmentId, userId), Date.now());
   };
 
+  /* Undo markLocalWrite once a write is known to have NOT taken (the API
+   * request failed and the cell was rolled back to its prior snapshot).
+   * Without this, the marker is left behind forever: a later, genuinely
+   * correct fetch for this cell would keep comparing itself against a write
+   * that never actually happened, be judged "stale" every time, and never be
+   * allowed to apply - permanently freezing that cell's record at whatever
+   * it was (or wiping it blank) even though Canvas has real, readable data
+   * for it. There is no newer successful write to protect once this one is
+   * known to have failed, so nothing is lost by clearing it. */
+  GradebookModel.prototype.clearLocalWrite = function (assignmentId, userId) {
+    this._writeStartedAt.delete(this.key(assignmentId, userId));
+  };
+
   GradebookModel.prototype.cell = function (assignmentId, userId) {
     return this.cells.get(this.key(assignmentId, userId)) || null;
   };
@@ -427,6 +441,26 @@
     if (!userId) return;
     this._totalQueue.add(String(userId));
     this._flushTotals();
+    this._scheduleTotalRecheck(String(userId));
+  };
+
+  /* Canvas recomputes a student's course total asynchronously - more so with
+   * weighted assignment groups - and the single read _doFlushTotals makes
+   * 900ms after a write has no guarantee that recomputation has finished by
+   * then. Unlike confirmMissing's re-check for the Missing status, nothing
+   * here ever verified the Total actually caught up: whatever that one read
+   * returned was painted and never looked at again. One extra, later look -
+   * the same bounded, self-cancelling shape used elsewhere for a single
+   * retry - costs little and catches Canvas simply needing a bit longer. */
+  GradebookModel.prototype._scheduleTotalRecheck = function (userId) {
+    var self = this;
+    if (this._totalRecheckPending.has(userId)) return;
+    this._totalRecheckPending.add(userId);
+    setTimeout(function () {
+      self._totalRecheckPending.delete(userId);
+      self._totalQueue.add(userId);
+      self._flushTotals();
+    }, 2500);
   };
 
   GradebookModel.prototype._doFlushTotals = function () {

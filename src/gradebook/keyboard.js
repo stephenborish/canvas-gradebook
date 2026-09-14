@@ -92,6 +92,18 @@
     if (now === watch.value) return;
     if (!watch.assignmentId || !watch.userId) return;
     if (this._nativeMPending.has(watch.assignmentId + ':' + watch.userId)) return;
+    // A grade committed just now through Canvas's own editor is a local
+    // write exactly as much as one of ours (M/E/L, paste, a comment) is - see
+    // model.markLocalWrite / applySubmission - but until now nothing ever
+    // marked it as one. A column-wide fetch already in flight when this
+    // commit happens could land afterwards carrying the pre-write state and
+    // silently revert what the teacher just typed (the status/indicators
+    // reverting while Canvas's own cell text stays correct), with nothing
+    // left to ever re-correct it since the column is already marked loaded.
+    // Stamped here, synchronously, rather than only once refreshCell's own
+    // fetch goes out 1200ms from now in scheduleReconcile - an in-flight
+    // fetch dispatched in that window must see this write happened before it.
+    this.model.markLocalWrite(watch.assignmentId, watch.userId);
     this.scheduleReconcile(watch.assignmentId, watch.userId);
   };
 

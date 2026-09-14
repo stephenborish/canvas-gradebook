@@ -257,4 +257,21 @@ suite('settings sanitizing', (test) => {
     a.eq(s.snippets.length, 1);
     a.eq(s.snippets[0].trigger, 'evidence', 'slash and punctuation stripped');
   });
+
+  test('a corrupted snippets value falls back to the real defaults, not an empty library', () => {
+    // Every other field falls back to its default when the stored value is
+    // unusable; snippets used to be the one exception, silently coercing
+    // null/an object/a string to [] and wiping the built-in defaults too.
+    a.deep(CGP.sanitizeSettings({ snippets: null }).snippets, CGP.DEFAULTS.snippets);
+    a.deep(CGP.sanitizeSettings({ snippets: {} }).snippets, CGP.DEFAULTS.snippets);
+    a.deep(CGP.sanitizeSettings({ snippets: 'oops' }).snippets, CGP.DEFAULTS.snippets);
+  });
+
+  test('snippets are capped well under chrome.storage.sync’s per-item quota', () => {
+    const many = [];
+    for (let i = 0; i < 100; i++) many.push({ trigger: 't' + i, text: 'x'.repeat(4000) });
+    const s = CGP.sanitizeSettings({ snippets: many });
+    a.eq(s.snippets.length <= 15, true, 'snippet count is capped');
+    a.eq(s.snippets[0].text.length <= 280, true, 'snippet text length is capped');
+  });
 });

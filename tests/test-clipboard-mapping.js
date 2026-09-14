@@ -53,6 +53,26 @@ suite('clipboard matrix parsing', (test) => {
     a.eq(parse('').cellCount, 0);
     a.eq(parse('   \n  ').cellCount, 0);
   });
+
+  test('a locale-grouped thousands number is read as one value, not split across students', () => {
+    const m = parse('1 000');
+    a.eq(m.source, 'grouped-number');
+    a.eq(m.rowCount, 1);
+    a.deep(m.rows, [['1000']]);
+  });
+
+  test('a larger grouped number still collapses to one value', () => {
+    const m = parse('12 345 678');
+    a.deep(m.rows, [['12345678']]);
+  });
+
+  test('a hand typed list that merely looks numeric is NOT mistaken for grouping', () => {
+    // Neither part after the first is exactly 3 digits, so this stays a list
+    // of two separate grades, matching the pre-existing spaced-column feature.
+    const m = parse('10 9');
+    a.eq(m.source, 'spaced-column');
+    a.deep(m.rows, [['10'], ['9']]);
+  });
 });
 
 suite('mapping a pasted block onto Canvas ids', (test) => {

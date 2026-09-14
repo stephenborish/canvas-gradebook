@@ -7,7 +7,7 @@
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.util) return;
 
-  CGP.VERSION = '1.6.0';
+  CGP.VERSION = '1.7.0';
 
   CGP.DEFAULTS = {
     // layout
@@ -160,6 +160,12 @@
 
   /* ---------------------------------------------------------------- settings */
 
+  // See the snippets branch of sanitizeSettings below for why these are
+  // this conservative: chrome.storage.sync caps a single stored item
+  // (the whole cgp.settings blob, not just this array) at 8192 bytes.
+  var MAX_SNIPPETS = 15;
+  var MAX_SNIPPET_TEXT = 280;
+
   function sanitizeSettings(raw) {
     var out = {};
     var d = CGP.DEFAULTS;
@@ -177,12 +183,26 @@
         return;
       }
       if (k === 'snippets') {
-        out[k] = (Array.isArray(v) ? v : []).map(function (s) {
+        // Unlike every other field above, an unusable stored value here used
+        // to be silently coerced to an EMPTY array rather than falling back
+        // to the real defaults - so a corrupted or legacy-schema snippets
+        // value (null, an object, a string) wiped the whole library,
+        // built-in defaults included, on the very next load, and the next
+        // save from the options page baked that loss in for good.
+        if (!Array.isArray(v)) { out[k] = d[k]; return; }
+        // MAX_SNIPPET_TEXT/MAX_SNIPPETS keep the whole cgp.settings blob
+        // (this array plus every other setting) under chrome.storage.sync's
+        // real per-item quota (QUOTA_BYTES_PER_ITEM, 8192 bytes) - a limit
+        // the old 60-snippets-of-4000-chars ceiling could exceed by itself,
+        // several times over. Saving past that quota fails the ENTIRE write
+        // atomically, silently discarding every other pending setting change
+        // in the same save, not just the snippets.
+        out[k] = v.map(function (s) {
           return {
             trigger: String((s && s.trigger) || '').trim().replace(/^\//, '').replace(/[^\w-]/g, '').slice(0, 32),
-            text: String((s && s.text) || '').slice(0, 4000)
+            text: String((s && s.text) || '').slice(0, MAX_SNIPPET_TEXT)
           };
-        }).filter(function (s) { return s.trigger && s.text; }).slice(0, 60);
+        }).filter(function (s) { return s.trigger && s.text; }).slice(0, MAX_SNIPPETS);
         return;
       }
       out[k] = v;
@@ -216,11 +236,23 @@
       }, function () { return self.values; });
     },
     save: function (patch) {
+      var self = this;
+      var prior = this.values;
       var next = sanitizeSettings(Object.assign({}, this.values, patch || {}));
       this.values = next;
       if (typeof chrome === 'undefined' || !chrome.storage) return Promise.resolve(next);
       var payload = {}; payload[this.STORAGE_KEY] = next;
-      return chrome.storage.sync.set(payload).then(function () { return next; });
+      return chrome.storage.sync.set(payload).then(function () { return next; }, function (err) {
+        // The in-memory value was already optimistically updated above; a
+        // rejected write (quota exceeded, a sync conflict) must not leave
+        // this tab believing the change took when nothing was actually
+        // persisted - the next load (or any other open tab) would silently
+        // revert to the old value with no explanation. Rolled back here so
+        // at least THIS tab stays consistent with what is really saved.
+        self.values = prior;
+        CGP.diag.error('settings.saveFailed', { message: String(err && err.message) });
+        throw err;
+      });
     },
     onChange: function (cb) { this._cbs.push(cb); }
   };
