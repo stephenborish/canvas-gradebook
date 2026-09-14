@@ -251,9 +251,20 @@
     if (!anchor || !anchor.isConnected || anchor === gear) { this.resetGearPosition(gear); return; }
     var rect = anchor.getBoundingClientRect();
     if (!rect.width && !rect.height) { this.resetGearPosition(gear); return; } // anchor not laid out yet/hidden
+    // Prefer to the right of Apply Filters, but a narrow or zoomed viewport
+    // can leave too little room there - falling back to fixed positioning
+    // unconditionally would push the gear off-screen and unreachable. Use
+    // the gear's own current size (position:fixed does not affect it) to
+    // check, and put it on the left instead when the right does not fit.
+    var margin = 8;
+    var gearWidth = gear.getBoundingClientRect().width || 32;
+    var left = rect.right + margin;
+    if (left + gearWidth > window.innerWidth) {
+      left = Math.max(margin, rect.left - gearWidth - margin);
+    }
     gear.classList.add('cgp-gear-aligned');
     gear.style.position = 'fixed';
-    gear.style.left = Math.round(rect.right + 8) + 'px';
+    gear.style.left = Math.round(left) + 'px';
     gear.style.top = Math.round(rect.top + rect.height / 2) + 'px';
     gear.style.transform = 'translateY(-50%)';
     gear.style.zIndex = '2147483000';
