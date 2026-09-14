@@ -68,6 +68,13 @@
     'button[title*="gradebook settings" i]'
   ];
 
+  // Used only to find Apply Filters as an anchor for alignSettingsGear() -
+  // Canvas's own button, never touched or moved.
+  var APPLY_FILTERS_SELECTORS = [
+    '[data-testid="apply-filters-button"]',
+    'button[aria-label*="apply filters" i]'
+  ];
+
   function CompactLayoutController(ctx) {
     this.adapter = ctx.adapter;
     this.settings = ctx.settings;
@@ -100,6 +107,10 @@
     root.style.setProperty('--cgp-header-h', headerH + 'px');
 
     if (s.hideCanvasUtilityControls) this.hideControls();
+    // Unconditional, like the utility-strip gear protection above: a teacher
+    // wants the settings gear next to Apply Filters regardless of whether
+    // the rest of the utility strip is being collapsed.
+    this.alignSettingsGear();
     this.applyGeometry();
     this.bindShortcut();
     if (!this._resizeBound) {
@@ -199,6 +210,67 @@
       if (label.indexOf('settings') >= 0) return candidate;
     }
     return null;
+  };
+
+  /* Find Canvas's own Apply Filters button. Used only as an anchor point for
+   * alignSettingsGear() below - never touched or moved. */
+  P.findApplyFiltersButton = function () {
+    for (var i = 0; i < APPLY_FILTERS_SELECTORS.length; i++) {
+      var el = document.querySelector(APPLY_FILTERS_SELECTORS[i]);
+      if (el) return el;
+    }
+    var buttons = document.querySelectorAll('#content button, #content [role="button"]');
+    for (var j = 0; j < buttons.length; j++) {
+      if ((buttons[j].textContent || '').trim().toLowerCase() === 'apply filters') return buttons[j];
+    }
+    return null;
+  };
+
+  /* Put Canvas's own settings gear on the same visual line as Apply Filters.
+   *
+   * The gear is never moved, cloned, or reparented - only its on-screen
+   * POSITION changes, via position:fixed computed from Apply Filters' own
+   * rect. Canvas's React tree never learns anything moved, so the gear's own
+   * click handler (bound by React's event delegation against the real DOM
+   * tree, not screen position) keeps working. An earlier version of this
+   * feature instead relocated the real button's DOM node out to <body>, which
+   * broke exactly that: React's delegated listener stopped seeing the click
+   * bubble through the tree it expected. A separate, later version built a
+   * lookalike proxy button beside Apply Filters that forwarded clicks to the
+   * real one - workable, but left two gear icons on screen since Canvas's
+   * real gear was never actually hidden. Repositioning the real button
+   * avoids both problems.
+   *
+   * Re-resolved and reapplied on every call, since Canvas can re-render
+   * either button - handing it a fresh DOM node with none of our inline
+   * styles - at any point while the gradebook is open. */
+  P.alignSettingsGear = function () {
+    var gear = this.findSettingsButton();
+    if (!gear || !gear.isConnected) return;
+    var anchor = this.findApplyFiltersButton();
+    if (!anchor || !anchor.isConnected || anchor === gear) { this.resetGearPosition(gear); return; }
+    var rect = anchor.getBoundingClientRect();
+    if (!rect.width && !rect.height) { this.resetGearPosition(gear); return; } // anchor not laid out yet/hidden
+    gear.classList.add('cgp-gear-aligned');
+    gear.style.position = 'fixed';
+    gear.style.left = Math.round(rect.right + 8) + 'px';
+    gear.style.top = Math.round(rect.top + rect.height / 2) + 'px';
+    gear.style.transform = 'translateY(-50%)';
+    gear.style.zIndex = '2147483000';
+  };
+
+  /* Undo alignSettingsGear()'s inline styles so the gear falls back to
+   * wherever Canvas naturally laid it out - used when Apply Filters is not
+   * currently on screen to align against (e.g. hidden by the "collapse
+   * Canvas's utility strip" setting). */
+  P.resetGearPosition = function (gear) {
+    if (!gear || !gear.classList.contains('cgp-gear-aligned')) return;
+    gear.classList.remove('cgp-gear-aligned');
+    gear.style.position = '';
+    gear.style.left = '';
+    gear.style.top = '';
+    gear.style.transform = '';
+    gear.style.zIndex = '';
   };
 
   P.hideControls = function () {
@@ -351,6 +423,7 @@
   P.onWindowResize = function () {
     if (this._selfResize) return;   // our own nudge, not the window actually changing
     this.applyGeometry();
+    this.alignSettingsGear();
   };
 
   /* ------------------------------------------------------- column narrowing */

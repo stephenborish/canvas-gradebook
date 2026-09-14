@@ -243,6 +243,11 @@ reachable right where a teacher expects it, whatever this setting is set to.
 Press **Alt+Shift+H** to bring Canvas's controls back for the current page. Turn the whole
 behaviour off permanently in the options page.
 
+Two smaller, unconditional cleanups apply regardless of that setting: Canvas's own "keyboard
+shortcuts" icon button is always hidden, and the settings gear is kept on the same visual line as
+the Apply Filters button (its on-screen position follows Apply Filters; the button itself is never
+moved in Canvas's DOM, so its click handling stays intact).
+
 ### Resubmission indicator
 
 A small purple corner wedge in the cell's bottom-left means the student resubmitted after you graded (Canvas's
