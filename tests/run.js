@@ -12,5 +12,9 @@ require('./test-clipboard-mapping');
 require('./test-comments-totals');
 require('./test-post-status');
 require('./test-model-staleness');
+require('./test-post-reporting');
 
-harness.run();
+// run() awaits each case, so the process must not exit before it settles.
+harness.run().then((okAll) => {
+  if (!okAll) process.exitCode = 1;
+});

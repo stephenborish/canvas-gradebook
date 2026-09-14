@@ -7,7 +7,7 @@
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.util) return;
 
-  CGP.VERSION = '1.7.2';
+  CGP.VERSION = '1.8.0';
 
   CGP.DEFAULTS = {
     // layout
@@ -23,6 +23,7 @@
     commentIndicator: true,
     showCommentCount: true,
     resubmissionIndicator: true,
+    hiddenGradeIndicator: true,
     submissionIndicator: true,
     commentPopover: true,
     // reading

@@ -137,6 +137,43 @@
     if (text) btn.textContent = text;
   };
 
+  /* Re-read the column until Canvas's own view of it catches up.
+   *
+   * Posting is a background job. Canvas's Progress record flips to
+   * "completed" when the job finishes, but the submissions endpoint can
+   * still answer from a moment earlier - so the very first re-read after a
+   * successful post can legitimately come back with every posted_at still
+   * null. That is what produced the "0 of N grades posted" report on a post
+   * that had in fact worked: the count was measured against a read that had
+   * not caught up, and a page refresh a few seconds later showed the grades
+   * posted exactly as they should be.
+   *
+   * So a re-read showing NOTHING changed is not taken at face value while
+   * there are attempts left; it is retried on a short backoff. A read
+   * showing partial progress is real (that is what gradedOnly leaves
+   * behind) and is returned straight away.
+   *
+   * Returns { left, known }. known is false when the re-read itself did not
+   * land - reloadAssignment resolves either way (see model.js), and
+   * pendingPosts answers 0 for a column it no longer considers loaded, so a
+   * failed read is otherwise indistinguishable from "nothing left to post".
+   * The caller must not read a 0 as success without it. */
+  P.settleAfterPost = function (assignmentId, expected) {
+    var self = this;
+    var id = String(assignmentId);
+    var DELAYS = [0, 700, 1500];
+    function attempt(n) {
+      return self.model.reloadAssignment(id).then(function () {
+        if (!self.model.loadedAssignments.has(id)) return { left: expected, known: false };
+        var left = self.model.pendingPosts(id).length;
+        if (left < expected || n + 1 >= DELAYS.length) return { left: left, known: true };
+        CGP.diag.bump('post.reReadLagged');
+        return CGP.util.sleep(DELAYS[n + 1]).then(function () { return attempt(n + 1); });
+      });
+    }
+    return attempt(0);
+  };
+
   /* Post one column.
    *
    * Canvas does the posting as a background job, so the new posted_at
@@ -184,7 +221,8 @@
         CGP.ui.error('Couldn’t confirm this column’s current state. Nothing was changed — try again.');
         return null;
       }
-      var count = self.model.pendingPosts(id).length;
+      var pendingIds = self.model.pendingPosts(id);
+      var count = pendingIds.length;
       if (!count) {
         self.busy.delete(id);
         self.setBusy(btn, false);
@@ -192,14 +230,23 @@
         return null;
       }
       self.setBusy(btn, true, 'Posting…');
+      // Set by the success path below and read after the re-read: whether
+      // Canvas itself confirmed the posting finished, as opposed to us
+      // merely having stopped waiting for its job. What the column looks
+      // like afterwards is only trustworthy evidence when it disagrees with
+      // this; see the reporting block.
+      var confirmed = false;
       return self.api.postAssignmentGrades(id, { gradedOnly: true })
         .then(function (progress) {
           // No progress id means Canvas did the work synchronously; otherwise
           // the posting happens in a background job and the new posted_at
           // timestamps do not exist until it finishes. A job that reports
           // FAILED throws from here and is reported to the teacher.
-          if (!progress || !progress._id) return null;
-          return self.api.waitForProgress(progress._id);
+          if (!progress || !progress._id) { confirmed = true; return null; }
+          return self.api.waitForProgress(progress._id).then(function (result) {
+            confirmed = !!(result && result.done);
+            return result;
+          });
         }, function (err) {
           // Fall back to the older, broader "unmute the whole column" REST
           // endpoint ONLY on a signal that specifically means the mutation
@@ -221,22 +268,48 @@
             /cannot query field|unknown (field|argument|operation)|doesn.?t exist on type/i.test(String(err.message || ''));
           var mutationUnavailable = !!(err && (err.network === true || err.status === 404 || err.status === 501 || schemaMismatch));
           if (!mutationUnavailable) throw err;
-          return self.postWithoutGraphql(id, err);
+          return self.postWithoutGraphql(id, err).then(function (r) { confirmed = true; return r; });
         })
         .then(function () {
-          return self.model.reloadAssignment(id);
+          return self.settleAfterPost(id, count);
         })
-        .then(function () {
-          var left = self.model.pendingPosts(id).length;
+        .then(function (settled) {
+          var left = settled.left;
           var name = (assignment && assignment.name) || 'this column';
-          if (left) {
+          if (settled.known && !left) {
+            CGP.ui.toast(count + (count === 1 ? ' grade' : ' grades') + ' posted to students');
+            CGP.diag.bump('post.completed', count);
+            return;
+          }
+          if (settled.known && left < count) {
             // Canvas posted some but not all - most often ungraded submissions,
             // which "post graded only" deliberately leaves hidden.
             CGP.ui.toast((count - left) + ' of ' + count + ' grades posted in ' + name);
-          } else {
-            CGP.ui.toast(count + (count === 1 ? ' grade' : ' grades') + ' posted to students');
+            CGP.diag.bump('post.completed', count - left);
+            return;
           }
-          CGP.diag.bump('post.completed', count - left);
+          // Nothing in the column looks different, even after re-reading it
+          // several times. Which of the two things that means depends on
+          // whether Canvas said the job had finished - and the old code did
+          // not ask: it reported "0 of N grades posted" either way, which on
+          // a post that had actually succeeded told the teacher their post
+          // had failed when a refresh moments later showed it had not.
+          if (confirmed) {
+            // Canvas reported the posting job complete, so the grades ARE
+            // posted; its submissions endpoint just has not caught up. Say
+            // what happened, and mark the cells posted locally so the button
+            // clears instead of inviting a pointless second post. The next
+            // ordinary re-read of the column replaces this with Canvas's own
+            // timestamps.
+            self.markPostedLocally(id, pendingIds);
+            CGP.ui.toast(count + (count === 1 ? ' grade' : ' grades') + ' posted to students');
+            CGP.diag.bump('post.completedUnconfirmedRead', count);
+          } else {
+            // We stopped waiting before Canvas finished. Nothing here says it
+            // failed - only that it is still running - so say exactly that.
+            CGP.ui.toast('Canvas is still posting ' + name + '. Refresh in a moment to see it.');
+            CGP.diag.bump('post.stillRunning', count);
+          }
         }, function (err) {
           CGP.diag.error('post.failed', { assignmentId: id, status: err && err.status, message: String(err && err.message) });
           CGP.ui.error('Canvas would not post these grades' +
@@ -253,6 +326,27 @@
         self.setBusy(btn, false);
         self.requestPaint();
       });
+  };
+
+  /* Stamp posted_at on the cells Canvas has just told us it posted.
+   *
+   * Only ever called after Canvas has affirmatively reported the posting job
+   * complete, and only for the exact submissions that were counted as
+   * pending immediately before the post - never as a guess. It exists so the
+   * grid stops claiming those grades are hidden during the window where
+   * Canvas's own submissions endpoint has not caught up yet; the next real
+   * read of the column overwrites it with Canvas's timestamps either way. */
+  P.markPostedLocally = function (assignmentId, userIds) {
+    var self = this;
+    var when = new Date().toISOString();
+    (userIds || []).forEach(function (uid) {
+      // Read straight out of the cell map rather than through model.cell(),
+      // which answers null for a column not currently marked loaded - which
+      // is exactly the case when the re-read after the post failed.
+      var rec = self.model.cells.get(self.model.key(assignmentId, uid));
+      if (!rec || rec.postedAt) return;
+      self.model.patchCell(assignmentId, uid, { postedAt: when, postedAtKnown: true }, { silent: true });
+    });
   };
 
   /* Fallback for Canvas builds without the postAssignmentGrades mutation.

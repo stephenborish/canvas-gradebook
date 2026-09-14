@@ -90,7 +90,12 @@ function suite(name, fn) {
   suites.push({ name, fn });
 }
 
-function run() {
+/* Cases may return a promise (posting a column is an async sequence of
+ * Canvas calls), so every case is awaited before the next one starts.
+ * Without that, an async case's assertions land after run() has already
+ * printed its result, and a failure surfaces as an unhandled rejection with
+ * a green summary above it. */
+async function run() {
   let pass = 0;
   const failures = [];
   const started = Date.now();
@@ -102,7 +107,7 @@ function run() {
     console.log(`\n${s.name}`);
     for (const c of cases) {
       try {
-        c.fn();
+        await c.fn();
         pass++;
         console.log(`  ok   ${c.name}`);
       } catch (err) {

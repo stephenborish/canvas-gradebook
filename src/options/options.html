@@ -86,6 +86,15 @@
         <label for="resubmissionIndicator">Mark cells where the student resubmitted after grading</label>
       </div>
       <div class="row row--check">
+        <input id="hiddenGradeIndicator" type="checkbox">
+        <label for="hiddenGradeIndicator">Mark cells whose grade the student cannot see yet
+          <span class="hint">A coloured bar down the left edge of every cell holding a grade that is still hidden &mdash;
+            exactly the grades that column&rsquo;s Post button would post. Note that Canvas keeps a submission posted
+            once it has been posted, so editing an already-posted score reaches the student immediately and needs no
+            second post: no bar means the student can see it.</span>
+        </label>
+      </div>
+      <div class="row row--check">
         <input id="submissionIndicator" type="checkbox">
         <label for="submissionIndicator">Show whether the student has handed anything in, and link it to SpeedGrader
           <span class="hint">A solid badge means submitted, a hollow one means nothing yet; the glyph shows what kind of
