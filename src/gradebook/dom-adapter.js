@@ -162,6 +162,22 @@
     return text;
   };
 
+  /** Header text with our OWN synthetic .cgp-header-label (and the resize
+   * handle) stripped, but the native points/"out of N" text left in - unlike
+   * headerTitleText, which strips that too. For reading the trailing points
+   * number back out (reconcileColumnsWithModel's disambiguation, and
+   * refreshColumns()'s re-check of it): once layout.js's decorateHeaders has
+   * ever run on this header, it leaves behind a persistent
+   * .cgp-header-label carrying its OWN "N pts"/due-date text, and plain
+   * el.textContent would then end with THAT instead of Canvas's native
+   * points text - reading the wrong number, or none at all, right after the
+   * very re-decoration this points check itself triggers. */
+  P.headerPointsSourceText = function (el) {
+    var clone = el.cloneNode(true);
+    Array.prototype.slice.call(clone.querySelectorAll('.slick-resizable-handle, .cgp-header-label')).forEach(function (n) { n.remove(); });
+    return clone.textContent || '';
+  };
+
   /** Last resort: match still-unresolved header columns to a known assignment
    * by their visible title text. Only used for columns structural parsing
    * could not identify, and only ever narrows an 'other'/'unknown' column to
@@ -191,7 +207,12 @@
       var ambiguous = candidates.length > 1;
       if (ambiguous) {
         // Disambiguate identically named assignments using the points line.
-        var m = /([\d.]+)\s*$/.exec(entry.el.textContent || '');
+        // (This guard only ever reaches columns not already typed
+        // 'assignment', which is also exactly when decorateHeaders has never
+        // added its own .cgp-header-label here - but headerPointsSourceText
+        // strips it anyway, so that stays true even if this guard ever
+        // loosens rather than being a coincidence this depends on.)
+        var m = /([\d.]+)\s*$/.exec(self.headerPointsSourceText(entry.el));
         if (m) {
           var byPoints = candidates.filter(function (a) { return String(a.pointsPossible) === m[1]; });
           if (byPoints.length === 1) pick = byPoints[0];
@@ -248,7 +269,7 @@
             // the first one's assignment instead of staying unresolved.
             var apply = !known.ambiguous;
             if (known.ambiguous) {
-              var pm = /([\d.]+)\s*$/.exec(el.textContent || '');
+              var pm = /([\d.]+)\s*$/.exec(self.headerPointsSourceText(el));
               apply = !!pm && String(known.points) === pm[1];
             }
             if (apply) {

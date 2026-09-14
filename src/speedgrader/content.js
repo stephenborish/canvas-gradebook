@@ -345,6 +345,16 @@
         state.textarea = textarea;
         if (!String(textarea.value || '').trim()) restoreDraft(textarea);
       }
+      // Also re-checked here, not just from the polling loop below: that
+      // loop stops itself after 60 seconds (it exists only to catch
+      // SpeedGrader's own async initial load), while a real grading session
+      // routinely runs for many minutes and switches students - via this
+      // same hashchange - well past that window. Confined to the poll
+      // alone, a comments panel Canvas replaces wholesale after the first
+      // minute would never be re-attached to again for the rest of the
+      // session: the exact stale-observer bug this was fixing, just
+      // delayed instead of prevented.
+      watchConfirmation();
     }
 
     window.addEventListener('hashchange', function () { setTimeout(onStudentChange, 250); });

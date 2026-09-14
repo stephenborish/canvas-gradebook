@@ -359,22 +359,38 @@
   /* Record that a local write to this cell is starting right now. Called
    * before every optimistic patch (writer.js), so a background fetch already
    * in flight for this cell's column can recognise, once it lands, that it
-   * is now stale. See applySubmission above. */
+   * is now stale. See applySubmission above.
+   *
+   * Returns whatever this cell's marker held BEFORE this call, so a caller
+   * whose write goes on to fail can restore exactly that - see
+   * clearLocalWrite. GradeWriter.serialize runs writes to the same cell one
+   * at a time, so a SECOND write can start (and fail) after a FIRST one on
+   * the same cell already succeeded; that first write's own protection must
+   * not be thrown away just because a later, unrelated write attempt on the
+   * same cell didn't pan out. */
   GradebookModel.prototype.markLocalWrite = function (assignmentId, userId) {
-    this._writeStartedAt.set(this.key(assignmentId, userId), Date.now());
+    var key = this.key(assignmentId, userId);
+    var previous = this._writeStartedAt.get(key);
+    this._writeStartedAt.set(key, Date.now());
+    return previous;
   };
 
   /* Undo markLocalWrite once a write is known to have NOT taken (the API
    * request failed and the cell was rolled back to its prior snapshot).
-   * Without this, the marker is left behind forever: a later, genuinely
-   * correct fetch for this cell would keep comparing itself against a write
-   * that never actually happened, be judged "stale" every time, and never be
-   * allowed to apply - permanently freezing that cell's record at whatever
-   * it was (or wiping it blank) even though Canvas has real, readable data
-   * for it. There is no newer successful write to protect once this one is
-   * known to have failed, so nothing is lost by clearing it. */
-  GradebookModel.prototype.clearLocalWrite = function (assignmentId, userId) {
-    this._writeStartedAt.delete(this.key(assignmentId, userId));
+   *
+   * restoreTo - what markLocalWrite returned for THIS write attempt, i.e.
+   * whatever the marker held immediately before it. Passing it back in
+   * (rather than always deleting) matters whenever a write to this same
+   * cell had already succeeded earlier: deleting unconditionally would
+   * throw away THAT write's protection too, and a column fetch dispatched
+   * before it that only lands after this later failure would then be
+   * treated as fresh and silently overwrite the correct post-rollback state
+   * with older, pre-both-writes data. Omit restoreTo (or pass undefined) for
+   * a cell that had no earlier write to protect. */
+  GradebookModel.prototype.clearLocalWrite = function (assignmentId, userId, restoreTo) {
+    var key = this.key(assignmentId, userId);
+    if (restoreTo === undefined) this._writeStartedAt.delete(key);
+    else this._writeStartedAt.set(key, restoreTo);
   };
 
   GradebookModel.prototype.cell = function (assignmentId, userId) {

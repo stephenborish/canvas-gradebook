@@ -136,8 +136,10 @@
     // Stamped before anything else: a column-wide fetch already in flight
     // for this cell must be recognised as stale once it lands, or its
     // pre-write response can silently overwrite what this write is about to
-    // record. See model.markLocalWrite / applySubmission.
-    this.model.markLocalWrite(assignmentId, userId);
+    // record. See model.markLocalWrite / applySubmission. Whatever this
+    // returns is what a failure below must restore, not just delete - see
+    // model.clearLocalWrite.
+    var priorWriteMark = this.model.markLocalWrite(assignmentId, userId);
 
     var currentRec = this.model.cell(assignmentId, userId);
     var op = CGP.gradeOps.operationFor(target.parsed, {
@@ -219,9 +221,11 @@
         });
       }, function (err) {
         self.model.restoreCell(assignmentId, userId, snapshot);
-        // This write never actually happened - nothing here is left for a
-        // later fetch to be "stale" against. See model.clearLocalWrite.
-        self.model.clearLocalWrite(assignmentId, userId);
+        // This write never actually happened - restore whatever protection
+        // existed before IT started (an earlier write to this same cell may
+        // have already succeeded and still needs it), rather than deleting
+        // the marker outright. See model.clearLocalWrite.
+        self.model.clearLocalWrite(assignmentId, userId, priorWriteMark);
         result.failed++;
         result.errors.push({ assignmentId: assignmentId, status: err && err.status });
         CGP.diag.error('write.rejected', {

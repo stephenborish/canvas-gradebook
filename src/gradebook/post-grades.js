@@ -168,6 +168,22 @@
     // a page-load-time snapshot - otherwise "Post 3" can silently post far
     // more than 3, and the toast would undercount how many were disclosed.
     return this.model.reloadAssignment(id).then(function () {
+      // reloadAssignment()/ensureAssignments() swallow a failed fetch and
+      // resolve anyway (see model.js) rather than rejecting - and
+      // reloadAssignment already removed this id from loadedAssignments
+      // before that fetch even started. So a genuinely failed reload does
+      // NOT reach the rejection handler below; it lands right here, and
+      // pendingPosts() (which refuses to answer for a column not marked
+      // loaded) would silently report 0 pending - indistinguishable from
+      // "nothing to post" when the truth is "couldn't check." Both must be
+      // told apart before trusting a 0.
+      if (!self.model.loadedAssignments.has(id)) {
+        self.busy.delete(id);
+        self.setBusy(btn, false);
+        self.requestPaint();
+        CGP.ui.error('Couldn’t confirm this column’s current state. Nothing was changed — try again.');
+        return null;
+      }
       var count = self.model.pendingPosts(id).length;
       if (!count) {
         self.busy.delete(id);
@@ -186,17 +202,24 @@
           return self.api.waitForProgress(progress._id);
         }, function (err) {
           // Fall back to the older, broader "unmute the whole column" REST
-          // endpoint ONLY when the mutation itself looks unavailable on this
-          // Canvas build - a network failure, a bad HTTP status, or the
-          // top-level GraphQL "errors" array a schema mismatch produces.
-          // A genuine domain-level refusal (moderation not finished, nothing
-          // left to post) comes back as a plain message with neither of
-          // those, because Canvas answered 200 and understood the request
-          // just fine - falling back for THAT would silently post grades
-          // Canvas just said should stay hidden, using an endpoint with no
-          // moderation awareness at all. Surface the real refusal instead.
-          var mutationUnavailable = !!(err && (err.network === true || err.graphql === true ||
-            (typeof err.status === 'number' && err.status >= 400)));
+          // endpoint ONLY on a signal that specifically means the mutation
+          // itself is unavailable on this Canvas build - a network failure,
+          // or an HTTP 404/501 (the endpoint/route genuinely not there).
+          // Nothing weaker than that: err.graphql===true is set for EVERY
+          // top-level GraphQL error alike, including an authorization or
+          // resolver-level refusal, not just an unrecognized mutation - and
+          // a 400/403/422 can just as easily mean "understood, refused" as
+          // "not implemented". Only a message that itself looks like a
+          // schema mismatch (the shape an unrecognized mutation/field
+          // actually produces) counts as evidence from that path. Anything
+          // else - moderation not finished, nothing left to post, a
+          // plain permissions error - must surface as a real error instead:
+          // falling back for THAT would silently post grades Canvas just
+          // said should stay hidden, through an endpoint with no moderation
+          // awareness at all.
+          var schemaMismatch = err && err.graphql === true &&
+            /cannot query field|unknown (field|argument|operation)|doesn.?t exist on type/i.test(String(err.message || ''));
+          var mutationUnavailable = !!(err && (err.network === true || err.status === 404 || err.status === 501 || schemaMismatch));
           if (!mutationUnavailable) throw err;
           return self.postWithoutGraphql(id, err);
         })
