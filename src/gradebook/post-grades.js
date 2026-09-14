@@ -32,6 +32,7 @@
     this.settings = ctx.settings;
     this.requestPaint = ctx.requestPaint || function () {};
     this.busy = new Set();          // assignmentIds with a post in flight
+    this._rechecking = new Set();   // assignmentIds with a delayed re-read pending
   }
 
   var P = PostGradesController.prototype;
@@ -294,16 +295,34 @@
           // not ask: it reported "0 of N grades posted" either way, which on
           // a post that had actually succeeded told the teacher their post
           // had failed when a refresh moments later showed it had not.
-          if (confirmed) {
-            // Canvas reported the posting job complete, so the grades ARE
-            // posted; its submissions endpoint just has not caught up. Say
-            // what happened, and mark the cells posted locally so the button
-            // clears instead of inviting a pointless second post. The next
-            // ordinary re-read of the column replaces this with Canvas's own
-            // timestamps.
+          if (confirmed && !settled.known) {
+            // Canvas reported the posting job complete and then the re-read
+            // failed outright, so there is no current picture of the column
+            // at all - only our own confirmed post. Record that against the
+            // cells we posted, so the grid is not left insisting those
+            // grades are hidden on the strength of a read that never landed.
             self.markPostedLocally(id, pendingIds);
             CGP.ui.toast(count + (count === 1 ? ' grade' : ' grades') + ' posted to students');
-            CGP.diag.bump('post.completedUnconfirmedRead', count);
+            CGP.diag.bump('post.completedUnreadableColumn', count);
+          } else if (confirmed) {
+            // Canvas said the job finished, but a re-read that DID land
+            // still shows every grade hidden. Almost always that is its
+            // submissions endpoint lagging its own job. It is not always:
+            // another instructor can hide a column during the second or two
+            // this takes, and then the read is simply right. Nothing here can
+            // tell those apart, so the read is left standing rather than
+            // overwritten - stamping every submission posted on the job's
+            // completion alone would, in the second case, drop the bars and
+            // the button on grades that really are hidden, and leave that
+            // wrong until a page reload.
+            //
+            // What can be said without guessing is what Canvas reported, so
+            // that is what is said; the follow-up read below settles which
+            // case this was, without the teacher waiting on it.
+            CGP.ui.toast('Canvas posted ' + count + (count === 1 ? ' grade' : ' grades') +
+              ' in ' + name + '. The grid will catch up in a moment.');
+            CGP.diag.bump('post.completedLaggingRead', count);
+            self.recheckLater(id);
           } else {
             // We stopped waiting before Canvas finished. Nothing here says it
             // failed - only that it is still running - so say exactly that.
@@ -328,14 +347,36 @@
       });
   };
 
+  /* One more re-read, later, for the column whose post Canvas confirmed but
+   * whose submissions still read as hidden.
+   *
+   * Detached on purpose: the teacher is not made to wait on it, and it is
+   * the only thing that will correct the column short of a page reload -
+   * nothing re-reads a column already marked loaded. Whichever way it lands
+   * is the truth, so it reports nothing and simply repaints. */
+  P.recheckLater = function (assignmentId) {
+    var self = this;
+    var id = String(assignmentId);
+    if (this._rechecking.has(id)) return;
+    this._rechecking.add(id);
+    setTimeout(function () {
+      self.model.reloadAssignment(id).then(function () {
+        self._rechecking.delete(id);
+        self.requestPaint();
+      }, function () {
+        self._rechecking.delete(id);
+      });
+    }, 6000);
+  };
+
   /* Stamp posted_at on the cells Canvas has just told us it posted.
    *
    * Only ever called after Canvas has affirmatively reported the posting job
-   * complete, and only for the exact submissions that were counted as
-   * pending immediately before the post - never as a guess. It exists so the
-   * grid stops claiming those grades are hidden during the window where
-   * Canvas's own submissions endpoint has not caught up yet; the next real
-   * read of the column overwrites it with Canvas's timestamps either way. */
+   * complete AND the re-read of the column failed to land - never over a
+   * successful read, which is the current truth about the column whatever we
+   * just did to it, and never for anything but the exact submissions counted
+   * as pending immediately before the post. The next real read of the column
+   * replaces this with Canvas's own timestamps. */
   P.markPostedLocally = function (assignmentId, userIds) {
     var self = this;
     var when = new Date().toISOString();

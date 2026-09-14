@@ -164,6 +164,8 @@
       !cell.querySelector(':scope > .cgp-marks > .cgp-resub')) return false;
     if (cell.classList.contains('cgp-has-sub') &&
       !cell.querySelector(':scope > .cgp-marks > .cgp-sub')) return false;
+    if (cell.classList.contains('cgp-has-unposted') &&
+      !cell.querySelector(':scope > .cgp-marks > .cgp-unposted')) return false;
     if (cell.classList.contains('cgp-override') &&
       !cell.querySelector(':scope > .cgp-val')) return false;
     return true;
@@ -305,6 +307,7 @@
     cell.classList.toggle('cgp-has-comment', !!showComment);
     cell.classList.toggle('cgp-has-resub', !!showResub);
     cell.classList.toggle('cgp-has-sub', !!showSub);
+    cell.classList.toggle('cgp-has-unposted', !!showHidden);
     cell.classList.toggle('cgp-pending-write', !!(rec && rec.pending));
 
     // Value overlay: only used when we wrote through the API and Canvas's own

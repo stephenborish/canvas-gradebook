@@ -126,7 +126,10 @@ still looks untouched on the first re-read is read again on a short backoff rath
 If it still has not caught up, the extension reports what Canvas actually told it — the job
 finished, the grades are posted — instead of the count it can currently see. (Reporting that
 count is what used to produce a false *0 of N grades posted* on a post that had in fact
-succeeded.) A job the extension stopped waiting for is reported as still running, which is what
+succeeded.) It does not overwrite the column on the strength of that: another instructor can
+hide a column during the second or two a post takes, and then the read is simply right, so the
+grid keeps showing what Canvas last said and one more re-read a few seconds later settles which
+case it was. A job the extension stopped waiting for is reported as still running, which is what
 it is; only a refusal from Canvas is reported as a failure.
 
 Three things it deliberately does not do:
