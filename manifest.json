@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "Canvas Gradebook+",
   "version": "1.7.0",
+  "author": "stephenborish",
   "description": "Upgrades Canvas instructor Gradebook: instructor-comment indicators, keyboard shortcuts, and instant post.",
   "minimum_chrome_version": "116",
   "permissions": [
