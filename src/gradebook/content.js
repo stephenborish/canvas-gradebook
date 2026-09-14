@@ -243,12 +243,7 @@
         if (model.ready && adapter._lastUnresolvedColumns) {
           adapter.reconcileColumnsWithModel(model);
         }
-        // Cheap and idempotent: catches Canvas re-rendering its action bar
-        // (which would otherwise move the settings gear back off its pinned
-        // spot) independently of whether the rest of the utility strip is
-        // being collapsed.
-        layout.pinSettingsGear();
-        // Also cheap and idempotent: recovers a wrapper this session wrongly
+        // Cheap and idempotent: recovers a wrapper this session wrongly
         // collapsed because it looked empty at the time but has since had
         // real Canvas content render into it. See recheckCollapsedWrappers.
         if (layout.controlsHidden) layout.recheckCollapsedWrappers();

@@ -236,11 +236,9 @@ one all still show through.
 Canvas's utility strip (student
 and assignment search, filters, Sync, Import, Export, View Options) is collapsed
 along with the empty wrappers it leaves behind, and the grid takes the full height of the window.
-Apply Filters and Canvas's own gradebook-settings gear are never part of that collapse — Canvas's
-real gear button is left exactly where it is (moving it would break its own click handling; see
-1.6.1 below), and a lookalike control that forwards its click to the real one sits right beside
-Apply Filters instead, so a settings control is always one click away, whatever this setting is
-set to.
+Canvas's own gradebook-settings gear is never part of that collapse — it is left exactly where
+Canvas put it (moving it would break its own click handling), so a settings control is always
+reachable right where a teacher expects it, whatever this setting is set to.
 
 Press **Alt+Shift+H** to bring Canvas's controls back for the current page. Turn the whole
 behaviour off permanently in the options page.

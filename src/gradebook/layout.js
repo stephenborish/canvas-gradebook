@@ -56,8 +56,9 @@
   // everything else in the utility strip): a teacher needs this control
   // often enough - column sorting, arrangement, late/missing policies - that
   // it should stay reachable regardless of the "collapse Canvas's utility
-  // strip" setting. Used only to LOCATE the real control - see
-  // ensureGearProxy/pinSettingsGear for why it is never moved.
+  // strip" setting. candidates() below uses this only to find the real
+  // button so it (and any wrapper that would take it down too) is never a
+  // hide candidate - Canvas's own gear stays exactly where Canvas put it.
   var SETTINGS_SELECTORS = [
     '#gradebook_settings_modal_button',
     '#gradebook-settings',
@@ -65,11 +66,6 @@
     '[data-component="GradebookSettingsButton"]',
     'button[aria-label*="gradebook settings" i]',
     'button[title*="gradebook settings" i]'
-  ];
-
-  var APPLY_FILTERS_SELECTORS = [
-    '[data-testid="apply-filters-button"]',
-    'button[aria-label*="apply filters" i]'
   ];
 
   function CompactLayoutController(ctx) {
@@ -103,11 +99,6 @@
     var headerH = (s.narrowColumns ? 72 : 48) + (s.showAssignmentDueDate ? 14 : 0);
     root.style.setProperty('--cgp-header-h', headerH + 'px');
 
-    // Unconditional: the settings gear is pinned in place regardless of the
-    // "collapse Canvas's utility strip" setting, so a teacher who turns that
-    // setting off still finds it exactly where they left it, and one who
-    // leaves it on can still reach the gear without Alt+Shift+H.
-    this.pinSettingsGear();
     if (s.hideCanvasUtilityControls) this.hideControls();
     this.applyGeometry();
     this.bindShortcut();
@@ -150,22 +141,15 @@
 
   P.candidates = function () {
     var found = [];
-    // Resolved fresh, once per call: Canvas's REAL settings button is never
-    // moved (see pinSettingsGear/ensureGearProxy), so it can still be sitting
-    // inside one of the whole-container CONTROL_SELECTORS entries below
-    // (#gradebook-actions and friends). Collapsing that container with
-    // display:none would take the real button down with it - invisible,
-    // zero-sized - even though the proxy beside Apply Filters still looks
-    // perfectly clickable and would go on dispatching synthetic clicks at it.
-    // That is exactly the failure this whole feature exists to prevent, so a
-    // container holding the real button is never a hide candidate here.
+    // Resolved fresh, once per call: Canvas's real settings gear is never
+    // hidden (a teacher needs it too often - column sorting, arrangement,
+    // late/missing policies - to bury it behind Alt+Shift+H), so it can
+    // still be sitting inside one of the whole-container CONTROL_SELECTORS
+    // entries below (#gradebook-actions and friends). Collapsing that
+    // container with display:none would take the real button down with it,
+    // so a container holding it is never a hide candidate here.
     var realGear = this.findSettingsButton();
     var push = function (el) {
-      // The settings-gear proxy (and, defensively, anything already inside
-      // it) is never a hide candidate. It lives on <body>, outside every
-      // selector above, so this never actually fires in practice - it is
-      // just a defensive backstop. See pinSettingsGear/ensureGearProxy.
-      if (el && (el.classList.contains('cgp-pinned-gear') || el.closest('.cgp-pinned-gear'))) return;
       if (el && realGear && el.contains(realGear)) return;
       if (el && found.indexOf(el) < 0) found.push(el);
     };
@@ -183,7 +167,7 @@
     Array.prototype.slice.call(document.querySelectorAll('#content button, #content [role="button"]')).forEach(function (btn) {
       if (btn.closest('.slick-header') || btn.closest('.grid-canvas') || btn.closest('#breadcrumbs')) return;
       if (btn.closest('.cgp-course-menu') || btn.classList.contains('cgp-crumb-toggle')) return;
-      if (btn.classList.contains('cgp-find-student') || btn.classList.contains('cgp-pinned-gear')) return;
+      if (btn.classList.contains('cgp-find-student')) return;
       var label = ((btn.textContent || '') + ' ' + (btn.getAttribute('aria-label') || '') + ' ' +
         (btn.getAttribute('title') || '')).trim().toLowerCase().replace(/\s+/g, ' ');
       if (!label) return;
@@ -194,37 +178,22 @@
     return found;
   };
 
-  /* Find Canvas's own gradebook-settings gear and Apply Filters button,
-   * wherever this Canvas build currently renders them.
-   *
-   * Must never return the proxy itself (see ensureGearProxy). The proxy is
-   * deliberately labelled "Gradebook settings" for its own tooltip/aria-label,
-   * which is the exact text the last two SETTINGS_SELECTORS patterns
-   * (button[aria-label*=...], button[title*=...]) match against - so on a
-   * Canvas build where none of the earlier id/test-id selectors find the
-   * real button, document.querySelector() for those two would happily return
-   * our own proxy instead, since it is the only element in the whole
-   * document with that label. That is self-reference, not a find: the click
-   * handler below would then call activateCell() on the proxy, which fires
-   * this same click handler again, recursing until the stack overflows. */
+  /* Find Canvas's own gradebook-settings gear, wherever this Canvas build
+   * currently renders it. Used only so candidates() can protect whatever
+   * container holds it (see candidates() above) - the button itself is
+   * never touched or moved. */
   P.findSettingsButton = function () {
     for (var i = 0; i < SETTINGS_SELECTORS.length; i++) {
       var el = document.querySelector(SETTINGS_SELECTORS[i]);
-      if (el && !el.classList.contains('cgp-pinned-gear') && !el.closest('.cgp-pinned-gear')) {
-        return el.closest('button, [role="button"]') || el;
-      }
+      if (el) return el.closest('button, [role="button"]') || el;
     }
     // Fallback: anything actually labelled "settings" inside the gradebook's
     // own action area, in case this Canvas build uses none of the ids/test
-    // ids above. Scoped to containers the proxy never lives in (it is parked
-    // directly on <body>, never inside #gradebook-actions/.gradebook-menus/
-    // an EnhancedActionMenu), but the same exclusion is repeated anyway - a
-    // consistent, defended invariant beats one that merely happens to hold.
+    // ids above.
     var area = document.querySelectorAll(
       '#gradebook-actions button, .gradebook-menus button, [data-component="EnhancedActionMenu"] button');
     for (var j = 0; j < area.length; j++) {
       var candidate = area[j];
-      if (candidate.classList.contains('cgp-pinned-gear') || candidate.closest('.cgp-pinned-gear')) continue;
       var label = ((candidate.getAttribute('aria-label') || '') + ' ' +
         (candidate.getAttribute('title') || '') + ' ' + (candidate.textContent || '')).toLowerCase();
       if (label.indexOf('settings') >= 0) return candidate;
@@ -232,117 +201,10 @@
     return null;
   };
 
-  P.findApplyFiltersButton = function () {
-    for (var i = 0; i < APPLY_FILTERS_SELECTORS.length; i++) {
-      var el = document.querySelector(APPLY_FILTERS_SELECTORS[i]);
-      if (el) return el;
-    }
-    var buttons = document.querySelectorAll('#content button, #content [role="button"]');
-    for (var j = 0; j < buttons.length; j++) {
-      if ((buttons[j].textContent || '').trim().toLowerCase() === 'apply filters') return buttons[j];
-    }
-    return null;
-  };
-
-  /* Earlier versions of this relocated Canvas's own settings gear - the real
-   * control, not a copy - out to <body> and held it fixed-position there.
-   * That broke the button: Canvas's gradebook is a React app, and React's
-   * synthetic event system delegates from a listener bound once near the
-   * root it rendered into, matched against the event as it bubbles through
-   * the ACTUAL live DOM tree. Moving the gear out from under that root - or
-   * Canvas later reconciling a re-render against a child it no longer finds
-   * where it left it - stopped the click from ever reaching Canvas's own
-   * handler, which is exactly the "the gear button does nothing" report.
-   * Canvas's real control is now never touched or moved. A lookalike proxy
-   * button (ensureGearProxy) is parked on <body> and fixed-position beside
-   * Apply Filters instead, and merely forwards its click to whatever element
-   * findSettingsButton() resolves to at that moment - so Canvas's own gear
-   * keeps its place in Canvas's own tree, and a Canvas re-render that hands
-   * it a brand new node is simply found fresh on the next click. */
-  P.pinSettingsGear = function () {
-    // Nothing to build the proxy from yet on a Canvas build that has never
-    // exposed the control; positionPinnedGear() itself already no-ops when
-    // there is no proxy (or an unconnected one), so there is nothing else to
-    // guard here once a proxy exists.
-    if (this.findSettingsButton()) this.ensureGearProxy();
-    this.positionPinnedGear();
-  };
-
-  /* Build (once) the visible stand-in for Canvas's settings gear. Never the
-   * real button - see pinSettingsGear for why - just something that looks
-   * like a gear, sits beside Apply Filters, and re-finds + clicks the real
-   * control on demand. */
-  P.ensureGearProxy = function () {
-    if (this._gearProxy && this._gearProxy.isConnected) return this._gearProxy;
-    var self = this;
-    var btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'cgp-pinned-gear';
-    btn.setAttribute('aria-label', 'Gradebook settings');
-    btn.title = 'Gradebook settings';
-    btn.innerHTML =
-      '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">' +
-      '<path fill="currentColor" d="M11.4 2c.45 0 .83.32.9.76l.25 1.55c.5.18.96.42 1.38.71l1.47-.56a.9.9 0 0 1 1.06.36l1 1.66a.9.9 0 0 1-.18 1.14l-1.19 1.03c.04.3.06.6.06.9s-.02.6-.06.9l1.19 1.03a.9.9 0 0 1 .18 1.14l-1 1.66a.9.9 0 0 1-1.06.36l-1.47-.56c-.42.29-.88.53-1.38.71l-.25 1.55a.9.9 0 0 1-.9.76H9.6a.9.9 0 0 1-.9-.76l-.25-1.55a5.98 5.98 0 0 1-1.38-.71l-1.47.56a.9.9 0 0 1-1.06-.36l-1-1.66a.9.9 0 0 1 .18-1.14l1.19-1.03A6.2 6.2 0 0 1 4.85 10c0-.3.02-.6.06-.9L3.72 8.07a.9.9 0 0 1-.18-1.14l1-1.66a.9.9 0 0 1 1.06-.36l1.47.56c.42-.29.88-.53 1.38-.71l.25-1.55a.9.9 0 0 1 .9-.76ZM10 7.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6Z"/>' +
-      '</svg>';
-    btn.addEventListener('click', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      // Re-resolved fresh rather than trusted from an earlier pass: Canvas
-      // can re-render its action bar (handing the settings control a brand
-      // new DOM node) at any point while the gradebook is open.
-      var real = self.findSettingsButton();
-      // Belt-and-suspenders against the self-reference findSettingsButton()
-      // now guards against: never dispatch a click back onto this same proxy,
-      // which would just re-enter this handler and recurse.
-      if (!real || real === btn || btn.contains(real)) {
-        CGP.diag.warn('layout.settingsButtonMissing');
-        CGP.ui.error('Gradebook+ couldn’t find Canvas’s settings button right now. Try reloading.');
-        return;
-      }
-      // Canvas disables the real button (e.g. while the gradebook is still
-      // loading) rather than removing it, so findSettingsButton() still
-      // resolves it - dispatching a click there would just silently do
-      // nothing, which is worse than telling the teacher to wait a moment.
-      if (real.disabled || real.getAttribute('aria-disabled') === 'true') {
-        CGP.diag.warn('layout.settingsButtonDisabled');
-        CGP.ui.error('Canvas’s settings button isn’t ready yet. Try again in a moment.');
-        return;
-      }
-      self.adapter.activateCell(real);
-    });
-    document.body.appendChild(btn);
-    this._gearProxy = btn;
-    return btn;
-  };
-
-  /* Keep the proxy glued to Apply Filters' current on-screen position. Cheap
-   * enough to call on every resize and on the periodic safety tick; does
-   * nothing when there is no proxy to place or nothing to place it by. */
-  P.positionPinnedGear = function () {
-    var gear = this._gearProxy;
-    if (!gear || !gear.isConnected) return;
-    var anchor = this.findApplyFiltersButton();
-    if (!anchor || !anchor.isConnected || anchor === gear) return;
-    var rect = anchor.getBoundingClientRect();
-    if (!rect.width && !rect.height) return; // anchor not actually laid out yet
-    gear.style.position = 'fixed';
-    gear.style.left = Math.round(rect.right + 8) + 'px';
-    gear.style.top = Math.round(rect.top + rect.height / 2) + 'px';
-    gear.style.transform = 'translateY(-50%)';
-    gear.style.zIndex = '2147483000';
-  };
-
   P.hideControls = function () {
     var now = Date.now();
     if (now - this._lastHidePass < 400) return;
     this._lastHidePass = now;
-
-    // Re-pin first: Canvas re-rendering its action bar between paint passes
-    // can put the gear back where it started, which candidates() would then
-    // (correctly, given where it is) leave alone - but "leave alone" only
-    // keeps it visible if it is back in its pinned spot, not orphaned in a
-    // wrapper this same pass is about to collapse.
-    this.pinSettingsGear();
 
     var self = this;
     var targets = this.candidates();
@@ -487,11 +349,6 @@
   };
 
   P.onWindowResize = function () {
-    // Harmless either way, so it runs even on our own synthetic nudge below -
-    // unlike applyGeometry, repositioning a fixed-position element cannot
-    // itself trigger another resize event and so can never feed the loop
-    // that guard exists to prevent.
-    this.positionPinnedGear();
     if (this._selfResize) return;   // our own nudge, not the window actually changing
     this.applyGeometry();
   };
