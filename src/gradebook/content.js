@@ -248,9 +248,11 @@
         // real Canvas content render into it. See recheckCollapsedWrappers.
         if (layout.controlsHidden) layout.recheckCollapsedWrappers();
         // Unconditional, like the initial call in layout.start(): Canvas can
-        // re-render the settings gear or Apply Filters with a fresh DOM node
-        // (losing our inline styles) at any point while the gradebook is open.
+        // re-render the settings gear, Apply Filters, or the keyboard-shortcuts
+        // button with a fresh DOM node (losing our inline styles/cgp-hidden
+        // class) at any point while the gradebook is open.
         layout.alignSettingsGear();
+        layout.hideKeyboardShortcutsButton();
         paint();
       }, 1500);
 
