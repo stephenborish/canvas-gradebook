@@ -7,7 +7,7 @@
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.util) return;
 
-  CGP.VERSION = '1.7.0';
+  CGP.VERSION = '1.7.1';
 
   CGP.DEFAULTS = {
     // layout
