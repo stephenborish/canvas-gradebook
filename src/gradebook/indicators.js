@@ -120,6 +120,12 @@
       this.settings.values.submissionIndicator ? 1 : 0,
       this.settings.values.showCommentCount ? 1 : 0,
       this.settings.values.resubmissionIndicator ? 1 : 0,
+      this.settings.values.hiddenGradeIndicator ? 1 : 0,
+      // Whether the student can see this grade yet is now painted (the left
+      // edge bar), so a post - which changes nothing else about the record -
+      // has to move the signature or the repaint would be skipped and the
+      // bar would stay on a cell that is no longer hidden.
+      CGP.postOps.needsPost(rec) ? 1 : 0,
       status
     ].join('|');
   };
@@ -158,6 +164,8 @@
       !cell.querySelector(':scope > .cgp-marks > .cgp-resub')) return false;
     if (cell.classList.contains('cgp-has-sub') &&
       !cell.querySelector(':scope > .cgp-marks > .cgp-sub')) return false;
+    if (cell.classList.contains('cgp-has-unposted') &&
+      !cell.querySelector(':scope > .cgp-marks > .cgp-unposted')) return false;
     if (cell.classList.contains('cgp-override') &&
       !cell.querySelector(':scope > .cgp-val')) return false;
     return true;
@@ -282,10 +290,24 @@
       parts.push('<span class="cgp-resub" title="Resubmitted after grading"></span>');
     }
 
+    // Which grades the student can actually see. Canvas keeps a submission
+    // posted once it has been posted, so changing an already-posted score
+    // reaches the student straight away with nothing left to post - which
+    // reads, from the gradebook, exactly like changing a hidden one. The bar
+    // is the difference: while it is there the student sees nothing, and the
+    // moment it goes the grade in that cell is live. needsPost() is the same
+    // test the column's Post button counts with, so a cell wearing the bar is
+    // always one of the grades that button would post.
+    var showHidden = !!(s.hiddenGradeIndicator && known && CGP.postOps.needsPost(rec));
+    if (showHidden) {
+      parts.push('<span class="cgp-unposted" title="Hidden from this student until this column\u2019s grades are posted"></span>');
+    }
+
     host.innerHTML = parts.join('');
     cell.classList.toggle('cgp-has-comment', !!showComment);
     cell.classList.toggle('cgp-has-resub', !!showResub);
     cell.classList.toggle('cgp-has-sub', !!showSub);
+    cell.classList.toggle('cgp-has-unposted', !!showHidden);
     cell.classList.toggle('cgp-pending-write', !!(rec && rec.pending));
 
     // Value overlay: only used when we wrote through the API and Canvas's own

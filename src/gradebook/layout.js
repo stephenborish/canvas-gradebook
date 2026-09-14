@@ -51,14 +51,20 @@
     'actions', 'export current gradebook view'
   ];
 
-  // Canvas's own gradebook-settings gear. Deliberately kept OUT of
-  // CONTROL_SELECTORS/BUTTON_LABELS above (it used to be hidden along with
-  // everything else in the utility strip): a teacher needs this control
-  // often enough - column sorting, arrangement, late/missing policies - that
-  // it should stay reachable regardless of the "collapse Canvas's utility
-  // strip" setting. candidates() below uses this only to find the real
-  // button so it (and any wrapper that would take it down too) is never a
-  // hide candidate - Canvas's own gear stays exactly where Canvas put it.
+  // Canvas's own gradebook-settings gear. Hidden with the rest of the
+  // utility strip (the searches, the filters, Import/Export/Sync/View
+  // Options) whenever that setting is on, and brought back by Alt+Shift+H
+  // along with everything else - see candidates() below.
+  //
+  // It used to be kept visible and repositioned instead (position:fixed,
+  // computed from Apply Filters' rect) so it sat on the same line as Apply
+  // Filters. That could only ever run AFTER Canvas had laid both buttons
+  // out, so the gear was painted in its natural spot first and then jumped,
+  // and Canvas re-renders the toolbar often enough that the jump kept
+  // recurring while the page otherwise looked settled. The alignment was
+  // never the point - getting the utility strip out of the teacher's way
+  // was - so the gear is now simply hidden like the search fields beside it.
+  // No measuring, no polling, nothing to jump.
   var SETTINGS_SELECTORS = [
     '#gradebook_settings_modal_button',
     '#gradebook-settings',
@@ -66,13 +72,6 @@
     '[data-component="GradebookSettingsButton"]',
     'button[aria-label*="gradebook settings" i]',
     'button[title*="gradebook settings" i]'
-  ];
-
-  // Used only to find Apply Filters as an anchor for alignSettingsGear() -
-  // Canvas's own button, never touched or moved.
-  var APPLY_FILTERS_SELECTORS = [
-    '[data-testid="apply-filters-button"]',
-    'button[aria-label*="apply filters" i]'
   ];
 
   // Canvas's own "keyboard shortcuts" icon button. These selectors only catch
@@ -119,11 +118,11 @@
     var headerH = (s.narrowColumns ? 72 : 48) + (s.showAssignmentDueDate ? 14 : 0);
     root.style.setProperty('--cgp-header-h', headerH + 'px');
 
+    // Set before hideControls() so the CSS rules keyed off it apply on the
+    // very first paint - Canvas's gear can otherwise flash in its natural
+    // spot before the JS pass below reaches it.
+    root.classList.toggle('cgp-hide-utility', !!s.hideCanvasUtilityControls);
     if (s.hideCanvasUtilityControls) this.hideControls();
-    // Unconditional, like the utility-strip gear protection above: a teacher
-    // wants the settings gear next to Apply Filters regardless of whether
-    // the rest of the utility strip is being collapsed.
-    this.alignSettingsGear();
     this.hideKeyboardShortcutsButton();
     this.settleQuickly();
     this.applyGeometry();
@@ -163,20 +162,12 @@
     });
     this.hidden = [];
     this.controlsHidden = false;
+    document.documentElement.classList.remove('cgp-hide-utility');
   };
 
   P.candidates = function () {
     var found = [];
-    // Resolved fresh, once per call: Canvas's real settings gear is never
-    // hidden (a teacher needs it too often - column sorting, arrangement,
-    // late/missing policies - to bury it behind Alt+Shift+H), so it can
-    // still be sitting inside one of the whole-container CONTROL_SELECTORS
-    // entries below (#gradebook-actions and friends). Collapsing that
-    // container with display:none would take the real button down with it,
-    // so a container holding it is never a hide candidate here.
-    var realGear = this.findSettingsButton();
     var push = function (el) {
-      if (el && realGear && el.contains(realGear)) return;
       if (el && found.indexOf(el) < 0) found.push(el);
     };
 
@@ -190,6 +181,11 @@
         push(wrap);
       });
     });
+    // The gear is matched by id/test-id rather than by BUTTON_LABELS below,
+    // because Canvas renders it as an icon button whose accessible name lives
+    // in a visually-hidden child span on some builds.
+    var gear = this.findSettingsButton();
+    if (gear) push(gear);
     Array.prototype.slice.call(document.querySelectorAll('#content button, #content [role="button"]')).forEach(function (btn) {
       if (btn.closest('.slick-header') || btn.closest('.grid-canvas') || btn.closest('#breadcrumbs')) return;
       if (btn.closest('.cgp-course-menu') || btn.classList.contains('cgp-crumb-toggle')) return;
@@ -205,9 +201,8 @@
   };
 
   /* Find Canvas's own gradebook-settings gear, wherever this Canvas build
-   * currently renders it. Used only so candidates() can protect whatever
-   * container holds it (see candidates() above) - the button itself is
-   * never touched or moved. */
+   * currently renders it, so candidates() can hide it along with the rest of
+   * the utility strip. */
   P.findSettingsButton = function () {
     for (var i = 0; i < SETTINGS_SELECTORS.length; i++) {
       var el = document.querySelector(SETTINGS_SELECTORS[i]);
@@ -223,20 +218,6 @@
       var label = ((candidate.getAttribute('aria-label') || '') + ' ' +
         (candidate.getAttribute('title') || '') + ' ' + (candidate.textContent || '')).toLowerCase();
       if (label.indexOf('settings') >= 0) return candidate;
-    }
-    return null;
-  };
-
-  /* Find Canvas's own Apply Filters button. Used only as an anchor point for
-   * alignSettingsGear() below - never touched or moved. */
-  P.findApplyFiltersButton = function () {
-    for (var i = 0; i < APPLY_FILTERS_SELECTORS.length; i++) {
-      var el = document.querySelector(APPLY_FILTERS_SELECTORS[i]);
-      if (el) return el;
-    }
-    var buttons = document.querySelectorAll('#content button, #content [role="button"]');
-    for (var j = 0; j < buttons.length; j++) {
-      if ((buttons[j].textContent || '').trim().toLowerCase() === 'apply filters') return buttons[j];
     }
     return null;
   };
@@ -266,8 +247,9 @@
     return null;
   };
 
-  /* Unconditional, like alignSettingsGear() - there is no setting for this
-   * one and Alt+Shift+H does not bring it back. The CSS rule in
+  /* Unconditional - there is no setting for this one and Alt+Shift+H does
+   * not bring it back (unlike the settings gear, which is part of the
+   * utility strip). The CSS rule in
    * gradebook.css already hides it the instant it matches, with no JS
    * involved; this only covers the builds that CSS attribute selectors can't
    * reach (see findKeyboardShortcutsButton() above). Re-resolved on every
@@ -278,98 +260,34 @@
     if (btn && btn.isConnected) btn.classList.add('cgp-hidden');
   };
 
-  /* Put Canvas's own settings gear on the same visual line as Apply Filters.
-   *
-   * The gear is never moved, cloned, or reparented - only its on-screen
-   * POSITION changes, via position:fixed computed from Apply Filters' own
-   * rect. Canvas's React tree never learns anything moved, so the gear's own
-   * click handler (bound by React's event delegation against the real DOM
-   * tree, not screen position) keeps working. An earlier version of this
-   * feature instead relocated the real button's DOM node out to <body>, which
-   * broke exactly that: React's delegated listener stopped seeing the click
-   * bubble through the tree it expected. A separate, later version built a
-   * lookalike proxy button beside Apply Filters that forwarded clicks to the
-   * real one - workable, but left two gear icons on screen since Canvas's
-   * real gear was never actually hidden. Repositioning the real button
-   * avoids both problems.
-   *
-   * Re-resolved and reapplied on every call, since Canvas can re-render
-   * either button - handing it a fresh DOM node with none of our inline
-   * styles - at any point while the gradebook is open. */
-  P.alignSettingsGear = function () {
-    var gear = this.findSettingsButton();
-    if (!gear || !gear.isConnected) return;
-    var anchor = this.findApplyFiltersButton();
-    if (!anchor || !anchor.isConnected || anchor === gear) { this.resetGearPosition(gear); return; }
-    var rect = anchor.getBoundingClientRect();
-    if (!rect.width && !rect.height) { this.resetGearPosition(gear); return; } // anchor not laid out yet/hidden
-    // Prefer to the right of Apply Filters, but a narrow or zoomed viewport
-    // can leave too little room there - falling back to fixed positioning
-    // unconditionally would push the gear off-screen and unreachable. Use
-    // the gear's own current size (position:fixed does not affect it) to
-    // check, and put it on the left instead when the right does not fit.
-    var margin = 8;
-    var gearWidth = gear.getBoundingClientRect().width || 32;
-    var left = rect.right + margin;
-    if (left + gearWidth > window.innerWidth) {
-      left = Math.max(margin, rect.left - gearWidth - margin);
-    }
-    gear.classList.add('cgp-gear-aligned');
-    gear.style.position = 'fixed';
-    gear.style.left = Math.round(left) + 'px';
-    gear.style.top = Math.round(rect.top + rect.height / 2) + 'px';
-    gear.style.transform = 'translateY(-50%)';
-    gear.style.zIndex = '2147483000';
-  };
-
-  /* Undo alignSettingsGear()'s inline styles so the gear falls back to
-   * wherever Canvas naturally laid it out - used when Apply Filters is not
-   * currently on screen to align against (e.g. hidden by the "collapse
-   * Canvas's utility strip" setting). */
-  P.resetGearPosition = function (gear) {
-    if (!gear || !gear.classList.contains('cgp-gear-aligned')) return;
-    gear.classList.remove('cgp-gear-aligned');
-    gear.style.position = '';
-    gear.style.left = '';
-    gear.style.top = '';
-    gear.style.transform = '';
-    gear.style.zIndex = '';
-  };
-
-  /* Right after boot, Apply Filters and the settings gear are frequently not
-   * laid out yet - Canvas renders the gradebook toolbar asynchronously - so
-   * the alignSettingsGear() call in start() often lands before anchor has a
-   * real rect and falls back to the gear's natural (unaligned) position.
-   * Without this, the only thing left to retry it is content.js's 1500ms
-   * safety tick, which reads to a teacher as the gear sitting visibly
-   * misaligned for up to a second and a half after the page looks done
+  /* Right after boot, Canvas has often not rendered the whole gradebook
+   * toolbar yet - start() runs before content.js's own grid-readiness wait -
+   * so the hide pass in start() can land before the keyboard-shortcuts
+   * button exists to be hidden. Without this, the only thing left to retry
+   * it is content.js's 1500ms safety tick, which reads to a teacher as the
+   * button sitting there for a second and a half after the page looks done
    * loading. Polling fast for a few seconds right after start (and stopping
-   * as soon as both this and the keyboard-shortcuts hide have taken, or the
-   * budget runs out) gets it visually correct within a tenth of a second in
-   * the common case instead, without leaving a fast interval running for the
-   * life of the page. */
+   * as soon as the hide has taken, or the budget runs out) gets it right
+   * within a tenth of a second in the common case instead, without leaving a
+   * fast interval running for the life of the page. */
   P.settleQuickly = function () {
     if (this._settling) return;
     this._settling = true;
     var self = this;
     var attempts = 0;
     var tick = function () {
-      self.alignSettingsGear();
       self.hideKeyboardShortcutsButton();
       attempts++;
-      var gear = self.findSettingsButton();
       // A control that has not mounted yet is NOT settled - Canvas can still
-      // render it on a later tick, and start() runs before content.js's own
-      // grid-readiness wait, so "not found" on an early tick usually means
-      // "not there yet", not "never coming". Only an affirmative aligned/
-      // hidden state - or the deliberate-utility-collapse case below, where
-      // the gear provably never gets a real anchor to align against - counts
-      // as settled; everything else keeps polling until the budget runs out.
-      var gearSettled = (gear && gear.isConnected && gear.classList.contains('cgp-gear-aligned')) ||
-        self.controlsHidden;
+      // render it on a later tick, so "not found" on an early tick usually
+      // means "not there yet", not "never coming". Only an affirmative
+      // hidden state counts as settled; everything else keeps polling until
+      // the budget runs out.
       var kbdBtn = self.findKeyboardShortcutsButton();
-      var kbdSettled = !!(kbdBtn && kbdBtn.classList.contains('cgp-hidden'));
-      if ((gearSettled && kbdSettled) || attempts >= 30) { self._settling = false; return; }
+      if ((kbdBtn && kbdBtn.classList.contains('cgp-hidden')) || attempts >= 30) {
+        self._settling = false;
+        return;
+      }
       setTimeout(tick, 100);
     };
     setTimeout(tick, 100);
@@ -389,6 +307,7 @@
     });
     if (targets.length) this.collapseEmptyWrappers(targets);
     this.controlsHidden = true;
+    document.documentElement.classList.add('cgp-hide-utility');
     CGP.diag.set('canvasControlsHidden', this.hidden.length);
   };
 
@@ -525,7 +444,6 @@
   P.onWindowResize = function () {
     if (this._selfResize) return;   // our own nudge, not the window actually changing
     this.applyGeometry();
-    this.alignSettingsGear();
   };
 
   /* ------------------------------------------------------- column narrowing */

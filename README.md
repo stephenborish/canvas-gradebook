@@ -121,6 +121,17 @@ go to the students immediately — the same action Canvas's own tray performs, t
 own `postAssignmentGrades` mutation. Canvas posts in a background job, so the extension waits
 for that job, re-reads the column, and the button disappears by itself once nothing is hidden.
 
+Canvas's submissions endpoint can lag its own posting job by a second or two, so a column that
+still looks untouched on the first re-read is read again on a short backoff rather than believed.
+If it still has not caught up, the extension reports what Canvas actually told it — the job
+finished, the grades are posted — instead of the count it can currently see. (Reporting that
+count is what used to produce a false *0 of N grades posted* on a post that had in fact
+succeeded.) It does not overwrite the column on the strength of that: another instructor can
+hide a column during the second or two a post takes, and then the read is simply right, so the
+grid keeps showing what Canvas last said and one more re-read a few seconds later settles which
+case it was. A job the extension stopped waiting for is reported as still running, which is what
+it is; only a refusal from Canvas is reported as a failure.
+
 Three things it deliberately does not do:
 
 - it never appears on a column with nothing to post, so the button is a statement of fact about
@@ -236,17 +247,33 @@ one all still show through.
 Canvas's utility strip (student
 and assignment search, filters, Sync, Import, Export, View Options) is collapsed
 along with the empty wrappers it leaves behind, and the grid takes the full height of the window.
-Canvas's own gradebook-settings gear is never part of that collapse — it is left exactly where
-Canvas put it (moving it would break its own click handling), so a settings control is always
-reachable right where a teacher expects it, whatever this setting is set to.
+Canvas's own gradebook-settings gear collapses with the rest of the strip. An earlier version
+kept it visible and repositioned it to sit beside Apply Filters instead; because that could only
+be measured once Canvas had laid the toolbar out, the gear was always painted in its natural spot
+first and then jumped — and Canvas re-renders that toolbar often enough that the jump kept
+recurring after the page otherwise looked settled. Hiding it removes the measuring, the polling
+and the jump.
 
-Press **Alt+Shift+H** to bring Canvas's controls back for the current page. Turn the whole
-behaviour off permanently in the options page.
+Press **Alt+Shift+H** to bring Canvas's controls back for the current page — the gear included,
+so gradebook settings, posting policies and column arrangement stay one keystroke away. Turn the
+whole behaviour off permanently in the options page.
 
-Two smaller, unconditional cleanups apply regardless of that setting: Canvas's own "keyboard
-shortcuts" icon button is always hidden, and the settings gear is kept on the same visual line as
-the Apply Filters button (its on-screen position follows Apply Filters; the button itself is never
-moved in Canvas's DOM, so its click handling stays intact).
+One smaller, unconditional cleanup applies regardless of that setting: Canvas's own "keyboard
+shortcuts" icon button is always hidden.
+
+### Which grades the student can actually see
+
+Every cell holding a grade that is still hidden gets a coloured bar down its left edge — exactly
+the grades that column's **Post** button would post, so a column can be scanned without reading
+the header count.
+
+The bar is also the answer to a question the gradebook otherwise cannot show you: Canvas keeps a
+submission *posted* once it has been posted, so changing an already-posted score reaches the
+student straight away and there is nothing left to post. That is Canvas's own behaviour, not
+something this extension does — but from the grid it looks identical to changing a hidden grade.
+No bar means the student can see it.
+
+Turn it off with *Mark cells whose grade the student cannot see yet* in the options page.
 
 ### Resubmission indicator
 

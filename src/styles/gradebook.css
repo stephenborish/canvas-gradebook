@@ -15,6 +15,7 @@ html.cgp-on {
   --cgp-brand-wash: #eef6fb;
   --cgp-comment: #0a72a8;
   --cgp-resub: #6b3fa0;
+  --cgp-unposted: #b3701a;
   --cgp-submitted: #0b7a45;
   --cgp-submitted-dark: #095f36;
   --cgp-nosub: #98a3ab;
@@ -303,6 +304,34 @@ html.cgp-on:not(.cgp-hide-arrow) .slick-cell.active .cgp-sub { right: 22px; }
 /* Resubmitted after grading: a small corner wedge in the bottom-left, clear
  * of both the comment bubble (bottom-right) and Canvas's own controls (which
  * live along the top edge). */
+/* Grades the student cannot see yet: a bar down the LEADING edge of the cell.
+ *
+ * An edge bar rather than a corner marker because all four corners are spoken
+ * for - Canvas's own status icon and tray arrow at the top, this extension's
+ * comment bubble and resubmission wedge at the bottom - and because a full-
+ * height stripe is what makes a column scannable at a glance: the cells with
+ * a bar are exactly the ones the header's Post button would post. It sits
+ * above the resubmission wedge's 8px so the two never look like one shape.
+ *
+ * It is a marker, not a warning: an unposted grade is a perfectly normal
+ * state under a manual posting policy, so this is a quiet edge, not a fill.
+ *
+ * Inset top and bottom rather than running the full height: the bar carries a
+ * tooltip and therefore takes pointer events, and the two ends of the leading
+ * edge are exactly where Canvas's own late/missing/excused status icon and
+ * this extension's resubmission wedge sit. Stopping short of both leaves
+ * their clicks alone. */
+html.cgp-on .cgp-unposted {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--cgp-unposted);
+  pointer-events: auto;
+}
+
 html.cgp-on .cgp-resub {
   position: absolute;
   bottom: 0;
@@ -603,6 +632,22 @@ html.cgp-frozen-total .cgp-total-cell.cgp-row-hover {
 
 html.cgp-on .cgp-hidden,
 html.cgp-on .cgp-collapsed {
+  display: none !important;
+}
+
+/* Canvas's own gradebook-settings gear, hidden with the rest of the utility
+ * strip (Alt+Shift+H brings the whole strip, gear included, back). layout.js
+ * hides it by class too - this rule exists so it is gone on the very first
+ * paint rather than one JS pass later. The gear used to be repositioned to
+ * sit beside Apply Filters instead, which meant it was necessarily painted
+ * in its natural spot first and then moved; that visible jump is what this
+ * replaces. */
+html.cgp-on.cgp-hide-utility #gradebook_settings_modal_button,
+html.cgp-on.cgp-hide-utility #gradebook-settings,
+html.cgp-on.cgp-hide-utility [data-testid="gradebook-settings-button"],
+html.cgp-on.cgp-hide-utility [data-component="GradebookSettingsButton"],
+html.cgp-on.cgp-hide-utility button[aria-label*="gradebook settings" i],
+html.cgp-on.cgp-hide-utility button[title*="gradebook settings" i] {
   display: none !important;
 }
 
