@@ -606,6 +606,17 @@ html.cgp-on .cgp-collapsed {
   display: none !important;
 }
 
+/* Canvas's own "keyboard shortcuts" icon button in the gradebook toolbar.
+ * Unlike the rest of the utility strip (see .cgp-hidden above), this one is
+ * always hidden - there is no setting for it and Alt+Shift+H does not bring
+ * it back. */
+html.cgp-on [data-testid="keyboard-shortcuts-button"],
+html.cgp-on button[aria-label*="keyboard shortcut" i],
+html.cgp-on button[title*="keyboard shortcut" i],
+html.cgp-on a[aria-label*="keyboard shortcut" i] {
+  display: none !important;
+}
+
 html.cgp-max-height #breadcrumbs { margin-bottom: 2px !important; }
 html.cgp-max-height #content,
 html.cgp-max-height .ic-Layout-contentMain {
