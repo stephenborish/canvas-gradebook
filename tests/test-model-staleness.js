@@ -72,4 +72,27 @@ suite('stale column-fetch protection', (test) => {
     const rec = model.cell('50', '10');
     a.eq(rec.commentList.length, 1, 'a just-added comment must not be wiped by a stale column read');
   });
+
+  test('markLocalWrite returns the prior marker, so a later failed write on the same cell can restore it', () => {
+    const model = makeModel();
+    // Write A succeeds (its own protection is never cleared on success).
+    const priorForA = model.markLocalWrite('50', '10');
+    a.eq(priorForA, undefined, 'no earlier write existed before A');
+    model.patchCell('50', '10', { grade: 'A-write-result' });
+
+    // Write B starts on the SAME cell (GradeWriter.serialize runs same-cell
+    // writes one at a time, but a second, later write is still a normal
+    // sequence) and then FAILS.
+    const priorForB = model.markLocalWrite('50', '10');
+    model.clearLocalWrite('50', '10', priorForB); // B's rollback: restore A's mark, not delete it
+
+    // A fetch dispatched before A started (so before either write) must
+    // still be recognised as stale - A's own protection must have survived
+    // B's failed attempt and rollback.
+    const fetchBeforeA = priorForB /* A's own timestamp */ - 10;
+    model.applySubmission(submission({ grade: 'stale-pre-A-data' }),
+      { silent: true, staleIfWrittenAfter: fetchBeforeA });
+    a.eq(model.cell('50', '10').grade, 'A-write-result',
+      'B failing and rolling back must not erase the protection A’s own successful write established');
+  });
 });

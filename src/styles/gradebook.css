@@ -1209,18 +1209,31 @@ html.cgp-on .cgp-crumb-item {
 
 /* ------------------------------------------------------- pinned settings gear */
 
-/* Canvas's own gradebook-settings gear, relocated (not cloned - it is still
- * Canvas's real control) to sit beside Apply Filters so it stays reachable
- * even while the rest of Canvas's utility strip is collapsed. Position
- * (fixed, tracking Apply Filters' own on-screen location) is set from
- * layout.js#positionPinnedGear, not here - this only guarantees the gear
- * itself renders once it's there. */
+/* A lookalike proxy for Canvas's own gradebook-settings gear - never the
+ * real control itself (see layout.js#pinSettingsGear for why moving that
+ * live React-rendered button broke its click) - parked beside Apply Filters
+ * so a reachable settings control survives even while the rest of Canvas's
+ * utility strip is collapsed. Position (fixed, tracking Apply Filters' own
+ * on-screen location) is set from layout.js#positionPinnedGear, not here -
+ * this only guarantees the proxy itself renders and looks like a button. */
 html.cgp-on .cgp-pinned-gear {
   display: inline-flex !important;
   visibility: visible !important;
   align-items: center;
   justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--cgp-brand-dark);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(19, 33, 44, 0.2);
 }
+html.cgp-on .cgp-pinned-gear svg { width: 16px; height: 16px; display: block; }
+html.cgp-on .cgp-pinned-gear:hover { background: var(--cgp-brand-wash); }
+html.cgp-on .cgp-pinned-gear:focus-visible { outline: 2px solid var(--cgp-brand); outline-offset: 2px; }
 
 /* ------------------------------------------------------- course switcher */
 

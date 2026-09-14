@@ -248,6 +248,10 @@
         // spot) independently of whether the rest of the utility strip is
         // being collapsed.
         layout.pinSettingsGear();
+        // Also cheap and idempotent: recovers a wrapper this session wrongly
+        // collapsed because it looked empty at the time but has since had
+        // real Canvas content render into it. See recheckCollapsedWrappers.
+        if (layout.controlsHidden) layout.recheckCollapsedWrappers();
         paint();
       }, 1500);
 

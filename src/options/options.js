@@ -67,6 +67,13 @@
     return chrome.storage.sync.set(payload).then(function () {
       fill(values); // show the clamped, sanitized result back to the teacher
       status('Saved. Reload the gradebook tab to see the change.');
+    }, function (err) {
+      // A rejected write (most likely the 8KB-per-item quota, from a large
+      // snippet library) previously vanished silently: nothing here ever
+      // reacted to a rejection, so nothing was saved AND nothing told the
+      // teacher that - the form just sat there looking like any other click.
+      status('Not saved: ' + (err && err.message ? err.message : 'Canvas storage rejected this.') +
+        ' Try shortening your snippets.');
     });
   }
 

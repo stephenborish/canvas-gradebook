@@ -236,8 +236,10 @@ one all still show through.
 Canvas's utility strip (student
 and assignment search, filters, Sync, Import, Export, View Options) is collapsed
 along with the empty wrappers it leaves behind, and the grid takes the full height of the window.
-Apply Filters and Canvas's own gradebook-settings gear are never part of that collapse — the gear
-is moved to sit right beside Apply Filters so it's always one click away, whatever this setting is
+Apply Filters and Canvas's own gradebook-settings gear are never part of that collapse — Canvas's
+real gear button is left exactly where it is (moving it would break its own click handling; see
+1.6.1 below), and a lookalike control that forwards its click to the real one sits right beside
+Apply Filters instead, so a settings control is always one click away, whatever this setting is
 set to.
 
 Press **Alt+Shift+H** to bring Canvas's controls back for the current page. Turn the whole
@@ -442,6 +444,80 @@ Two things that no longer happen, as of this fix:
 - Chrome / Edge (Chromium 116+). Not tested in Firefox, which needs a different manifest.
 
 ## Version
+
+1.7.0 - a data-integrity audit across grade identity, writes, posting and drafts, prompted by a
+teacher asking what edge cases could still cause a wrong grade or a lost comment. Highlights:
+
+- **Cell identity.** A click or keystroke could resolve to the wrong student right after sorting
+  or filtering the gradebook: the row cache was checked before a live read of the row itself,
+  instead of after. A live read now always wins, the row cache is fully rebuilt (not just
+  patched) the moment a sort/filter is detected, and a Shift-click range no longer trusts
+  off-screen rows left over from before it. Two assignments sharing the exact same name (a
+  common pattern across modules/terms) could have the second one silently forced onto the
+  first's id by the name-matching fallback; it now re-checks the points value that
+  disambiguated them in the first place before ever reusing that match. The very first
+  row-height measurement, if it landed before Canvas had rendered a row yet, used to lock in a
+  guess for the rest of the page's life; a wrong guess collided different students onto the same
+  computed row index. It's no longer cached until it's a real measurement.
+- **Grade writes.** A grade typed directly into Canvas's own cell editor never marked itself
+  against the in-flight-fetch race guard added in 1.6.0 - only M/E/L, paste and comments did -
+  so a slower column-wide read could still silently revert a plain typed grade. A failed write
+  left that same guard permanently pointed at a write that never happened, freezing the cell's
+  data forever; it's cleared on failure now. Moderated assignments were only half-refused (like
+  the README already claimed) - `writer.js` now refuses them exactly like anonymous ones, for
+  both grades and comments (comments had no such refusal at all before, despite grades on the
+  same assignment being refused).
+- **Clipboard paste.** Pasting one Excel/Sheets cell showing a locale-grouped number ("1 000")
+  silently split into two values and wrote to two different students. It's now recognized as one
+  grouped number and kept as one write. Cells skipped mid-paste (an anonymous/moderated column
+  mixed into an otherwise-ordinary range) used to vanish with no indication - the toast now says
+  so.
+- **Posting grades.** Any failure of Canvas's postAssignmentGrades mutation - including a
+  legitimate refusal because moderation wasn't finished - fell back to the older, broader
+  "unmute the whole column" endpoint, which has no moderation awareness and posts everything
+  regardless of what was clicked. That fallback now only runs when the mutation itself looks
+  genuinely unavailable; a real refusal is shown as an error instead. The Post button's count
+  could also be stale by however long the page had been open (a co-teacher grading elsewhere is
+  not an edge case) - the column is re-read immediately before posting and before the
+  confirmation toast, not just from whatever the button last displayed.
+- **SpeedGrader drafts.** Clicking through students quickly could land one student's saved draft
+  in a different student's box, or silently delete a still-unsaved draft when navigating away
+  before Canvas finished repopulating the comment field. Both are fixed. A rejected
+  `chrome.storage.local` write (quota, a mid-session extension update) used to report success
+  regardless; it's now surfaced once per page rather than silently losing the draft. The
+  confirmation-tracking observer only ever attached to the first comments panel Canvas rendered;
+  if a later student's panel was a fresh element rather than a mutation of the same one, a
+  submitted comment's draft copy was never cleared and could be resubmitted as a duplicate.
+- **Settings.** A corrupted or legacy-schema `snippets` value used to reset to an empty list
+  (wiping the built-in defaults too) instead of falling back to the real defaults like every
+  other setting does. The snippet library's own limits (60 entries x 4000 characters) could
+  exceed `chrome.storage.sync`'s real 8KB-per-item quota by several times over, silently failing
+  to save - discarding every other pending setting change in the same save, with no error shown
+  anywhere. Limits are now realistic, and a failed save is reported instead of silently
+  discarded.
+- **Column resizing.** Two failed attempts at narrowing a column to width now try to put it back
+  where it started - and say so if that also fails - rather than leaving Canvas's own resize
+  handle (which persists whatever width it's dragged to, including to the teacher's next login)
+  at an untouched, silently wrong width. A utility-strip wrapper wrongly collapsed because it
+  looked empty at the time (Canvas hadn't rendered into it yet) is now periodically rechecked and
+  recovered instead of staying hidden for the rest of the page's life.
+
+1.6.1 - two fixes reported right after 1.6.0 shipped. Pressing `C` with cells selected did
+nothing but type a literal "c" into whatever grade cell was last focused: building a selection
+with Cmd/Ctrl-click deliberately keeps Canvas from moving focus onto the clicked cells, so the
+teacher's previous grade editor stayed focused throughout, and the shortcut refused to fire
+whenever that focused element looked like a text input - which, in practice, was every time.
+The shortcut now opens the bulk-comment dialog once a selection exists, unless the focused text
+entry was itself focused after that selection was last built - which means a teacher who keeps
+grading or typing Notes elsewhere while an old selection quietly sits in the background still
+gets their own keystrokes, selection or not. Canvas's own gradebook-settings gear also went dead
+after being pinned beside Apply Filters: pinning it worked by physically moving Canvas's real
+button into `<body>`, which silently breaks its click, because Canvas's gradebook is a React app
+whose event delegation depends on the button staying in the DOM subtree React actually rendered
+it into. The real gear is no longer touched or moved - including staying out of whatever Canvas
+container the "collapse Canvas's utility strip" setting hides - and a lookalike button sits
+beside Apply Filters instead, forwarding its click to whatever Canvas's real settings control
+resolves to at that moment.
 
 1.6.0 - fixes reported from real classroom use. Keyboard shortcuts (`M`/`E`/`L`, numbers, bulk
 paste) no longer silently revert a moment after they're applied: a column-wide submissions fetch

@@ -17,6 +17,11 @@
     this.keys = new Map();   // "assignmentId:userId" -> {assignmentId, userId, rowIndex, colIndex}
     this.anchor = null;
     this.pending = '';
+    // When the set of selected cells last actually changed (add/toggle/
+    // extend) - read by keyboard.js's C shortcut to tell a stale, leftover-
+    // focused editor (predates this) from one genuinely focused since (does
+    // not: it is what the teacher is looking at right now, selection or not).
+    this.changedAt = 0;
   }
 
   var P = SelectionController.prototype;
@@ -47,6 +52,7 @@
       rowIndex: info.rowIndex, colIndex: info.colIndex
     });
     this.anchor = { rowIndex: info.rowIndex, colIndex: info.colIndex };
+    this.changedAt = Date.now();
     return true;
   };
 
@@ -56,6 +62,7 @@
     if (this.keys.has(key)) {
       this.keys.delete(key);
       if (this.keys.size === 0) this.anchor = null;
+      this.changedAt = Date.now();
     } else {
       this.add(info);
     }
@@ -75,6 +82,7 @@
       self.keys.set(CGP.gridMap.cellKey(t.assignmentId, t.userId), t);
     });
     this.anchor = anchor;
+    this.changedAt = Date.now();
     this.repaint();
     CGP.diag.set('selectionSize', this.keys.size);
   };

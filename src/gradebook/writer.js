@@ -41,11 +41,26 @@
         return self.gate(function () { return self.writeOne(target, result, opts); });
       });
     })).then(function () {
+      // Both are reported, not just whichever happened first: a paste that
+      // spans one ordinary column and one anonymous/moderated one silently
+      // wrote the ordinary cells and dropped the rest before this - the
+      // success toast for the ones that DID save looked identical to a fully
+      // successful paste, with nothing telling the teacher part of what they
+      // pasted never went anywhere.
+      var messages = [];
       if (result.failed) {
         var first = result.errors[0] || {};
-        CGP.ui.error(result.failed + (result.failed === 1 ? ' grade' : ' grades') +
+        messages.push(result.failed + (result.failed === 1 ? ' grade' : ' grades') +
           ' could not be saved' + (first.status ? ' (Canvas ' + first.status + ')' : '') +
           '. Those cells were left unchanged.');
+      }
+      if (result.skipped) {
+        messages.push(result.skipped + (result.skipped === 1 ? ' cell was' : ' cells were') +
+          ' skipped (an anonymous or moderated assignment, or an unresolved student/assignment) ' +
+          'and left unchanged.');
+      }
+      if (messages.length) {
+        CGP.ui.error(messages.join(' '));
       } else if (opts.announce && result.ok > 1) {
         CGP.ui.toast(result.ok + ' grades saved');
       }
@@ -112,17 +127,19 @@
       CGP.diag.error('write.unknownStudent', { assignmentId: assignmentId });
       return Promise.resolve();
     }
-    if (assignment.anonymous) {
+    if (assignment.anonymous || assignment.moderated) {
       result.skipped++;
-      CGP.diag.warn('write.anonymousAssignmentSkipped', { assignmentId: assignmentId });
+      CGP.diag.warn('write.anonymousAssignmentSkipped', { assignmentId: assignmentId, moderated: !!assignment.moderated });
       return Promise.resolve();
     }
 
     // Stamped before anything else: a column-wide fetch already in flight
     // for this cell must be recognised as stale once it lands, or its
     // pre-write response can silently overwrite what this write is about to
-    // record. See model.markLocalWrite / applySubmission.
-    this.model.markLocalWrite(assignmentId, userId);
+    // record. See model.markLocalWrite / applySubmission. Whatever this
+    // returns is what a failure below must restore, not just delete - see
+    // model.clearLocalWrite.
+    var priorWriteMark = this.model.markLocalWrite(assignmentId, userId);
 
     var currentRec = this.model.cell(assignmentId, userId);
     var op = CGP.gradeOps.operationFor(target.parsed, {
@@ -204,6 +221,11 @@
         });
       }, function (err) {
         self.model.restoreCell(assignmentId, userId, snapshot);
+        // This write never actually happened - restore whatever protection
+        // existed before IT started (an earlier write to this same cell may
+        // have already succeeded and still needs it), rather than deleting
+        // the marker outright. See model.clearLocalWrite.
+        self.model.clearLocalWrite(assignmentId, userId, priorWriteMark);
         result.failed++;
         result.errors.push({ assignmentId: assignmentId, status: err && err.status });
         CGP.diag.error('write.rejected', {
@@ -308,8 +330,29 @@
       });
   };
 
+  /* Same identity safeguards writeOne enforces for every grade/status write -
+   * previously missing here entirely. A comment typed on an anonymous or
+   * moderated assignment was written straight to whatever userId the model
+   * happened to associate with that cell, with none of the refusal a grade
+   * write on the same assignment already gets - exactly the identity mapping
+   * this extension otherwise treats as deliberately hidden there, so a
+   * comment meant for one student could land on a different student's
+   * thread. Both call sites (comment-popover.js, bulk-comment.js) already
+   * handle a rejected addComment() by showing an error and keeping the
+   * teacher's typed text, so refusing here is safe to add. */
   P.addComment = function (assignmentId, userId, text) {
     var self = this;
+    if (!assignmentId || !userId) {
+      return Promise.reject(new Error('Comment could not be matched to a student and assignment.'));
+    }
+    var assignment = this.model.assignment(assignmentId);
+    if (!assignment) return Promise.reject(new Error('Unknown assignment.'));
+    if (!this.model.student(userId)) return Promise.reject(new Error('Unknown student.'));
+    if (assignment.anonymous || assignment.moderated) {
+      CGP.diag.warn('comment.anonymousOrModeratedSkipped', { assignmentId: assignmentId, moderated: !!assignment.moderated });
+      return Promise.reject(new Error(
+        'Comments cannot be added here on an anonymous or moderated assignment - use SpeedGrader instead.'));
+    }
     this.model.markLocalWrite(assignmentId, userId);
     return this.api.addComment(this.model.courseId, assignmentId, userId, text).then(function (submission) {
       self.model.applyCommentWrite(assignmentId, userId, submission);

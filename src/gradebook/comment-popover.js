@@ -165,7 +165,14 @@
       }, function (err) {
         save.disabled = false;
         save.textContent = 'Save comment';
-        CGP.ui.error('Canvas rejected that comment' + (err && err.status ? ' (' + err.status + ')' : '') + '. Your text is still here.');
+        // addComment can now refuse before ever reaching Canvas (an
+        // anonymous/moderated assignment) as well as have Canvas itself
+        // reject it - err.message carries the real reason either way, so
+        // show it instead of always blaming Canvas for a refusal that may
+        // have been this extension's own.
+        var reason = (err && err.message) ? err.message
+          : ('Canvas rejected that comment' + (err && err.status ? ' (' + err.status + ')' : '') + '.');
+        CGP.ui.error(reason + ' Your text is still here.');
       });
     }
     setTimeout(function () { input.focus(); }, 0);

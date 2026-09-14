@@ -97,8 +97,19 @@
     if (this._rowHeight) return this._rowHeight;
     var row = document.querySelector('.grid-canvas .slick-row');
     var h = row ? Math.round(row.getBoundingClientRect().height) : 0;
-    this._rowHeight = h > 8 ? h : DEFAULT_ROW_HEIGHT;
-    return this._rowHeight;
+    // Only a REAL measurement is ever cached. Locking in DEFAULT_ROW_HEIGHT
+    // just because this ran before Canvas had rendered a single row yet -
+    // entirely possible this early - would wrongly stick for the rest of the
+    // page's life on any build whose actual row height differs from that
+    // guess, and every row-index computation downstream (rowIndexFromTop)
+    // divides by this same wrong number. That silently maps two DIFFERENT
+    // real rows onto the SAME computed index, so one of the two students
+    // there is simply never resolvable by index again. Returning the guess
+    // for THIS call (so a caller has something usable right now) while
+    // leaving _rowHeight unset means the very next call keeps trying for a
+    // real measurement instead of being stuck with a wrong one forever.
+    if (h > 8) this._rowHeight = h;
+    return h > 8 ? h : DEFAULT_ROW_HEIGHT;
   };
 
   P.columnIdForHeader = function (el) {
@@ -151,6 +162,22 @@
     return text;
   };
 
+  /** Header text with our OWN synthetic .cgp-header-label (and the resize
+   * handle) stripped, but the native points/"out of N" text left in - unlike
+   * headerTitleText, which strips that too. For reading the trailing points
+   * number back out (reconcileColumnsWithModel's disambiguation, and
+   * refreshColumns()'s re-check of it): once layout.js's decorateHeaders has
+   * ever run on this header, it leaves behind a persistent
+   * .cgp-header-label carrying its OWN "N pts"/due-date text, and plain
+   * el.textContent would then end with THAT instead of Canvas's native
+   * points text - reading the wrong number, or none at all, right after the
+   * very re-decoration this points check itself triggers. */
+  P.headerPointsSourceText = function (el) {
+    var clone = el.cloneNode(true);
+    Array.prototype.slice.call(clone.querySelectorAll('.slick-resizable-handle, .cgp-header-label')).forEach(function (n) { n.remove(); });
+    return clone.textContent || '';
+  };
+
   /** Last resort: match still-unresolved header columns to a known assignment
    * by their visible title text. Only used for columns structural parsing
    * could not identify, and only ever narrows an 'other'/'unknown' column to
@@ -177,9 +204,15 @@
       var candidates = byName.get(title.toLowerCase());
       if (!candidates || !candidates.length) return;
       var pick = candidates[0];
-      if (candidates.length > 1) {
+      var ambiguous = candidates.length > 1;
+      if (ambiguous) {
         // Disambiguate identically named assignments using the points line.
-        var m = /([\d.]+)\s*$/.exec(entry.el.textContent || '');
+        // (This guard only ever reaches columns not already typed
+        // 'assignment', which is also exactly when decorateHeaders has never
+        // added its own .cgp-header-label here - but headerPointsSourceText
+        // strips it anyway, so that stays true even if this guard ever
+        // loosens rather than being a coincidence this depends on.)
+        var m = /([\d.]+)\s*$/.exec(self.headerPointsSourceText(entry.el));
         if (m) {
           var byPoints = candidates.filter(function (a) { return String(a.pointsPossible) === m[1]; });
           if (byPoints.length === 1) pick = byPoints[0];
@@ -188,7 +221,16 @@
           return;
         }
       }
-      self.nameOverrideByTitle.set(title.toLowerCase(), pick.id);
+      // Remembering just the id would let refreshColumns()'s fast path below
+      // force-match a LATER, different column sharing this same title onto
+      // this same assignment with no further check - silently sending every
+      // grade typed into that other column to the wrong assignment. Whether
+      // this title was ever actually ambiguous (more than one assignment
+      // shares it) is remembered alongside the id so the fast path can
+      // require the SAME points-based check here whenever it was.
+      self.nameOverrideByTitle.set(title.toLowerCase(), {
+        id: pick.id, ambiguous: ambiguous, points: pick.pointsPossible
+      });
       entry.type = 'assignment';
       entry.assignmentId = pick.id;
       entry.columnId = 'assignment_' + pick.id;
@@ -215,10 +257,25 @@
         var columnId = self.columnIdForHeader(el);
         var info = gridMap.classifyColumnId(columnId || '');
         if (info.type !== 'assignment' && self.nameOverrideByTitle.size) {
-          var knownId = self.nameOverrideByTitle.get(self.headerTitleText(el).toLowerCase());
-          if (knownId) {
-            info = { type: 'assignment', assignmentId: knownId };
-            columnId = 'assignment_' + knownId;
+          var known = self.nameOverrideByTitle.get(self.headerTitleText(el).toLowerCase());
+          if (known) {
+            // An unambiguous title (only one assignment anywhere in the
+            // course has this exact name) is safe to force-match on sight -
+            // there is no OTHER assignment it could be. One that was only
+            // resolved by disambiguating on points, though, must have THIS
+            // column's own points re-checked before reusing that id: without
+            // this, a second column that happens to share the same title
+            // (and a DIFFERENT point value) would silently be forced onto
+            // the first one's assignment instead of staying unresolved.
+            var apply = !known.ambiguous;
+            if (known.ambiguous) {
+              var pm = /([\d.]+)\s*$/.exec(self.headerPointsSourceText(el));
+              apply = !!pm && String(known.points) === pm[1];
+            }
+            if (apply) {
+              info = { type: 'assignment', assignmentId: known.id };
+              columnId = 'assignment_' + known.id;
+            }
           }
         }
         var entry = {
@@ -323,6 +380,8 @@
     var canvases = this.canvases();
     var unresolved = 0;
     var sampled = 0;
+    var reordered = false;
+    var seen = [];   // {top, idx, sid} actually read live this pass
     canvases.forEach(function (canvas) {
       var rows = canvas.querySelectorAll(':scope > .slick-row');
       for (var i = 0; i < rows.length; i++) {
@@ -330,9 +389,27 @@
         var top = self.rowTop(row);
         if (top === null) continue;
         var idx = gridMap.rowIndexFromTop(top, h);
-        var sid = self.studentIdFromRow(row) || self.topToStudent.get(top) ||
+        var live = self.studentIdFromRow(row);
+        var sid = live || self.topToStudent.get(top) ||
           (idx !== null ? self.rowIndexToStudent.get(idx) : null);
+        if (live) {
+          // A live read that disagrees with whoever this exact pixel offset
+          // / row index used to hold is the signature of a sort, filter, or
+          // roster change happening right now: the grid has been reordered
+          // under us. Every OTHER cached row is now suspect too, most of all
+          // any not currently rendered - this loop only ever corrects rows
+          // actually on screen, so an off-screen row's stale entry from
+          // before the reorder would otherwise linger and silently feed a
+          // Shift-click range (grid-map.js rangeTargets) that spans it.
+          var priorTop = self.topToStudent.get(top);
+          var priorIdx = idx !== null ? self.rowIndexToStudent.get(idx) : undefined;
+          if ((priorTop !== undefined && priorTop !== live) ||
+            (priorIdx !== undefined && priorIdx !== live)) {
+            reordered = true;
+          }
+        }
         if (sid) {
+          seen.push({ top: top, idx: idx, sid: sid });
           self.topToStudent.set(top, sid);
           if (idx !== null) {
             self.rowIndexToStudent.set(idx, sid);
@@ -351,6 +428,23 @@
         }
       }
     });
+    if (reordered) {
+      // Rebuilt from exactly what this pass saw live, with no second DOM
+      // walk needed: every cached entry not just reconfirmed above is wiped
+      // rather than trusted, since after a reorder a stale one is now just
+      // as likely as a correct one.
+      this.topToStudent.clear();
+      this.rowIndexToStudent.clear();
+      this.studentToRowIndex.clear();
+      seen.forEach(function (r) {
+        self.topToStudent.set(r.top, r.sid);
+        if (r.idx !== null) {
+          self.rowIndexToStudent.set(r.idx, r.sid);
+          self.studentToRowIndex.set(String(r.sid), r.idx);
+        }
+      });
+      CGP.diag.warn('adapter.rows.reorderDetected');
+    }
     CGP.diag.set('rowsMapped', this.rowIndexToStudent.size);
     CGP.diag.set('rowsUnresolved', unresolved);
   };
@@ -420,9 +514,21 @@
     var top = this.rowTop(row);
     var h = this.rowHeight();
     var rowIndex = top === null ? null : gridMap.rowIndexFromTop(top, h);
-    var studentId = (top !== null && this.topToStudent.get(top)) || this.studentIdFromRow(row) ||
+    // A live read of THIS row wins over any cache: the cache (topToStudent /
+    // rowIndexToStudent) is keyed by pixel offset / row index, neither of
+    // which changes when Canvas re-sorts or re-filters the grid - only which
+    // student now sits there does. Checking the cache first (as an earlier
+    // version of this did) meant a click or keystroke on this exact row,
+    // right after a sort, could resolve to whoever occupied it BEFORE the
+    // sort - a real grade landing on the wrong student with no error at all.
+    // Falling back to the cache only when there is no row to read live (this
+    // cell's row somehow was not found) keeps every other call site that
+    // still legitimately needs the cache (off-screen rows) unaffected.
+    var live = this.studentIdFromRow(row);
+    var studentId = live || (top !== null && this.topToStudent.get(top)) ||
       (rowIndex !== null ? this.studentAt(rowIndex) : null) || null;
     if (studentId && rowIndex !== null) {
+      if (top !== null) this.topToStudent.set(top, studentId);
       this.rowIndexToStudent.set(rowIndex, studentId);
       this.studentToRowIndex.set(String(studentId), rowIndex);
     }

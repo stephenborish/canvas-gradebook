@@ -178,6 +178,21 @@
       return ['cgp.draft', location.host, courseId || 'course', assignmentId, studentId].join(':');
     }
 
+    // chrome.storage.local.set/remove return promises that can reject
+    // asynchronously (quota pressure, "Extension context invalidated" during
+    // an auto-update mid-session); a bare try/catch only ever caught a
+    // SYNCHRONOUS throw, so a rejected save previously vanished silently -
+    // CGP.diag.bump('draft.saved') fired unconditionally right after,
+    // reporting success even when nothing was actually persisted. Warned
+    // once per page load rather than every keystroke, so a genuine outage
+    // does not spam the teacher while they are trying to finish grading.
+    function warnSaveFailedOnce() {
+      if (state.saveWarned) return;
+      state.saveWarned = true;
+      CGP.ui.error('Gradebook+ couldn’t save your draft comment just now. ' +
+        'Copy your text somewhere safe before navigating away.');
+    }
+
     function saveDraft(text) {
       if (!CGP.settings.values.speedgraderDrafts) return;
       var key = state.key;
@@ -187,14 +202,28 @@
       var payload = {};
       payload[key] = { text: value, at: Date.now() };
       try {
-        chrome.storage.local.set(payload);
+        var result = chrome.storage.local.set(payload);
         CGP.diag.bump('draft.saved');
-      } catch (e) { CGP.diag.warn('draft.saveFailed'); }
+        if (result && typeof result.catch === 'function') {
+          result.catch(function (e) {
+            CGP.diag.error('draft.saveRejected', { message: String(e && e.message) });
+            warnSaveFailedOnce();
+          });
+        }
+      } catch (e) {
+        CGP.diag.warn('draft.saveFailed');
+        warnSaveFailedOnce();
+      }
     }
 
     function removeDraft(key) {
       if (typeof chrome === 'undefined' || !chrome.storage) return;
-      try { chrome.storage.local.remove(key || state.key); } catch (e) { /* ignore */ }
+      try {
+        var result = chrome.storage.local.remove(key || state.key);
+        if (result && typeof result.catch === 'function') {
+          result.catch(function (e) { CGP.diag.warn('draft.removeFailed', { message: String(e && e.message) }); });
+        }
+      } catch (e) { /* ignore */ }
     }
 
     function inlineNote(textarea, message) {
@@ -215,6 +244,14 @@
       var key = state.key;
       if (!key || typeof chrome === 'undefined' || !chrome.storage) return;
       chrome.storage.local.get(key).then(function (got) {
+        // A teacher clicking through students quickly is the ordinary case,
+        // not an edge one: this read is async, and by the time it resolves
+        // the student (and therefore which key/textarea a draft belongs to)
+        // may have moved on again - Canvas can also reuse the same textarea
+        // DOM node across students. Applying a stale result here landed one
+        // student's saved draft in a DIFFERENT student's comment box, with
+        // the "Unsent draft restored" note making it look legitimate.
+        if (state.key !== key || state.textarea !== textarea) return;
         var box = got && got[key];
         if (!box || !box.text) return;
         if (String(textarea.value || '').trim()) return;   // never clobber live typing
@@ -258,9 +295,22 @@
       }, true);
     }
 
+    // Re-checked on every poll tick (see the setInterval below) rather than
+    // attached once: this used to grab whichever #comments-shaped container
+    // existed the FIRST time any textarea was found, and never looked again.
+    // If Canvas replaces that whole panel element (rather than mutating it
+    // in place) when switching submissions - plausible for a per-submission
+    // feed - the observer went on watching a now-detached node forever.
+    // Every later confirmation was then missed: removeDraft() never ran, so
+    // an already-posted comment's local draft lingered and could be offered
+    // back as "unsent" and resubmitted as a duplicate. Cheap to re-check
+    // (one querySelector) and a no-op whenever the container has not changed.
     function watchConfirmation() {
       var container = document.querySelector(COMMENTS_SELECTORS) || document.body;
-      var observer = new MutationObserver(function () {
+      if (state.confirmContainer === container && state.confirmObserver) return;
+      if (state.confirmObserver) state.confirmObserver.disconnect();
+      state.confirmContainer = container;
+      state.confirmObserver = new MutationObserver(function () {
         if (!state.pendingSubmit) return;
         var target = normalize(state.pendingSubmit.text);
         if (!target) return;
@@ -274,17 +324,37 @@
           CGP.diag.bump('comment.confirmed');
         }
       });
-      observer.observe(container, { childList: true, subtree: true, characterData: true });
+      state.confirmObserver.observe(container, { childList: true, subtree: true, characterData: true });
     }
 
     function onStudentChange() {
-      if (state.textarea) saveDraft(state.textarea.value);
+      // Deliberately NOT "if (state.textarea) saveDraft(state.textarea.value)"
+      // here any more. This runs 250ms after the hash already changed, with
+      // no guarantee Canvas has not already repopulated this same reused
+      // textarea node for the NEW student by then - reading its value now
+      // could be the new student's content, saved under the OLD student's
+      // key (still in state.key at this point), silently overwriting or
+      // deleting the old student's real draft. The blur listener attached in
+      // attach() already saves the outgoing textarea's value at the correct
+      // moment (navigating away blurs it first), and the debounced input
+      // listener keeps storage caught up while still typing - both fire
+      // before content could have changed, so nothing further is needed here.
       state.key = draftKey();
       var textarea = document.querySelector(TEXTAREA_SELECTORS) || findTextareaFallback();
       if (textarea) {
         state.textarea = textarea;
         if (!String(textarea.value || '').trim()) restoreDraft(textarea);
       }
+      // Also re-checked here, not just from the polling loop below: that
+      // loop stops itself after 60 seconds (it exists only to catch
+      // SpeedGrader's own async initial load), while a real grading session
+      // routinely runs for many minutes and switches students - via this
+      // same hashchange - well past that window. Confined to the poll
+      // alone, a comments panel Canvas replaces wholesale after the first
+      // minute would never be re-attached to again for the rest of the
+      // session: the exact stale-observer bug this was fixing, just
+      // delayed instead of prevented.
+      watchConfirmation();
     }
 
     window.addEventListener('hashchange', function () { setTimeout(onStudentChange, 250); });
@@ -293,11 +363,15 @@
       var textarea = document.querySelector(TEXTAREA_SELECTORS) || findTextareaFallback();
       if (textarea) {
         attach(textarea);
+        // watchSubmit binds to document itself, once, and never needs
+        // re-binding. watchConfirmation is cheap and re-checks/re-attaches
+        // to whatever the CURRENT comments container is on every tick - see
+        // its own comment for why that must not be a one-time thing.
         if (!state.watching) {
           state.watching = true;
           watchSubmit();
-          watchConfirmation();
         }
+        watchConfirmation();
       } else if (!state.sampledMiss) {
         state.sampledMiss = true;
         var all = Array.prototype.map.call(document.querySelectorAll('textarea'), function (t) {

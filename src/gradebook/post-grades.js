@@ -82,6 +82,20 @@
     }
     if (this.busy.has(id)) return;   // mid-post: the button is saying so already
 
+    // Never on an anonymous/moderated assignment: writer.js refuses to POST
+    // to one (the identity mapping it depends on is deliberately hidden
+    // there), and postAssignmentGrades can legitimately refuse a moderated
+    // column too (moderation not finished) - a refusal that must surface as
+    // an error, not silently widen into the older "unmute the whole column"
+    // fallback (see post()). A button that cannot be safely pressed should
+    // not be offered in the first place.
+    var assignmentMeta = this.model.assignment(id);
+    if (assignmentMeta && (assignmentMeta.anonymous || assignmentMeta.moderated)) {
+      if (existing) existing.remove();
+      headerEl.classList.remove('cgp-has-post');
+      return;
+    }
+
     var count = this.model.pendingPosts(id).length;
     if (!count) {
       if (existing) existing.remove();
@@ -135,44 +149,105 @@
     var id = String(assignmentId);
     if (this.busy.has(id)) return Promise.resolve(null);
     var assignment = this.model.assignment(id);
-    var count = this.model.pendingPosts(id).length;
-    if (!count) { this.requestPaint(); return Promise.resolve(null); }
+    if (assignment && (assignment.anonymous || assignment.moderated)) {
+      CGP.ui.error('Post it through Canvas’s own moderation/anonymous-grading workflow instead.');
+      return Promise.resolve(null);
+    }
 
     this.busy.add(id);
-    this.setBusy(btn, true, 'Posting…');
+    this.setBusy(btn, true, 'Checking…');
     CGP.diag.bump('post.started');
 
-    return this.api.postAssignmentGrades(id, { gradedOnly: true })
-      .then(function (progress) {
-        // No progress id means Canvas did the work synchronously; otherwise
-        // the posting happens in a background job and the new posted_at
-        // timestamps do not exist until it finishes. A job that reports
-        // FAILED throws from here and is reported to the teacher.
-        if (!progress || !progress._id) return null;
-        return self.api.waitForProgress(progress._id);
-      }, function (err) {
-        return self.postWithoutGraphql(id, err);
-      })
-      .then(function () {
-        return self.model.reloadAssignment(id);
-      })
-      .then(function () {
-        var left = self.model.pendingPosts(id).length;
-        var name = (assignment && assignment.name) || 'this column';
-        if (left) {
-          // Canvas posted some but not all - most often ungraded submissions,
-          // which "post graded only" deliberately leaves hidden.
-          CGP.ui.toast((count - left) + ' of ' + count + ' grades posted in ' + name);
-        } else {
-          CGP.ui.toast(count + (count === 1 ? ' grade' : ' grades') + ' posted to students');
-        }
-        CGP.diag.bump('post.completed', count - left);
-      }, function (err) {
-        CGP.diag.error('post.failed', { assignmentId: id, status: err && err.status, message: String(err && err.message) });
-        CGP.ui.error('Canvas would not post these grades' +
-          (err && err.status ? ' (Canvas ' + err.status + ')' : '') +
-          '. Nothing was changed — you can still post from the column’s own menu.');
-      })
+    // Re-read the column right before posting rather than trusting the count
+    // this button was last painted with: nothing here polls Canvas, so that
+    // count can be stale by however long the page has been open (a co-
+    // teacher or TA grading in another tab/SpeedGrader session is not an
+    // edge case). gradedOnly:true posts whatever Canvas's server currently
+    // has graded-and-hidden regardless of what we last saw, so the
+    // confirmation afterwards has to be based on this same fresh read, not
+    // a page-load-time snapshot - otherwise "Post 3" can silently post far
+    // more than 3, and the toast would undercount how many were disclosed.
+    return this.model.reloadAssignment(id).then(function () {
+      // reloadAssignment()/ensureAssignments() swallow a failed fetch and
+      // resolve anyway (see model.js) rather than rejecting - and
+      // reloadAssignment already removed this id from loadedAssignments
+      // before that fetch even started. So a genuinely failed reload does
+      // NOT reach the rejection handler below; it lands right here, and
+      // pendingPosts() (which refuses to answer for a column not marked
+      // loaded) would silently report 0 pending - indistinguishable from
+      // "nothing to post" when the truth is "couldn't check." Both must be
+      // told apart before trusting a 0.
+      if (!self.model.loadedAssignments.has(id)) {
+        self.busy.delete(id);
+        self.setBusy(btn, false);
+        self.requestPaint();
+        CGP.ui.error('Couldn’t confirm this column’s current state. Nothing was changed — try again.');
+        return null;
+      }
+      var count = self.model.pendingPosts(id).length;
+      if (!count) {
+        self.busy.delete(id);
+        self.setBusy(btn, false);
+        self.requestPaint();
+        return null;
+      }
+      self.setBusy(btn, true, 'Posting…');
+      return self.api.postAssignmentGrades(id, { gradedOnly: true })
+        .then(function (progress) {
+          // No progress id means Canvas did the work synchronously; otherwise
+          // the posting happens in a background job and the new posted_at
+          // timestamps do not exist until it finishes. A job that reports
+          // FAILED throws from here and is reported to the teacher.
+          if (!progress || !progress._id) return null;
+          return self.api.waitForProgress(progress._id);
+        }, function (err) {
+          // Fall back to the older, broader "unmute the whole column" REST
+          // endpoint ONLY on a signal that specifically means the mutation
+          // itself is unavailable on this Canvas build - a network failure,
+          // or an HTTP 404/501 (the endpoint/route genuinely not there).
+          // Nothing weaker than that: err.graphql===true is set for EVERY
+          // top-level GraphQL error alike, including an authorization or
+          // resolver-level refusal, not just an unrecognized mutation - and
+          // a 400/403/422 can just as easily mean "understood, refused" as
+          // "not implemented". Only a message that itself looks like a
+          // schema mismatch (the shape an unrecognized mutation/field
+          // actually produces) counts as evidence from that path. Anything
+          // else - moderation not finished, nothing left to post, a
+          // plain permissions error - must surface as a real error instead:
+          // falling back for THAT would silently post grades Canvas just
+          // said should stay hidden, through an endpoint with no moderation
+          // awareness at all.
+          var schemaMismatch = err && err.graphql === true &&
+            /cannot query field|unknown (field|argument|operation)|doesn.?t exist on type/i.test(String(err.message || ''));
+          var mutationUnavailable = !!(err && (err.network === true || err.status === 404 || err.status === 501 || schemaMismatch));
+          if (!mutationUnavailable) throw err;
+          return self.postWithoutGraphql(id, err);
+        })
+        .then(function () {
+          return self.model.reloadAssignment(id);
+        })
+        .then(function () {
+          var left = self.model.pendingPosts(id).length;
+          var name = (assignment && assignment.name) || 'this column';
+          if (left) {
+            // Canvas posted some but not all - most often ungraded submissions,
+            // which "post graded only" deliberately leaves hidden.
+            CGP.ui.toast((count - left) + ' of ' + count + ' grades posted in ' + name);
+          } else {
+            CGP.ui.toast(count + (count === 1 ? ' grade' : ' grades') + ' posted to students');
+          }
+          CGP.diag.bump('post.completed', count - left);
+        }, function (err) {
+          CGP.diag.error('post.failed', { assignmentId: id, status: err && err.status, message: String(err && err.message) });
+          CGP.ui.error('Canvas would not post these grades' +
+            (err && err.status ? ' (Canvas ' + err.status + ')' : (err && err.message ? ': ' + err.message : '')) +
+            '. Nothing was changed — you can still post from the column’s own menu.');
+        });
+    }, function () {
+      // The re-read itself failed: refuse rather than posting against a
+      // count we can no longer vouch for.
+      CGP.ui.error('Couldn’t confirm this column’s current state. Nothing was changed — try again.');
+    })
       .then(function () {
         self.busy.delete(id);
         self.setBusy(btn, false);

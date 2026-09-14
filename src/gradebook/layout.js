@@ -56,8 +56,8 @@
   // everything else in the utility strip): a teacher needs this control
   // often enough - column sorting, arrangement, late/missing policies - that
   // it should stay reachable regardless of the "collapse Canvas's utility
-  // strip" setting, pinned next to Apply Filters instead of buried behind
-  // Alt+Shift+H. See pinSettingsGear.
+  // strip" setting. Used only to LOCATE the real control - see
+  // ensureGearProxy/pinSettingsGear for why it is never moved.
   var SETTINGS_SELECTORS = [
     '#gradebook_settings_modal_button',
     '#gradebook-settings',
@@ -150,11 +150,23 @@
 
   P.candidates = function () {
     var found = [];
+    // Resolved fresh, once per call: Canvas's REAL settings button is never
+    // moved (see pinSettingsGear/ensureGearProxy), so it can still be sitting
+    // inside one of the whole-container CONTROL_SELECTORS entries below
+    // (#gradebook-actions and friends). Collapsing that container with
+    // display:none would take the real button down with it - invisible,
+    // zero-sized - even though the proxy beside Apply Filters still looks
+    // perfectly clickable and would go on dispatching synthetic clicks at it.
+    // That is exactly the failure this whole feature exists to prevent, so a
+    // container holding the real button is never a hide candidate here.
+    var realGear = this.findSettingsButton();
     var push = function (el) {
-      // The pinned settings gear (and, defensively, anything already inside
-      // it) is never a hide candidate, however it happened to be found -
-      // that is the whole point of pinning it. See pinSettingsGear.
+      // The settings-gear proxy (and, defensively, anything already inside
+      // it) is never a hide candidate. It lives on <body>, outside every
+      // selector above, so this never actually fires in practice - it is
+      // just a defensive backstop. See pinSettingsGear/ensureGearProxy.
       if (el && (el.classList.contains('cgp-pinned-gear') || el.closest('.cgp-pinned-gear'))) return;
+      if (el && realGear && el.contains(realGear)) return;
       if (el && found.indexOf(el) < 0) found.push(el);
     };
 
@@ -183,21 +195,39 @@
   };
 
   /* Find Canvas's own gradebook-settings gear and Apply Filters button,
-   * wherever this Canvas build currently renders them. */
+   * wherever this Canvas build currently renders them.
+   *
+   * Must never return the proxy itself (see ensureGearProxy). The proxy is
+   * deliberately labelled "Gradebook settings" for its own tooltip/aria-label,
+   * which is the exact text the last two SETTINGS_SELECTORS patterns
+   * (button[aria-label*=...], button[title*=...]) match against - so on a
+   * Canvas build where none of the earlier id/test-id selectors find the
+   * real button, document.querySelector() for those two would happily return
+   * our own proxy instead, since it is the only element in the whole
+   * document with that label. That is self-reference, not a find: the click
+   * handler below would then call activateCell() on the proxy, which fires
+   * this same click handler again, recursing until the stack overflows. */
   P.findSettingsButton = function () {
     for (var i = 0; i < SETTINGS_SELECTORS.length; i++) {
       var el = document.querySelector(SETTINGS_SELECTORS[i]);
-      if (el) return el.closest('button, [role="button"]') || el;
+      if (el && !el.classList.contains('cgp-pinned-gear') && !el.closest('.cgp-pinned-gear')) {
+        return el.closest('button, [role="button"]') || el;
+      }
     }
     // Fallback: anything actually labelled "settings" inside the gradebook's
     // own action area, in case this Canvas build uses none of the ids/test
-    // ids above.
+    // ids above. Scoped to containers the proxy never lives in (it is parked
+    // directly on <body>, never inside #gradebook-actions/.gradebook-menus/
+    // an EnhancedActionMenu), but the same exclusion is repeated anyway - a
+    // consistent, defended invariant beats one that merely happens to hold.
     var area = document.querySelectorAll(
       '#gradebook-actions button, .gradebook-menus button, [data-component="EnhancedActionMenu"] button');
     for (var j = 0; j < area.length; j++) {
-      var label = ((area[j].getAttribute('aria-label') || '') + ' ' +
-        (area[j].getAttribute('title') || '') + ' ' + (area[j].textContent || '')).toLowerCase();
-      if (label.indexOf('settings') >= 0) return area[j];
+      var candidate = area[j];
+      if (candidate.classList.contains('cgp-pinned-gear') || candidate.closest('.cgp-pinned-gear')) continue;
+      var label = ((candidate.getAttribute('aria-label') || '') + ' ' +
+        (candidate.getAttribute('title') || '') + ' ' + (candidate.textContent || '')).toLowerCase();
+      if (label.indexOf('settings') >= 0) return candidate;
     }
     return null;
   };
@@ -214,38 +244,82 @@
     return null;
   };
 
-  /* Move Canvas's own settings gear (the real control, not a copy) out to
-   * <body> and hold it fixed-position beside Apply Filters, rather than
-   * leaving it as an ordinary sibling wherever Apply Filters happens to live.
-   * That distinction matters: Canvas's utility strip is hidden largely by
-   * whole-container selectors (#gradebook-actions, .gradebook-menus and
-   * friends in CONTROL_SELECTORS) rather than by targeting every individual
-   * button, so a gear merely inserted next to Apply Filters could still end
-   * up INSIDE one of those containers - excluding the gear itself from
-   * candidates() does nothing when the thing actually being hidden is an
-   * ancestor several levels up. Parking it on <body> - the same pattern this
-   * file's siblings already use for the course-switcher menu and the comment
-   * popover - puts it somewhere hideControls() can never reach, regardless of
-   * where Canvas renders Apply Filters. Idempotent and cheap to call often:
-   * Canvas can re-render its action bar (which would otherwise move a FRESH
-   * copy of the gear back into that markup) at any point while the gradebook
-   * is open. */
+  /* Earlier versions of this relocated Canvas's own settings gear - the real
+   * control, not a copy - out to <body> and held it fixed-position there.
+   * That broke the button: Canvas's gradebook is a React app, and React's
+   * synthetic event system delegates from a listener bound once near the
+   * root it rendered into, matched against the event as it bubbles through
+   * the ACTUAL live DOM tree. Moving the gear out from under that root - or
+   * Canvas later reconciling a re-render against a child it no longer finds
+   * where it left it - stopped the click from ever reaching Canvas's own
+   * handler, which is exactly the "the gear button does nothing" report.
+   * Canvas's real control is now never touched or moved. A lookalike proxy
+   * button (ensureGearProxy) is parked on <body> and fixed-position beside
+   * Apply Filters instead, and merely forwards its click to whatever element
+   * findSettingsButton() resolves to at that moment - so Canvas's own gear
+   * keeps its place in Canvas's own tree, and a Canvas re-render that hands
+   * it a brand new node is simply found fresh on the next click. */
   P.pinSettingsGear = function () {
-    var gear = this.findSettingsButton();
-    if (gear && gear.isConnected) {
-      gear.classList.add('cgp-pinned-gear');
-      gear.classList.remove('cgp-hidden', 'cgp-collapsed');
-      if (gear.parentElement !== document.body) document.body.appendChild(gear);
-      this._gearEl = gear;
-    }
+    // Nothing to build the proxy from yet on a Canvas build that has never
+    // exposed the control; positionPinnedGear() itself already no-ops when
+    // there is no proxy (or an unconnected one), so there is nothing else to
+    // guard here once a proxy exists.
+    if (this.findSettingsButton()) this.ensureGearProxy();
     this.positionPinnedGear();
   };
 
-  /* Keep the parked gear glued to Apply Filters' current on-screen position.
-   * Cheap enough to call on every resize and on the periodic safety tick;
-   * does nothing when there is no gear to place or nothing to place it by. */
+  /* Build (once) the visible stand-in for Canvas's settings gear. Never the
+   * real button - see pinSettingsGear for why - just something that looks
+   * like a gear, sits beside Apply Filters, and re-finds + clicks the real
+   * control on demand. */
+  P.ensureGearProxy = function () {
+    if (this._gearProxy && this._gearProxy.isConnected) return this._gearProxy;
+    var self = this;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cgp-pinned-gear';
+    btn.setAttribute('aria-label', 'Gradebook settings');
+    btn.title = 'Gradebook settings';
+    btn.innerHTML =
+      '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">' +
+      '<path fill="currentColor" d="M11.4 2c.45 0 .83.32.9.76l.25 1.55c.5.18.96.42 1.38.71l1.47-.56a.9.9 0 0 1 1.06.36l1 1.66a.9.9 0 0 1-.18 1.14l-1.19 1.03c.04.3.06.6.06.9s-.02.6-.06.9l1.19 1.03a.9.9 0 0 1 .18 1.14l-1 1.66a.9.9 0 0 1-1.06.36l-1.47-.56c-.42.29-.88.53-1.38.71l-.25 1.55a.9.9 0 0 1-.9.76H9.6a.9.9 0 0 1-.9-.76l-.25-1.55a5.98 5.98 0 0 1-1.38-.71l-1.47.56a.9.9 0 0 1-1.06-.36l-1-1.66a.9.9 0 0 1 .18-1.14l1.19-1.03A6.2 6.2 0 0 1 4.85 10c0-.3.02-.6.06-.9L3.72 8.07a.9.9 0 0 1-.18-1.14l1-1.66a.9.9 0 0 1 1.06-.36l1.47.56c.42-.29.88-.53 1.38-.71l.25-1.55a.9.9 0 0 1 .9-.76ZM10 7.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6Z"/>' +
+      '</svg>';
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      // Re-resolved fresh rather than trusted from an earlier pass: Canvas
+      // can re-render its action bar (handing the settings control a brand
+      // new DOM node) at any point while the gradebook is open.
+      var real = self.findSettingsButton();
+      // Belt-and-suspenders against the self-reference findSettingsButton()
+      // now guards against: never dispatch a click back onto this same proxy,
+      // which would just re-enter this handler and recurse.
+      if (!real || real === btn || btn.contains(real)) {
+        CGP.diag.warn('layout.settingsButtonMissing');
+        CGP.ui.error('Gradebook+ couldn’t find Canvas’s settings button right now. Try reloading.');
+        return;
+      }
+      // Canvas disables the real button (e.g. while the gradebook is still
+      // loading) rather than removing it, so findSettingsButton() still
+      // resolves it - dispatching a click there would just silently do
+      // nothing, which is worse than telling the teacher to wait a moment.
+      if (real.disabled || real.getAttribute('aria-disabled') === 'true') {
+        CGP.diag.warn('layout.settingsButtonDisabled');
+        CGP.ui.error('Canvas’s settings button isn’t ready yet. Try again in a moment.');
+        return;
+      }
+      self.adapter.activateCell(real);
+    });
+    document.body.appendChild(btn);
+    this._gearProxy = btn;
+    return btn;
+  };
+
+  /* Keep the proxy glued to Apply Filters' current on-screen position. Cheap
+   * enough to call on every resize and on the periodic safety tick; does
+   * nothing when there is no proxy to place or nothing to place it by. */
   P.positionPinnedGear = function () {
-    var gear = this._gearEl;
+    var gear = this._gearProxy;
     if (!gear || !gear.isConnected) return;
     var anchor = this.findApplyFiltersButton();
     if (!anchor || !anchor.isConnected || anchor === gear) return;
@@ -335,6 +409,31 @@
         node = node.parentElement;
       }
     });
+  };
+
+  /* A wrapper collapsed above only because it looked EMPTY at that moment -
+   * never one of the deliberate, direct cgp-hidden matches - can be wrong:
+   * Canvas can still be about to render real content into it asynchronously
+   * (a lazy-loaded filter panel, say), and nothing before this ever
+   * reconsidered a wrapper once collapsed. That made a false-positive
+   * permanent - hiding a control the teacher genuinely needs for the rest of
+   * the page's life, recoverable only via Alt+Shift+H or turning the whole
+   * setting off, neither of which a teacher has any reason to try for this.
+   * Cheap to run periodically (see content.js's safety tick): only wrappers
+   * already in `hidden` are ever considered, and un-collapsing one that
+   * really does have content now is always correct regardless of why it
+   * looked empty before. */
+  P.recheckCollapsedWrappers = function () {
+    var self = this;
+    var recovered = 0;
+    this.hidden.forEach(function (el) {
+      if (!el || !el.isConnected || !el.classList.contains('cgp-collapsed')) return;
+      if (self.hasVisibleSubstance(el)) {
+        el.classList.remove('cgp-collapsed');
+        recovered++;
+      }
+    });
+    if (recovered) CGP.diag.bump('layout.wrappersRecovered', recovered);
   };
 
   /* Where the grid starts, and therefore how tall it is allowed to be.
@@ -439,8 +538,23 @@
           // instead of leaving the column at whatever width the miss landed
           // on.
           return self.dragResize(item).then(function (ok2) {
-            if (ok2) applied++;
-            else CGP.diag.warn('layout.columnResizeMissed', { type: item.type, want: item.want });
+            if (ok2) { applied++; return; }
+            CGP.diag.warn('layout.columnResizeMissed', { type: item.type, want: item.want });
+            // Two attempts at the target width both missed. This is Canvas's
+            // OWN real resize handle, so whatever odd width the failed drags
+            // left behind is not just a cosmetic glitch - Canvas persists it
+            // exactly as if the teacher had dragged it there themselves,
+            // including on their next login. Leaving it there with nothing
+            // but a diagnostics-only trace is worse than trying to put it
+            // back: drag it toward its ORIGINAL width instead, and only if
+            // that also fails, say so where the teacher can actually see it.
+            return self.dragResize({ el: item.el, want: item.have, type: item.type }).then(function (reverted) {
+              if (reverted) return;
+              if (self._resizeMissedNotified) return;
+              self._resizeMissedNotified = true;
+              CGP.ui.error('Gradebook+ couldn’t resize one or more columns to fit. ' +
+                'Check their widths in Canvas if they look off.');
+            });
           });
         });
       });
