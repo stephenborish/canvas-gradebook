@@ -75,6 +75,19 @@
     'button[aria-label*="apply filters" i]'
   ];
 
+  // Canvas's own "keyboard shortcuts" icon button. These selectors only catch
+  // the accessible name when Canvas exposes it as an aria-label/title
+  // attribute on the button itself - findKeyboardShortcutsButton() below adds
+  // a text-scan fallback for builds that instead put it in a visually-hidden
+  // child node (an INSTUI IconButton screen-reader-only span), which no CSS
+  // attribute selector can reach.
+  var KEYBOARD_SHORTCUTS_SELECTORS = [
+    '[data-testid="keyboard-shortcuts-button"]',
+    'button[aria-label*="keyboard shortcut" i]',
+    'button[title*="keyboard shortcut" i]',
+    'a[aria-label*="keyboard shortcut" i]'
+  ];
+
   function CompactLayoutController(ctx) {
     this.adapter = ctx.adapter;
     this.settings = ctx.settings;
@@ -111,6 +124,8 @@
     // wants the settings gear next to Apply Filters regardless of whether
     // the rest of the utility strip is being collapsed.
     this.alignSettingsGear();
+    this.hideKeyboardShortcutsButton();
+    this.settleQuickly();
     this.applyGeometry();
     this.bindShortcut();
     if (!this._resizeBound) {
@@ -226,6 +241,43 @@
     return null;
   };
 
+  /* Find Canvas's own "keyboard shortcuts" icon button, wherever this Canvas
+   * build renders it and however it exposes its accessible name. The CSS
+   * attribute selectors in KEYBOARD_SHORTCUTS_SELECTORS only match a build
+   * that sets aria-label/title on the button itself; some builds instead put
+   * the name in a visually-hidden child span (same pattern as
+   * findSettingsButton()'s fallback below), so this scans by combined
+   * textContent/aria-label/title the same way candidates() matches
+   * BUTTON_LABELS. */
+  P.findKeyboardShortcutsButton = function () {
+    for (var i = 0; i < KEYBOARD_SHORTCUTS_SELECTORS.length; i++) {
+      var el = document.querySelector(KEYBOARD_SHORTCUTS_SELECTORS[i]);
+      if (el) return el.closest('button, [role="button"], a') || el;
+    }
+    var area = document.querySelectorAll(
+      '#gradebook-actions button, #gradebook-actions a, .gradebook-menus button, ' +
+      '[data-component="EnhancedActionMenu"] button, [data-component="EnhancedActionMenu"] a');
+    for (var j = 0; j < area.length; j++) {
+      var candidate = area[j];
+      var label = ((candidate.getAttribute('aria-label') || '') + ' ' +
+        (candidate.getAttribute('title') || '') + ' ' + (candidate.textContent || '')).toLowerCase();
+      if (label.indexOf('keyboard shortcut') >= 0) return candidate;
+    }
+    return null;
+  };
+
+  /* Unconditional, like alignSettingsGear() - there is no setting for this
+   * one and Alt+Shift+H does not bring it back. The CSS rule in
+   * gradebook.css already hides it the instant it matches, with no JS
+   * involved; this only covers the builds that CSS attribute selectors can't
+   * reach (see findKeyboardShortcutsButton() above). Re-resolved on every
+   * call since Canvas can re-render the button with a fresh DOM node at any
+   * point while the gradebook is open. */
+  P.hideKeyboardShortcutsButton = function () {
+    var btn = this.findKeyboardShortcutsButton();
+    if (btn && btn.isConnected) btn.classList.add('cgp-hidden');
+  };
+
   /* Put Canvas's own settings gear on the same visual line as Apply Filters.
    *
    * The gear is never moved, cloned, or reparented - only its on-screen
@@ -282,6 +334,45 @@
     gear.style.top = '';
     gear.style.transform = '';
     gear.style.zIndex = '';
+  };
+
+  /* Right after boot, Apply Filters and the settings gear are frequently not
+   * laid out yet - Canvas renders the gradebook toolbar asynchronously - so
+   * the alignSettingsGear() call in start() often lands before anchor has a
+   * real rect and falls back to the gear's natural (unaligned) position.
+   * Without this, the only thing left to retry it is content.js's 1500ms
+   * safety tick, which reads to a teacher as the gear sitting visibly
+   * misaligned for up to a second and a half after the page looks done
+   * loading. Polling fast for a few seconds right after start (and stopping
+   * as soon as both this and the keyboard-shortcuts hide have taken, or the
+   * budget runs out) gets it visually correct within a tenth of a second in
+   * the common case instead, without leaving a fast interval running for the
+   * life of the page. */
+  P.settleQuickly = function () {
+    if (this._settling) return;
+    this._settling = true;
+    var self = this;
+    var attempts = 0;
+    var tick = function () {
+      self.alignSettingsGear();
+      self.hideKeyboardShortcutsButton();
+      attempts++;
+      var gear = self.findSettingsButton();
+      // A control that has not mounted yet is NOT settled - Canvas can still
+      // render it on a later tick, and start() runs before content.js's own
+      // grid-readiness wait, so "not found" on an early tick usually means
+      // "not there yet", not "never coming". Only an affirmative aligned/
+      // hidden state - or the deliberate-utility-collapse case below, where
+      // the gear provably never gets a real anchor to align against - counts
+      // as settled; everything else keeps polling until the budget runs out.
+      var gearSettled = (gear && gear.isConnected && gear.classList.contains('cgp-gear-aligned')) ||
+        self.controlsHidden;
+      var kbdBtn = self.findKeyboardShortcutsButton();
+      var kbdSettled = !!(kbdBtn && kbdBtn.classList.contains('cgp-hidden'));
+      if ((gearSettled && kbdSettled) || attempts >= 30) { self._settling = false; return; }
+      setTimeout(tick, 100);
+    };
+    setTimeout(tick, 100);
   };
 
   P.hideControls = function () {
