@@ -56,14 +56,47 @@
   };
 
   P.headerContainers = function () {
-    var list = Array.prototype.slice.call(document.querySelectorAll('.slick-header-columns'));
-    return list.sort(function (a, b) {
-      return a.getBoundingClientRect().left - b.getBoundingClientRect().left;
-    });
+    return this.orderPaneElements(document.querySelectorAll('.slick-header-columns'));
   };
 
   P.canvases = function () {
-    var list = Array.prototype.slice.call(document.querySelectorAll('.grid-canvas'));
+    return this.orderPaneElements(document.querySelectorAll('.grid-canvas'));
+  };
+
+  /* Left-to-right order for the two body/header panes - NOT by their current
+   * getBoundingClientRect().left, which is only a safe proxy for "which pane
+   * is which" while both are scrolled to their start. The right (scrolling)
+   * pane's `.grid-canvas`/`.slick-header-columns` is the content INSIDE an
+   * overflow:auto viewport, not the viewport itself - scrolling that viewport
+   * moves the content left relative to the page, so a horizontal scroll far
+   * enough right drives this element's rect left BELOW the stationary frozen
+   * pane's, and a plain numeric sort then reports the scrolling pane as
+   * pane[0] ("the frozen one") instead. Every caller of canvases()/
+   * headerContainers() - frozenRowGeometry, frozenNaturalWidth, bodyPanes,
+   * headerPanes, hideTestStudentRows, and more - trusts pane[0] to mean
+   * "frozen", so that flip silently redirects the Total overlay and the
+   * pane-widening math onto the wrong (scrolling) pane mid-scroll.
+   *
+   * leftViewport()/rightViewport() are the VIEWPORT (clipping) boxes, not
+   * their scrolled content, so their own rect.left is untouched by their
+   * internal scroll position - ordering by which viewport actually CONTAINS
+   * each element is scroll-position-independent. Only falls back to the old
+   * rect-based sort when a Canvas build doesn't split into two distinct
+   * viewports at all (a single-pane course, or a markup this extension
+   * doesn't recognize), where there is nothing to get backwards. */
+  P.orderPaneElements = function (nodeList) {
+    var list = Array.prototype.slice.call(nodeList);
+    if (list.length < 2) return list;
+    var left = this.leftViewport();
+    var right = this.rightViewport();
+    if (left && right && left !== right) {
+      var inLeft = list.filter(function (el) { return left.contains(el); });
+      var inRight = list.filter(function (el) { return right.contains(el); });
+      var rest = list.filter(function (el) {
+        return inLeft.indexOf(el) < 0 && inRight.indexOf(el) < 0;
+      });
+      if (inLeft.length && inRight.length) return inLeft.concat(inRight, rest);
+    }
     return list.sort(function (a, b) {
       return a.getBoundingClientRect().left - b.getBoundingClientRect().left;
     });

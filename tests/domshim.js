@@ -253,6 +253,14 @@ FakeElement.prototype.querySelectorAll = function (selectorList) {
 FakeElement.prototype.querySelector = function (selectorList) {
   return this.querySelectorAll(selectorList)[0] || null;
 };
+FakeElement.prototype.contains = function (other) {
+  var node = other;
+  while (node) {
+    if (node === this) return true;
+    node = node.parentElement;
+  }
+  return false;
+};
 FakeElement.prototype.closest = function (selectorList) {
   var compiled = compileSelectorList(selectorList);
   var node = this;
