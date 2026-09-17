@@ -14,6 +14,10 @@ require('./test-post-status');
 require('./test-model-staleness');
 require('./test-post-reporting');
 require('./test-grading-period');
+require('./test-model-init-parallel');
+require('./test-dom-adapter-panes');
+require('./test-frozen-total-geometry');
+require('./test-hide-test-student');
 
 // run() awaits each case, so the process must not exit before it settles.
 harness.run().then((okAll) => {

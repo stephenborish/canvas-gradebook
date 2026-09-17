@@ -616,15 +616,61 @@ html.cgp-on .slick-cell:not(:has(.Grid__GradeCell)) *:has(> input):has(> button)
  * was asked for) before relying on it for anything, on every paint, not just
  * once. Nothing below this comment ever draws or hides anything on its own;
  * see html.cgp-frozen-total-active further down for what is gated on that
- * confirmation. */
+ * confirmation.
+ *
+ * These rules are only ever a FIRST-PAINT BASELINE now, though - the frame
+ * before frozen-total.js's own JS (FrozenTotalController.applyPaneGeometry(),
+ * called from every measure()/paint()) has run. That JS re-pins every pane's
+ * left/width as REAL MEASURED PIXELS, also via `!important` so it always wins
+ * the cascade over these rules, because relying on `calc(100% - Npx)` here to
+ * resolve against the same containing block the widened left pane's own box
+ * uses is exactly what was reported broken live: whatever "100%" actually
+ * resolved against there was NOT that box, so the two panes' widths silently
+ * stopped summing to the grid's real, unchanged footprint, and an ancestor
+ * sized to that original total grew a scrollbar that scrolled BOTH the
+ * frozen and the scrolling pane together - neither is exempt from an
+ * ancestor's own scroll just for being `position: absolute`. See
+ * dom-adapter.js's positionedAncestor()/bodyPanes()/headerPanes() and
+ * frozen-total.js's applyPaneGeometry()/clampAncestorOverflow() for the
+ * actual fix; the class-name rules below exist only so nothing looks broken
+ * for the one rendered frame before that JS gets there, or on a Canvas build
+ * whose pane class names happen to match them exactly. */
 html.cgp-frozen-total .slick-pane-left { width: var(--cgp-frozen-w) !important; }
 html.cgp-frozen-total .slick-pane-left .slick-header,
-html.cgp-frozen-total .slick-header-left { width: var(--cgp-frozen-w) !important; }
+html.cgp-frozen-total .slick-header-left,
+html.cgp-frozen-total .slick-pane-header-left { width: var(--cgp-frozen-w) !important; }
 html.cgp-frozen-total .slick-pane-left .slick-viewport,
 html.cgp-frozen-total .slick-viewport-left { width: var(--cgp-frozen-w) !important; overflow-x: hidden !important; }
 html.cgp-frozen-total .slick-pane-right {
   left: var(--cgp-frozen-w) !important;
   width: calc(100% - var(--cgp-frozen-w)) !important;
+}
+/* The header row's own right-hand pane was never covered here at all before -
+ * only the body's .slick-pane-right was - which is a real, separate bug from
+ * the whole-grid-scrolls-together one: whatever this Canvas build calls the
+ * header's right pane kept its ORIGINAL `left` while the body pane next to it
+ * moved, so the assignment headers rendered --cgp-total-w pixels to the left
+ * of the columns they actually label. Kept in sync with the body rule above
+ * for exactly the reason its own comment gives. */
+html.cgp-frozen-total .slick-header-right,
+html.cgp-frozen-total .slick-pane-header-right {
+  left: var(--cgp-frozen-w) !important;
+  width: calc(100% - var(--cgp-frozen-w)) !important;
+}
+
+/* Safety net for the "whole grid scrolls together" failure mode: force every
+ * plausible ancestor of the grid to clip rather than scroll, so that even a
+ * geometry mistake this extension does not yet know about can only ever be
+ * invisible, never a scrollbar that drags the frozen pane sideways with it.
+ * frozen-total.js's clampAncestorOverflow() does the same thing, driven from
+ * the grid's REAL DOM ancestry (not a guess at Canvas's element ids/classes)
+ * and is the authoritative version of this - these rules only cover the one
+ * rendered frame before that JS runs, same as the pane rules above. */
+html.cgp-frozen-total #gradebook_grid,
+html.cgp-frozen-total #application,
+html.cgp-frozen-total #content,
+html.cgp-frozen-total .ic-Layout-contentMain {
+  overflow-x: hidden !important;
 }
 
 /* .cgp-total-layer (frozen-total.js) is appended into the frozen pane's own

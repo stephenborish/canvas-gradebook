@@ -72,15 +72,35 @@
 
   GradebookModel.prototype.init = function () {
     var self = this;
-    return this.api.currentUser().then(function (user) {
+    // currentUser() (who is grading, for the instructor-authored-comment
+    // check in comment-analysis.js) does not feed into - and used to sit
+    // needlessly in front of - the assignments/enrollments fetch below. That
+    // used to be one straight `.then()` chain: assignments and enrollments
+    // could not even START until currentUser()'s own round trip had already
+    // finished, which pushed model.ready (and therefore content.js's very
+    // first ensureAssignments() call for the on-screen columns) back by one
+    // whole extra network round trip on every single page load, for no
+    // reason the data itself required. That is a real slice of the reported
+    // "icons take too long to appear" - not a per-cell painting cost (the
+    // paint-signature check in indicators.js already skips unchanged cells
+    // correctly) but pure unforced latency sitting in front of the first
+    // paint that could show anything at all. All three requests now start
+    // at once; instructorId/instructorNames are only ever read once this
+    // whole Promise.all has settled, same as before.
+    var userPromise = this.api.currentUser();
+    var dataPromise = Promise.all([
+      self.api.assignments(self.courseId),
+      self.api.studentEnrollments(self.courseId, self.gradingPeriodId)
+    ]);
+    return Promise.all([userPromise, dataPromise]).then(function (results) {
+      var user = results[0];
+      var data = results[1];
       self.instructorId = user ? user.id : null;
       self.instructorNames = user ? [user.name, user.shortName, user.sortableName].filter(Boolean) : [];
       CGP.diag.set('instructorId', self.instructorId);
       CGP.diag.set('instructorNameAliases', self.instructorNames.length);
-      return Promise.all([self.api.assignments(self.courseId), self.api.studentEnrollments(self.courseId, self.gradingPeriodId)]);
-    }).then(function (res) {
-      var assignments = res[0] || [];
-      var enrollments = res[1] || [];
+      var assignments = data[0] || [];
+      var enrollments = data[1] || [];
 
       assignments.forEach(function (a) {
         if (!a || a.id === undefined) return;

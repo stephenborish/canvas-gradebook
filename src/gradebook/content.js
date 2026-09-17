@@ -213,11 +213,23 @@
       painting = true;
       try {
         layout.decorateHeaders(model);
-        layout.hideTestStudentRows();
         posting.paint();
         indicators.paint();
         selection.paint(registry.lastCells);
+        // frozen.paint() runs BEFORE hideTestStudentRows(), not after: it is
+        // what creates/repositions the .cgp-total-cell overlay elements (see
+        // frozen-total.js), and hideTestStudentRows()'s own `others` query
+        // matches those same .cgp-total-cell nodes to keep the Test
+        // Student's row hidden across every pane, INCLUDING that overlay.
+        // Running hideTestStudentRows() first used to mean a .cgp-total-cell
+        // freshly created THIS SAME PASS (a fresh rowIndex the cell pool had
+        // never seen - e.g. right after a scroll or a re-render moved the
+        // Test Student to a row this overlay hadn't drawn before) got no
+        // cgp-hidden-row class at all until the NEXT full paint pass - a
+        // real, if narrow, window where the Test Student's Total cell could
+        // show. Ordering it last closes that window every single pass.
         frozen.paint();
+        layout.hideTestStudentRows();
       } finally {
         painting = false;
       }
@@ -231,6 +243,32 @@
         boundViewports.add(vp);
         vp.addEventListener('scroll', paint, { passive: true });
       });
+    }
+
+    /* Belt-and-braces for bindScroll() above: per-viewport listeners only
+     * ever cover whichever `.slick-viewport` ELEMENTS existed at the moment
+     * bindScroll() last ran. Canvas can - on a sort, a filter change, or
+     * simply re-rendering a pane after this extension's own frozen-Total
+     * widen (see frozen-total.js) - tear down and recreate that element
+     * outright, which silently orphans the old listener: nothing calls
+     * paint() again for that pane's scrolling until the next periodic
+     * bindScroll() call (content.js's safetyTick, up to 1500ms later) finds
+     * and binds the replacement. That gap is exactly the kind of window
+     * where hideTestStudentRows() would not re-run after a scroll and the
+     * Test Student's row could sit unhidden for up to a second and a half.
+     *
+     * A single capture-phase listener on `document` sidesteps needing to
+     * know which element scrolled at all: the 'scroll' event does not
+     * bubble, but it IS dispatched during the capture phase on every
+     * ancestor of the element that scrolled, `document` included, in every
+     * browser this extension runs in. This also means ANY horizontal scroll
+     * of an ancestor above the grid - the exact failure mode Bug 1's fix
+     * (applyPaneGeometry / clampAncestorOverflow in frozen-total.js) targets
+     * directly - still triggers a repaint even if that fix somehow missed a
+     * case this extension does not yet know about, instead of the Test
+     * Student staying visible with nothing left to ever hide it again. */
+    function bindDocumentScroll() {
+      document.addEventListener('scroll', paint, { passive: true, capture: true });
     }
 
     function observeGrid() {
@@ -257,6 +295,7 @@
       paste.start();
       frozen.start();
       bindScroll();
+      bindDocumentScroll();
       observeGrid();
       paint();
 

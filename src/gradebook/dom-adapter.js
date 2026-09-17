@@ -849,10 +849,77 @@
    * `.grid-canvas`, whose width SlickGrid sets to the sum of that pane's
    * column widths rather than to the pane's own (CSS-overridden) box width.
    * Measuring the canvas instead of this element is what made
-   * FrozenTotalController.verifyWidened() never see the widen take hold. */
+   * FrozenTotalController.verifyWidened() never see the widen take hold.
+   *
+   * Falls back to positionedAncestor() (below) when neither class name
+   * matches - see that method's own comment for why that fallback exists at
+   * all: this Canvas build's real pane class names are not something this
+   * extension can verify against a live site. */
   P.frozenPaneLeft = function () {
-    return document.querySelector('.slick-pane-left') ||
-      document.querySelector('.slick-viewport-left') || null;
+    var byClass = document.querySelector('.slick-pane-left') ||
+      document.querySelector('.slick-viewport-left');
+    if (byClass) return byClass;
+    var canvas = this.canvases()[0];
+    return canvas ? this.positionedAncestor(canvas) : null;
+  };
+
+  /* Nearest ancestor (starting at el itself, walking up toward <body>) whose
+   * OWN box is `position: absolute` - i.e. the actual pane div SlickGrid
+   * moves and sizes to build the frozen/scrolling two-pane layout, whatever
+   * this particular Canvas build happens to name it.
+   *
+   * The frozen-Total feature (see frozen-total.js) has to change that pane's
+   * width - both the frozen (left) one, widening it, and the scrolling
+   * (right) one, shrinking it back by the same amount so the grid's total
+   * on-screen footprint never grows. Doing that by class name alone
+   * (`.slick-pane-left` / `.slick-pane-right`) is exactly the kind of single
+   * fragile path this file's own header comment warns against: a Canvas
+   * build that names or nests these panes differently would leave the right
+   * pane's geometry completely untouched while the left one still widened
+   * (via the broader class-name matches elsewhere), silently pushing the
+   * grid's rendered content past whatever fixed-width box actually contains
+   * both panes - which is what turns into a horizontal scrollbar on some
+   * ANCESTOR of the grid that scrolls both (frozen and scrolling) panes
+   * together as one unit, since neither is `position: fixed` relative to
+   * that ancestor. Walking up by *computed position* instead of by class
+   * name survives a markup change that renames or restructures those
+   * classes, the same lesson `frozenPaneLeft()`'s own history already
+   * taught once (see its comment). */
+  P.positionedAncestor = function (el) {
+    var node = el;
+    for (var i = 0; i < 8 && node && node !== document.body && node !== document.documentElement; i++) {
+      var pos = '';
+      try { pos = getComputedStyle(node).position; } catch (e) { pos = ''; }
+      if (pos === 'absolute') return node;
+      node = node.parentElement;
+    }
+    return null;
+  };
+
+  /* The two body panes (frozen/left, scrolling/right), left-to-right by
+   * current position - not by class name, so a Canvas build that names them
+   * differently (or doesn't split header/body pane classes the way this
+   * extension assumed) is still handled. Only ever returns as many entries
+   * as `canvases()` found (0, 1, or 2+ - a course with no frozen pane at all
+   * yields exactly one). */
+  P.bodyPanes = function () {
+    var self = this;
+    return this.canvases().map(function (canvas) {
+      return self.positionedAncestor(canvas) || canvas.parentElement || canvas;
+    });
+  };
+
+  /* Same idea as bodyPanes(), for the header row's own pane split. Canvas's
+   * frozen-column header is typically a SEPARATE pair of pane elements from
+   * the body (its own `.slick-pane-header-left` / `-right`, or similar),
+   * which must be kept in sync with the body panes' widen/shrink or the
+   * header row drifts out of alignment with the columns beneath it - see
+   * frozen-total.js's applyPaneGeometry(). */
+  P.headerPanes = function () {
+    var self = this;
+    return this.headerContainers().map(function (container) {
+      return self.positionedAncestor(container) || container.parentElement || container;
+    });
   };
 
   CGP.GradebookDomAdapter = GradebookDomAdapter;

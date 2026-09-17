@@ -29,6 +29,7 @@
     this.header = null;
     this.cellPool = new Map(); // rowIndex -> element
     this.naturalWidth = 0;
+    this._clampedAncestors = [];
   }
 
   var P = FrozenTotalController.prototype;
@@ -42,13 +43,122 @@
     this.enabled = true;
     document.documentElement.classList.add('cgp-frozen-total');
     document.documentElement.style.setProperty('--cgp-total-w', this.width + 'px');
+    this.clampAncestorOverflow();
     this.measure();
   };
 
   P.stop = function () {
     this.enabled = false;
+    this.restorePaneGeometry();
     document.documentElement.classList.remove('cgp-frozen-total');
+    this.restoreAncestorOverflow();
     this.teardownDrawn();
+  };
+
+  /* Undo applyPaneGeometry()'s inline `!important` left/width pins so a
+   * teacher turning the setting off gets Canvas's own untouched pane
+   * geometry back, not whatever pixel values this feature last computed. */
+  P.restorePaneGeometry = function () {
+    var self = this;
+    [this.adapter.bodyPanes(), this.adapter.headerPanes()].forEach(function (panes) {
+      panes.forEach(function (el) {
+        if (!el) return;
+        el.style.removeProperty('width');
+        el.style.removeProperty('left');
+      });
+      void self;
+    });
+  };
+
+  /* Belt-and-braces against the exact failure mode reported live: BOTH panes
+   * (the frozen student/Total pane and the scrolling assignment pane)
+   * sliding sideways together when the teacher scrolls right, with a
+   * horizontal scrollbar showing at the bottom of the grid.
+   *
+   * applyPaneGeometry() below is what actually PREVENTS that, by keeping the
+   * grid's total on-screen footprint exactly what it was before the widen
+   * (see its own comment) - but that guarantee depends on this extension
+   * correctly identifying every pane element on THIS Canvas build. Rather
+   * than trust that alone, every ancestor from the grid root up to (not
+   * including) <body> is force-clipped so that even a geometry mistake this
+   * extension does not know about yet can only ever be invisible/cropped,
+   * never a scrollbar that drags the "frozen" pane along with it - a
+   * position:absolute pane is not exempt from an ancestor's own scroll
+   * unless something stops that ancestor from ever needing one.
+   * `.slick-viewport-right` (or whichever pane genuinely owns the
+   * assignment columns' horizontal scroll) is explicitly left alone: that is
+   * the ONE scrollbar this feature wants to keep working exactly as before. */
+  P.clampAncestorOverflow = function () {
+    var root = this.adapter.gridRoot();
+    if (!root) return;
+    var rightViewport = this.adapter.rightViewport();
+    var out = [];
+    var node = root;
+    for (var i = 0; i < 12 && node && node !== document.body && node !== document.documentElement; i++) {
+      if (node !== rightViewport && !node.style.getPropertyValue('overflow-x')) {
+        node.style.setProperty('overflow-x', 'hidden', 'important');
+        out.push(node);
+      }
+      node = node.parentElement;
+    }
+    this._clampedAncestors = out;
+  };
+
+  P.restoreAncestorOverflow = function () {
+    this._clampedAncestors.forEach(function (node) {
+      if (node && node.isConnected) node.style.removeProperty('overflow-x');
+    });
+    this._clampedAncestors = [];
+  };
+
+  /* Set every pane's left/width in real measured pixels rather than trusting
+   * a CSS `calc(100% - Npx)` to resolve against the containing block this
+   * extension assumes it will - the "100%" there is what actually failed
+   * live: whatever it was really resolving against was NOT the same box the
+   * left pane's own widened width is measured relative to, so the two panes'
+   * geometry silently stopped summing to the grid's real, unchanged total
+   * width, and something upstream of both (an ancestor sized to that ORIGINAL
+   * total) grew a scrollbar that scrolls both absolutely-positioned panes as
+   * one unit - exactly the reported bug.
+   *
+   * The invariant this method enforces instead needs no assumption about any
+   * containing block at all: leftWidth(new) + rightWidth(new) is kept
+   * IDENTICAL to leftWidth(natural) + rightWidth(natural), which is
+   * whatever the grid root's own rendered width already was (untouched by
+   * any of this). The right pane simply gives back exactly the `width`
+   * pixels the left pane gained, using ONE shared measured number
+   * (gridRootWidth) rather than two separately-resolved percentages that
+   * could each be wrong in their own way. Applied to both the body panes and
+   * the header panes (see dom-adapter's bodyPanes()/headerPanes()) so the
+   * header row's columns never drift out of alignment with the body's. */
+  P.applyPaneGeometry = function () {
+    if (!this.naturalWidth) return;
+    var root = this.adapter.gridRoot();
+    if (!root) return;
+    var gridWidth = Math.round(root.getBoundingClientRect().width);
+    if (!gridWidth) return;
+    var newLeftWidth = this.naturalWidth + this.width;
+    var newRightLeft = newLeftWidth;
+    var newRightWidth = Math.max(0, gridWidth - newLeftWidth);
+
+    function pin(el, prop, px) {
+      if (!el) return;
+      var value = px + 'px';
+      if (el.style.getPropertyValue(prop) === value) return;
+      el.style.setProperty(prop, value, 'important');
+    }
+
+    [this.adapter.bodyPanes(), this.adapter.headerPanes()].forEach(function (panes) {
+      var left = panes[0], right = panes[1];
+      pin(left, 'width', newLeftWidth);
+      // A course with no real frozen pane (bodyPanes()/headerPanes() only
+      // found one element) has nothing on the right to reposition - start()
+      // already refused to enable the feature at all in that case, but
+      // paint()/measure() can still be called defensively.
+      if (!right || right === left) return;
+      pin(right, 'left', newRightLeft);
+      pin(right, 'width', newRightWidth);
+    });
   };
 
   /* Everything that only belongs on screen once the widen is actually
@@ -98,12 +208,21 @@
   P.measure = function () {
     var natural = this.adapter.frozenNaturalWidth();
     if (!natural) return;
-    if (Math.abs(natural - this.naturalWidth) < 2) return;
+    if (Math.abs(natural - this.naturalWidth) < 2) {
+      // The natural width itself hasn't moved, but the grid root's overall
+      // width can still change on its own (a window resize, the compact-
+      // layout controller's own geometry pass) - re-pinning every pane's
+      // pixels on every measure() call, not only when naturalWidth changes,
+      // is what keeps applyPaneGeometry()'s invariant true after that too.
+      this.applyPaneGeometry();
+      return;
+    }
     this.naturalWidth = natural;
     var root = document.documentElement;
     root.style.setProperty('--cgp-frozen-natural', natural + 'px');
     root.style.setProperty('--cgp-frozen-w', (natural + this.width) + 'px');
     CGP.diag.set('frozenPaneWidth', natural + this.width);
+    this.applyPaneGeometry();
   };
 
   P.ensureHeader = function () {

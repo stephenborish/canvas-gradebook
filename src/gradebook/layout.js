@@ -854,7 +854,22 @@
     var others = document.querySelectorAll('.grid-canvas > .slick-row, .cgp-total-cell');
     for (var j = 0; j < others.length; j++) {
       var el = others[j];
-      if (el.parentElement === frozen) continue; // handled above
+      // "Handled above" only ever means "this exact element was already
+      // toggled by the loop over frozen's OWN .slick-row children" - it does
+      // NOT mean "everything living inside the frozen canvas". frozen-total.js
+      // appends its .cgp-total-cell overlay as a SIBLING of those same
+      // .slick-row elements, inside that very canvas (see its ensureLayer()) -
+      // so a blanket `el.parentElement === frozen` skip here silently
+      // excluded the Total column's own cell for the Test Student's row from
+      // ever being hidden at all, regardless of scroll position: it is a
+      // different element from anything the loop above touched, and nothing
+      // downstream of this function checks it again. That is a second,
+      // independent way the Test Student could show up - not the frozen
+      // pane's name cell (which the loop above DOES catch), but this
+      // extension's own Total figure sitting right next to it. Excluding by
+      // class (only an actual .slick-row already toggled above) instead of
+      // by parentage closes that gap without re-toggling anything twice.
+      if (el.classList.contains('slick-row') && el.parentElement === frozen) continue;
       el.classList.toggle('cgp-hidden-row', !!tops[self.adapter.rowTop(el)]);
     }
   };
