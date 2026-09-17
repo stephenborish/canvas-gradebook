@@ -304,15 +304,35 @@
     return null;
   };
 
+  /* openArrangeMenu() reveals Canvas's utility strip (it has to - the gear
+   * lives in it) unconditionally, which is correct when a teacher clicked
+   * "More options…" themselves and wants to see the tray, but wrong for the
+   * fully automated flows below (arrangeColumnsBy, syncViewOptions): those
+   * run with nothing for the teacher to look at, so leaving the whole
+   * utility strip permanently un-hidden afterward - which openArrangeMenu()
+   * used to do, with nothing anywhere restoring it - was a bug of its own,
+   * not a side effect anyone wanted. Called once the automation is actually
+   * DONE - not when it gave up early and told the teacher the tray is still
+   * open for them to finish by hand, which must stay visible. */
+  P.reapplyHiddenState = function (wasHidden) {
+    if (wasHidden && this.settings.values.hideCanvasUtilityControls && !this.controlsHidden) {
+      this.hideControls();
+      this.applyGeometry();
+    }
+  };
+
   /* Toolbar dropdown handler: opens Canvas's settings straight to the
    * Arrange By select, picks the requested arrangement, and applies it - the
    * teacher never needs to see the modal at all in the common case. Falls
    * back to leaving the tray open (with an error toast) the moment any step
-   * cannot be found, rather than silently doing nothing. */
+   * cannot be found, rather than silently doing nothing - in that one case
+   * the utility strip is deliberately left revealed, matching the message,
+   * rather than re-hidden out from under the teacher. */
   P.arrangeColumnsBy = function (value) {
     var self = this;
+    var wasHidden = this.controlsHidden;
     return this.openArrangeMenu().then(function (onTab) {
-      if (!onTab) return false;
+      if (!onTab) { self.reapplyHiddenState(wasHidden); return false; }
       var select = self.findArrangeBySelect();
       if (!select) {
         CGP.diag.warn('layout.arrangeMenu.selectNotFound');
@@ -325,6 +345,7 @@
       var apply = self.findTrayApplyButton();
       if (apply) apply.click();
       CGP.diag.bump('layout.arrangeApplied', { value: value });
+      self.reapplyHiddenState(wasHidden);
       return true;
     });
   };
@@ -363,8 +384,9 @@
     var s = this.settings.values;
     if (!s.syncViewOptionsToCanvas) return Promise.resolve(false);
     var self = this;
+    var wasHidden = this.controlsHidden;
     return this.openArrangeMenu().then(function (onTab) {
-      if (!onTab) return false;
+      if (!onTab) { self.reapplyHiddenState(wasHidden); return false; }
       var changed = 0;
       var missing = 0;
       VIEW_OPTION_CHECKBOXES.forEach(function (spec) {
@@ -385,6 +407,12 @@
         var closeBtn = document.querySelector('[aria-label="Close" i], button[aria-label*="close" i]');
         if (closeBtn) closeBtn.click();
       }
+      // This flow is fully automated end to end (unlike arrangeColumnsBy's
+      // "control not found" branch, which deliberately leaves the tray open
+      // with a message inviting the teacher to finish by hand) - every path
+      // through it either applied a change or determined none was needed, so
+      // restoring the prior hidden state is always correct here.
+      self.reapplyHiddenState(wasHidden);
       CGP.diag.set('layout.viewOptionsSynced', { changed: changed, missing: missing });
       return changed > 0;
     });

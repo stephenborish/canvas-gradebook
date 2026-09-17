@@ -181,6 +181,15 @@
     if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
   };
 
+  // Course-level index routes only - no resource id after them, because an
+  // id on the ORIGINAL course (an assignment, a discussion topic, a specific
+  // student's grades page, ...) belongs to that course and is meaningless -
+  // or points at someone else's data - on the new one. Preserving the page
+  // TYPE only ever means these; anything else falls back to the new
+  // course's home page rather than guessing at what the equivalent
+  // resource-specific URL would even be.
+  var SAFE_COURSE_INDEX = /^\/(assignments|modules|quizzes|discussion_topics|announcements|files|pages|wiki|collaborations|outcomes|rubrics|settings|users|grades|content_exports)\/?$/i;
+
   P.go = function (course) {
     this.close();
     var newId = encodeURIComponent(String(course.id));
@@ -188,16 +197,18 @@
       window.location.href = '/courses/' + newId + '/gradebook';
       return;
     }
-    // Not on the gradebook: keep whatever kind of page this is (assignments,
-    // modules, a student's grades, ...) and just swap the course id, so
-    // switching never force-jumps to the gradebook from somewhere else. A
-    // path that doesn't carry anything past the course id (or that somehow
-    // is the gradebook despite isGradebookPage being false) falls back to the
-    // new course's own home page.
+    // Not on the gradebook: keep the page TYPE only when it is a course-level
+    // index route with no old-course-specific id riding along in it, so
+    // switching never force-jumps to the gradebook from somewhere else, and
+    // never carries a stale resource id into the new course either. Anything
+    // else - including a bare course id, "/gradebook" (only reachable here
+    // if isGradebookPage was somehow wrong), or a resource-specific route
+    // like "/assignments/345" or "/grades/<student>" - lands on the new
+    // course's own home page instead.
     var m = /^\/courses\/\d+(\/.*)?$/.exec(location.pathname || '');
     var rest = (m && m[1]) || '';
-    if (/^\/gradebook\/?$/.test(rest)) rest = '';
-    window.location.href = '/courses/' + newId + rest;
+    var target = SAFE_COURSE_INDEX.test(rest) ? rest : '';
+    window.location.href = '/courses/' + newId + target;
   };
 
   P.loadCourses = function () {
