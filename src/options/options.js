@@ -214,6 +214,57 @@
     });
   }
 
+  /* -------------------------------------------------------------------- tabs */
+
+  var TAB_STORAGE_KEY = 'cgp.options.activeTab';
+
+  function initTabs() {
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
+    var panels = Array.prototype.slice.call(document.querySelectorAll('.panel'));
+    if (!tabs.length) return;
+
+    function activate(id, opts) {
+      var found = false;
+      tabs.forEach(function (tab) {
+        var on = tab.dataset.tab === id;
+        if (on) found = true;
+        tab.classList.toggle('is-active', on);
+        tab.setAttribute('aria-selected', on ? 'true' : 'false');
+        tab.tabIndex = on ? 0 : -1;
+      });
+      if (!found) return false;
+      panels.forEach(function (panel) { panel.hidden = panel.dataset.panel !== id; });
+      if (!(opts && opts.silent)) {
+        try { localStorage.setItem(TAB_STORAGE_KEY, id); } catch (e) { /* private mode, ignore */ }
+      }
+      return true;
+    }
+
+    tabs.forEach(function (tab, i) {
+      tab.addEventListener('click', function () { activate(tab.dataset.tab); });
+      // Standard roving-tabindex arrow-key navigation for a vertical tablist:
+      // Up/Down move focus one tab at a time (wrapping at the ends), Home/End
+      // jump to the first/last. Activating on focus (rather than requiring a
+      // separate Enter/Space) matches how every other Chrome/OS settings
+      // sidebar already behaves, so nothing here has to be learned.
+      tab.addEventListener('keydown', function (e) {
+        var dir = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
+        var target = null;
+        if (dir) target = tabs[(i + dir + tabs.length) % tabs.length];
+        else if (e.key === 'Home') target = tabs[0];
+        else if (e.key === 'End') target = tabs[tabs.length - 1];
+        if (!target) return;
+        e.preventDefault();
+        activate(target.dataset.tab);
+        target.focus();
+      });
+    });
+
+    var stored = null;
+    try { stored = localStorage.getItem(TAB_STORAGE_KEY); } catch (e) { /* private mode, ignore */ }
+    if (!stored || !activate(stored, { silent: true })) activate(tabs[0].dataset.tab, { silent: true });
+  }
+
   /* ---------------------------------------------------------------- wiring */
 
   $('save').addEventListener('click', save);
@@ -247,6 +298,8 @@
       $('diagOut').textContent = 'Cleared.';
     });
   });
+
+  initTabs();
 
   load().then(function () {
     listDomains();

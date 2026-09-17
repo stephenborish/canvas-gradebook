@@ -323,8 +323,11 @@ Edit the snippet list in the options page (first line = trigger, following lines
 ## Settings
 
 Everything is in the options page — click the toolbar icon, or `chrome://extensions` →
-Canvas Gradebook+ → Details → Extension options. Every feature above can be switched off
-individually. Nothing is configurable from inside the gradebook, by design.
+Canvas Gradebook+ → Details → Extension options. It opens to a sidebar of tabs (Layout &
+Display, Cell Indicators, Grading Input, Comment Snippets, Course & Domains, Backup &
+Transfer, Diagnostics); Save and Restore defaults stay visible in the sidebar no matter which
+tab you're on. Every feature above can be switched off individually. Nothing is configurable
+from inside the gradebook, by design.
 
 ## Diagnostics
 
