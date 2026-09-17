@@ -21,9 +21,9 @@ suite('cell status (what M and L must show immediately)', (test) => {
     a.eq(status(patch), 'missing');
   });
 
-  test('the second M reads as Late the instant it is applied', () => {
+  test('the second M reads as no status at all, the instant it is applied', () => {
     const patch = CGP.gradeOps.operationFor(CGP.gradeOps.parseToken('M'), { wasExplicitMissing: true }).patch;
-    a.eq(status(patch), 'late');
+    a.eq(status(patch), 'none');
   });
 
   test('L applies Late and L again leaves no status', () => {

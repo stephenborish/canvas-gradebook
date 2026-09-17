@@ -37,6 +37,7 @@ function fakeModel(reads) {
     loadedAssignments: new Set(['99']),
     cells: new Map(users.map((u) => [`99:${u}`, { userId: u, postedAt: null, postedAtKnown: true }])),
     reloads: 0,
+    reloadOpts: [],
     key: (aid, uid) => `${aid}:${uid}`,
     assignment: () => ({ name: 'Lab 4' }),
     cell(aid, uid) { return this.loadedAssignments.has(String(aid)) ? this.cells.get(this.key(aid, uid)) : null; },
@@ -45,8 +46,9 @@ function fakeModel(reads) {
       if (!this.loadedAssignments.has(String(aid))) return [];
       return users.filter((u) => state.hidden.get(u));
     },
-    reloadAssignment(aid) {
+    reloadAssignment(aid, opts) {
       this.reloads++;
+      this.reloadOpts.push(opts);
       const next = reads.length ? reads.shift() : null;
       if (next === 'fail') { this.loadedAssignments.delete(String(aid)); return Promise.resolve(null); }
       this.loadedAssignments.add(String(aid));
@@ -56,12 +58,13 @@ function fakeModel(reads) {
   };
 }
 
-function controller(model, api) {
+function controller(model, api, recheckBaseDelayMs) {
   return new CGP.PostGradesController({
     model, api,
     adapter: { colIndexToColumn: new Map() },
     settings: { values: { postGradesButton: true } },
-    requestPaint: () => {}
+    requestPaint: () => {},
+    recheckBaseDelayMs
   });
 }
 
@@ -146,5 +149,56 @@ suite('what the teacher is told after posting a column', (test) => {
     };
     await controller(model, api).post('99', null);
     a.eq(last().level, 'error');
+  });
+
+  test('a job we stopped waiting for keeps checking in the background until it catches up - no refresh needed', async () => {
+    said.length = 0;
+    // 3 reads for settleAfterPost's own attempts (all still hidden, so the
+    // job reads as "still running"), then recheckLater's own background
+    // attempts: still hidden once more, then finally caught up.
+    const model = fakeModel([[true, true], [true, true], [true, true], [true, true], [false, false]]);
+    await controller(model, okApi(false), 2 /* tiny base delay: this test does not wait minutes */).post('99', null);
+    a.ok(/still posting/i.test(last().text), 'got: ' + last().text);
+    a.ok(!/refresh/i.test(last().text), 'must not ask the teacher to refresh - the grid corrects itself');
+    a.eq(model.pendingPosts('99').length, 2, 'not caught up yet - the background recheck has not run');
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    a.eq(model.pendingPosts('99').length, 0, 'the background recheck(s) caught the column up with no user action');
+  });
+
+  test('a swallowed fetch failure during the background recheck is retried, not mistaken for caught up', async () => {
+    said.length = 0;
+    // 1 pre-post read + 3 settleAfterPost attempts (all still hidden) before
+    // recheckLater even starts, then recheckLater's own attempts: a fetch
+    // failure reloadAssignment() swallows internally (the column drops out
+    // of loadedAssignments, same as the 'fail' reads used elsewhere in this
+    // file), then still hidden, then finally caught up. pendingPosts()
+    // answers [] for an assignment that is not loaded - indistinguishable,
+    // by length alone, from "nothing left to post" - so a naive read of that
+    // length used to end the retry chain right there instead of recognising
+    // the column was never actually re-read.
+    const model = fakeModel([
+      [true, true], [true, true], [true, true], [true, true],
+      'fail', [true, true], [false, false]
+    ]);
+    await controller(model, okApi(false), 2 /* tiny base delay */).post('99', null);
+    a.ok(/still posting/i.test(last().text), 'got: ' + last().text);
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    a.eq(model.reloads, 7, 'the swallowed failure did not silently end the retry chain');
+    a.eq(model.loadedAssignments.has('99'), true, 'the column is not left stuck unloaded after one failed attempt');
+    a.eq(model.pendingPosts('99').length, 0, 'and it actually caught up, not merely stopped retrying');
+  });
+
+  test('every re-read a post triggers skips fetching comments it will never use', async () => {
+    // Posting can re-read the same column up to four times (the pre-post
+    // check, plus up to three settle-after-post attempts); none of them look
+    // at a comment, so none of them should ask Canvas to serialize every
+    // submission's comment thread along with the grades.
+    said.length = 0;
+    const model = fakeModel([[true, true], [true, true], [false, false]]);
+    await controller(model, okApi()).post('99', null);
+    a.ok(model.reloadOpts.length >= 3, 'more than one re-read happened in this run');
+    model.reloadOpts.forEach((opts) => a.eq(opts && opts.includeComments, false));
   });
 });

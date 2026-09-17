@@ -91,7 +91,15 @@
     this.adapter = ctx.adapter;
     this.settings = ctx.settings;
     this.hidden = [];
-    this._resizeStoodDown = false;
+    // header element -> how many times dragResize has failed on it outright
+    // (both the first attempt and its one corrective retry). A column that
+    // keeps failing is left alone rather than retried every tick forever, but
+    // this is keyed on the ELEMENT, not on the column or a page-wide switch:
+    // Canvas swapping in a fresh header node for that same column (its own
+    // re-render, a sort, a filter change) is a clean slate and gets its own
+    // chances again. Nothing here ever disables resizing for the rest of the
+    // page - see resizeColumns() for why a single early failure used to.
+    this._resizeFailures = new WeakMap();
     this._lastHidePass = 0;
     this.controlsHidden = false;
     this.applyGeometry = CGP.util.debounce(this._applyGeometry.bind(this), 120);
@@ -125,11 +133,70 @@
     if (s.hideCanvasUtilityControls) this.hideControls();
     this.hideKeyboardShortcutsButton();
     this.settleQuickly();
+    this.mountArrangeButton();
     this.applyGeometry();
     this.bindShortcut();
     if (!this._resizeBound) {
       this._resizeBound = this.onWindowResize.bind(this);
       window.addEventListener('resize', this._resizeBound);
+    }
+  };
+
+  /* Canvas's own "Arrange columns by" - due date, name, points, module, or a
+   * manual drag order - lives inside the gear/Settings modal's View Options
+   * tab, reached through the exact gear hideCanvasUtilityControls hides to
+   * keep the gradebook clean. Hiding it must never also hide the only way to
+   * sort assignments, so a small button of this extension's own takes the
+   * space that hiding freed up: it sits in NORMAL DOCUMENT FLOW right above
+   * the grid, not measured against or aligned to anything Canvas renders, so
+   * there is nothing here to jump the way an earlier, since-removed attempt
+   * at repositioning the gear itself used to (see the layout notes further
+   * up). Only mounted while hideCanvasUtilityControls is actually on - with
+   * it off, Canvas's own gear is already sitting right there and a second way
+   * to reach it would just be clutter - so this is re-evaluated every time
+   * start() runs again on a settings change, same as everything else here. */
+  P.mountArrangeButton = function () {
+    if (!this.settings.values.hideCanvasUtilityControls) {
+      if (this._arrangeBar) { this._arrangeBar.remove(); this._arrangeBar = null; }
+      return;
+    }
+    if (this._arrangeBar && this._arrangeBar.isConnected) return;
+    var grid = this.adapter.gridRoot();
+    if (!grid || !grid.parentElement) return;
+
+    var bar = document.createElement('div');
+    bar.className = 'cgp-toolbar';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cgp-arrange-btn';
+    btn.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.8 4.2h10.4M2.8 8h7.4M2.8 11.8h4.4"/>' +
+      '<path d="M12.4 6.4v6.4M10 10.4l2.4 2.4 2.4-2.4"/></svg><span>Arrange columns…</span>';
+    btn.title = 'Open Canvas’s own column arrangement – by due date, name, points, module, or manually';
+    var self = this;
+    btn.addEventListener('click', function () { self.openArrangeMenu(); });
+    bar.appendChild(btn);
+    grid.parentElement.insertBefore(bar, grid);
+    this._arrangeBar = bar;
+  };
+
+  /* Bring Canvas's own controls back (exactly what Alt+Shift+H already does)
+   * and open its gear/Settings modal directly, landing on View Options ->
+   * Arrange By in one click instead of the teacher needing to know that
+   * shortcut, or that button, exists at all. Canvas's own modal actually
+   * moves the columns - nothing here reimplements that by moving DOM nodes
+   * around in a virtualized grid, which is exactly the kind of thing that
+   * would corrupt SlickGrid's own row/column bookkeeping. */
+  P.openArrangeMenu = function () {
+    if (this.controlsHidden) this.restoreControls();
+    this.applyGeometry();
+    var gear = this.findSettingsButton();
+    if (gear && gear.isConnected) {
+      gear.click();
+      CGP.diag.bump('layout.arrangeMenuOpened');
+    } else {
+      CGP.diag.warn('layout.arrangeMenu.gearNotFound');
+      CGP.ui.error('Couldn’t find Canvas’s gradebook settings button. Look for the gear icon, then ' +
+        'View Options → Arrange By, to sort assignments by due date, name, points or module.');
     }
   };
 
@@ -448,14 +515,28 @@
 
   /* ------------------------------------------------------- column narrowing */
 
+  /* Safe to call often - a repeat visit with nothing left to do costs one
+   * cheap DOM measurement pass and returns immediately. That matters because
+   * this is no longer a single one-shot pass fired 500ms after boot: a
+   * gradebook whose columns are not all rendered yet at boot (a wide course,
+   * a slow Canvas render) used to leave every column that mounted after that
+   * one pass at Canvas's original, un-narrowed width forever - the "some
+   * columns are oddly wide and others are not" report. content.js's periodic
+   * safety tick now calls this on every pass instead, and the check above
+   * means that costs nothing once every currently-mounted column is already
+   * the right width. */
   P.resizeColumns = function () {
     var s = this.settings.values;
-    if (!s.narrowColumns || this._resizeStoodDown || this._resizing) return Promise.resolve();
+    if (!s.narrowColumns || this._resizing) return Promise.resolve();
     var self = this;
     var headers = this.adapter.refreshColumns();
     var work = [];
     headers.forEach(function (h) {
       if (!h.el || !h.el.isConnected) return;
+      // A column whose element has already failed to resize twice is left
+      // alone - not retried every single tick forever - until Canvas swaps in
+      // a fresh element for it (a re-render, a sort), which gets a clean slate.
+      if ((self._resizeFailures.get(h.el) || 0) >= 2) return;
       var want = h.type === 'assignment' ? s.assignmentColumnWidth
         : (h.type === 'student' ? s.studentColumnWidth : null);
       if (want === null) return;
@@ -468,15 +549,12 @@
     this._resizing = true;
     var seq = Promise.resolve();
     var applied = 0;
+    var abandonedRest = false;
     work.slice(0, 40).forEach(function (item, i) {
       seq = seq.then(function () {
+        if (abandonedRest) return;
         return self.dragResize(item).then(function (ok) {
           if (ok) { applied++; return; }
-          if (i === 0 && applied === 0) {
-            self._resizeStoodDown = true;
-            CGP.diag.warn('layout.columnResizeUnavailable', { type: item.type });
-            throw new Error('resize-unavailable');
-          }
           // The drag missed its target width. This batch can take seconds to
           // work through every column, so by the time a later column's turn
           // comes its width may already have moved on from what was measured
@@ -489,7 +567,19 @@
           // on.
           return self.dragResize(item).then(function (ok2) {
             if (ok2) { applied++; return; }
+            self._resizeFailures.set(item.el, (self._resizeFailures.get(item.el) || 0) + 1);
             CGP.diag.warn('layout.columnResizeMissed', { type: item.type, want: item.want });
+            // The very first column of this pass failing twice outright
+            // (rather than merely missing its target width) usually means
+            // Canvas has not finished mounting its resize handles yet, or a
+            // markup change means this build's do not match what dragResize
+            // expects - either way, burning through the rest of a 40-column
+            // batch on the same broken mechanism is pure jank with nothing to
+            // show for it. Abandon only the REST OF THIS CALL, not resizing
+            // forever: the next periodic call re-measures from scratch and
+            // tries again, which is exactly what picks this back up once
+            // Canvas has caught up.
+            if (i === 0 && applied === 0) abandonedRest = true;
             // Two attempts at the target width both missed. This is Canvas's
             // OWN real resize handle, so whatever odd width the failed drags
             // left behind is not just a cosmetic glitch - Canvas persists it
@@ -583,10 +673,25 @@
           if (!oldLabel) {
             oldLabel = document.createElement('div');
             oldLabel.className = 'cgp-header-label';
-            oldLabel.innerHTML = '<div class="cgp-header-title"></div><div class="cgp-header-points"></div><div class="cgp-header-due"></div>';
+            oldLabel.innerHTML = '<a class="cgp-header-title" target="_blank" rel="noopener"></a>' +
+              '<div class="cgp-header-points"></div><div class="cgp-header-due"></div>';
+            // Canvas's header reacts to mousedown (sorting, the resize-drag
+            // threshold, its own "..." menu); the link lives inside that same
+            // header cell, so the gesture has to stop here or clicking the
+            // assignment name would also trigger whatever a plain header
+            // mousedown does. Only the gesture is stopped - the click itself
+            // is left alone, so cmd-click, middle-click and "open link in new
+            // tab" all still behave exactly like clicking any other link.
+            oldLabel.querySelector('.cgp-header-title').addEventListener('mousedown', function (e) { e.stopPropagation(); });
             h.el.appendChild(oldLabel);
           }
-          oldLabel.querySelector('.cgp-header-title').textContent = a.name;
+          var titleLink = oldLabel.querySelector('.cgp-header-title');
+          titleLink.textContent = a.name;
+          // Straight to Canvas's own assignment page - to re-read or edit it -
+          // opened in a new tab so the teacher's place in the gradebook is
+          // never lost just to go look at the assignment.
+          titleLink.href = '/courses/' + encodeURIComponent(String(model.courseId)) +
+            '/assignments/' + encodeURIComponent(String(h.assignmentId));
           oldLabel.querySelector('.cgp-header-points').textContent = pointsText;
           var dueEl = oldLabel.querySelector('.cgp-header-due');
           if (dueEl) {

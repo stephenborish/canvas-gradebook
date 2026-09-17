@@ -7,19 +7,15 @@ const CGP = globalThis.CGP;
 suite('grade shortcuts (M / E / L / 0)', (test) => {
   const ops = () => CGP.gradeOps;
 
-  test('M parses as Missing and writes grade 0 plus missing status', () => {
+  test('M parses as Missing and sets the status only - no grade at all', () => {
     const parsed = ops().parseToken('M');
     a.eq(parsed.kind, ops().KIND.MISSING);
-    a.eq(parsed.score, 0);
     const op = ops().operationFor(parsed);
-    a.form(op.form, {
-      'submission[posted_grade]': '0',
-      'submission[late_policy_status]': 'missing'
-    }, 'M form');
-    a.eq(op.patch.score, 0, 'optimistic score');
+    a.form(op.form, { 'submission[late_policy_status]': 'missing' }, 'M form');
+    a.lacksKey(op.form, 'submission[posted_grade]', 'Missing must never write a grade');
     a.eq(op.patch.missing, true, 'optimistic missing flag');
     a.eq(op.patch.latePolicyStatus, 'missing');
-    a.eq(op.patch.excused, false);
+    a.eq(op.display, null, 'no display override for a status-only write');
   });
 
   test('m, mi and missing are all the Missing shortcut', () => {
@@ -28,60 +24,32 @@ suite('grade shortcuts (M / E / L / 0)', (test) => {
     });
   });
 
-  test('M again on an explicitly Missing cell switches it to Late and clears the 0', () => {
+  test('M again on an explicitly Missing cell removes the status and leaves the grade alone', () => {
     const op = ops().operationFor(ops().parseToken('M'), { wasExplicitMissing: true });
-    a.form(op.form, {
-      'submission[posted_grade]': '',
-      'submission[late_policy_status]': 'late'
-    }, 'M toggle form');
+    a.form(op.form, { 'submission[late_policy_status]': 'none' }, 'M toggle-off form');
+    a.lacksKey(op.form, 'submission[posted_grade]', 'un-marking Missing must not change the grade');
     a.eq(op.toggledOff, true);
     a.eq(op.patch.missing, false, 'Missing is gone');
-    a.eq(op.patch.late, true, 'and Late took its place');
-    a.eq(op.patch.latePolicyStatus, 'late', 'the raw status the next toggle reads');
-    a.eq(op.patch.score, null, 'the 0 M wrote is taken back out');
-    a.eq(op.patch.grade, null, 'so any grade can be typed into the cell');
-  });
-
-  test('the M toggle keeps a real grade that was sitting on a Missing submission', () => {
-    // Canvas lets a teacher mark a submission Missing in the Grade Detail Tray
-    // and then grade it; both stand. That 8 is not M's to delete.
-    const op = ops().operationFor(ops().parseToken('M'), { wasExplicitMissing: true, currentScore: 8 });
-    a.form(op.form, { 'submission[late_policy_status]': 'late' }, 'grade-preserving toggle form');
-    a.lacksKey(op.form, 'submission[posted_grade]', 'a grade nobody asked to undo must survive');
-    a.eq(op.keptGrade, true);
-    a.eq(op.patch.missing, false);
-    a.eq(op.patch.late, true);
+    a.eq(op.patch.latePolicyStatus, null, 'the raw status the next toggle reads must not stay stale');
     a.eq(op.display, null, 'the grade text is left exactly as it is');
-  });
-
-  test('the M toggle does clear the 0 M itself wrote', () => {
-    [0, '0', null, undefined].forEach((held) => {
-      const op = ops().operationFor(ops().parseToken('M'), { wasExplicitMissing: true, currentScore: held });
-      a.eq(op.form['submission[posted_grade]'], '', 'clears score ' + String(held));
-      a.eq(op.keptGrade, undefined);
-    });
   });
 
   test('M on a cell Canvas merely computes as missing still APPLIES the status', () => {
     // Canvas reports missing: true for anything past due and not handed in.
     // Only a status somebody actually applied is a thing M can toggle off.
-    const op = ops().operationFor(ops().parseToken('M'), { wasMissing: true });
-    a.form(op.form, {
-      'submission[posted_grade]': '0',
-      'submission[late_policy_status]': 'missing'
-    }, 'first M form');
+    const op = ops().operationFor(ops().parseToken('M'), {});
+    a.form(op.form, { 'submission[late_policy_status]': 'missing' }, 'first M form');
     a.eq(op.patch.missing, true);
   });
 
-  test('M round trip: apply, toggle to Late, then L leaves no status at all', () => {
+  test('M round trip: apply, remove, apply again leaves the same status each time', () => {
     const applied = ops().operationFor(ops().parseToken('M'), {});
     a.eq(applied.patch.latePolicyStatus, 'missing');
-    const toggled = ops().operationFor(ops().parseToken('M'), { wasExplicitMissing: true });
-    a.eq(toggled.patch.latePolicyStatus, 'late');
-    // The status the M toggle leaves behind is exactly what L then reads.
-    const unlate = ops().operationFor(ops().parseToken('L'), { wasLate: true });
-    a.eq(unlate.patch.latePolicyStatus, null);
-    a.eq(unlate.patch.late, false);
+    const removed = ops().operationFor(ops().parseToken('M'), { wasExplicitMissing: true });
+    a.eq(removed.patch.latePolicyStatus, null);
+    a.eq(removed.patch.missing, false);
+    // Missing and Late are independent - removing Missing never applies Late.
+    a.eq(removed.patch.late, undefined);
   });
 
   test('E excuses the submission and never sends a score', () => {
@@ -112,31 +80,23 @@ suite('grade shortcuts (M / E / L / 0)', (test) => {
     a.eq(ops().operationFor(ops().parseToken('L'), { wasLate: false }).patch.late, true);
   });
 
-  test('grading a Missing submission ends Missing and records Late', () => {
-    const op = ops().operationFor(ops().parseToken('7'), { wasMissing: true });
-    a.form(op.form, {
-      'submission[posted_grade]': '7',
-      'submission[late_policy_status]': 'late'
-    }, 'graded-after-missing form');
-    a.eq(op.patch.missing, false, 'Missing must not survive a real grade');
-    a.eq(op.patch.late, true, 'work that was Missing and is now graded came in late');
+  test('grading a Missing (or Late) submission never touches its status', () => {
+    // Entering a grade must never flip Missing to Late, or clear either
+    // status - only the teacher's own M/L press does that.
+    const op = ops().operationFor(ops().parseToken('7'), { wasExplicitMissing: true });
+    a.form(op.form, { 'submission[posted_grade]': '7' }, 'graded-while-missing form');
+    a.lacksKey(op.form, 'submission[late_policy_status]', 'a grade must not restate or change any status');
+    a.eq(op.patch.missing, undefined, 'the patch says nothing about Missing either way');
 
     // Letter and percent grades take the same route.
-    a.eq(ops().operationFor(ops().parseToken('B+'), { wasMissing: true })
-      .form['submission[late_policy_status]'], 'late');
-    a.eq(ops().operationFor(ops().parseToken('80%'), { wasMissing: true })
-      .form['submission[late_policy_status]'], 'late');
-  });
-
-  test('with missingBecomesLate off, grading a Missing submission just clears it', () => {
-    const op = ops().operationFor(ops().parseToken('7'), { wasMissing: true, missingBecomesLate: false });
-    a.eq(op.form['submission[late_policy_status]'], 'none');
-    a.eq(op.patch.missing, false);
-    a.eq(op.patch.late, false);
+    a.lacksKey(ops().operationFor(ops().parseToken('B+'), { wasExplicitMissing: true }).form,
+      'submission[late_policy_status]');
+    a.lacksKey(ops().operationFor(ops().parseToken('80%'), { wasLate: true }).form,
+      'submission[late_policy_status]');
   });
 
   test('a grade on a submission that was never Missing leaves late policy alone', () => {
-    const op = ops().operationFor(ops().parseToken('7'), { wasMissing: false });
+    const op = ops().operationFor(ops().parseToken('7'), {});
     a.lacksKey(op.form, 'submission[late_policy_status]',
       'an ordinary grade must not restate a status Canvas already holds');
   });
@@ -273,5 +233,32 @@ suite('settings sanitizing', (test) => {
     const s = CGP.sanitizeSettings({ snippets: many });
     a.eq(s.snippets.length <= 15, true, 'snippet count is capped');
     a.eq(s.snippets[0].text.length <= 280, true, 'snippet text length is capped');
+  });
+});
+
+suite('describing a failed Canvas request', (test) => {
+  test('a 401 is always a session expiry, worded so the teacher knows to log back in', () => {
+    a.eq(CGP.util.isSessionExpiredError({ status: 401 }), true);
+    a.ok(/log back in/i.test(CGP.util.describeApiError({ status: 401 })));
+  });
+
+  test('other statuses are not mistaken for a session expiry', () => {
+    [403, 429, 500, undefined].forEach((status) => {
+      a.eq(CGP.util.isSessionExpiredError({ status }), false, 'status ' + status);
+    });
+    a.eq(CGP.util.isSessionExpiredError(null), false);
+  });
+
+  test('a network failure and a rate limit each get their own specific wording', () => {
+    a.ok(/network/i.test(CGP.util.describeApiError({ network: true })));
+    a.ok(/slow down|rate limit/i.test(CGP.util.describeApiError({ status: 429 })));
+  });
+
+  test('anything else falls back to the caller’s own message, with the status folded in', () => {
+    const msg = CGP.util.describeApiError({ status: 422 }, { fallback: 'Could not save this' });
+    a.eq(msg, 'Could not save this (Canvas 422).');
+    const noStatus = CGP.util.describeApiError({ message: 'boom' }, { fallback: 'Could not save this' });
+    a.eq(noStatus, 'Could not save this: boom.');
+    a.eq(CGP.util.describeApiError(null), 'Canvas rejected this request.');
   });
 });

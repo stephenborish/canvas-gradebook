@@ -16,7 +16,15 @@
     this.model = ctx.model;
     this.settings = ctx.settings;
     this.width = 84;
-    this.enabled = false;
+    this.enabled = false;   // the setting is on and a frozen pane was found at start
+    // Verified to actually be showing, not merely attempted - see
+    // verifyWidened(). Everything downstream (drawing the Total overlay,
+    // hiding Canvas's own native Total column so there is never a confusing
+    // duplicate) is gated on this, not on `enabled`, precisely because the
+    // CSS trick `enabled` turns on is not guaranteed to have taken hold.
+    this.working = false;
+    this._failStreak = 0;
+    this._notifiedBroken = false;
     this.layer = null;
     this.header = null;
     this.cellPool = new Map(); // rowIndex -> element
@@ -40,9 +48,46 @@
   P.stop = function () {
     this.enabled = false;
     document.documentElement.classList.remove('cgp-frozen-total');
+    this.teardownDrawn();
+  };
+
+  /* Everything that only belongs on screen once the widen is actually
+   * confirmed (see paint()). Torn down, not just left stale, the moment that
+   * confirmation is lost - a half-correct overlay is worse than none. */
+  P.teardownDrawn = function () {
+    this.working = false;
+    document.documentElement.classList.remove('cgp-frozen-total-active');
     if (this.layer) { this.layer.remove(); this.layer = null; }
     if (this.header) { this.header.remove(); this.header = null; }
     this.cellPool.clear();
+  };
+
+  /* Confirm the CSS pane-widening this whole feature depends on actually took
+   * hold, rather than assuming it. Canvas's exact SlickGrid pane/viewport
+   * class names are not something this extension can verify against a live
+   * build (see the class list in gradebook.css), and a silently-failed widen
+   * is not cosmetic: the Total this method would otherwise draw is appended
+   * into the frozen canvas at a left offset past where a NOT-actually-widened
+   * pane really ends, which reads, from the grid, as a Total column that
+   * scrolls along with the assignment columns instead of staying put - the
+   * exact "it isn't actually frozen" report this guards against.
+   *
+   * Checked on every paint, not just once at start, because the widen can be
+   * lost later just as easily as it can fail to ever take hold (Canvas
+   * re-rendering the pane on a sort, a filter change, a column drag). A
+   * short streak of failures (not a single one - the frozen pane may simply
+   * not have its final layout yet on the very first paint or two) is what
+   * actually tears the overlay down; a later paint that measures correctly
+   * again brings it right back with no reload needed either way. */
+  P.verifyWidened = function () {
+    if (!this.naturalWidth) return false;
+    var canvas = this.adapter.canvases()[0];
+    if (!canvas) return false;
+    var have = Math.round(canvas.getBoundingClientRect().width);
+    var want = this.naturalWidth + this.width;
+    // A little slack for a hairline border, a scrollbar gutter, or ordinary
+    // sub-pixel layout rounding on an otherwise-correct widen.
+    return Math.abs(have - want) <= 8;
   };
 
   P.measure = function () {
@@ -91,6 +136,31 @@
   P.paint = function () {
     if (!this.enabled) return;
     this.measure();
+
+    if (!this.verifyWidened()) {
+      this._failStreak++;
+      // Three misses in a row (not one - the very first paint or two can
+      // easily land before the frozen pane has its final layout) before
+      // standing down: draw nothing, and leave Canvas's own native Total
+      // column alone rather than hiding it out from under a Total that turned
+      // out not to actually be there.
+      if (this._failStreak >= 3 && this.working) {
+        this.teardownDrawn();
+        if (!this._notifiedBroken) {
+          this._notifiedBroken = true;
+          CGP.diag.warn('frozenTotal.widenNotConfirmed', { natural: this.naturalWidth, width: this.width });
+        }
+      }
+      return;
+    }
+    this._failStreak = 0;
+    this._notifiedBroken = false;
+    if (!this.working) {
+      this.working = true;
+      document.documentElement.classList.add('cgp-frozen-total-active');
+      CGP.diag.bump('frozenTotal.confirmed');
+    }
+
     var layer = this.ensureLayer();
     this.ensureHeader();
     if (!layer) return;

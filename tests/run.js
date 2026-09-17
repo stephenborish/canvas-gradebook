@@ -13,6 +13,7 @@ require('./test-comments-totals');
 require('./test-post-status');
 require('./test-model-staleness');
 require('./test-post-reporting');
+require('./test-grading-period');
 
 // run() awaits each case, so the process must not exit before it settles.
 harness.run().then((okAll) => {

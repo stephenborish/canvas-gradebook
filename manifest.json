@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Canvas Gradebook+",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "author": "stephenborish",
   "description": "Upgrades Canvas instructor Gradebook: instructor-comment indicators, keyboard shortcuts, and instant post.",
   "minimum_chrome_version": "116",
@@ -88,7 +88,7 @@
         "src/page/env-bridge.js"
       ],
       "matches": [
-        "*://*.instructure.com/*"
+        "*://*/*"
       ]
     }
   ]

@@ -73,6 +73,38 @@ suite('stale column-fetch protection', (test) => {
     a.eq(rec.commentList.length, 1, 'a just-added comment must not be wiped by a stale column read');
   });
 
+  test('reloadAssignment does not un-teach the model a column it already knows', () => {
+    // post-grades.js re-reads a column by briefly clearing loadedAssignments
+    // to force ensureAssignments to actually re-fetch (possibly more than
+    // once per post). Painters must not read that as "never loaded" - the
+    // model has perfectly good cached data for every one of its cells the
+    // whole time - or every status tint, comment bubble and hidden-grade bar
+    // in the column flashes away and back on every single re-read.
+    const model = makeModel();
+    const api = { submissionsForAssignments: () => Promise.resolve([submission({ grade: '5', score: 5, workflow_state: 'graded' })]) };
+    model.api = api;
+    model.loadedAssignments.add('50'); // pretend an earlier real load already happened
+    model.everLoadedAssignments.add('50');
+
+    model.loadedAssignments.delete('50'); // reloadAssignment()'s own first move
+    a.eq(model.loadedAssignments.has('50'), false, 'mid-reload: temporarily not "loaded"');
+    a.eq(model.everLoadedAssignments.has('50'), true, 'but never un-taught that this column is real');
+  });
+
+  test('everLoadedAssignments is populated the same moment loadedAssignments is, and stays set', () => {
+    const model = makeModel();
+    const api = { submissionsForAssignments: () => Promise.resolve([submission({ grade: '5', score: 5, workflow_state: 'graded' })]) };
+    model.api = api;
+    return model.ensureAssignments(['50']).then(() => {
+      a.eq(model.loadedAssignments.has('50'), true);
+      a.eq(model.everLoadedAssignments.has('50'), true);
+      return model.reloadAssignment('50');
+    }).then(() => {
+      a.eq(model.loadedAssignments.has('50'), true, 'reloaded and loaded again');
+      a.eq(model.everLoadedAssignments.has('50'), true, 'never stopped being true');
+    });
+  });
+
   test('markLocalWrite returns the prior marker, so a later failed write on the same cell can restore it', () => {
     const model = makeModel();
     // Write A succeeds (its own protection is never cleared on success).

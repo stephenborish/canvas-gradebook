@@ -33,6 +33,10 @@
     this.requestPaint = ctx.requestPaint || function () {};
     this.busy = new Set();          // assignmentIds with a post in flight
     this._rechecking = new Set();   // assignmentIds with a delayed re-read pending
+    // The base delay recheckLater() backs off from. A constructor option
+    // only so tests can shrink minutes of real backoff down to milliseconds;
+    // production code never overrides it.
+    this._recheckBaseDelayMs = ctx.recheckBaseDelayMs || 6000;
   }
 
   var P = PostGradesController.prototype;
@@ -164,7 +168,7 @@
     var id = String(assignmentId);
     var DELAYS = [0, 700, 1500];
     function attempt(n) {
-      return self.model.reloadAssignment(id).then(function () {
+      return self.model.reloadAssignment(id, { includeComments: false }).then(function () {
         if (!self.model.loadedAssignments.has(id)) return { left: expected, known: false };
         var left = self.model.pendingPosts(id).length;
         if (left < expected || n + 1 >= DELAYS.length) return { left: left, known: true };
@@ -205,7 +209,7 @@
     // confirmation afterwards has to be based on this same fresh read, not
     // a page-load-time snapshot - otherwise "Post 3" can silently post far
     // more than 3, and the toast would undercount how many were disclosed.
-    return this.model.reloadAssignment(id).then(function () {
+    return this.model.reloadAssignment(id, { includeComments: false }).then(function () {
       // reloadAssignment()/ensureAssignments() swallow a failed fetch and
       // resolve anyway (see model.js) rather than rejecting - and
       // reloadAssignment already removed this id from loadedAssignments
@@ -325,15 +329,23 @@
             self.recheckLater(id);
           } else {
             // We stopped waiting before Canvas finished. Nothing here says it
-            // failed - only that it is still running - so say exactly that.
-            CGP.ui.toast('Canvas is still posting ' + name + '. Refresh in a moment to see it.');
+            // failed - only that it is still running - so say exactly that,
+            // and keep checking in the background until it catches up. A
+            // teacher should never have to reload the page to find out a post
+            // they already started actually landed.
+            CGP.ui.toast('Canvas is still posting ' + name + ' in the background — the grid will update on its own.');
             CGP.diag.bump('post.stillRunning', count);
+            self.recheckLater(id);
           }
         }, function (err) {
           CGP.diag.error('post.failed', { assignmentId: id, status: err && err.status, message: String(err && err.message) });
-          CGP.ui.error('Canvas would not post these grades' +
-            (err && err.status ? ' (Canvas ' + err.status + ')' : (err && err.message ? ': ' + err.message : '')) +
-            '. Nothing was changed — you can still post from the column’s own menu.');
+          if (CGP.util.isSessionExpiredError(err)) {
+            CGP.ui.error(CGP.util.describeApiError(err) + ' Nothing was posted.');
+          } else {
+            CGP.ui.error('Canvas would not post these grades' +
+              (err && err.status ? ' (Canvas ' + err.status + ')' : (err && err.message ? ': ' + err.message : '')) +
+              '. Nothing was changed — you can still post from the column’s own menu.');
+          }
         });
     }, function () {
       // The re-read itself failed: refuse rather than posting against a
@@ -347,26 +359,59 @@
       });
   };
 
-  /* One more re-read, later, for the column whose post Canvas confirmed but
-   * whose submissions still read as hidden.
+  /* One or more re-reads, later, for a column whose post Canvas confirmed (or
+   * whose job we simply stopped waiting for) but whose submissions still read
+   * as hidden.
    *
-   * Detached on purpose: the teacher is not made to wait on it, and it is
-   * the only thing that will correct the column short of a page reload -
-   * nothing re-reads a column already marked loaded. Whichever way it lands
-   * is the truth, so it reports nothing and simply repaints. */
-  P.recheckLater = function (assignmentId) {
+   * Detached on purpose: the teacher is not made to wait on it, and it is the
+   * only thing that will correct the column short of a page reload - nothing
+   * else re-reads a column already marked loaded. This used to try exactly
+   * once, 6 seconds later, and if that single read still had not caught up
+   * the teacher was left to notice and reload the page themselves - which is
+   * exactly what "the grid will update on its own" a moment earlier promised
+   * would not be necessary. It now keeps trying on a backoff (6s, ~10s,
+   * ~15s, ~25s, 30s - about ninety seconds of total patience) until either
+   * the column is confirmed caught up or that patience runs out, so a post
+   * that simply takes Canvas longer than usual still self-corrects instead
+   * of quietly needing a reload. Whichever way any one attempt lands is the
+   * truth for that attempt, so it reports nothing itself and simply repaints;
+   * running out of attempts is logged to diagnostics only; a teacher who is
+   * still looking at the column can always press Post again. */
+  P.recheckLater = function (assignmentId, attempt) {
     var self = this;
     var id = String(assignmentId);
+    attempt = attempt || 0;
+    var MAX_ATTEMPTS = 5;
     if (this._rechecking.has(id)) return;
     this._rechecking.add(id);
+    var delay = Math.min(this._recheckBaseDelayMs * Math.pow(1.6, attempt), this._recheckBaseDelayMs * 5);
     setTimeout(function () {
-      self.model.reloadAssignment(id).then(function () {
+      self.model.reloadAssignment(id, { includeComments: false }).then(function () {
         self._rechecking.delete(id);
         self.requestPaint();
+        // reloadAssignment() swallows its own fetch failure (see
+        // ensureAssignments) and resolves normally either way, leaving the
+        // assignment out of loadedAssignments when the read actually failed.
+        // pendingPosts() reads that as "column has nothing to post" and
+        // answers [] regardless of the real reason, which used to read here
+        // as "caught up" and silently end the retry chain on a fetch that
+        // never actually landed. Treat "still not loaded" the same as "still
+        // has pending posts" so a swallowed failure keeps retrying instead of
+        // being mistaken for success.
+        var loaded = self.model.loadedAssignments.has(id);
+        var left = loaded ? self.model.pendingPosts(id).length : -1;
+        if (!loaded || left > 0) {
+          if (attempt + 1 < MAX_ATTEMPTS) {
+            self.recheckLater(id, attempt + 1);
+          } else {
+            CGP.diag.warn('post.recheckExhausted', { assignmentId: id, left: loaded ? left : null });
+          }
+        }
       }, function () {
         self._rechecking.delete(id);
+        if (attempt + 1 < MAX_ATTEMPTS) self.recheckLater(id, attempt + 1);
       });
-    }, 6000);
+    }, delay);
   };
 
   /* Stamp posted_at on the cells Canvas has just told us it posted.

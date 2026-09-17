@@ -50,9 +50,18 @@
       var messages = [];
       if (result.failed) {
         var first = result.errors[0] || {};
-        messages.push(result.failed + (result.failed === 1 ? ' grade' : ' grades') +
-          ' could not be saved' + (first.status ? ' (Canvas ' + first.status + ')' : '') +
-          '. Those cells were left unchanged.');
+        if (CGP.util.isSessionExpiredError(first)) {
+          // The one failure reason worth calling out on its own: every other
+          // status differs cell to cell in ways a teacher can't act on
+          // uniformly, but a session timing out mid-grading explains ALL of
+          // them at once and has one fix.
+          messages.push(result.failed + (result.failed === 1 ? ' grade' : ' grades') +
+            ' could not be saved: ' + CGP.util.describeApiError(first) + ' Those cells were left unchanged.');
+        } else {
+          messages.push(result.failed + (result.failed === 1 ? ' grade' : ' grades') +
+            ' could not be saved' + (first.status ? ' (Canvas ' + first.status + ')' : '') +
+            '. Those cells were left unchanged.');
+        }
       }
       if (result.skipped) {
         messages.push(result.skipped + (result.skipped === 1 ? ' cell was' : ' cells were') +
@@ -143,7 +152,6 @@
 
     var currentRec = this.model.cell(assignmentId, userId);
     var op = CGP.gradeOps.operationFor(target.parsed, {
-      wasMissing: !!(currentRec && currentRec.missing),
       // Only an explicitly applied Late status is a thing the L shortcut can
       // toggle off. Canvas also reports late: true for anything simply handed
       // in after the due date, and "un-late" is not a thing that can mean.
@@ -151,18 +159,8 @@
       // Same distinction for the M toggle: only a status somebody actually
       // applied can be toggled off. Canvas reports missing: true for anything
       // merely past due and unsubmitted, and a first M on such a cell must
-      // still APPLY the status rather than flip it to Late.
-      wasExplicitMissing: !!(currentRec && currentRec.latePolicyStatus === 'missing'),
-      // What the toggle is allowed to erase. A submission can reach us already
-      // flagged Missing AND holding a real grade (marked Missing in the Grade
-      // Detail Tray, graded afterwards - Canvas leaves both standing), and
-      // that grade is not M's to delete. enteredScore is what the teacher
-      // actually typed; score can already have a late-policy deduction in it.
-      currentScore: currentRec
-        ? (currentRec.enteredScore === null || currentRec.enteredScore === undefined
-          ? currentRec.score : currentRec.enteredScore)
-        : null,
-      missingBecomesLate: this.settings.values.missingBecomesLate !== false
+      // still APPLY the status rather than flip it off.
+      wasExplicitMissing: !!(currentRec && currentRec.latePolicyStatus === 'missing')
     });
     if (!op) { result.skipped++; return Promise.resolve(); }
 
@@ -207,10 +205,10 @@
             // Canvas spells "no grade" as null on some submissions and as an
             // empty string on others; both mean the cell has nothing to show.
             else if (shown.grade !== null && shown.grade !== undefined && String(shown.grade) !== '') display = String(shown.grade);
-            // No grade left, because this write deliberately took one away
-            // (a clear, or the second M turning Missing into Late). Dropping
-            // the overlay here would uncover the grade Canvas still has
-            // painted in the cell, so the score would appear to come back.
+            // No grade left, because this write deliberately took one away (a
+            // clear). Dropping the overlay here would uncover the grade
+            // Canvas still has painted in the cell, so the score would appear
+            // to come back.
             else display = clearsGrade ? '\u2013' : null;
             self.model.patchCell(assignmentId, userId, { pending: false, override: display });
           } else if (!opts.noOptimistic) {
@@ -240,15 +238,14 @@
    *
    * M is a promise about the Canvas record, not about how the cell looks here:
    * the submission has to read as Missing in the Grade Detail Tray, in
-   * SpeedGrader and on the student's own grades page. Canvas normally applies
-   * the status from the same request that carries the grade, but a late policy
-   * or another write finishing after ours can leave the score behind without
-   * it - which looks, from the gradebook, exactly like "M only typed a zero".
+   * SpeedGrader and on the student's own grades page. A course's own late
+   * policy can override the status we just asked for, which would otherwise
+   * look, from the gradebook, exactly like "M did nothing".
    *
    * So the response is checked rather than assumed. If the submission came
    * back without the status, it is asked for once more on its own, and if
    * Canvas still refuses, the teacher is told plainly instead of being left
-   * with a silent 0. */
+   * with a silent no-op. */
   P.confirmMissing = function (assignmentId, userId, rec) {
     var self = this;
     if (self.isMissing(rec)) return Promise.resolve(rec);
@@ -262,12 +259,12 @@
           return fresh;
         }
         CGP.diag.error('write.missingRefused', { assignmentId: assignmentId });
-        CGP.ui.error('Canvas saved the grade but would not mark this submission Missing. ' +
+        CGP.ui.error('Canvas would not mark this submission Missing. ' +
           'Its own late policy may be overriding the status.');
         return fresh;
       }, function (err) {
         CGP.diag.error('write.missingRetryFailed', { assignmentId: assignmentId, status: err && err.status });
-        CGP.ui.error('Canvas saved the grade but rejected the Missing status' +
+        CGP.ui.error('Canvas rejected the Missing status' +
           (err && err.status ? ' (' + err.status + ')' : '') + '.');
         return rec;
       });
@@ -293,41 +290,6 @@
       out.push({ assignmentId: item.assignmentId, userId: item.userId, parsed: parsed, token: item.token });
     });
     return { targets: out, invalid: invalid };
-  };
-
-  /** Canvas leaves a manually-applied Missing status in place even once a real
-   * grade exists on the submission (it only clears it when the status is
-   * explicitly reset). Called after any grade committed through Canvas's own
-   * editor is re-read from the API: if it turns out to still carry both a
-   * real grade and Missing, that combination is exactly the "stuck" state
-   * teachers hit, so this resolves the status once, with no optimistic flash
-   * and no toast - it is bookkeeping, not something the teacher asked for.
-   *
-   * It resolves to Late rather than to no status at all: work that was
-   * Missing and has now been graded arrived after its due date, and that is
-   * what Late records. (Set "Grading a Missing submission marks it Late" off
-   * in the options page to merely clear the status instead.) This is the same
-   * rule grade-ops applies to grades written through this extension; it is
-   * repeated here for grades the teacher committed through Canvas's own
-   * editor, which never pass through gradeOps at all. */
-  P.resolveStaleMissing = function (assignmentId, userId) {
-    var self = this;
-    var rec = this.model.cell(assignmentId, userId);
-    if (!rec || !rec.missing || rec.excused || !rec.gradedAt) return Promise.resolve(null);
-    var toLate = this.settings.values.missingBecomesLate !== false;
-    var dupKey = String(assignmentId) + ':' + String(userId) + ':unstick-missing';
-    if (this.inflight.has(dupKey)) return Promise.resolve(null);
-    this.inflight.add(dupKey);
-    return this.api.updateSubmission(this.model.courseId, assignmentId, userId,
-      { 'submission[late_policy_status]': toLate ? 'late' : 'none' })
-      .then(function (submission) {
-        self.model.applySubmission(submission);
-        CGP.diag.bump(toLate ? 'write.missingBecameLate' : 'write.missingAutoCleared');
-      }, function (err) {
-        CGP.diag.warn('write.missingAutoClearFailed', { assignmentId: assignmentId, status: err && err.status });
-      }).then(function () {
-        self.inflight.delete(dupKey);
-      });
   };
 
   /* Same identity safeguards writeOne enforces for every grade/status write -

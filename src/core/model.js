@@ -16,12 +16,33 @@
     this.courseId = String(courseId);
     this.instructorId = null;
     this.instructorNames = [];
+    // Which grading period Canvas's OWN Total column is currently scoped to,
+    // if any (null = the whole course). Learned from ENV after boot (see
+    // setGradingPeriod / content.js's env-bridge listener) since Canvas
+    // decides the default period server-side and does not always reflect it
+    // in the URL. Every Total read - the initial fetch and every refresh
+    // after a write - is scoped to this so the frozen Total this extension
+    // draws never disagrees with the one Canvas itself is showing.
+    this.gradingPeriodId = null;
     this.assignments = new Map();      // assignmentId -> assignment
     this.assignmentOrder = [];
     this.students = new Map();         // userId -> {id, name, sortableName, currentScore, currentGrade}
     this.studentOrder = [];
     this.cells = new Map();            // "assignmentId:userId" -> record
     this.loadedAssignments = new Set();
+    // Once true for an assignment, stays true for the rest of the page's
+    // life - unlike loadedAssignments, which reloadAssignment() deliberately
+    // clears for a moment to force a fresh fetch (posting re-reads a column
+    // this way, more than once per post). Cells already have good data
+    // sitting in `cells` the instant a column first loads, and nothing about
+    // a background refresh makes that data any less real - so this is what
+    // "have we ever actually seen this column" should mean to a painter,
+    // rather than loadedAssignments, whose narrower "not mid-refetch right
+    // now" is what ensureAssignments itself needs. Reading loadedAssignments
+    // for the former is what used to blank every status tint, comment bubble
+    // and hidden-grade bar in a column for the moment its Post button was
+    // merely re-checking it, before anything had actually posted.
+    this.everLoadedAssignments = new Set();
     this.pendingAssignments = new Map();
     this.commentVerifiedAssignments = new Set();
     // "assignmentId:userId" -> Date.now() when a local write (a keyboard
@@ -56,7 +77,7 @@
       self.instructorNames = user ? [user.name, user.shortName, user.sortableName].filter(Boolean) : [];
       CGP.diag.set('instructorId', self.instructorId);
       CGP.diag.set('instructorNameAliases', self.instructorNames.length);
-      return Promise.all([self.api.assignments(self.courseId), self.api.studentEnrollments(self.courseId)]);
+      return Promise.all([self.api.assignments(self.courseId), self.api.studentEnrollments(self.courseId, self.gradingPeriodId)]);
     }).then(function (res) {
       var assignments = res[0] || [];
       var enrollments = res[1] || [];
@@ -91,25 +112,7 @@
       });
       self.assignmentOrder = Array.from(self.assignments.keys());
 
-      enrollments.forEach(function (e) {
-        if (!e || !e.user || e.user.id === undefined) return;
-        var uid = String(e.user.id);
-        var grades = e.grades || {};
-        var score = grades.current_score;
-        if (score === undefined || score === null) score = e.computed_current_score;
-        var prev = self.students.get(uid);
-        var rec = {
-          id: uid,
-          name: e.user.short_name || e.user.name || '',
-          fullName: e.user.name || '',
-          sortableName: e.user.sortable_name || '',
-          currentScore: score === undefined ? null : score,
-          currentGrade: grades.current_grade === undefined ? null : grades.current_grade,
-          enrollmentId: e.id === undefined ? null : String(e.id)
-        };
-        if (!prev) self.studentOrder.push(uid);
-        self.students.set(uid, rec);
-      });
+      enrollments.forEach(function (e) { self._applyEnrollment(e); });
 
       self.ready = true;
       CGP.diag.set('courseId', self.courseId);
@@ -121,8 +124,88 @@
     });
   };
 
-  /* Load submissions (with comments) for assignment columns we do not have yet. */
-  GradebookModel.prototype.ensureAssignments = function (ids) {
+  /* One enrollment record -> the student's own entry. Shared by init() (the
+   * first, whole-roster read) and reloadTotals() (a later one scoped to a
+   * grading period learned after boot), so the two can never drift apart in
+   * which fields they read off an enrollment. */
+  GradebookModel.prototype._applyEnrollment = function (e) {
+    if (!e || !e.user || e.user.id === undefined) return;
+    var uid = String(e.user.id);
+    var grades = e.grades || {};
+    var score = grades.current_score;
+    if (score === undefined || score === null) score = e.computed_current_score;
+    var prev = this.students.get(uid);
+    var rec = {
+      id: uid,
+      name: e.user.short_name || e.user.name || '',
+      fullName: e.user.name || '',
+      sortableName: e.user.sortable_name || '',
+      currentScore: score === undefined ? null : score,
+      currentGrade: grades.current_grade === undefined ? null : grades.current_grade,
+      enrollmentId: e.id === undefined ? null : String(e.id)
+    };
+    if (!prev) this.studentOrder.push(uid);
+    this.students.set(uid, rec);
+  };
+
+  /* Canvas decides the grading period its OWN Total column defaults to on the
+   * server, and does not always echo that choice into the URL - so it has to
+   * be learned from ENV after the page has already booted (see content.js's
+   * env-bridge listener) rather than assumed to be "the whole course" just
+   * because the URL says nothing. Called once boot learns it; a no-op if it
+   * turns out to be the same period the model is already using (the common
+   * case: no grading periods, or none of this course's students have one set
+   * as "current").
+   *
+   * The whole-roster Total read is simply repeated with the period now
+   * known, rather than trying to patch individual students' scores in place,
+   * so this reuses exactly the same request and parsing path init() already
+   * uses and cannot drift from it. */
+  GradebookModel.prototype.setGradingPeriod = function (id) {
+    var next = (id === null || id === undefined) ? null : String(id);
+    if (next === this.gradingPeriodId) return Promise.resolve(null);
+    this.gradingPeriodId = next;
+    CGP.diag.set('gradingPeriodId', next);
+    if (!this.ready) {
+      // init()'s own whole-roster enrollment read (see init()) may already be
+      // in flight, scoped to whatever period this.gradingPeriodId held before
+      // this call - reloadTotals() itself is a no-op until ready, and would
+      // otherwise silently drop this correction the moment that in-flight
+      // read lands and applies the wrong scope. env-bridge.js posts exactly
+      // once and removes itself, so no second ENV message will ever arrive to
+      // try again - queue the corrective reload for the instant the model
+      // actually becomes ready instead. 'ready' fires exactly once (see
+      // init()), so this can never run stale.
+      var self = this;
+      this.on('ready', function () { self.reloadTotals(); });
+      return Promise.resolve(null);
+    }
+    return this.reloadTotals();
+  };
+
+  /* Re-read every student's course total, scoped to whatever grading period
+   * (if any) this model currently tracks. Used after learning the grading
+   * period from ENV, and safe to call any other time the whole roster's
+   * totals should be refreshed from Canvas rather than one student's (see
+   * queueTotalRefresh for the single-student, write-triggered path). */
+  GradebookModel.prototype.reloadTotals = function () {
+    var self = this;
+    if (!this.ready) return Promise.resolve(null);
+    return this.api.studentEnrollments(this.courseId, this.gradingPeriodId).then(function (enrollments) {
+      (enrollments || []).forEach(function (e) { self._applyEnrollment(e); });
+      CGP.diag.bump('totals.reloadedForGradingPeriod');
+      self.emit('totals', null);
+      return null;
+    }, function (err) {
+      CGP.diag.error('model.reloadTotals.failed', { status: err && err.status });
+      return null;
+    });
+  };
+
+  /* Load submissions (with comments, unless opts.includeComments is false -
+   * see CanvasApi.submissionsForAssignments) for assignment columns we do not
+   * have yet. */
+  GradebookModel.prototype.ensureAssignments = function (ids, opts) {
     var self = this;
     var wanted = (ids || []).map(String).filter(function (id) {
       return id && self.assignments.has(id) && !self.loadedAssignments.has(id) && !self.pendingAssignments.has(id);
@@ -138,7 +221,7 @@
       // describes the column no earlier than this moment, so a local write
       // that starts at or after it must win (see applySubmission).
       var fetchStartedAt = Date.now();
-      var job = self.api.submissionsForAssignments(self.courseId, batch).then(function (subs) {
+      var job = self.api.submissionsForAssignments(self.courseId, batch, opts).then(function (subs) {
         var payloadsWithComments = 0;
         var rawCommentCount = 0;
         (subs || []).forEach(function (s) {
@@ -148,7 +231,11 @@
           }
           self.applySubmission(s, { silent: true, staleIfWrittenAfter: fetchStartedAt });
         });
-        batch.forEach(function (id) { self.loadedAssignments.add(id); self.pendingAssignments.delete(id); });
+        batch.forEach(function (id) {
+          self.loadedAssignments.add(id);
+          self.everLoadedAssignments.add(id);
+          self.pendingAssignments.delete(id);
+        });
         CGP.diag.set('submissionsLoaded', self.cells.size);
         CGP.diag.set('assignmentsLoaded', self.loadedAssignments.size);
         CGP.diag.set('commentPayloads', payloadsWithComments);
@@ -309,7 +396,7 @@
     var types = a.submissionTypes || [];
     var online = types.filter(function (t) { return ONLINE_TYPES.indexOf(t) >= 0; });
     if (!online.length) return null;
-    if (!this.loadedAssignments.has(String(assignmentId))) return null;
+    if (!this.everLoadedAssignments.has(String(assignmentId))) return null;
     var rec = this.cell(assignmentId, userId);
     var submittedType = rec && rec.submissionType ? rec.submissionType : null;
     return {
@@ -348,12 +435,12 @@
   /* Re-read one assignment column from Canvas, replacing what we hold.
    * Used after posting grades, where the thing that changed (posted_at on
    * every submission in the column) is not in any response we already have. */
-  GradebookModel.prototype.reloadAssignment = function (assignmentId) {
+  GradebookModel.prototype.reloadAssignment = function (assignmentId, opts) {
     var id = String(assignmentId);
     if (!this.assignments.has(id)) return Promise.resolve(null);
     this.loadedAssignments.delete(id);
     this.pendingAssignments.delete(id);
-    return this.ensureAssignments([id]);
+    return this.ensureAssignments([id], opts);
   };
 
   /* Record that a local write to this cell is starting right now. Called
@@ -486,15 +573,9 @@
     if (!ids.length) return;
     var gate = util.pool(3);
     Promise.all(ids.map(function (uid) {
-      return gate(function () { return self.api.enrollmentForUser(self.courseId, uid); }).then(function (e) {
-        if (!e) return;
-        var student = self.students.get(uid);
-        if (!student) return;
-        var grades = e.grades || {};
-        var score = grades.current_score;
-        if (score === undefined || score === null) score = e.computed_current_score;
-        student.currentScore = score === undefined ? null : score;
-        student.currentGrade = grades.current_grade === undefined ? null : grades.current_grade;
+      return gate(function () { return self.api.enrollmentForUser(self.courseId, uid, self.gradingPeriodId); }).then(function (e) {
+        if (!e || !self.students.has(uid)) return;
+        self._applyEnrollment(e);
       }, function () { return null; });
     })).then(function () {
       CGP.diag.bump('totals.refreshed', ids.length);

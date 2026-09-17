@@ -60,36 +60,32 @@ In any editable grade cell:
 
 | Key | Result |
 | --- | --- |
-| `M` | grade `0` **and** status Missing, in one write — pressed again on the same cell it switches Missing to Late and takes the `0` back out |
+| `M` | Missing — pressed again on the same cell, removes it |
 | `E` | Excused |
-| `L` | Late (grade untouched) — pressed again on an already-Late submission, it removes the status |
-| `-` or `--` | clears the grade and resets the status |
+| `L` | Late — pressed again on the same cell, removes it |
+| `-` or `--` | clears the grade and resets every status |
 
-Both status keys are toggles. `M` on a cell you have already marked Missing means "it turned
-up after all": the status becomes **Late**, the `0` that `M` wrote is removed, and the cell is
-left empty and ready for whatever grade you want to type into it. `L` on a cell you have
-already marked Late simply removes that status. Only a status *somebody applied* can be
-toggled — Canvas reports `missing` for anything merely past due and not handed in, and a first
-`M` on such a cell still applies the status rather than flipping it.
+Missing and Late are independent, instant flags. Each is a toggle, in exactly the same shape:
+pressing the key applies that status, pressing it again on a cell that already carries it takes
+the status back off. Neither one ever touches the grade, in either direction, and neither one
+ever touches the other — marking a submission Missing does not change a grade already sitting
+there, and typing a grade never removes or changes Missing or Late. Only your own `M` or `L`
+press changes that status. This is deliberate: Canvas quietly flipping a manually-applied
+Missing status to Late the moment a grade showed up used to be a surprise, not a convenience,
+so nothing here does that automatically any more — mark it, or unmark it, yourself, and it
+happens instantly either way.
 
-Only the `0` that `M` itself writes is `M`'s to take away. A submission can be flagged Missing
-*and* carry a real grade — Canvas lets you mark it Missing in the Grade Detail Tray and grade
-it afterwards, and leaves both standing — and toggling that one changes the status to Late
-while the grade stays exactly where it is.
+Only a status *somebody applied* can be toggled off — Canvas reports `missing` (or `late`) for
+anything merely past its due date and not handed in, and a first `M` (or `L`) on such a cell
+still applies the status rather than flipping it.
 
-These are writes to the Canvas record, not local decoration. `M` sends the score and
-`late_policy_status=missing` in a single request, so the submission reads as Missing in the
-Grade Detail Tray, in SpeedGrader and on the student's own grades page. Canvas's editor is
-closed without committing anything of its own first, so there is never a second, plain grade
-write racing ours — that race is what used to leave a `0` behind with no Missing status. The
-response is then checked: if the status did not take, it is requested once more on its own, and
-if Canvas still refuses (a course late policy can override it) you are told, rather than being
-left with a silent zero.
-
-**Entering a score on a submission that was Missing** removes the Missing status and records
-**Late** in its place — the work came in, after it was due. That applies however the grade was
-typed, including through Canvas's own editor. Turn off *Grading a Missing submission marks it
-Late* in the options page to simply clear the status instead.
+These are writes to the Canvas record, not local decoration. `M` sends
+`late_policy_status=missing` (and removing it sends `none`), so the submission reads as Missing
+everywhere — the Grade Detail Tray, SpeedGrader and the student's own grades page — not only
+here. Canvas's editor is closed without committing anything of its own first, so there is never
+a second, plain grade write racing ours. The response is then checked: if the status did not
+take, it is requested once more on its own, and if Canvas still refuses (a course late policy
+can override it) you are told, rather than being left with a silent no-op.
 
 A plain `0` stays an ordinary zero — it never becomes Missing. On letter-graded and
 GPA-scale assignments a bare `A`–`F` is treated as the letter grade it is, and the shortcuts
@@ -99,15 +95,18 @@ are available as `MISSING`, `EX`, `LATE` instead.
 excused cells from its own in-page store, which a write to the Submissions API never reaches —
 so the cell used to keep whatever colour Canvas last rendered until the whole gradebook was
 reloaded. The extension now paints the status itself, from the record it holds, the instant a
-key is pressed: a tint plus a coloured bar down the leading edge of the cell. It also *removes*
-a status Canvas is still showing that the submission no longer has — the second `M` turning
-Missing into Late, `L` toggled off, a grade that resolved a Missing status.
+key is pressed. It also *removes* a status Canvas is still showing that the submission no
+longer has — `M` or `L` toggled off on a cell that already carried that status.
 
-Where Canvas has caught up and is already painting that same status, the extension's tint
-stands down and Canvas's own colour (including custom status colours set in Canvas) is what you
-see. Statuses the extension does not manage — dropped, extended, Canvas's resubmitted shading —
-are never touched, and a column whose submissions have not loaded yet is left completely alone
-rather than being declared status-free.
+Missing and Late are drawn as a plain, bold letter in a solid circle at the top-left of the cell —
+a red **M**, a yellow **L** — rather than a tint, so the two can never be mistaken for each other
+or missed at a glance; it shows whenever the submission is Missing or Late by our own record, full
+stop, whether or not Canvas's own colour has caught up with it yet. Excused still gets a tint plus
+a coloured bar down the leading edge, and that one *does* stand down once Canvas is already
+painting the same status (including a custom status colour set in Canvas), so a gradebook Canvas
+has caught up with looks exactly as it always did. Statuses the extension does not manage —
+dropped, extended, Canvas's resubmitted shading — are never touched, and a column whose
+submissions have not loaded yet is left completely alone rather than being declared status-free.
 
 ### Post grades from the column header
 
@@ -130,7 +129,17 @@ succeeded.) It does not overwrite the column on the strength of that: another in
 hide a column during the second or two a post takes, and then the read is simply right, so the
 grid keeps showing what Canvas last said and one more re-read a few seconds later settles which
 case it was. A job the extension stopped waiting for is reported as still running, which is what
-it is; only a refusal from Canvas is reported as a failure.
+it is — and rather than leaving it there, the extension keeps quietly re-checking that column in
+the background, on a growing backoff, until it catches up or about ninety seconds have passed.
+Posting never requires a reload to show its true result; only a refusal from Canvas is reported
+as a failure.
+
+Every one of those re-reads happens without disturbing the rest of the column while it runs: the
+status badge, comment bubbles and the hidden-grade bar on every cell in it keep showing exactly
+what they showed before Post was pressed, because the model never forgets it has already loaded
+that column just because it is re-reading it. (It also never asks Canvas for comments on any of
+these re-reads, since posting has no use for them - one fewer thing every column-wide read has to
+carry, on the one action this extension most wants to feel instant.)
 
 Three things it deliberately does not do:
 
@@ -182,8 +191,19 @@ works in it too.
 ### Student name + Total, frozen together
 
 The Total percentage is drawn beside the student name in Canvas's own frozen pane, so it stays
-visible no matter how far right you scroll. The values come from Canvas's enrollment scores —
-weighting, drop rules and grading schemes are Canvas's own arithmetic, never recomputed here.
+visible no matter how far right you scroll — it does not scroll away with the assignment
+columns, and Canvas's own Total column at the far right is hidden so there is never a second,
+possibly-different-looking Total competing with it. The values come from Canvas's enrollment
+scores — weighting, drop rules and grading schemes are Canvas's own arithmetic, never
+recomputed here.
+
+Both of those only happen once the frozen pane has actually been widened to make room: the
+widen is measured on every paint, not assumed, because Canvas's exact pane markup cannot be
+checked here against a live instance (see "Known limitations" below). If the
+measurement doesn't confirm the extra width is really there, nothing is drawn and Canvas's own
+Total column is left visible and untouched — you are never left looking at a gap where a Total
+used to be. A later paint that measures correctly brings the frozen Total right back with no
+reload needed either way.
 
 ### Submission indicator, one click from SpeedGrader
 
@@ -258,6 +278,13 @@ Press **Alt+Shift+H** to bring Canvas's controls back for the current page — t
 so gradebook settings, posting policies and column arrangement stay one keystroke away. Turn the
 whole behaviour off permanently in the options page.
 
+An **Arrange columns…** button sits right above the grid whenever the utility strip is hidden,
+so reordering assignments — by due date, name, points, module, or manual drag — never means
+hunting down Canvas's own hidden gear first. Clicking it brings the controls back the same way
+Alt+Shift+H does and opens Canvas's own gradebook-settings menu straight to its "Arrange columns
+by" option, which is Canvas's own sorting, not a reimplementation of it here: it moves the real
+columns in the real SlickGrid, so the order sticks exactly as if you'd opened the gear yourself.
+
 One smaller, unconditional cleanup applies regardless of that setting: Canvas's own "keyboard
 shortcuts" icon button is always hidden.
 
@@ -287,6 +314,10 @@ The course name in Canvas's breadcrumb grows a noticeably larger, pill-shaped **
 button. Click it for a filterable list of the courses you teach and jump straight to another
 gradebook. The list is cached for 30 minutes.
 
+This isn't limited to the gradebook page - the same button is on every page inside a course
+(Assignments, Modules, Discussions, a single student's Grades, wherever Canvas draws that
+course's breadcrumb), so switching courses never means going back to the gradebook first.
+
 ### SpeedGrader draft protection
 
 Unsent comment text in SpeedGrader is autosaved locally, keyed by host + course + assignment +
@@ -294,11 +325,16 @@ student, and restored if you come back to that submission with an empty box. The
 cleared only once Canvas confirms the comment posted; if Canvas fails, the text stays and you
 are told so.
 
-### Due dates in the header
+### Due dates in the header, and a link back to the assignment
 
 Each assignment header shows a small line under the points ("Due Sep 12, 11:59 PM"),
 read straight from Canvas's own assignment data. Turn it off in the options page if you'd
 rather keep the header to two lines.
+
+The assignment's title itself is a real link to that assignment's own page, so re-reading or
+editing it is a click away instead of a trip through Canvas's assignments list. It opens in a
+new tab — cmd-click, middle-click and "copy link address" all behave the way you'd expect —
+and clicking it never triggers the header's own sort/drag handling underneath.
 
 ### Comment snippets
 
@@ -310,8 +346,11 @@ Edit the snippet list in the options page (first line = trigger, following lines
 ## Settings
 
 Everything is in the options page — click the toolbar icon, or `chrome://extensions` →
-Canvas Gradebook+ → Details → Extension options. Every feature above can be switched off
-individually. Nothing is configurable from inside the gradebook, by design.
+Canvas Gradebook+ → Details → Extension options. It opens to a sidebar of tabs (Layout &
+Display, Cell Indicators, Grading Input, Comment Snippets, Course & Domains, Backup &
+Transfer, Diagnostics); Save and Restore defaults stay visible in the sidebar no matter which
+tab you're on. Every feature above can be switched off individually. Nothing is configurable
+from inside the gradebook, by design.
 
 ## Diagnostics
 
@@ -371,7 +410,8 @@ src/gradebook/
   comment-popover.js              in-place comment thread and reply
   course-switcher.js              breadcrumb course dropdown + shared teaching-course list
   student-search.js               cross-course student search (rosters in memory only)
-  content.js                      bootstrap, single rAF paint pass, observers
+  content.js                      bootstrap (full gradebook, or just the course switcher
+                                   elsewhere in the course), single rAF paint pass, observers
 
 src/speedgrader/content.js        comment draft autosave
 src/page/env-bridge.js            reads a few ENV ids from the page context
@@ -398,10 +438,9 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-90 assertions covering the parts where being wrong would be expensive: `M` → 0 + Missing and
-`M` again → Late with the score cleared (but a real grade left alone), `E` → Excused,
-`L` → Late and `L` again → not Late,
-a grade on a Missing submission → Late,
+101 assertions covering the parts where being wrong would be expensive: `M` → Missing and `M`
+again → not Missing, `L` → Late and `L` again → not Late, both leaving the grade untouched either
+way, `E` → Excused, a grade entered on a Missing (or Late) submission never changing that status,
 plain `0` is *not* Missing, letter-grade exceptions, clipboard
 matrix parsing (TSV / column / spaced / ragged / CRLF), clipboard-to-cell mapping and its
 refusals, instructor-comment authorship (including drafts, other teachers, numeric vs string
@@ -451,19 +490,26 @@ Two things that no longer happen, as of this fix:
   Canvas's documented markup and could not be exercised against a real gradebook here. That is
   exactly what the diagnostics panel is for: if something looks off, turn it on, reload the
   gradebook, and read the unmapped-cell and failed-request counts.
-- **Canvas's own Total column at the far right is left in place.** It is virtualized away
-  during horizontal scrolling, so it cannot be made sticky; the frozen Total is drawn beside
-  the student name instead. Hide the original with Canvas's own column menu if the duplicate
-  bothers you.
+- **Frozen Total depends on a pane-widen that is verified, not assumed.** Canvas's own Total
+  column at the far right is virtualized away during horizontal scrolling, so it cannot be made
+  sticky there; instead the frozen pane beside the student name is widened and a Total is drawn
+  into the space that opens up, and the native Total is hidden only once that widen is actually
+  confirmed to have taken hold (checked on every paint against Canvas's real, unverifiable-here
+  pane markup). If a future Canvas markup change ever breaks the widen, the frozen Total simply
+  stops drawing and Canvas's own native Total column is left visible in its place — you are
+  never left with neither.
 - **Row height is unchanged.** SlickGrid computes row positions in JavaScript from its own row
   height; overriding it in CSS misaligns every row. Vertical space is won by collapsing Canvas's
   chrome instead.
-- **Column resizing uses Canvas's own resize handles.** If a Canvas update changes those
-  handles, the extension detects the failed first drag and stands down completely rather than
-  half-resizing the grid. Everything else keeps working.
-- **Grading periods.** The frozen Total shows the score Canvas returns for the enrollment. If
-  you are filtered to a specific grading period, re-check it against Canvas's own Total column
-  before relying on it for reporting.
+- **Column resizing uses Canvas's own resize handles.** A column whose drag fails twice outright
+  is left at its original width and not retried again until Canvas re-renders that column fresh
+  (a sort, a filter, its own update); everything else - including columns that were not on
+  screen yet, or that mounted after an earlier attempt - keeps being checked on every pass, so
+  one column having trouble never leaves the rest of the grid un-narrowed.
+- **Grading periods.** The frozen Total is read with the same grading-period filter Canvas's own
+  Total column is currently using, learned from the page itself rather than assumed - so the two
+  agree, including when a grading period is the server's own default rather than something
+  spelled out in the URL.
 - **Anonymous or moderated assignments** are refused for API writes, since the identity mapping
   a write depends on is deliberately hidden there.
 - **Posting grades uses Canvas's GraphQL endpoint** (`postAssignmentGrades`), which is what

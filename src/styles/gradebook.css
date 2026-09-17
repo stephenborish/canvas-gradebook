@@ -128,22 +128,31 @@ html.cgp-on .cgp-cmt::after {
   border-radius: 6px;
 }
 /* Both right-hand markers in one cell: the submission badge at the top and the
- * comment bubble at the bottom. A grid row is only ~35px tall, so the generous
- * halos would otherwise meet in the middle and the upper one would swallow
- * clicks meant for the lower. Where they share a cell, each keeps a halo only
- * as big as the gap allows. */
-html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt::after,
-html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-sub::after { inset: -1px; }
-/* Same cell, same reason: a grid row is ~35px, and the submission badge plus a
- * full-size bubble would not both fit between its edges. The bubble gives up a
- * few pixels rather than crowding the badge - it is still far larger than the
- * dot it replaced. */
-html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt {
-  width: 17px;
-  height: 17px;
-  bottom: 0;
+ * comment bubble at the bottom. A grid row is only ~35px tall, so at full size
+ * the two would touch with no gap at all - and their generous hover/click
+ * halos would then overlap by a couple of pixels, so a click near the
+ * boundary could land on the wrong one. Where they share a cell, both shrink
+ * enough to leave a real gap between them, and neither one is allowed a halo
+ * that reaches past its own visual edge - see the hit-area rule below. */
+html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-sub {
+  top: 1px;
+  width: 13px;
+  height: 13px;
 }
-html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt svg { width: 15px; height: 15px; }
+html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-sub svg { width: 9px; height: 9px; }
+html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt {
+  width: 14px;
+  height: 14px;
+  bottom: 1px;
+}
+html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt svg { width: 12px; height: 12px; }
+html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt-count { right: 18px; }
+/* Neither marker's hit area may extend past its own edge here: a halo, sized
+ * for a single full-size icon sitting alone in the cell, is exactly what let
+ * the two overlap in the tightened layout above. Pointer accuracy takes a
+ * back seat to the two being unambiguously clickable on their own. */
+html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt::after,
+html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-sub::after { inset: 0; }
 /* While a cell is actually being typed into, pull the hit area back to the
  * painted dot so it cannot swallow a click meant to place the caret. */
 html.cgp-on .slick-cell:has(input:not([type="hidden"])) .cgp-cmt::after { inset: 0; }
@@ -384,47 +393,32 @@ html.cgp-on .slick-cell.cgp-override:has(input:not([type="hidden"])) > *:not(.cg
  * extension writes ever reaches - so after pressing M or L the designation
  * used to appear only after a full page reload. indicators.js now keeps a
  * cgp-status-* class on every grade cell whose submission we actually know
- * about, and these rules are what makes that visible.
- *
- * Two deliberate choices:
- *
- *  - The colour is a TINT (background-image, per the tinting note at the top
- *    of this file) plus a solid bar down the leading edge, never a flat
- *    background-color. Canvas's own colour - including the custom status
- *    colours a teacher can set in Canvas's own status settings - keeps
- *    painting underneath it.
- *  - It stands down completely on any cell Canvas is ALREADY painting for the
- *    same status (:not(.missing) and friends, checked both on the cell and on
- *    Canvas's own grade-cell node inside it). So a gradebook Canvas has caught
- *    up with looks exactly as it always did; what these rules paint is the
- *    window between writing a status and Canvas hearing about it, which for a
- *    cell the teacher never reloads is forever. */
+ * about; Excused still gets a TINT plus an edge bar from it (below), the same
+ * way all three used to. Missing and Late instead get the badge just below
+ * this block - a plain letter in a solid, unmistakable circle, not a pale
+ * wash easy to miss at a glance and easy to confuse with each other's similar
+ * tint. Either way, this stands down completely on any cell Canvas is
+ * ALREADY painting for the same status, checked both on the cell and on
+ * Canvas's own grade-cell node inside it - so a gradebook Canvas has caught up
+ * with looks exactly as it always did. */
 html.cgp-on {
-  --cgp-missing-tint: rgba(255, 116, 96, 0.20);
-  --cgp-missing-edge: #cf4a3f;
-  --cgp-late-tint: rgba(3, 116, 181, 0.14);
-  --cgp-late-edge: #0374b5;
   --cgp-excused-tint: rgba(214, 158, 15, 0.18);
   --cgp-excused-edge: #a8790c;
+  --cgp-missing-badge: #d1453b;
+  --cgp-missing-badge-ink: #ffffff;
+  --cgp-late-badge: #e0a300;
+  --cgp-late-badge-ink: #3a2600;
 }
 
-html.cgp-on .slick-cell.cgp-status-missing:not(.missing):not(:has(> .missing)) {
-  background-image: linear-gradient(var(--cgp-missing-tint), var(--cgp-missing-tint));
-}
-html.cgp-on .slick-cell.cgp-status-late:not(.late):not(:has(> .late)) {
-  background-image: linear-gradient(var(--cgp-late-tint), var(--cgp-late-tint));
-}
 html.cgp-on .slick-cell.cgp-status-excused:not(.excused):not(:has(> .excused)) {
   background-image: linear-gradient(var(--cgp-excused-tint), var(--cgp-excused-tint));
 }
 
 /* The bar reads at a glance down a whole column and, unlike the tint, it is
  * drawn whether or not Canvas has caught up - so one status always looks like
- * one status, never like two slightly different shades of pink. It sits on the
- * leading edge, below our markers and above Canvas's own cell content, and is
- * a pseudo-element so it costs no DOM and cannot intercept a click. */
-html.cgp-on .slick-cell.cgp-status-missing::before,
-html.cgp-on .slick-cell.cgp-status-late::before,
+ * one status, never like two slightly different shades of yellow. It sits on
+ * the leading edge, below our markers and above Canvas's own cell content, and
+ * is a pseudo-element so it costs no DOM and cannot intercept a click. */
 html.cgp-on .slick-cell.cgp-status-excused::before {
   content: "";
   position: absolute;
@@ -434,10 +428,45 @@ html.cgp-on .slick-cell.cgp-status-excused::before {
   width: 3px;
   z-index: 1;
   pointer-events: none;
+  background: var(--cgp-excused-edge);
 }
-html.cgp-on .slick-cell.cgp-status-missing::before { background: var(--cgp-missing-edge); }
-html.cgp-on .slick-cell.cgp-status-late::before { background: var(--cgp-late-edge); }
-html.cgp-on .slick-cell.cgp-status-excused::before { background: var(--cgp-excused-edge); }
+
+/* Missing / Late badge: a plain, bold letter in a solid circle at the leading
+ * (top-left) corner - the one corner nothing else this extension paints ever
+ * claims (the submission badge is top-right, the comment bubble bottom-right,
+ * the resubmission wedge bottom-left). One glyph, one colour, one meaning, and
+ * it sits ON TOP of whatever Canvas paints underneath (its own status colour,
+ * a custom status colour, the hidden-grade bar's thin sliver at the very left
+ * edge) rather than depending on knowing Canvas's exact markup for its own
+ * status icon there - a solid ring keeps it legible against literally any
+ * background colour Canvas or this extension paints behind it. */
+html.cgp-on .cgp-status-badge {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  font-family: inherit;
+  pointer-events: auto;
+  cursor: default;
+  z-index: 6;
+  box-shadow: 0 0 0 1.5px #fff, 0 1px 2px rgba(19, 33, 44, 0.35);
+}
+html.cgp-on .cgp-status-badge--missing {
+  background: var(--cgp-missing-badge);
+  color: var(--cgp-missing-badge-ink);
+}
+html.cgp-on .cgp-status-badge--late {
+  background: var(--cgp-late-badge);
+  color: var(--cgp-late-badge-ink);
+}
 
 /* ------------------------------------------------------- cell selection */
 
@@ -568,6 +597,15 @@ html.cgp-on .slick-cell:not(:has(.Grid__GradeCell)) *:has(> input):has(> button)
 
 /* ------------------------------------------------------- frozen Total column */
 
+/* These class names are SlickGrid's own generated ones for a frozen-column
+ * grid (not a guess at Canvas-specific markup), but this extension still
+ * cannot confirm against a live build that Canvas's gradebook wires them up
+ * the same way every time - so frozen-total.js verifies the widen actually
+ * took hold (comparing the frozen canvas's real rendered width against what
+ * was asked for) before relying on it for anything, on every paint, not just
+ * once. Nothing below this comment ever draws or hides anything on its own;
+ * see html.cgp-frozen-total-active further down for what is gated on that
+ * confirmation. */
 html.cgp-frozen-total .slick-pane-left { width: var(--cgp-frozen-w) !important; }
 html.cgp-frozen-total .slick-pane-left .slick-header,
 html.cgp-frozen-total .slick-header-left { width: var(--cgp-frozen-w) !important; }
@@ -628,11 +666,75 @@ html.cgp-frozen-total .cgp-total-cell.cgp-row-hover {
   background-image: linear-gradient(var(--cgp-row-hover), var(--cgp-row-hover));
 }
 
+/* Canvas's own native Total column - wherever it actually sits (some
+ * gradebooks show it right after student name, most at the far right past
+ * every assignment) - hidden ONLY once frozen-total.js has confirmed its own
+ * replacement is genuinely showing (html.cgp-frozen-total-active, added by
+ * paint()'s verifyWidened() check, never by start() alone). That ordering is
+ * the whole point: a course is never left with ZERO working Total columns
+ * because our own could not be confirmed - Canvas's own stays fully visible
+ * unless and until ours is proven to be standing in for it. data-cgp-col is
+ * set on both the header and every body cell of whichever column Canvas
+ * itself classifies as a Total (see dom-adapter.js), so this reaches it
+ * wherever it is without knowing its exact position.
+ *
+ * visibility, not display: the column's WIDTH is left exactly as Canvas
+ * sized it - collapsing it would mean fighting the same SlickGrid column-
+ * width internals the narrowing feature above goes to such lengths not to
+ * fight - so what remains is an intentionally blank column, not a second
+ * number that can disagree with this extension's own. */
+html.cgp-frozen-total-active [data-cgp-col="total"] {
+  visibility: hidden !important;
+}
+
 /* ------------------------------------------------------- compact layout */
 
 html.cgp-on .cgp-hidden,
 html.cgp-on .cgp-collapsed {
   display: none !important;
+}
+
+/* The "Arrange columns..." substitute for Canvas's own hidden gear (see
+ * layout.js's mountArrangeButton). Sits in normal document flow right above
+ * the grid - never measured against or aligned to anything Canvas renders,
+ * so there is nothing here that can jump on a later re-render the way an
+ * earlier, since-removed attempt at repositioning the gear itself used to. */
+html.cgp-on .cgp-toolbar {
+  display: flex;
+  align-items: center;
+  padding: 2px 2px 8px;
+}
+html.cgp-on .cgp-arrange-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--cgp-line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--cgp-ink);
+  font: 600 12px/1 inherit;
+  cursor: pointer;
+  transition: background 100ms ease, border-color 100ms ease, color 100ms ease;
+}
+html.cgp-on .cgp-arrange-btn:hover {
+  background: var(--cgp-brand-wash);
+  border-color: var(--cgp-brand);
+  color: var(--cgp-brand-dark);
+}
+html.cgp-on .cgp-arrange-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+html.cgp-on .cgp-arrange-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--cgp-focus-ring);
+  border-radius: 6px;
 }
 
 /* Canvas's own gradebook-settings gear, hidden with the rest of the utility
@@ -777,6 +879,12 @@ html.cgp-on .cgp-header-label {
   overflow: hidden !important;
   z-index: 2 !important;
 }
+/* A real link to the assignment itself (to re-read or edit it), opened in a
+ * new tab so the teacher's place in the gradebook is never lost. The rest of
+ * .cgp-header-label is pointer-events:none (see above); this is the one thing
+ * inside it that takes clicks back, exactly the way the submission badge and
+ * comment bubble already carve out their own clickable area from a
+ * pointer-events:none ancestor. */
 html.cgp-on .cgp-header-title {
   width: 100%;
   display: -webkit-box;
@@ -790,6 +898,19 @@ html.cgp-on .cgp-header-title {
   line-height: 1.18;
   font-weight: 600;
   color: var(--cgp-ink-strong, #1a232b);
+  text-decoration: none;
+  pointer-events: auto !important;
+  cursor: pointer;
+}
+html.cgp-on .cgp-header-title:hover,
+html.cgp-on .cgp-header-title:focus-visible {
+  color: var(--cgp-brand-dark, var(--cgp-brand));
+  text-decoration: underline;
+}
+html.cgp-on .cgp-header-title:focus-visible {
+  outline: none;
+  box-shadow: var(--cgp-focus-ring);
+  border-radius: 3px;
 }
 html.cgp-on .cgp-header-points {
   width: 100%;
