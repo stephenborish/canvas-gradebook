@@ -50,9 +50,18 @@
       var messages = [];
       if (result.failed) {
         var first = result.errors[0] || {};
-        messages.push(result.failed + (result.failed === 1 ? ' grade' : ' grades') +
-          ' could not be saved' + (first.status ? ' (Canvas ' + first.status + ')' : '') +
-          '. Those cells were left unchanged.');
+        if (CGP.util.isSessionExpiredError(first)) {
+          // The one failure reason worth calling out on its own: every other
+          // status differs cell to cell in ways a teacher can't act on
+          // uniformly, but a session timing out mid-grading explains ALL of
+          // them at once and has one fix.
+          messages.push(result.failed + (result.failed === 1 ? ' grade' : ' grades') +
+            ' could not be saved: ' + CGP.util.describeApiError(first) + ' Those cells were left unchanged.');
+        } else {
+          messages.push(result.failed + (result.failed === 1 ? ' grade' : ' grades') +
+            ' could not be saved' + (first.status ? ' (Canvas ' + first.status + ')' : '') +
+            '. Those cells were left unchanged.');
+        }
       }
       if (result.skipped) {
         messages.push(result.skipped + (result.skipped === 1 ? ' cell was' : ' cells were') +

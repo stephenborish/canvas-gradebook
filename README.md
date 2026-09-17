@@ -95,15 +95,18 @@ are available as `MISSING`, `EX`, `LATE` instead.
 excused cells from its own in-page store, which a write to the Submissions API never reaches —
 so the cell used to keep whatever colour Canvas last rendered until the whole gradebook was
 reloaded. The extension now paints the status itself, from the record it holds, the instant a
-key is pressed: a tint plus a coloured bar down the leading edge of the cell. It also *removes*
-a status Canvas is still showing that the submission no longer has — `M` or `L` toggled off on a
-cell that already carried that status.
+key is pressed. It also *removes* a status Canvas is still showing that the submission no
+longer has — `M` or `L` toggled off on a cell that already carried that status.
 
-Where Canvas has caught up and is already painting that same status, the extension's tint
-stands down and Canvas's own colour (including custom status colours set in Canvas) is what you
-see. Statuses the extension does not manage — dropped, extended, Canvas's resubmitted shading —
-are never touched, and a column whose submissions have not loaded yet is left completely alone
-rather than being declared status-free.
+Missing and Late are drawn as a plain, bold letter in a solid circle at the top-left of the cell —
+a red **M**, a yellow **L** — rather than a tint, so the two can never be mistaken for each other
+or missed at a glance; it shows whenever the submission is Missing or Late by our own record, full
+stop, whether or not Canvas's own colour has caught up with it yet. Excused still gets a tint plus
+a coloured bar down the leading edge, and that one *does* stand down once Canvas is already
+painting the same status (including a custom status colour set in Canvas), so a gradebook Canvas
+has caught up with looks exactly as it always did. Statuses the extension does not manage —
+dropped, extended, Canvas's resubmitted shading — are never touched, and a column whose
+submissions have not loaded yet is left completely alone rather than being declared status-free.
 
 ### Post grades from the column header
 
@@ -126,10 +129,13 @@ succeeded.) It does not overwrite the column on the strength of that: another in
 hide a column during the second or two a post takes, and then the read is simply right, so the
 grid keeps showing what Canvas last said and one more re-read a few seconds later settles which
 case it was. A job the extension stopped waiting for is reported as still running, which is what
-it is; only a refusal from Canvas is reported as a failure.
+it is — and rather than leaving it there, the extension keeps quietly re-checking that column in
+the background, on a growing backoff, until it catches up or about ninety seconds have passed.
+Posting never requires a reload to show its true result; only a refusal from Canvas is reported
+as a failure.
 
 Every one of those re-reads happens without disturbing the rest of the column while it runs: the
-status tint, comment bubbles and the hidden-grade bar on every cell in it keep showing exactly
+status badge, comment bubbles and the hidden-grade bar on every cell in it keep showing exactly
 what they showed before Post was pressed, because the model never forgets it has already loaded
 that column just because it is re-reading it. (It also never asks Canvas for comments on any of
 these re-reads, since posting has no use for them - one fewer thing every column-wide read has to

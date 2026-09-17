@@ -166,6 +166,8 @@
       !cell.querySelector(':scope > .cgp-marks > .cgp-sub')) return false;
     if (cell.classList.contains('cgp-has-unposted') &&
       !cell.querySelector(':scope > .cgp-marks > .cgp-unposted')) return false;
+    if (cell.classList.contains('cgp-has-status-badge') &&
+      !cell.querySelector(':scope > .cgp-marks > .cgp-status-badge')) return false;
     if (cell.classList.contains('cgp-override') &&
       !cell.querySelector(':scope > .cgp-val')) return false;
     return true;
@@ -183,19 +185,20 @@
    * Two halves, and both are needed:
    *
    *  1. Canvas's own status class is REMOVED when it contradicts what we know
-   *     (the second M turning Missing into Late, L toggled off, a grade that
-   *     resolved a Missing status). Left alone, Canvas's stale pink or blue
-   *     would keep insisting on a status the submission no longer has. The
-   *     class is cleared off the cell and off Canvas's own grade-cell node,
-   *     because different Canvas builds put it in different places.
+   *     (M or L toggled off, a newly-applied status). Left alone, Canvas's
+   *     stale pink or blue would keep insisting on a status the submission no
+   *     longer has. The class is cleared off the cell and off Canvas's own
+   *     grade-cell node, because different Canvas builds put it in different
+   *     places.
    *
-   *  2. Our own cgp-status-* class is added, and the stylesheet paints it as
-   *     a TINT plus an edge bar - never a flat background-color, so Canvas's
-   *     own colour (including a teacher's customised status colours) still
-   *     shows through where Canvas has caught up. The CSS stands the tint
-   *     down entirely on any cell Canvas is already painting for that same
-   *     status, so the grid looks exactly as it always did except where
-   *     Canvas is out of date.
+   *  2. Our own cgp-status-* class is added. Excused still gets a tint plus an
+   *     edge bar from it - never a flat background-color, so Canvas's own
+   *     colour still shows through where Canvas has caught up. Missing and
+   *     Late get something more legible than a tint: paintCell (below) turns
+   *     this same class into a plain, unambiguous M/L badge in a coloured
+   *     circle, because a pale wash behind a grade is easy to miss at a glance
+   *     and easy to confuse with Late's own similar wash - the whole point of
+   *     "extremely clear and easy to read".
    *
    * Statuses this extension does not manage (Canvas's dropped, extended and
    * resubmitted shading) are never touched, and a cell whose column has not
@@ -203,7 +206,9 @@
    *
    * This runs on every paint pass, ahead of the paint-signature shortcut:
    * Canvas re-rendering a cell can put its stale class back without changing
-   * anything the signature is derived from. */
+   * anything the signature is derived from. Returns the status it settled on
+   * (one of PAINTED_STATUSES, or 'none', or null for "unknown"), so paintCell
+   * can decide what to draw without recomputing it a second time. */
   var PAINTED = CGP.gradeOps.PAINTED_STATUSES;
 
   P.syncStatus = function (cell, rec) {
@@ -215,7 +220,7 @@
       if (cell.className.indexOf('cgp-status-') >= 0) {
         PAINTED.forEach(function (name) { cell.classList.remove('cgp-status-' + name); });
       }
-      return;
+      return status;
     }
     var canvasNodes = [cell];
     var own = cell.querySelector(':scope > .Grid__GradeCell, :scope > .gradebook-cell');
@@ -232,6 +237,7 @@
         }
       });
     });
+    return status;
   };
 
   P.paintCell = function (info) {
@@ -270,13 +276,26 @@
     // a visible flash on every single click of Post, well before anything had
     // actually posted.
     var known = this.model.everLoadedAssignments.has(String(info.assignmentId)) || !!(rec && rec.pending);
-    this.syncStatus(cell, known ? rec : null);
+    var status = this.syncStatus(cell, known ? rec : null);
     var sig = this.signatureFor(info, rec);
     if (!this.registry.needsPaint(cell, sig) && this.marksIntact(cell)) return;
     this.registry.markPainted(cell, sig);
 
     var host = this.marksHost(cell);
     var parts = [];
+
+    // Missing / Late: a plain letter in a coloured circle, not a pale wash
+    // behind the grade - the two used to be the same kind of tint and easy to
+    // mix up at a glance, and a wash sitting directly behind the grade text
+    // works against reading the number quickly. One glyph, one colour, one
+    // meaning: a red M means Missing, a yellow L means Late, full stop.
+    var showMissingBadge = status === 'missing';
+    var showLateBadge = status === 'late';
+    if (showMissingBadge) {
+      parts.push('<span class="cgp-status-badge cgp-status-badge--missing" title="Missing">M</span>');
+    } else if (showLateBadge) {
+      parts.push('<span class="cgp-status-badge cgp-status-badge--late" title="Late">L</span>');
+    }
 
     var comments = (rec && rec.comments) || null;
     var showComment = s.commentIndicator && comments && comments.hasInstructorComment;
@@ -317,6 +336,7 @@
     cell.classList.toggle('cgp-has-resub', !!showResub);
     cell.classList.toggle('cgp-has-sub', !!showSub);
     cell.classList.toggle('cgp-has-unposted', !!showHidden);
+    cell.classList.toggle('cgp-has-status-badge', showMissingBadge || showLateBadge);
     cell.classList.toggle('cgp-pending-write', !!(rec && rec.pending));
 
     // Value overlay: only used when we wrote through the API and Canvas's own

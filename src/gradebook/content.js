@@ -252,8 +252,7 @@
       // Slower safety tick: catches any rerender an observer missed. Cheap,
       // because unchanged cells are skipped by their paint signature. Also
       // retries the name-based column fallback while anything is unresolved.
-      setInterval(function () {
-        if (document.hidden) return;
+      function safetyTick() {
         bindScroll();
         if (model.ready && adapter._lastUnresolvedColumns) {
           adapter.reconcileColumnsWithModel(model);
@@ -276,7 +275,25 @@
         // of spec - one measurement pass, no drags - so this costs nothing in
         // the steady state.
         layout.resizeColumns().then(function () { frozen.measure(); paint(); });
+      }
+
+      // Slower safety tick: catches any rerender an observer missed.
+      setInterval(function () {
+        if (document.hidden) return;
+        safetyTick();
       }, 1500);
+
+      // A backgrounded tab pauses the tick above entirely (there is nothing
+      // to gain from resizing columns or reconciling column names nobody is
+      // looking at), so a teacher switching back to this tab after a while
+      // could otherwise be looking at a grid up to 1500ms stale before the
+      // next tick happens to land. Running the same work the instant the tab
+      // becomes visible again removes that wait - the whole point of never
+      // needing to notice anything is stale in the first place.
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden) return;
+        safetyTick();
+      });
 
       // Canvas's own column widths, then re-measure the frozen pane.
       setTimeout(function () {
@@ -349,7 +366,8 @@
         });
       }, function (err) {
         CGP.diag.error('boot.modelFailed', { status: err && err.status, message: String(err && err.message) });
-        CGP.ui.error('Gradebook+ could not read this course from Canvas. Canvas itself is unaffected.');
+        CGP.ui.error(CGP.util.describeApiError(err, { fallback: 'Gradebook+ could not read this course from Canvas' }) +
+          ' Canvas itself is unaffected.');
       });
     }).then(function () {
       CGP.settings.onChange(function () {

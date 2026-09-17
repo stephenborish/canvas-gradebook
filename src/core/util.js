@@ -158,6 +158,41 @@
     } catch (e) { return 'Due ' + d.toISOString().slice(0, 16).replace('T', ' '); }
   };
 
+  /* A Canvas session timing out mid-page is a real, recurring edge case - a
+   * teacher grading for a while, or coming back to a tab left open overnight
+   * - and every write or read after that happened to fail with whatever
+   * generic "(Canvas 401)" message that call site already had, which reads
+   * as "something is broken here" rather than "log back in and this all
+   * works again". One helper, used at the handful of places a failure is
+   * actually shown to the teacher, so that specific, fixable case always
+   * gets a specific, actionable message instead of guessing why Canvas said
+   * no this time.
+   * opts.fallback - the generic lead-in for a plain failure ("Couldn't save
+   * this grade"); opts.action - what going wrong stopped ("saved", "posted"),
+   * folded into the specific messages below where it reads naturally. */
+  util.describeApiError = function (err, opts) {
+    opts = opts || {};
+    if (err && err.status === 401) {
+      return 'Your Canvas session has expired. Reload the page and log back in, then try again.';
+    }
+    if (err && err.network === true) {
+      return 'Canvas could not be reached (a network problem). Check your connection and try again.';
+    }
+    if (err && err.status === 429) {
+      return 'Canvas asked us to slow down (rate limited). Wait a moment and try again.';
+    }
+    var base = opts.fallback || 'Canvas rejected this request';
+    if (err && err.status) return base + ' (Canvas ' + err.status + ').';
+    if (err && err.message) return base + ': ' + err.message + '.';
+    return base + '.';
+  };
+
+  /** True for the one error shape every other check above already handles by
+   * name - kept separate so a call site that only needs the yes/no (to skip
+   * a retry, say, rather than to build a message) does not have to repeat the
+   * status check inline. */
+  util.isSessionExpiredError = function (err) { return !!(err && err.status === 401); };
+
   /* ---------------------------------------------------------------- settings */
 
   // See the snippets branch of sanitizeSettings below for why these are

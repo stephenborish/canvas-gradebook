@@ -235,3 +235,30 @@ suite('settings sanitizing', (test) => {
     a.eq(s.snippets[0].text.length <= 280, true, 'snippet text length is capped');
   });
 });
+
+suite('describing a failed Canvas request', (test) => {
+  test('a 401 is always a session expiry, worded so the teacher knows to log back in', () => {
+    a.eq(CGP.util.isSessionExpiredError({ status: 401 }), true);
+    a.ok(/log back in/i.test(CGP.util.describeApiError({ status: 401 })));
+  });
+
+  test('other statuses are not mistaken for a session expiry', () => {
+    [403, 429, 500, undefined].forEach((status) => {
+      a.eq(CGP.util.isSessionExpiredError({ status }), false, 'status ' + status);
+    });
+    a.eq(CGP.util.isSessionExpiredError(null), false);
+  });
+
+  test('a network failure and a rate limit each get their own specific wording', () => {
+    a.ok(/network/i.test(CGP.util.describeApiError({ network: true })));
+    a.ok(/slow down|rate limit/i.test(CGP.util.describeApiError({ status: 429 })));
+  });
+
+  test('anything else falls back to the caller’s own message, with the status folded in', () => {
+    const msg = CGP.util.describeApiError({ status: 422 }, { fallback: 'Could not save this' });
+    a.eq(msg, 'Could not save this (Canvas 422).');
+    const noStatus = CGP.util.describeApiError({ message: 'boom' }, { fallback: 'Could not save this' });
+    a.eq(noStatus, 'Could not save this: boom.');
+    a.eq(CGP.util.describeApiError(null), 'Canvas rejected this request.');
+  });
+});

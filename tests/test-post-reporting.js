@@ -58,12 +58,13 @@ function fakeModel(reads) {
   };
 }
 
-function controller(model, api) {
+function controller(model, api, recheckBaseDelayMs) {
   return new CGP.PostGradesController({
     model, api,
     adapter: { colIndexToColumn: new Map() },
     settings: { values: { postGradesButton: true } },
-    requestPaint: () => {}
+    requestPaint: () => {},
+    recheckBaseDelayMs
   });
 }
 
@@ -148,6 +149,21 @@ suite('what the teacher is told after posting a column', (test) => {
     };
     await controller(model, api).post('99', null);
     a.eq(last().level, 'error');
+  });
+
+  test('a job we stopped waiting for keeps checking in the background until it catches up - no refresh needed', async () => {
+    said.length = 0;
+    // 3 reads for settleAfterPost's own attempts (all still hidden, so the
+    // job reads as "still running"), then recheckLater's own background
+    // attempts: still hidden once more, then finally caught up.
+    const model = fakeModel([[true, true], [true, true], [true, true], [true, true], [false, false]]);
+    await controller(model, okApi(false), 2 /* tiny base delay: this test does not wait minutes */).post('99', null);
+    a.ok(/still posting/i.test(last().text), 'got: ' + last().text);
+    a.ok(!/refresh/i.test(last().text), 'must not ask the teacher to refresh - the grid corrects itself');
+    a.eq(model.pendingPosts('99').length, 2, 'not caught up yet - the background recheck has not run');
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    a.eq(model.pendingPosts('99').length, 0, 'the background recheck(s) caught the column up with no user action');
   });
 
   test('every re-read a post triggers skips fetching comments it will never use', async () => {
