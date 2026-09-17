@@ -283,14 +283,6 @@
         // open. The settings gear is covered by the utility-strip re-hide
         // below, plus a CSS rule that needs no JS at all.
         layout.hideKeyboardShortcutsButton();
-        // Same idea as the keyboard-shortcuts button above: on a gradebook
-        // slow enough that Canvas had not yet mounted the grid when
-        // layout.start() ran, gridRoot() was null and mountArrangeButton()
-        // returned without mounting, with nothing re-trying it afterwards.
-        // The setting-off case and the already-mounted case are both cheap,
-        // idempotent no-ops (see mountArrangeButton), so calling it on every
-        // tick costs nothing once the button is up.
-        layout.mountArrangeButton();
         // Re-checked on every tick, not just once at boot: a column that was
         // not yet rendered (or whose first resize attempt failed because
         // Canvas had not finished mounting it) is picked up here instead of

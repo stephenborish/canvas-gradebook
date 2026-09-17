@@ -275,15 +275,9 @@ recurring after the page otherwise looked settled. Hiding it removes the measuri
 and the jump.
 
 Press **Alt+Shift+H** to bring Canvas's controls back for the current page — the gear included,
-so gradebook settings, posting policies and column arrangement stay one keystroke away. Turn the
+so gradebook settings, posting policies and column arrangement (by due date, name, points, module,
+or manual drag, under the gear's own "Arrange columns by" option) stay one keystroke away. Turn the
 whole behaviour off permanently in the options page.
-
-An **Arrange columns…** button sits right above the grid whenever the utility strip is hidden,
-so reordering assignments — by due date, name, points, module, or manual drag — never means
-hunting down Canvas's own hidden gear first. Clicking it brings the controls back the same way
-Alt+Shift+H does and opens Canvas's own gradebook-settings menu straight to its "Arrange columns
-by" option, which is Canvas's own sorting, not a reimplementation of it here: it moves the real
-columns in the real SlickGrid, so the order sticks exactly as if you'd opened the gear yourself.
 
 One smaller, unconditional cleanup applies regardless of that setting: Canvas's own "keyboard
 shortcuts" icon button is always hidden.

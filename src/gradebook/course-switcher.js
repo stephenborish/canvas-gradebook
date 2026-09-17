@@ -91,12 +91,38 @@
     this.menu.classList.add('cgp-course-menu--on');
     if (this.toggle) this.toggle.setAttribute('aria-expanded', 'true');
     this.position();
+    this.filter = '';
+    // Reset to 0 (nothing meaningful to land on yet) before the list is even
+    // loaded, so the very first paint - while courses is still null and
+    // paintList() only shows "Loading courses..." - has nothing stale to
+    // show. Once the real list arrives, activeIndex is recomputed against IT
+    // (see currentCourseIndex): leaving it at 0 unconditionally used to mean
+    // whichever course sorts first alphabetically got the exact same
+    // highlighted background as "is-current" (see the CSS), regardless of
+    // which course a teacher was actually on - a plain a-to-z first course
+    // has no other reason to be highlighted.
+    this.activeIndex = 0;
     this.loadCourses().then(function (courses) {
       self.courses = courses;
+      self.activeIndex = self.currentCourseIndex();
       self.paintList();
     });
     var input = this.menu.querySelector('.cgp-course-menu__filter');
-    if (input) { input.value = ''; this.filter = ''; setTimeout(function () { input.focus(); }, 0); }
+    if (input) { input.value = ''; setTimeout(function () { input.focus(); }, 0); }
+  };
+
+  /* Index, within the currently visible (filtered) course list, of the
+   * course the teacher is actually on right now - what the keyboard-nav
+   * highlight should default to when the menu opens, instead of always
+   * landing on index 0. Falls back to 0 only when the current course is not
+   * in the visible list at all (very unlikely on open, since the filter is
+   * always empty then). */
+  P.currentCourseIndex = function () {
+    var items = this.visibleCourses();
+    for (var i = 0; i < items.length; i++) {
+      if (String(items[i].id) === this.courseId) return i;
+    }
+    return 0;
   };
 
   P.close = function () {
