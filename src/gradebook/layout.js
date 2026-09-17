@@ -133,7 +133,6 @@
     if (s.hideCanvasUtilityControls) this.hideControls();
     this.hideKeyboardShortcutsButton();
     this.settleQuickly();
-    this.mountArrangeButton();
     this.applyGeometry();
     this.bindShortcut();
     if (!this._resizeBound) {
@@ -145,80 +144,21 @@
   /* Canvas's own "Arrange columns by" - due date, name, points, module, or a
    * manual drag order - lives inside the gear/Settings modal's View Options
    * tab, reached through the exact gear hideCanvasUtilityControls hides to
-   * keep the gradebook clean. Hiding it must never also hide the only way to
-   * sort assignments, so a small button of this extension's own takes the
-   * space that hiding freed up: it sits in NORMAL DOCUMENT FLOW right above
-   * the grid, not measured against or aligned to anything Canvas renders, so
-   * there is nothing here to jump the way an earlier, since-removed attempt
-   * at repositioning the gear itself used to (see the layout notes further
-   * up). Only mounted while hideCanvasUtilityControls is actually on - with
-   * it off, Canvas's own gear is already sitting right there and a second way
-   * to reach it would just be clutter - so this is re-evaluated every time
-   * start() runs again on a settings change, same as everything else here. */
-  var ARRANGE_OPTIONS = [
-    { value: '', label: 'Arrange columns…' },
-    { value: 'due_date', label: 'By due date' },
-    { value: 'name', label: 'By name' },
-    { value: 'points', label: 'By points' },
-    { value: 'module', label: 'By module' }
-  ];
+   * keep the gradebook clean. This used to be replaced with a substitute
+   * control of this extension's own, mounted in normal document flow right
+   * above the grid - but that put a second "arrange" control directly over
+   * the gradebook a teacher had not asked for. A teacher who wants to arrange
+   * columns while the utility strip is hidden now reaches it the same way as
+   * any other hidden Canvas control: Alt+Shift+H brings the whole strip
+   * (gear included) back for the rest of the page visit, and the teacher
+   * picks Arrange By from Canvas's own View Options tab directly. */
 
-  /* A real control in this extension's own toolbar, not just a button that
-   * detours through Canvas's settings tray: picking an option here drives
-   * Canvas's own View Options -> Arrange By select and clicks Apply for the
-   * teacher, so the choice takes effect without Canvas's modal ever being
-   * seen. Canvas's own control still does the actual sorting - nothing here
-   * reorders columns itself - this only automates reaching it. */
-  P.mountArrangeButton = function () {
-    if (!this.settings.values.hideCanvasUtilityControls) {
-      if (this._arrangeBar) { this._arrangeBar.remove(); this._arrangeBar = null; }
-      return;
-    }
-    if (this._arrangeBar && this._arrangeBar.isConnected) return;
-    var grid = this.adapter.gridRoot();
-    if (!grid || !grid.parentElement) return;
-
-    var bar = document.createElement('div');
-    bar.className = 'cgp-toolbar';
-
-    var select = document.createElement('select');
-    select.className = 'cgp-arrange-select';
-    select.title = 'Arrange assignment columns – uses Canvas’s own arrangement, applied automatically';
-    ARRANGE_OPTIONS.forEach(function (opt) {
-      var o = document.createElement('option');
-      o.value = opt.value;
-      o.textContent = opt.label;
-      select.appendChild(o);
-    });
-    var self = this;
-    select.addEventListener('change', function () {
-      var value = select.value;
-      select.value = '';
-      if (!value) return;
-      self.arrangeColumnsBy(value);
-    });
-    bar.appendChild(select);
-
-    var manualBtn = document.createElement('button');
-    manualBtn.type = 'button';
-    manualBtn.className = 'cgp-arrange-btn';
-    manualBtn.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.8 4.2h10.4M2.8 8h7.4M2.8 11.8h4.4"/>' +
-      '<path d="M12.4 6.4v6.4M10 10.4l2.4 2.4 2.4-2.4"/></svg><span>More options…</span>';
-    manualBtn.title = 'Open Canvas’s own gradebook settings, on the View Options tab';
-    manualBtn.addEventListener('click', function () { self.openArrangeMenu(); });
-    bar.appendChild(manualBtn);
-
-    grid.parentElement.insertBefore(bar, grid);
-    this._arrangeBar = bar;
-  };
-
-  /* Bring Canvas's own controls back (exactly what Alt+Shift+H already does)
-   * and open its gear/Settings modal directly, landing on View Options ->
-   * Arrange By in one click instead of the teacher needing to know that
-   * shortcut, or that button, exists at all. Canvas's own modal actually
-   * moves the columns - nothing here reimplements that by moving DOM nodes
-   * around in a virtualized grid, which is exactly the kind of thing that
-   * would corrupt SlickGrid's own row/column bookkeeping.
+  /* Open Canvas's own gear/Settings modal and land on its View Options tab -
+   * used internally by syncViewOptions() below to push a teacher's saved
+   * preferences into Canvas without them ever seeing the modal. Canvas's own
+   * modal actually moves the columns - nothing here reimplements that by
+   * moving DOM nodes around in a virtualized grid, which is exactly the kind
+   * of thing that would corrupt SlickGrid's own row/column bookkeeping.
    *
    * Clicking the gear alone only opens the modal on whichever tab it last
    * had active (Late Policies, on a first open) - it never selects View
@@ -255,7 +195,7 @@
   /* Polls briefly for the settings modal to actually mount (it appears
    * asynchronously after the gear click) and then for the View Options tab
    * inside it, clicking it the moment it is found. Resolves true/false so
-   * callers (openArrangeMenu, arrangeColumnsBy, syncViewOptions) can chain
+   * callers (openArrangeMenu, syncViewOptions) can chain
    * further automation once the right tab is showing. */
   P.selectViewOptionsTab = function () {
     var self = this;
@@ -281,20 +221,9 @@
     });
   };
 
-  /* Find the "Arrange By" control inside the (already open) View Options tab
-   * and Canvas's own Apply/Done button for that tray - scanned by label text,
-   * not a fixed id, for the same reason as everything else in this file. */
-  P.findArrangeBySelect = function () {
-    var selects = document.querySelectorAll('select');
-    for (var i = 0; i < selects.length; i++) {
-      var label = (selects[i].getAttribute('aria-label') || selects[i].getAttribute('name') || '').toLowerCase();
-      var labelledEl = selects[i].labels && selects[i].labels[0];
-      var text = (label + ' ' + (labelledEl ? labelledEl.textContent || '' : '')).toLowerCase();
-      if (text.indexOf('arrange') >= 0) return selects[i];
-    }
-    return null;
-  };
-
+  /* Canvas's own Apply/Done button for the View Options tray - scanned by
+   * label text, not a fixed id, for the same reason as everything else in
+   * this file. */
   P.findTrayApplyButton = function () {
     var buttons = document.querySelectorAll('button, [role="button"]');
     for (var i = 0; i < buttons.length; i++) {
@@ -305,10 +234,8 @@
   };
 
   /* openArrangeMenu() reveals Canvas's utility strip (it has to - the gear
-   * lives in it) unconditionally, which is correct when a teacher clicked
-   * "More options…" themselves and wants to see the tray, but wrong for the
-   * fully automated flows below (arrangeColumnsBy, syncViewOptions): those
-   * run with nothing for the teacher to look at, so leaving the whole
+   * lives in it) unconditionally, which is fine for syncViewOptions below:
+   * that flow runs with nothing for the teacher to look at, so leaving the whole
    * utility strip permanently un-hidden afterward - which openArrangeMenu()
    * used to do, with nothing anywhere restoring it - was a bug of its own,
    * not a side effect anyone wanted. Called once the automation is actually
@@ -319,35 +246,6 @@
       this.hideControls();
       this.applyGeometry();
     }
-  };
-
-  /* Toolbar dropdown handler: opens Canvas's settings straight to the
-   * Arrange By select, picks the requested arrangement, and applies it - the
-   * teacher never needs to see the modal at all in the common case. Falls
-   * back to leaving the tray open (with an error toast) the moment any step
-   * cannot be found, rather than silently doing nothing - in that one case
-   * the utility strip is deliberately left revealed, matching the message,
-   * rather than re-hidden out from under the teacher. */
-  P.arrangeColumnsBy = function (value) {
-    var self = this;
-    var wasHidden = this.controlsHidden;
-    return this.openArrangeMenu().then(function (onTab) {
-      if (!onTab) { self.reapplyHiddenState(wasHidden); return false; }
-      var select = self.findArrangeBySelect();
-      if (!select) {
-        CGP.diag.warn('layout.arrangeMenu.selectNotFound');
-        CGP.ui.error('Couldn’t find Canvas’s “Arrange By” control on the View Options tab. ' +
-          'It’s still open if you’d like to pick one by hand.');
-        return false;
-      }
-      select.value = value;
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      var apply = self.findTrayApplyButton();
-      if (apply) apply.click();
-      CGP.diag.bump('layout.arrangeApplied', { value: value });
-      self.reapplyHiddenState(wasHidden);
-      return true;
-    });
   };
 
   /* Canvas's own "View Options" checkboxes, mirrored in this extension's
@@ -407,10 +305,10 @@
         var closeBtn = document.querySelector('[aria-label="Close" i], button[aria-label*="close" i]');
         if (closeBtn) closeBtn.click();
       }
-      // This flow is fully automated end to end (unlike arrangeColumnsBy's
-      // "control not found" branch, which deliberately leaves the tray open
-      // with a message inviting the teacher to finish by hand) - every path
-      // through it either applied a change or determined none was needed, so
+      // This flow is fully automated end to end (unlike the "control not
+      // found" branch above, which deliberately leaves the tray open with a
+      // message inviting the teacher to finish by hand) - every path through
+      // it either applied a change or determined none was needed, so
       // restoring the prior hidden state is always correct here.
       self.reapplyHiddenState(wasHidden);
       CGP.diag.set('layout.viewOptionsSynced', { changed: changed, missing: missing });
@@ -944,13 +842,20 @@
     for (var i = 0; i < rows.length; i++) {
       var isTest = want && self.adapter.isTestStudentRow(rows[i]);
       rows[i].classList.toggle('cgp-hidden-row', isTest);
-      if (isTest) tops[rows[i].style.top] = true;
+      // Keyed on the adapter's own normalized rowTop() (parsed and rounded),
+      // not the raw style.top STRING - a horizontal scroll can leave the
+      // scrolling pane's rows a sub-pixel off from the frozen pane's ("245px"
+      // vs "244.98px"), which a plain string match never matches, so the
+      // Test Student's grade cells silently lost their cgp-hidden-row class
+      // (and became typeable again) the moment that happened even though the
+      // frozen pane's own name cell stayed correctly hidden.
+      if (isTest) tops[self.adapter.rowTop(rows[i])] = true;
     }
     var others = document.querySelectorAll('.grid-canvas > .slick-row, .cgp-total-cell');
     for (var j = 0; j < others.length; j++) {
       var el = others[j];
       if (el.parentElement === frozen) continue; // handled above
-      el.classList.toggle('cgp-hidden-row', !!tops[el.style.top]);
+      el.classList.toggle('cgp-hidden-row', !!tops[self.adapter.rowTop(el)]);
     }
   };
 

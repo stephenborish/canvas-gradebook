@@ -627,6 +627,20 @@ html.cgp-frozen-total .slick-pane-right {
   width: calc(100% - var(--cgp-frozen-w)) !important;
 }
 
+/* .cgp-total-layer (frozen-total.js) is appended into the frozen pane's own
+ * .grid-canvas and absolutely positioned against it, on the same assumption
+ * as .cgp-total-header below - true for every real SlickGrid build, but not
+ * guaranteed if Canvas's own CSS has not finished loading yet. Without this
+ * assertion, an unpositioned .grid-canvas lets the layer fall back to
+ * position:absolute's next positioned ancestor further up the DOM - which,
+ * unlike the frozen pane itself, can be a container that scrolls
+ * horizontally with the assignment columns. That is what reads as "the
+ * Total column moves with the scroll and disappears": the layer is still
+ * exactly where its CSS places it, just against the wrong ancestor. */
+html.cgp-frozen-total .grid-canvas {
+  position: relative;
+}
+
 html.cgp-frozen-total .cgp-total-header {
   position: absolute;
   top: 0;
@@ -713,63 +727,6 @@ html.cgp-on .cgp-collapsed {
 html.cgp-on .cgp-hidden-row {
   visibility: hidden !important;
   pointer-events: none !important;
-}
-
-/* The "Arrange columns..." substitute for Canvas's own hidden gear (see
- * layout.js's mountArrangeButton). Sits in normal document flow right above
- * the grid - never measured against or aligned to anything Canvas renders,
- * so there is nothing here that can jump on a later re-render the way an
- * earlier, since-removed attempt at repositioning the gear itself used to. */
-html.cgp-on .cgp-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 2px 8px;
-}
-html.cgp-on .cgp-arrange-select {
-  padding: 5px 8px;
-  border: 1px solid var(--cgp-line);
-  border-radius: 6px;
-  background: #fff;
-  color: var(--cgp-ink);
-  font: 600 12px/1 inherit;
-  cursor: pointer;
-}
-html.cgp-on .cgp-arrange-select:focus-visible {
-  outline: none;
-  box-shadow: var(--cgp-focus-ring);
-}
-html.cgp-on .cgp-arrange-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 11px;
-  border: 1px solid var(--cgp-line);
-  border-radius: 6px;
-  background: #fff;
-  color: var(--cgp-ink);
-  font: 600 12px/1 inherit;
-  cursor: pointer;
-  transition: background 100ms ease, border-color 100ms ease, color 100ms ease;
-}
-html.cgp-on .cgp-arrange-btn:hover {
-  background: var(--cgp-brand-wash);
-  border-color: var(--cgp-brand);
-  color: var(--cgp-brand-dark);
-}
-html.cgp-on .cgp-arrange-btn svg {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-html.cgp-on .cgp-arrange-btn:focus-visible {
-  outline: none;
-  box-shadow: var(--cgp-focus-ring);
-  border-radius: 6px;
 }
 
 /* Canvas's own gradebook-settings gear, hidden with the rest of the utility
