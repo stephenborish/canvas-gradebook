@@ -597,6 +597,15 @@ html.cgp-on .slick-cell:not(:has(.Grid__GradeCell)) *:has(> input):has(> button)
 
 /* ------------------------------------------------------- frozen Total column */
 
+/* These class names are SlickGrid's own generated ones for a frozen-column
+ * grid (not a guess at Canvas-specific markup), but this extension still
+ * cannot confirm against a live build that Canvas's gradebook wires them up
+ * the same way every time - so frozen-total.js verifies the widen actually
+ * took hold (comparing the frozen canvas's real rendered width against what
+ * was asked for) before relying on it for anything, on every paint, not just
+ * once. Nothing below this comment ever draws or hides anything on its own;
+ * see html.cgp-frozen-total-active further down for what is gated on that
+ * confirmation. */
 html.cgp-frozen-total .slick-pane-left { width: var(--cgp-frozen-w) !important; }
 html.cgp-frozen-total .slick-pane-left .slick-header,
 html.cgp-frozen-total .slick-header-left { width: var(--cgp-frozen-w) !important; }
@@ -657,11 +666,75 @@ html.cgp-frozen-total .cgp-total-cell.cgp-row-hover {
   background-image: linear-gradient(var(--cgp-row-hover), var(--cgp-row-hover));
 }
 
+/* Canvas's own native Total column - wherever it actually sits (some
+ * gradebooks show it right after student name, most at the far right past
+ * every assignment) - hidden ONLY once frozen-total.js has confirmed its own
+ * replacement is genuinely showing (html.cgp-frozen-total-active, added by
+ * paint()'s verifyWidened() check, never by start() alone). That ordering is
+ * the whole point: a course is never left with ZERO working Total columns
+ * because our own could not be confirmed - Canvas's own stays fully visible
+ * unless and until ours is proven to be standing in for it. data-cgp-col is
+ * set on both the header and every body cell of whichever column Canvas
+ * itself classifies as a Total (see dom-adapter.js), so this reaches it
+ * wherever it is without knowing its exact position.
+ *
+ * visibility, not display: the column's WIDTH is left exactly as Canvas
+ * sized it - collapsing it would mean fighting the same SlickGrid column-
+ * width internals the narrowing feature above goes to such lengths not to
+ * fight - so what remains is an intentionally blank column, not a second
+ * number that can disagree with this extension's own. */
+html.cgp-frozen-total-active [data-cgp-col="total"] {
+  visibility: hidden !important;
+}
+
 /* ------------------------------------------------------- compact layout */
 
 html.cgp-on .cgp-hidden,
 html.cgp-on .cgp-collapsed {
   display: none !important;
+}
+
+/* The "Arrange columns..." substitute for Canvas's own hidden gear (see
+ * layout.js's mountArrangeButton). Sits in normal document flow right above
+ * the grid - never measured against or aligned to anything Canvas renders,
+ * so there is nothing here that can jump on a later re-render the way an
+ * earlier, since-removed attempt at repositioning the gear itself used to. */
+html.cgp-on .cgp-toolbar {
+  display: flex;
+  align-items: center;
+  padding: 2px 2px 8px;
+}
+html.cgp-on .cgp-arrange-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--cgp-line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--cgp-ink);
+  font: 600 12px/1 inherit;
+  cursor: pointer;
+  transition: background 100ms ease, border-color 100ms ease, color 100ms ease;
+}
+html.cgp-on .cgp-arrange-btn:hover {
+  background: var(--cgp-brand-wash);
+  border-color: var(--cgp-brand);
+  color: var(--cgp-brand-dark);
+}
+html.cgp-on .cgp-arrange-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+html.cgp-on .cgp-arrange-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--cgp-focus-ring);
+  border-radius: 6px;
 }
 
 /* Canvas's own gradebook-settings gear, hidden with the rest of the utility
@@ -806,6 +879,12 @@ html.cgp-on .cgp-header-label {
   overflow: hidden !important;
   z-index: 2 !important;
 }
+/* A real link to the assignment itself (to re-read or edit it), opened in a
+ * new tab so the teacher's place in the gradebook is never lost. The rest of
+ * .cgp-header-label is pointer-events:none (see above); this is the one thing
+ * inside it that takes clicks back, exactly the way the submission badge and
+ * comment bubble already carve out their own clickable area from a
+ * pointer-events:none ancestor. */
 html.cgp-on .cgp-header-title {
   width: 100%;
   display: -webkit-box;
@@ -819,6 +898,19 @@ html.cgp-on .cgp-header-title {
   line-height: 1.18;
   font-weight: 600;
   color: var(--cgp-ink-strong, #1a232b);
+  text-decoration: none;
+  pointer-events: auto !important;
+  cursor: pointer;
+}
+html.cgp-on .cgp-header-title:hover,
+html.cgp-on .cgp-header-title:focus-visible {
+  color: var(--cgp-brand-dark, var(--cgp-brand));
+  text-decoration: underline;
+}
+html.cgp-on .cgp-header-title:focus-visible {
+  outline: none;
+  box-shadow: var(--cgp-focus-ring);
+  border-radius: 3px;
 }
 html.cgp-on .cgp-header-points {
   width: 100%;

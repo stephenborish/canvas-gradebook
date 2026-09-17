@@ -133,11 +133,70 @@
     if (s.hideCanvasUtilityControls) this.hideControls();
     this.hideKeyboardShortcutsButton();
     this.settleQuickly();
+    this.mountArrangeButton();
     this.applyGeometry();
     this.bindShortcut();
     if (!this._resizeBound) {
       this._resizeBound = this.onWindowResize.bind(this);
       window.addEventListener('resize', this._resizeBound);
+    }
+  };
+
+  /* Canvas's own "Arrange columns by" - due date, name, points, module, or a
+   * manual drag order - lives inside the gear/Settings modal's View Options
+   * tab, reached through the exact gear hideCanvasUtilityControls hides to
+   * keep the gradebook clean. Hiding it must never also hide the only way to
+   * sort assignments, so a small button of this extension's own takes the
+   * space that hiding freed up: it sits in NORMAL DOCUMENT FLOW right above
+   * the grid, not measured against or aligned to anything Canvas renders, so
+   * there is nothing here to jump the way an earlier, since-removed attempt
+   * at repositioning the gear itself used to (see the layout notes further
+   * up). Only mounted while hideCanvasUtilityControls is actually on - with
+   * it off, Canvas's own gear is already sitting right there and a second way
+   * to reach it would just be clutter - so this is re-evaluated every time
+   * start() runs again on a settings change, same as everything else here. */
+  P.mountArrangeButton = function () {
+    if (!this.settings.values.hideCanvasUtilityControls) {
+      if (this._arrangeBar) { this._arrangeBar.remove(); this._arrangeBar = null; }
+      return;
+    }
+    if (this._arrangeBar && this._arrangeBar.isConnected) return;
+    var grid = this.adapter.gridRoot();
+    if (!grid || !grid.parentElement) return;
+
+    var bar = document.createElement('div');
+    bar.className = 'cgp-toolbar';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cgp-arrange-btn';
+    btn.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.8 4.2h10.4M2.8 8h7.4M2.8 11.8h4.4"/>' +
+      '<path d="M12.4 6.4v6.4M10 10.4l2.4 2.4 2.4-2.4"/></svg><span>Arrange columns…</span>';
+    btn.title = 'Open Canvas’s own column arrangement – by due date, name, points, module, or manually';
+    var self = this;
+    btn.addEventListener('click', function () { self.openArrangeMenu(); });
+    bar.appendChild(btn);
+    grid.parentElement.insertBefore(bar, grid);
+    this._arrangeBar = bar;
+  };
+
+  /* Bring Canvas's own controls back (exactly what Alt+Shift+H already does)
+   * and open its gear/Settings modal directly, landing on View Options ->
+   * Arrange By in one click instead of the teacher needing to know that
+   * shortcut, or that button, exists at all. Canvas's own modal actually
+   * moves the columns - nothing here reimplements that by moving DOM nodes
+   * around in a virtualized grid, which is exactly the kind of thing that
+   * would corrupt SlickGrid's own row/column bookkeeping. */
+  P.openArrangeMenu = function () {
+    if (this.controlsHidden) this.restoreControls();
+    this.applyGeometry();
+    var gear = this.findSettingsButton();
+    if (gear && gear.isConnected) {
+      gear.click();
+      CGP.diag.bump('layout.arrangeMenuOpened');
+    } else {
+      CGP.diag.warn('layout.arrangeMenu.gearNotFound');
+      CGP.ui.error('Couldn’t find Canvas’s gradebook settings button. Look for the gear icon, then ' +
+        'View Options → Arrange By, to sort assignments by due date, name, points or module.');
     }
   };
 
@@ -614,10 +673,25 @@
           if (!oldLabel) {
             oldLabel = document.createElement('div');
             oldLabel.className = 'cgp-header-label';
-            oldLabel.innerHTML = '<div class="cgp-header-title"></div><div class="cgp-header-points"></div><div class="cgp-header-due"></div>';
+            oldLabel.innerHTML = '<a class="cgp-header-title" target="_blank" rel="noopener"></a>' +
+              '<div class="cgp-header-points"></div><div class="cgp-header-due"></div>';
+            // Canvas's header reacts to mousedown (sorting, the resize-drag
+            // threshold, its own "..." menu); the link lives inside that same
+            // header cell, so the gesture has to stop here or clicking the
+            // assignment name would also trigger whatever a plain header
+            // mousedown does. Only the gesture is stopped - the click itself
+            // is left alone, so cmd-click, middle-click and "open link in new
+            // tab" all still behave exactly like clicking any other link.
+            oldLabel.querySelector('.cgp-header-title').addEventListener('mousedown', function (e) { e.stopPropagation(); });
             h.el.appendChild(oldLabel);
           }
-          oldLabel.querySelector('.cgp-header-title').textContent = a.name;
+          var titleLink = oldLabel.querySelector('.cgp-header-title');
+          titleLink.textContent = a.name;
+          // Straight to Canvas's own assignment page - to re-read or edit it -
+          // opened in a new tab so the teacher's place in the gradebook is
+          // never lost just to go look at the assignment.
+          titleLink.href = '/courses/' + encodeURIComponent(String(model.courseId)) +
+            '/assignments/' + encodeURIComponent(String(h.assignmentId));
           oldLabel.querySelector('.cgp-header-points').textContent = pointsText;
           var dueEl = oldLabel.querySelector('.cgp-header-due');
           if (dueEl) {

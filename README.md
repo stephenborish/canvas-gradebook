@@ -191,8 +191,19 @@ works in it too.
 ### Student name + Total, frozen together
 
 The Total percentage is drawn beside the student name in Canvas's own frozen pane, so it stays
-visible no matter how far right you scroll. The values come from Canvas's enrollment scores —
-weighting, drop rules and grading schemes are Canvas's own arithmetic, never recomputed here.
+visible no matter how far right you scroll — it does not scroll away with the assignment
+columns, and Canvas's own Total column at the far right is hidden so there is never a second,
+possibly-different-looking Total competing with it. The values come from Canvas's enrollment
+scores — weighting, drop rules and grading schemes are Canvas's own arithmetic, never
+recomputed here.
+
+Both of those only happen once the frozen pane has actually been widened to make room: the
+widen is measured on every paint, not assumed, because Canvas's exact pane markup cannot be
+checked here against a live instance (see "Known limitations" below). If the
+measurement doesn't confirm the extra width is really there, nothing is drawn and Canvas's own
+Total column is left visible and untouched — you are never left looking at a gap where a Total
+used to be. A later paint that measures correctly brings the frozen Total right back with no
+reload needed either way.
 
 ### Submission indicator, one click from SpeedGrader
 
@@ -267,6 +278,13 @@ Press **Alt+Shift+H** to bring Canvas's controls back for the current page — t
 so gradebook settings, posting policies and column arrangement stay one keystroke away. Turn the
 whole behaviour off permanently in the options page.
 
+An **Arrange columns…** button sits right above the grid whenever the utility strip is hidden,
+so reordering assignments — by due date, name, points, module, or manual drag — never means
+hunting down Canvas's own hidden gear first. Clicking it brings the controls back the same way
+Alt+Shift+H does and opens Canvas's own gradebook-settings menu straight to its "Arrange columns
+by" option, which is Canvas's own sorting, not a reimplementation of it here: it moves the real
+columns in the real SlickGrid, so the order sticks exactly as if you'd opened the gear yourself.
+
 One smaller, unconditional cleanup applies regardless of that setting: Canvas's own "keyboard
 shortcuts" icon button is always hidden.
 
@@ -307,11 +325,16 @@ student, and restored if you come back to that submission with an empty box. The
 cleared only once Canvas confirms the comment posted; if Canvas fails, the text stays and you
 are told so.
 
-### Due dates in the header
+### Due dates in the header, and a link back to the assignment
 
 Each assignment header shows a small line under the points ("Due Sep 12, 11:59 PM"),
 read straight from Canvas's own assignment data. Turn it off in the options page if you'd
 rather keep the header to two lines.
+
+The assignment's title itself is a real link to that assignment's own page, so re-reading or
+editing it is a click away instead of a trip through Canvas's assignments list. It opens in a
+new tab — cmd-click, middle-click and "copy link address" all behave the way you'd expect —
+and clicking it never triggers the header's own sort/drag handling underneath.
 
 ### Comment snippets
 
@@ -467,10 +490,14 @@ Two things that no longer happen, as of this fix:
   Canvas's documented markup and could not be exercised against a real gradebook here. That is
   exactly what the diagnostics panel is for: if something looks off, turn it on, reload the
   gradebook, and read the unmapped-cell and failed-request counts.
-- **Canvas's own Total column at the far right is left in place.** It is virtualized away
-  during horizontal scrolling, so it cannot be made sticky; the frozen Total is drawn beside
-  the student name instead. Hide the original with Canvas's own column menu if the duplicate
-  bothers you.
+- **Frozen Total depends on a pane-widen that is verified, not assumed.** Canvas's own Total
+  column at the far right is virtualized away during horizontal scrolling, so it cannot be made
+  sticky there; instead the frozen pane beside the student name is widened and a Total is drawn
+  into the space that opens up, and the native Total is hidden only once that widen is actually
+  confirmed to have taken hold (checked on every paint against Canvas's real, unverifiable-here
+  pane markup). If a future Canvas markup change ever breaks the widen, the frozen Total simply
+  stops drawing and Canvas's own native Total column is left visible in its place — you are
+  never left with neither.
 - **Row height is unchanged.** SlickGrid computes row positions in JavaScript from its own row
   height; overriding it in CSS misaligns every row. Vertical space is won by collapsing Canvas's
   chrome instead.
