@@ -26,7 +26,6 @@
    * Parse one token (a keystroke, a clipboard cell, a typed value).
    * opts.gradingType - Canvas assignment grading_type; letter schemes keep A-F
    *                    as real letter grades instead of shortcut actions.
-   * opts.missingScore - score written alongside Missing status (default 0).
    */
   function parseToken(raw, opts) {
     opts = opts || {};
@@ -42,10 +41,7 @@
     var isLetterGradeToken = letterish && /^[A-F][+-]?$/.test(up);
 
     if (!isLetterGradeToken) {
-      if (up === 'M' || up === 'MI' || up === 'MISSING') {
-        var ms = opts.missingScore;
-        return { kind: KIND.MISSING, raw: s, score: (ms === undefined || ms === null) ? 0 : Number(ms) };
-      }
+      if (up === 'M' || up === 'MI' || up === 'MISSING') return { kind: KIND.MISSING, raw: s };
       if (up === 'E' || up === 'EX' || up === 'EXCUSE' || up === 'EXCUSED') return { kind: KIND.EXCUSED, raw: s };
       if (up === 'L' || up === 'LATE') return { kind: KIND.LATE, raw: s };
     }
@@ -58,53 +54,33 @@
     return { kind: KIND.INVALID, raw: s };
   }
 
-  /* A real grade has just landed on a submission Canvas still flags Missing.
-   * Missing always ends here; whether the submission is then flagged Late or
-   * left with no status at all is opts.missingBecomesLate (default true). */
-  function applyMissingResolution(form, patch, opts) {
-    var toLate = opts.missingBecomesLate !== false;
-    form['submission[late_policy_status]'] = toLate ? 'late' : 'none';
-    patch.missing = false;
-    patch.late = toLate;
-    patch.latePolicyStatus = toLate ? 'late' : null;
-  }
-
   /**
    * Canvas API form parameters + the optimistic local patch for a parsed token.
    * Returns null for SKIP / INVALID (callers must not write those).
    *
-   * opts.wasMissing - true when the cell being written to is currently marked
-   * Missing (an explicit late_policy_status, not merely a computed one). A
-   * teacher who types a real grade means it, and Canvas does not clear a
-   * manually-applied Missing status just because a grade showed up afterward -
-   * it keeps showing the red "Missing" pill until something explicitly clears
-   * it. So an ordinary grade write (NUMBER/PERCENT/LETTER) also resolves the
-   * status here, once, instead of leaving it for the teacher to hunt down.
-   *
-   * What it resolves TO is the point: work that was Missing and has now been
-   * graded was, by definition, handed in after it was due, so the honest
-   * status is Late, not "no status at all". opts.missingBecomesLate (default
-   * true) is what turns that on; set it false and the status is merely
-   * cleared, which is what Canvas itself would leave behind.
+   * Missing and Late are independent, instant status flags, each a toggle in
+   * exactly the same shape: never touching the grade in either direction, and
+   * never touching each other. Entering an ordinary grade (NUMBER / PERCENT /
+   * LETTER) never changes either status - a teacher who wants Missing or Late
+   * off presses M or L themselves. That is a deliberate choice: Canvas's own
+   * behaviour of quietly flipping a manually-applied Missing status to Late
+   * the moment a grade showed up was a surprise, not a convenience, so nothing
+   * here does that automatically any more.
    *
    * Every patch that changes a status also carries latePolicyStatus, not just
    * the derived missing/late booleans: that raw field is what decides the next
-   * write's meaning (the L toggle reads it), so leaving it stale would make an
-   * optimistic record contradict itself.
+   * write's meaning (the M/L toggles read it), so leaving it stale would make
+   * an optimistic record contradict itself.
    *
    * opts.wasLate - true when the cell already carries an explicit Late status.
-   * The L shortcut is a toggle, so on such a cell it REMOVES the status
-   * instead of re-applying it; typing L twice leaves the submission exactly as
-   * it started.
-   *
    * opts.wasExplicitMissing - true when the cell already carries an explicit
-   * Missing status. M is a toggle too: the second press turns Missing into
-   * Late and takes the 0 back out, so the teacher can type a real grade.
-   *
-   * opts.currentScore - the score already on that cell, which decides whether
-   * the M toggle may clear it. Only the score M itself writes (the
-   * missingScore, 0 by default) is M's to remove; a real grade a teacher
-   * entered on a submission Canvas had flagged Missing survives the toggle.
+   * Missing status. Both shortcuts are toggles built on this: pressing one on
+   * a cell that already carries that exact status removes it; pressing it on
+   * a cell that does not adds it. Canvas also reports missing/late as
+   * COMPUTED booleans for anything simply past due, whether or not anyone
+   * applied a status - keying the toggle off wasExplicitMissing/wasLate
+   * instead of those computed flags is what makes the FIRST press on such a
+   * cell always APPLY the status rather than mistake it for a second press.
    *
    * EXCUSED is an explicit status command and is left alone.
    */
@@ -112,74 +88,24 @@
     if (!parsed) return null;
     opts = opts || {};
     switch (parsed.kind) {
-      case KIND.MISSING: {
-        // Second press on a cell that already carries an explicit Missing
-        // status: M is a toggle, exactly like L. Missing gives way to Late -
-        // the work is no longer being called "never handed in", it is being
-        // called "handed in after the due date" - and the 0 that M itself
-        // wrote is taken back out, leaving the cell empty and ready for
-        // whatever grade the teacher wants to type into it.
-        //
-        // opts.wasExplicitMissing, not opts.wasMissing, is what decides this.
-        // Canvas reports missing: true for anything simply past due and not
-        // handed in, so keying off that would make the FIRST M on an overdue
-        // cell behave like the second and toggle a status that was never
-        // applied.
+      case KIND.MISSING:
         if (opts.wasExplicitMissing) {
-          // ...but only the score M itself puts there is M's to take away.
-          // A submission can arrive from Canvas already flagged Missing AND
-          // carrying a real grade - a teacher marked it Missing in the Grade
-          // Detail Tray and graded it afterwards, which Canvas allows and
-          // leaves standing. Deleting that grade would be destroying work
-          // nobody asked to undo, so a non-zero score survives the toggle and
-          // only the status changes. What M writes is the missingScore (0 by
-          // default), so that is what a toggle is willing to clear.
-          var held = opts.currentScore;
-          var clearable = held === null || held === undefined || held === '' ||
-            Number(held) === Number(parsed.score === undefined || parsed.score === null ? 0 : parsed.score);
-          if (!clearable) {
-            return {
-              kind: parsed.kind,
-              toggledOff: true,
-              keptGrade: true,
-              summary: 'Missing \u2192 Late (grade kept)',
-              form: { 'submission[late_policy_status]': 'late' },
-              patch: { missing: false, late: true, latePolicyStatus: 'late' },
-              display: null // status only; the grade stays exactly as it is
-            };
-          }
           return {
             kind: parsed.kind,
             toggledOff: true,
-            summary: 'Missing \u2192 Late',
-            form: {
-              'submission[posted_grade]': '',
-              'submission[late_policy_status]': 'late'
-            },
-            patch: {
-              score: null, enteredScore: null, grade: null,
-              missing: false, late: true, excused: false,
-              latePolicyStatus: 'late', workflowState: 'unsubmitted'
-            },
-            display: '\u2013'
+            summary: 'Missing removed',
+            form: { 'submission[late_policy_status]': 'none' },
+            patch: { missing: false, latePolicyStatus: null },
+            display: null // status only; the grade is never touched
           };
         }
-        var score = (parsed.score === undefined || parsed.score === null) ? 0 : Number(parsed.score);
         return {
           kind: parsed.kind,
-          summary: score + ' + Missing',
-          form: {
-            'submission[posted_grade]': String(score),
-            'submission[late_policy_status]': 'missing'
-          },
-          patch: {
-            score: score, enteredScore: score, grade: String(score),
-            missing: true, late: false, excused: false, workflowState: 'graded',
-            latePolicyStatus: 'missing'
-          },
-          display: String(score)
+          summary: 'Missing',
+          form: { 'submission[late_policy_status]': 'missing' },
+          patch: { missing: true, latePolicyStatus: 'missing' },
+          display: null // status only; the grade is never touched
         };
-      }
       case KIND.EXCUSED:
         return {
           kind: parsed.kind,
@@ -215,19 +141,18 @@
           display: '\u2013'
         };
       case KIND.NUMBER: {
-        // Deliberately no late_policy_status by default: a plain 0 is an
-        // ordinary zero, and an already-Late submission should stay Late
-        // after grading. Missing is the one status a real grade always ends.
+        // No late_policy_status, ever: a grade never touches Missing or Late
+        // in either direction. A plain 0 is an ordinary zero, and a Missing or
+        // Late submission keeps that status after grading until the teacher
+        // presses M or L themselves to remove it.
         var numberForm = { 'submission[posted_grade]': String(parsed.value) };
         var numberPatch = { score: Number(parsed.value), enteredScore: Number(parsed.value), grade: String(parsed.value), excused: false, workflowState: 'graded' };
-        if (opts.wasMissing) applyMissingResolution(numberForm, numberPatch, opts);
         return { kind: parsed.kind, summary: String(parsed.value), form: numberForm, patch: numberPatch, display: String(parsed.value) };
       }
       case KIND.PERCENT:
       case KIND.LETTER: {
         var gradeForm = { 'submission[posted_grade]': String(parsed.value) };
         var gradePatch = { grade: String(parsed.value), excused: false, workflowState: 'graded' };
-        if (opts.wasMissing) applyMissingResolution(gradeForm, gradePatch, opts);
         return { kind: parsed.kind, summary: String(parsed.value), form: gradeForm, patch: gradePatch, display: String(parsed.value) };
       }
       default:

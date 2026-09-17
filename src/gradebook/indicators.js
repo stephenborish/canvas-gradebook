@@ -96,7 +96,7 @@
     // stays away until they have, so "not loaded" and "loaded, nothing to
     // show" must be two different signatures or the marker would never appear
     // on a cell that had no record at the moment of its first paint.
-    var loaded = this.model.loadedAssignments.has(String(info.assignmentId)) ? 'L' : '-';
+    var loaded = this.model.everLoadedAssignments.has(String(info.assignmentId)) ? 'L' : '-';
     if (!rec) return id + '|none|' + loaded;
     
     var c = rec.comments || {};
@@ -259,8 +259,17 @@
     // changed at all.
     // A record only speaks for its cell once the column has actually loaded -
     // or while one of our own optimistic writes is riding on it, which is the
-    // whole point of the instant designation.
-    var known = this.model.loadedAssignments.has(String(info.assignmentId)) || !!(rec && rec.pending);
+    // whole point of the instant designation. everLoadedAssignments, not
+    // loadedAssignments: post-grades.js's Post button re-reads a column by
+    // briefly clearing it from loadedAssignments to force a fresh fetch, one
+    // or more times per post, and every cell here has perfectly good data
+    // sitting in the model the whole time that has nothing to do with
+    // whether a background refresh happens to be in flight right now. Reading
+    // loadedAssignments here instead used to blank every status tint, comment
+    // bubble and hidden-grade bar in the column for that reload's duration -
+    // a visible flash on every single click of Post, well before anything had
+    // actually posted.
+    var known = this.model.everLoadedAssignments.has(String(info.assignmentId)) || !!(rec && rec.pending);
     this.syncStatus(cell, known ? rec : null);
     var sig = this.signatureFor(info, rec);
     if (!this.registry.needsPaint(cell, sig) && this.marksIntact(cell)) return;

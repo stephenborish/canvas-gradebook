@@ -164,7 +164,7 @@
     var id = String(assignmentId);
     var DELAYS = [0, 700, 1500];
     function attempt(n) {
-      return self.model.reloadAssignment(id).then(function () {
+      return self.model.reloadAssignment(id, { includeComments: false }).then(function () {
         if (!self.model.loadedAssignments.has(id)) return { left: expected, known: false };
         var left = self.model.pendingPosts(id).length;
         if (left < expected || n + 1 >= DELAYS.length) return { left: left, known: true };
@@ -205,7 +205,7 @@
     // confirmation afterwards has to be based on this same fresh read, not
     // a page-load-time snapshot - otherwise "Post 3" can silently post far
     // more than 3, and the toast would undercount how many were disclosed.
-    return this.model.reloadAssignment(id).then(function () {
+    return this.model.reloadAssignment(id, { includeComments: false }).then(function () {
       // reloadAssignment()/ensureAssignments() swallow a failed fetch and
       // resolve anyway (see model.js) rather than rejecting - and
       // reloadAssignment already removed this id from loadedAssignments
@@ -360,7 +360,7 @@
     if (this._rechecking.has(id)) return;
     this._rechecking.add(id);
     setTimeout(function () {
-      self.model.reloadAssignment(id).then(function () {
+      self.model.reloadAssignment(id, { includeComments: false }).then(function () {
         self._rechecking.delete(id);
         self.requestPaint();
       }, function () {

@@ -41,7 +41,16 @@
     opts = opts || {};
     this.origin = opts.origin || (typeof location !== 'undefined' ? location.origin : '');
     this.fetchImpl = opts.fetch || (typeof fetch === 'function' ? function () { return fetch.apply(null, arguments); } : null);
-    this.gate = util.pool(opts.concurrency || 4);
+    // Bulk boot work (assignments + enrollments together, then several
+    // 8-assignment submission batches while prefetching) is several
+    // independent request chains that all want to run at once; a pool this
+    // narrow serialized them more than Canvas itself needs, which is exactly
+    // the kind of thing that reads as "slow to load" without any single
+    // request actually being slow. 429s and 5xxs already retry with backoff
+    // (see request() below), so a modest increase costs nothing on a course
+    // that never gets throttled and only means slightly more patience on one
+    // that does.
+    this.gate = util.pool(opts.concurrency || 6);
   }
 
   CanvasApi.prototype.csrfToken = function () {
@@ -180,30 +189,51 @@
     return this.getAll('/api/v1/courses/' + courseId + '/assignments', { order_by: 'position' }, { maxPages: 20 });
   };
 
-  CanvasApi.prototype.studentEnrollments = function (courseId) {
+  /* gradingPeriodId - scopes the returned grades (current_score,
+   * computed_current_score, ...) to one grading period, exactly the way
+   * Canvas's own gradebook does when a grading-period filter is active -
+   * see model.js's grading-period tracking for why this matters: without it,
+   * this Total disagrees with Canvas's own whenever the gradebook is filtered
+   * to anything but the whole course. Omitted (null/undefined) means the
+   * whole course, same as leaving the parameter off entirely. */
+  CanvasApi.prototype.studentEnrollments = function (courseId, gradingPeriodId) {
     return this.getAll('/api/v1/courses/' + courseId + '/enrollments', {
       'type[]': ['StudentEnrollment'],
-      'state[]': ['active', 'invited']
+      'state[]': ['active', 'invited'],
+      grading_period_id: (gradingPeriodId === undefined || gradingPeriodId === null) ? undefined : String(gradingPeriodId)
     }, { maxPages: 20 });
   };
 
-  CanvasApi.prototype.enrollmentForUser = function (courseId, userId) {
+  CanvasApi.prototype.enrollmentForUser = function (courseId, userId, gradingPeriodId) {
     return this.getAll('/api/v1/courses/' + courseId + '/enrollments', {
       user_id: String(userId),
       'type[]': ['StudentEnrollment'],
-      'state[]': ['active', 'invited']
+      'state[]': ['active', 'invited'],
+      grading_period_id: (gradingPeriodId === undefined || gradingPeriodId === null) ? undefined : String(gradingPeriodId)
     }, { maxPages: 2 }).then(function (list) { return (list && list[0]) || null; });
   };
 
-  /* One request covers many assignments x every student, with comments. */
+  /* One request covers many assignments x every student, with comments -
+   * unless opts.includeComments is explicitly false, for a caller that only
+   * needs grades and posted-state (a Post button's own before/after column
+   * re-reads, most of all: comments play no part in what it decides or
+   * reports, and asking Canvas to also serialize every comment on every
+   * submission, every time, on a column that can run to hundreds of students,
+   * is pure added weight on the one action this extension most needs to feel
+   * instant). Omitting it here never loses cached comments already held for
+   * this column - applySubmission falls back to whatever it already has
+   * whenever a response carries no submission_comments field at all - it just
+   * skips re-fetching them for a read that was never going to use them. */
   CanvasApi.prototype.submissionsForAssignments = function (courseId, assignmentIds, opts) {
     opts = opts || {};
-    return this.getAll('/api/v1/courses/' + courseId + '/students/submissions', {
+    var params = {
       'student_ids[]': ['all'],
       'assignment_ids[]': (assignmentIds || []).map(String),
-      'include[]': ['submission_comments'],
       grouped: false
-    }, { maxPages: opts.maxPages || 60 });
+    };
+    if (opts.includeComments !== false) params['include[]'] = ['submission_comments'];
+    return this.getAll('/api/v1/courses/' + courseId + '/students/submissions', params,
+      { maxPages: opts.maxPages || 60 });
   };
 
   /* Assignment-specific fallback. Canvas's Gradebook itself preloads visible

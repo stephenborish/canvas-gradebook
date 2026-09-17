@@ -91,7 +91,15 @@
     this.adapter = ctx.adapter;
     this.settings = ctx.settings;
     this.hidden = [];
-    this._resizeStoodDown = false;
+    // header element -> how many times dragResize has failed on it outright
+    // (both the first attempt and its one corrective retry). A column that
+    // keeps failing is left alone rather than retried every tick forever, but
+    // this is keyed on the ELEMENT, not on the column or a page-wide switch:
+    // Canvas swapping in a fresh header node for that same column (its own
+    // re-render, a sort, a filter change) is a clean slate and gets its own
+    // chances again. Nothing here ever disables resizing for the rest of the
+    // page - see resizeColumns() for why a single early failure used to.
+    this._resizeFailures = new WeakMap();
     this._lastHidePass = 0;
     this.controlsHidden = false;
     this.applyGeometry = CGP.util.debounce(this._applyGeometry.bind(this), 120);
@@ -448,14 +456,28 @@
 
   /* ------------------------------------------------------- column narrowing */
 
+  /* Safe to call often - a repeat visit with nothing left to do costs one
+   * cheap DOM measurement pass and returns immediately. That matters because
+   * this is no longer a single one-shot pass fired 500ms after boot: a
+   * gradebook whose columns are not all rendered yet at boot (a wide course,
+   * a slow Canvas render) used to leave every column that mounted after that
+   * one pass at Canvas's original, un-narrowed width forever - the "some
+   * columns are oddly wide and others are not" report. content.js's periodic
+   * safety tick now calls this on every pass instead, and the check above
+   * means that costs nothing once every currently-mounted column is already
+   * the right width. */
   P.resizeColumns = function () {
     var s = this.settings.values;
-    if (!s.narrowColumns || this._resizeStoodDown || this._resizing) return Promise.resolve();
+    if (!s.narrowColumns || this._resizing) return Promise.resolve();
     var self = this;
     var headers = this.adapter.refreshColumns();
     var work = [];
     headers.forEach(function (h) {
       if (!h.el || !h.el.isConnected) return;
+      // A column whose element has already failed to resize twice is left
+      // alone - not retried every single tick forever - until Canvas swaps in
+      // a fresh element for it (a re-render, a sort), which gets a clean slate.
+      if ((self._resizeFailures.get(h.el) || 0) >= 2) return;
       var want = h.type === 'assignment' ? s.assignmentColumnWidth
         : (h.type === 'student' ? s.studentColumnWidth : null);
       if (want === null) return;
@@ -468,15 +490,12 @@
     this._resizing = true;
     var seq = Promise.resolve();
     var applied = 0;
+    var abandonedRest = false;
     work.slice(0, 40).forEach(function (item, i) {
       seq = seq.then(function () {
+        if (abandonedRest) return;
         return self.dragResize(item).then(function (ok) {
           if (ok) { applied++; return; }
-          if (i === 0 && applied === 0) {
-            self._resizeStoodDown = true;
-            CGP.diag.warn('layout.columnResizeUnavailable', { type: item.type });
-            throw new Error('resize-unavailable');
-          }
           // The drag missed its target width. This batch can take seconds to
           // work through every column, so by the time a later column's turn
           // comes its width may already have moved on from what was measured
@@ -489,7 +508,19 @@
           // on.
           return self.dragResize(item).then(function (ok2) {
             if (ok2) { applied++; return; }
+            self._resizeFailures.set(item.el, (self._resizeFailures.get(item.el) || 0) + 1);
             CGP.diag.warn('layout.columnResizeMissed', { type: item.type, want: item.want });
+            // The very first column of this pass failing twice outright
+            // (rather than merely missing its target width) usually means
+            // Canvas has not finished mounting its resize handles yet, or a
+            // markup change means this build's do not match what dragResize
+            // expects - either way, burning through the rest of a 40-column
+            // batch on the same broken mechanism is pure jank with nothing to
+            // show for it. Abandon only the REST OF THIS CALL, not resizing
+            // forever: the next periodic call re-measures from scratch and
+            // tries again, which is exactly what picks this back up once
+            // Canvas has caught up.
+            if (i === 0 && applied === 0) abandonedRest = true;
             // Two attempts at the target width both missed. This is Canvas's
             // OWN real resize handle, so whatever odd width the failed drags
             // left behind is not just a cosmetic glitch - Canvas persists it

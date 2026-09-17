@@ -1,8 +1,10 @@
 /* Canvas Gradebook+ - keyboard grading and spreadsheet navigation.
  *
- * M = grade 0 + Missing status, in one keystroke, written to Canvas; pressed
- * again on the same cell it switches Missing to Late and takes the 0 back out.
- * E = Excused. L = Late, and L again removes it. Typing 0 is still an
+ * M = Missing, written to Canvas instantly; pressed again it is removed. L =
+ * Late, same shape; pressed again it is removed. E = Excused. Missing and
+ * Late are independent flags: neither one ever touches the grade, and
+ * entering a grade never touches either of them - the teacher's own M/L
+ * press is the only thing that changes a status. Typing 0 is still an
  * ordinary zero.
  * Shortcuts only fire when a real editable grade cell is active (or cells are
  * multi-selected); typing anywhere else on Canvas is never intercepted.
@@ -117,14 +119,6 @@
       self.model.patchCell(assignmentId, userId, { override: null }, { silent: true });
       self.model.refreshCell(assignmentId, userId).then(function () {
         self.model.queueTotalRefresh(userId);
-        if (self.requestPaint) self.requestPaint();
-        // Canvas just committed a grade through its own editor. If that left
-        // the submission both graded and still flagged Missing, a teacher who
-        // just typed a real grade does not mean to keep that status - the work
-        // came in, late. Hand it to the writer, which switches Missing to Late
-        // (or merely clears it, per the setting).
-        return self.writer.resolveStaleMissing(assignmentId, userId);
-      }).then(function () {
         if (self.requestPaint) self.requestPaint();
       });
     }, 1200));

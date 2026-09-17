@@ -37,6 +37,7 @@ function fakeModel(reads) {
     loadedAssignments: new Set(['99']),
     cells: new Map(users.map((u) => [`99:${u}`, { userId: u, postedAt: null, postedAtKnown: true }])),
     reloads: 0,
+    reloadOpts: [],
     key: (aid, uid) => `${aid}:${uid}`,
     assignment: () => ({ name: 'Lab 4' }),
     cell(aid, uid) { return this.loadedAssignments.has(String(aid)) ? this.cells.get(this.key(aid, uid)) : null; },
@@ -45,8 +46,9 @@ function fakeModel(reads) {
       if (!this.loadedAssignments.has(String(aid))) return [];
       return users.filter((u) => state.hidden.get(u));
     },
-    reloadAssignment(aid) {
+    reloadAssignment(aid, opts) {
       this.reloads++;
+      this.reloadOpts.push(opts);
       const next = reads.length ? reads.shift() : null;
       if (next === 'fail') { this.loadedAssignments.delete(String(aid)); return Promise.resolve(null); }
       this.loadedAssignments.add(String(aid));
@@ -146,5 +148,17 @@ suite('what the teacher is told after posting a column', (test) => {
     };
     await controller(model, api).post('99', null);
     a.eq(last().level, 'error');
+  });
+
+  test('every re-read a post triggers skips fetching comments it will never use', async () => {
+    // Posting can re-read the same column up to four times (the pre-post
+    // check, plus up to three settle-after-post attempts); none of them look
+    // at a comment, so none of them should ask Canvas to serialize every
+    // submission's comment thread along with the grades.
+    said.length = 0;
+    const model = fakeModel([[true, true], [true, true], [false, false]]);
+    await controller(model, okApi()).post('99', null);
+    a.ok(model.reloadOpts.length >= 3, 'more than one re-read happened in this run');
+    model.reloadOpts.forEach((opts) => a.eq(opts && opts.includeComments, false));
   });
 });

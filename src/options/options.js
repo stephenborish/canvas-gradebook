@@ -77,6 +77,74 @@
     });
   }
 
+  /* ------------------------------------------------------- export / import */
+
+  /* A settings backup a teacher can carry to another computer by hand - the
+   * counterpart to chrome.storage.sync, which only carries settings between
+   * computers signed into the same, syncing Chrome profile. Downloaded
+   * straight from this page with no network request of any kind: the file is
+   * built and saved entirely client-side. */
+  function exportSettings() {
+    var payload = {
+      app: 'canvas-gradebook-plus',
+      formatVersion: 1,
+      extensionVersion: CGP.VERSION,
+      exportedAt: new Date().toISOString(),
+      settings: read()
+    };
+    var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'canvas-gradebook-plus-settings-' + payload.exportedAt.slice(0, 10) + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Revoked shortly after, not immediately: some browsers cancel a
+    // still-in-flight download if the object URL disappears too soon.
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    status('Settings file downloaded.');
+  }
+
+  /* Accepts either this extension's own export (wrapped in {settings: ...})
+   * or a bare settings object, so a file someone hand-edited or extracted
+   * from an older export still loads. Every field still passes through
+   * sanitizeSettings - exactly the same clamping and coercion a value coming
+   * from chrome.storage.sync gets - so a corrupted or hand-edited file can
+   * never write something the options form itself could not have produced. */
+  function importSettingsFromText(text) {
+    var parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      status('That file is not a valid settings file (not JSON).');
+      return;
+    }
+    var raw = (parsed && typeof parsed === 'object' && !Array.isArray(parsed) &&
+      parsed.settings && typeof parsed.settings === 'object') ? parsed.settings : parsed;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      status('That file does not look like a Gradebook+ settings file.');
+      return;
+    }
+    var values = CGP.sanitizeSettings(raw);
+    var payload = {};
+    payload[KEY] = values;
+    chrome.storage.sync.set(payload).then(function () {
+      fill(values);
+      status('Settings restored from file. Reload the gradebook tab to see the change.');
+    }, function (err) {
+      status('Not saved: ' + (err && err.message ? err.message : 'Canvas storage rejected this.'));
+    });
+  }
+
+  function importSettingsFile(file) {
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () { importSettingsFromText(String(reader.result || '')); };
+    reader.onerror = function () { status('Could not read that file.'); };
+    reader.readAsText(file);
+  }
+
   /* ----------------------------------------------------------- extra hosts */
 
   function normalizeHost(raw) {
@@ -158,6 +226,14 @@
       load();
       status('Defaults restored.');
     });
+  });
+
+  $('exportSettings').addEventListener('click', exportSettings);
+  $('importSettingsButton').addEventListener('click', function () { $('importSettingsFile').click(); });
+  $('importSettingsFile').addEventListener('change', function () {
+    var file = this.files && this.files[0];
+    importSettingsFile(file);
+    this.value = ''; // clears the selection so picking the same file again still fires 'change'
   });
 
   $('grantDomain').addEventListener('click', grantDomain);

@@ -15,6 +15,13 @@
       courseId: (ENV.COURSE_ID || ENV.course_id || opts.context_id || null),
       gradebookEditable: opts.gradebook_is_editable === undefined ? null : !!opts.gradebook_is_editable,
       gradingPeriodsEnabled: !!(opts.grading_period_set || opts.multiple_grading_periods_enabled),
+      // Which grading period Canvas's OWN Total column is scoped to right
+      // now. Canvas decides this server-side (a URL ?grading_period_id=, or
+      // its own "current" default when the URL says nothing) and this is the
+      // only place that choice is ever exposed - never reliably inferable
+      // from the URL alone. null means the whole course (no filter, or the
+      // teacher explicitly chose "All Grading Periods").
+      currentGradingPeriodId: opts.current_grading_period_id === undefined ? null : String(opts.current_grading_period_id),
       postPolicies: !!opts.post_policies_enabled
     };
     if (payload.courseId !== null) payload.courseId = String(payload.courseId);

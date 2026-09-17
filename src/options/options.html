@@ -112,12 +112,12 @@
       <h2 id="h-input">Grading input</h2>
       <div class="row row--check">
         <input id="enableM" type="checkbox">
-        <label for="enableM"><kbd>M</kbd> enters 0 and marks the submission Missing, and again switches it to Late
+        <label for="enableM"><kbd>M</kbd> marks the submission Missing instantly, and again removes it
           <span class="hint">The status is written to Canvas itself, so the submission shows as Missing everywhere
             &ndash; the Grade Detail Tray, SpeedGrader and the student&rsquo;s own grades page &ndash; not only here.
-            A toggle: pressing <kbd>M</kbd> again on the same cell means the work turned up after all, so Missing
-            becomes Late, the 0 is removed, and the cell is ready for any grade you want to type. A submission that
-            was already both Missing and graded keeps its grade &ndash; only the status changes.</span>
+            A pure toggle, exactly like <kbd>L</kbd>: it never enters a grade and never touches one that is already
+            there, in either direction. Entering a grade never removes or changes Missing either &ndash; press
+            <kbd>M</kbd> yourself when the status should come off.</span>
         </label>
       </div>
       <div class="row row--check">
@@ -128,14 +128,7 @@
         <input id="enableL" type="checkbox">
         <label for="enableL"><kbd>L</kbd> marks the submission Late, and un-marks one that is already Late
           <span class="hint">A toggle: pressing <kbd>L</kbd> on a submission you have already marked Late removes that
-            status again. It never touches the grade either way.</span>
-        </label>
-      </div>
-      <div class="row row--check">
-        <input id="missingBecomesLate" type="checkbox">
-        <label for="missingBecomesLate">Grading a Missing submission marks it Late in Canvas
-          <span class="hint">Work that was Missing and has now been graded came in after it was due. Entering a score
-            removes the Missing status and records Late in its place. Turn this off to simply clear the status.</span>
+            status again. It never touches the grade either way, and entering a grade never touches Late either.</span>
         </label>
       </div>
       <div class="row row--check">
@@ -224,6 +217,18 @@ Check your units and significant figures.</pre>
           <p class="hint">Only needed if your Canvas is not on instructure.com.</p>
           <p id="domainList" class="hint"></p>
         </div>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="h-backup">
+      <h2 id="h-backup">Backup and transfer</h2>
+      <p class="hint">Carry your settings to another computer: download a file here, then use
+        &ldquo;Restore from file&hellip;&rdquo; on the other one. The file holds your preferences, layout and
+        snippets only &ndash; never grades, comments or student names.</p>
+      <div class="diag__actions">
+        <button id="exportSettings" type="button" class="btn">Download settings file</button>
+        <button id="importSettingsButton" type="button" class="btn btn--quiet">Restore from file&hellip;</button>
+        <input id="importSettingsFile" type="file" accept="application/json,.json" hidden>
       </div>
     </section>
 

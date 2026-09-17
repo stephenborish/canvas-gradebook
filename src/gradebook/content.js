@@ -60,6 +60,21 @@
 
     document.documentElement.classList.add('cgp-gradebook');
 
+    // Bound and injected as early as possible - before the model's own first
+    // network round trip even starts, ideally - so the grading period Canvas
+    // is actually using has the best chance of being known BEFORE init()'s
+    // one and only whole-roster Total read, rather than correcting it
+    // afterwards. See env-bridge.js and model.setGradingPeriod. A late
+    // arrival still self-corrects; it is just one extra read instead of zero.
+    window.addEventListener('message', function (e) {
+      if (e.source !== window || !e.data || e.data.source !== 'cgp-env') return;
+      var env = e.data.env || {};
+      if (env.currentUserId) CGP.diag.set('envUserId', String(env.currentUserId));
+      if (env.courseId) CGP.diag.set('envCourseId', String(env.courseId));
+      if (env.currentGradingPeriodId !== undefined) model.setGradingPeriod(env.currentGradingPeriodId);
+    });
+    injectEnvBridge();
+
     var layout = new CGP.CompactLayoutController({ adapter: adapter, settings: settings });
     layout.start();
 
@@ -253,7 +268,14 @@
         // open. The settings gear is covered by the utility-strip re-hide
         // below, plus a CSS rule that needs no JS at all.
         layout.hideKeyboardShortcutsButton();
-        paint();
+        // Re-checked on every tick, not just once at boot: a column that was
+        // not yet rendered (or whose first resize attempt failed because
+        // Canvas had not finished mounting it) is picked up here instead of
+        // being left at Canvas's original width for the rest of the page's
+        // life. resizeColumns() itself is cheap to call when nothing is out
+        // of spec - one measurement pass, no drags - so this costs nothing in
+        // the steady state.
+        layout.resizeColumns().then(function () { frozen.measure(); paint(); });
       }, 1500);
 
       // Canvas's own column widths, then re-measure the frozen pane.
@@ -304,14 +326,26 @@
           }
         });
         CGP.diag.set('visibleAssignmentIds', visibleIds.length);
+        // ensureAssignments alone already paints values, comment bubbles and
+        // every other indicator for the visible columns - it emits 'cells' as
+        // soon as its own (bulk) fetch lands, which model.on('cells', paint)
+        // above is already listening for. verifyVisibleComments is a
+        // defensive fallback for Canvas builds that do not reliably include
+        // comments on that bulk endpoint, and prefetching the rest of the
+        // course is background warming - neither is what the teacher is
+        // waiting on to see this screenful of the grid, so neither should
+        // make the other (or the visible screen) wait on it. Both are still
+        // bounded by the same request pool, so this changes nothing about how
+        // many requests are in flight at once - only which unrelated things
+        // no longer queue behind each other for no reason.
         return model.ensureAssignments(visibleIds).then(function () {
-          return model.verifyVisibleComments(visibleIds);
-        }).then(function () {
-          CGP.diag.log('comments.visibleLoaded', model.stats());
-          paint();
           if (CGP.settings.values.prefetchAllAssignments) {
             setTimeout(function () { model.prefetchRemaining(); }, 1200);
           }
+          return model.verifyVisibleComments(visibleIds).then(function () {
+            CGP.diag.log('comments.visibleLoaded', model.stats());
+            paint();
+          });
         });
       }, function (err) {
         CGP.diag.error('boot.modelFailed', { status: err && err.status, message: String(err && err.message) });
@@ -323,18 +357,34 @@
         layout.start();
         paint();
       });
-      window.addEventListener('message', function (e) {
-        if (e.source !== window || !e.data || e.data.source !== 'cgp-env') return;
-        var env = e.data.env || {};
-        if (env.currentUserId) CGP.diag.set('envUserId', String(env.currentUserId));
-        if (env.courseId) CGP.diag.set('envCourseId', String(env.courseId));
-      });
-      injectEnvBridge();
       CGP.gradebook = {
         model: model, adapter: adapter, layout: layout, selection: selection,
         writer: writer, posting: posting, bulkComment: bulkComment, paint: paint, diag: CGP.diag
       };
     });
+  }
+
+  /* Every other page inside a course - Assignments, Modules, Discussions, a
+   * single student's Grades, wherever - gets only the breadcrumb course
+   * switcher, not the gradebook grid. Canvas already renders the same
+   * course-name breadcrumb on every one of these pages, so the same "Switch
+   * course" control belongs on all of them, not only on the gradebook: a
+   * teacher moving between courses is just as often starting from an
+   * assignment or a module page as from the gradebook itself. Nothing else in
+   * this file runs here - no model, no grid, no writes - so this costs
+   * nothing beyond the one API call the switcher itself only makes once its
+   * menu is actually opened. */
+  function startCourseChrome(courseId) {
+    document.documentElement.classList.add('cgp-on');
+    var settings = CGP.settings;
+    var api = new CGP.CanvasApi();
+    var switcher = new CGP.CourseSwitcher({ api: api, courseId: courseId, settings: settings });
+    switcher.start();
+    // Re-run (idempotent: start() itself refuses to mount a second toggle,
+    // and does nothing at all while the setting is off) so flipping the
+    // setting on in the options page takes effect without a reload, the same
+    // way the full gradebook page already behaves on a settings change.
+    CGP.settings.onChange(function () { switcher.start(); });
   }
 
   function boot() {
@@ -343,14 +393,15 @@
       var isSpeedGrader = /\/gradebook\/speed_grader/.test(path);
       var isGradebook = !isSpeedGrader && /\/courses\/\d+\/gradebook\/?$/.test(path);
       var courseId = CGP.util.courseIdFromPath(path);
-      CGP.diag.set('page', isSpeedGrader ? 'speedgrader' : (isGradebook ? 'gradebook' : 'other'));
+      CGP.diag.set('page', isSpeedGrader ? 'speedgrader' : (isGradebook ? 'gradebook' : (courseId ? 'course-other' : 'other')));
 
       if (isSpeedGrader) {
         if (CGP.startSpeedGrader) CGP.startSpeedGrader(courseId);
         return null;
       }
-      if (!isGradebook || !courseId) return null;
-      return startGradebook(courseId);
+      if (isGradebook && courseId) return startGradebook(courseId);
+      if (courseId) return startCourseChrome(courseId);
+      return null;
     }).catch(function (e) {
       CGP.diag.error('boot.failed', { message: String(e && e.message) });
     });
