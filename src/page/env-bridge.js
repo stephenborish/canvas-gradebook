@@ -21,7 +21,8 @@
       // only place that choice is ever exposed - never reliably inferable
       // from the URL alone. null means the whole course (no filter, or the
       // teacher explicitly chose "All Grading Periods").
-      currentGradingPeriodId: opts.current_grading_period_id === undefined ? null : String(opts.current_grading_period_id),
+      currentGradingPeriodId: (opts.current_grading_period_id === undefined || opts.current_grading_period_id === null)
+        ? null : String(opts.current_grading_period_id),
       postPolicies: !!opts.post_policies_enabled
     };
     if (payload.courseId !== null) payload.courseId = String(payload.courseId);

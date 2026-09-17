@@ -79,6 +79,31 @@ suite('grading-period-scoped Total', (test) => {
     a.eq(api.calls.length, 0, 'not ready yet - init() itself will use gradingPeriodId on its own first read');
   });
 
+  test('a period learned before ready is not lost when init() already had its own read in flight', () => {
+    // The race the previous test does not cover: init()'s own whole-roster
+    // read started (scoped to the default period, null) BEFORE env-bridge's
+    // message set the real period, and has not resolved yet when it does.
+    // That in-flight read still lands with the wrong scope; the corrective
+    // reload must happen once the model goes ready, not be silently dropped.
+    const api = fakeApi();
+    const model = new CGP.GradebookModel(api, '999');
+    model.ready = false;
+    model.students.set('10', { id: '10', currentScore: 90, currentGrade: null });
+    model.setGradingPeriod('7');
+    a.eq(api.calls.length, 0, 'queued, not fetched yet - the model is not ready');
+    // init()'s own in-flight read (scoped to null, the period this model held
+    // before setGradingPeriod ran) lands and flips the model ready.
+    model.gradingPeriodId = '7'; // already set by setGradingPeriod above
+    model._applyEnrollment(enrollment('10', 90));
+    model.ready = true;
+    model.emit('ready', null);
+    return new Promise((resolve) => setTimeout(resolve, 0)).then(() => {
+      a.eq(api.calls.length, 1, 'the corrective reload actually ran once ready fired');
+      a.eq(api.calls[0].gradingPeriodId, '7');
+      a.eq(model.students.get('10').currentScore, 50, 'the period-scoped score wins, not the whole-course one');
+    });
+  });
+
   test('a single grade write refreshes one student scoped to the same period', () => {
     const api = fakeApi();
     api.enrollmentForUser = function (courseId, userId, gradingPeriodId) {

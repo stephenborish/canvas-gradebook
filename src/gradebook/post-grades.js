@@ -389,11 +389,23 @@
       self.model.reloadAssignment(id, { includeComments: false }).then(function () {
         self._rechecking.delete(id);
         self.requestPaint();
-        var left = self.model.pendingPosts(id).length;
-        if (left > 0 && attempt + 1 < MAX_ATTEMPTS) {
-          self.recheckLater(id, attempt + 1);
-        } else if (left > 0) {
-          CGP.diag.warn('post.recheckExhausted', { assignmentId: id, left: left });
+        // reloadAssignment() swallows its own fetch failure (see
+        // ensureAssignments) and resolves normally either way, leaving the
+        // assignment out of loadedAssignments when the read actually failed.
+        // pendingPosts() reads that as "column has nothing to post" and
+        // answers [] regardless of the real reason, which used to read here
+        // as "caught up" and silently end the retry chain on a fetch that
+        // never actually landed. Treat "still not loaded" the same as "still
+        // has pending posts" so a swallowed failure keeps retrying instead of
+        // being mistaken for success.
+        var loaded = self.model.loadedAssignments.has(id);
+        var left = loaded ? self.model.pendingPosts(id).length : -1;
+        if (!loaded || left > 0) {
+          if (attempt + 1 < MAX_ATTEMPTS) {
+            self.recheckLater(id, attempt + 1);
+          } else {
+            CGP.diag.warn('post.recheckExhausted', { assignmentId: id, left: loaded ? left : null });
+          }
         }
       }, function () {
         self._rechecking.delete(id);

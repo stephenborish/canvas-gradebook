@@ -166,6 +166,30 @@ suite('what the teacher is told after posting a column', (test) => {
     a.eq(model.pendingPosts('99').length, 0, 'the background recheck(s) caught the column up with no user action');
   });
 
+  test('a swallowed fetch failure during the background recheck is retried, not mistaken for caught up', async () => {
+    said.length = 0;
+    // 1 pre-post read + 3 settleAfterPost attempts (all still hidden) before
+    // recheckLater even starts, then recheckLater's own attempts: a fetch
+    // failure reloadAssignment() swallows internally (the column drops out
+    // of loadedAssignments, same as the 'fail' reads used elsewhere in this
+    // file), then still hidden, then finally caught up. pendingPosts()
+    // answers [] for an assignment that is not loaded - indistinguishable,
+    // by length alone, from "nothing left to post" - so a naive read of that
+    // length used to end the retry chain right there instead of recognising
+    // the column was never actually re-read.
+    const model = fakeModel([
+      [true, true], [true, true], [true, true], [true, true],
+      'fail', [true, true], [false, false]
+    ]);
+    await controller(model, okApi(false), 2 /* tiny base delay */).post('99', null);
+    a.ok(/still posting/i.test(last().text), 'got: ' + last().text);
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    a.eq(model.reloads, 7, 'the swallowed failure did not silently end the retry chain');
+    a.eq(model.loadedAssignments.has('99'), true, 'the column is not left stuck unloaded after one failed attempt');
+    a.eq(model.pendingPosts('99').length, 0, 'and it actually caught up, not merely stopped retrying');
+  });
+
   test('every re-read a post triggers skips fetching comments it will never use', async () => {
     // Posting can re-read the same column up to four times (the pre-post
     // check, plus up to three settle-after-post attempts); none of them look

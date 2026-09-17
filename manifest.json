@@ -88,7 +88,7 @@
         "src/page/env-bridge.js"
       ],
       "matches": [
-        "*://*.instructure.com/*"
+        "*://*/*"
       ]
     }
   ]

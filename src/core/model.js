@@ -166,6 +166,20 @@
     if (next === this.gradingPeriodId) return Promise.resolve(null);
     this.gradingPeriodId = next;
     CGP.diag.set('gradingPeriodId', next);
+    if (!this.ready) {
+      // init()'s own whole-roster enrollment read (see init()) may already be
+      // in flight, scoped to whatever period this.gradingPeriodId held before
+      // this call - reloadTotals() itself is a no-op until ready, and would
+      // otherwise silently drop this correction the moment that in-flight
+      // read lands and applies the wrong scope. env-bridge.js posts exactly
+      // once and removes itself, so no second ENV message will ever arrive to
+      // try again - queue the corrective reload for the instant the model
+      // actually becomes ready instead. 'ready' fires exactly once (see
+      // init()), so this can never run stale.
+      var self = this;
+      this.on('ready', function () { self.reloadTotals(); });
+      return Promise.resolve(null);
+    }
     return this.reloadTotals();
   };
 

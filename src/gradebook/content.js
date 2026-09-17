@@ -40,6 +40,16 @@
     });
   }
 
+  // manifest.json exposes env-bridge.js as web-accessible to "*://*/*", not
+  // just *.instructure.com: this content script itself only ever runs on an
+  // instructure.com domain or a self-hosted one the teacher explicitly
+  // granted through the options page (optional_host_permissions is already
+  // "*://*/*" for exactly that reason), so a self-hosted domain would
+  // otherwise have this <script src> silently blocked by Chrome and never
+  // learn the active grading period at all. The bridge script itself reads
+  // nothing but window.ENV and posts back an allowlisted, already-public
+  // payload, so being loadable on a wider set of origins than it actually
+  // ever runs on is not a new exposure.
   function injectEnvBridge() {
     try {
       if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.getURL) return;
@@ -267,6 +277,14 @@
         // open. The settings gear is covered by the utility-strip re-hide
         // below, plus a CSS rule that needs no JS at all.
         layout.hideKeyboardShortcutsButton();
+        // Same idea as the keyboard-shortcuts button above: on a gradebook
+        // slow enough that Canvas had not yet mounted the grid when
+        // layout.start() ran, gridRoot() was null and mountArrangeButton()
+        // returned without mounting, with nothing re-trying it afterwards.
+        // The setting-off case and the already-mounted case are both cheap,
+        // idempotent no-ops (see mountArrangeButton), so calling it on every
+        // tick costs nothing once the button is up.
+        layout.mountArrangeButton();
         // Re-checked on every tick, not just once at boot: a column that was
         // not yet rendered (or whose first resize attempt failed because
         // Canvas had not finished mounting it) is picked up here instead of
