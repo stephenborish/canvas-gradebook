@@ -467,6 +467,17 @@ html.cgp-on .cgp-status-badge--late {
   background: var(--cgp-late-badge);
   color: var(--cgp-late-badge-ink);
 }
+/* Canvas draws its own late-clock / missing-"?" icon as a real child element
+ * at the same leading (top-left) corner - not merely a background tint - so a
+ * solid ring around our own badge does not reliably cover it (the icon can be
+ * a different size/shape, or simply sit beside rather than fully underneath
+ * our circle). Rather than guess at Canvas's icon markup, our badge replaces
+ * it outright: whenever this extension is showing its own Missing/Late badge
+ * for a cell, Canvas's own icon container for that same cell is hidden, so
+ * there is exactly one indicator, never two overlapping ones. */
+html.cgp-on .slick-cell.cgp-has-status-badge .Grid__GradeCell__StartContainer {
+  visibility: hidden !important;
+}
 
 /* ------------------------------------------------------- cell selection */
 
@@ -694,6 +705,16 @@ html.cgp-on .cgp-collapsed {
   display: none !important;
 }
 
+/* The Test Student row - visibility, not display:none, so its slot in
+ * SlickGrid's absolutely-positioned row layout is left completely alone
+ * (see layout.js hideTestStudentRows) rather than shifting every row below
+ * it. Not clickable/focusable either, so a grade can never land in it by
+ * accident. */
+html.cgp-on .cgp-hidden-row {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 /* The "Arrange columns..." substitute for Canvas's own hidden gear (see
  * layout.js's mountArrangeButton). Sits in normal document flow right above
  * the grid - never measured against or aligned to anything Canvas renders,
@@ -702,7 +723,21 @@ html.cgp-on .cgp-collapsed {
 html.cgp-on .cgp-toolbar {
   display: flex;
   align-items: center;
+  gap: 8px;
   padding: 2px 2px 8px;
+}
+html.cgp-on .cgp-arrange-select {
+  padding: 5px 8px;
+  border: 1px solid var(--cgp-line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--cgp-ink);
+  font: 600 12px/1 inherit;
+  cursor: pointer;
+}
+html.cgp-on .cgp-arrange-select:focus-visible {
+  outline: none;
+  box-shadow: var(--cgp-focus-ring);
 }
 html.cgp-on .cgp-arrange-btn {
   display: inline-flex;
@@ -1220,6 +1255,15 @@ html.cgp-on .slick-header-columns {
 html.cgp-on .slick-header {
   border-bottom: 2px solid var(--cgp-brand) !important;
   box-shadow: 0 1px 4px rgba(19, 33, 44, 0.07);
+  /* .cgp-total-header (frozen-total.js) is absolutely positioned against
+   * this element on the assumption that SlickGrid's own stylesheet already
+   * makes it a positioned ancestor - true for every real SlickGrid build,
+   * but not guaranteed if Canvas's own CSS has not finished loading yet on
+   * a slow connection. Asserting it here too costs nothing and removes that
+   * race entirely, rather than leaving the Total header able to drift to
+   * position:absolute's fallback (the viewport) and overlap page chrome
+   * above the grid until Canvas's stylesheet catches up. */
+  position: relative;
 }
 html.cgp-on .slick-header-column {
   background: transparent !important;
@@ -1472,7 +1516,30 @@ html.cgp-on .cgp-course-menu__item {
 }
 html.cgp-on .cgp-course-menu__item.is-active { background: var(--cgp-brand-wash); }
 html.cgp-on .cgp-course-menu__item:hover { background: var(--cgp-brand-wash); }
+/* The active course is the one a teacher most needs to spot at a glance in a
+ * scrollable list of otherwise-identical rows, so it gets its own persistent
+ * treatment - background tint, left accent bar and an explicit "Current"
+ * tag - independent of (and visible underneath) the hover/keyboard-active
+ * wash above, rather than relying on bold text alone. */
+html.cgp-on .cgp-course-menu__item.is-current {
+  background: rgba(3, 116, 181, 0.08);
+  box-shadow: inset 3px 0 0 var(--cgp-brand);
+}
+html.cgp-on .cgp-course-menu__item.is-current.is-active,
+html.cgp-on .cgp-course-menu__item.is-current:hover { background: var(--cgp-brand-wash); }
+html.cgp-on .cgp-course-menu__row { display: flex; align-items: center; gap: 6px; }
 html.cgp-on .cgp-course-menu__item.is-current .cgp-course-menu__name { font-weight: 700; }
+html.cgp-on .cgp-course-menu__current-tag {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: var(--cgp-brand);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
 html.cgp-on .cgp-course-menu__term { color: var(--cgp-muted); font-size: 11px; }
 html.cgp-on .cgp-course-menu__empty { padding: 8px 7px; color: var(--cgp-muted); }
 

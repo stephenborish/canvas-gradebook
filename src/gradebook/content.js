@@ -88,7 +88,7 @@
     var layout = new CGP.CompactLayoutController({ adapter: adapter, settings: settings });
     layout.start();
 
-    var switcher = new CGP.CourseSwitcher({ api: api, courseId: courseId, settings: settings });
+    var switcher = new CGP.CourseSwitcher({ api: api, courseId: courseId, settings: settings, isGradebookPage: true });
     switcher.start();
 
     // Started after the switcher so it can seat itself to the right of it in
@@ -213,6 +213,7 @@
       painting = true;
       try {
         layout.decorateHeaders(model);
+        layout.hideTestStudentRows();
         posting.paint();
         indicators.paint();
         selection.paint(registry.lastCells);
@@ -258,6 +259,11 @@
       bindScroll();
       observeGrid();
       paint();
+
+      // Best-effort, once per page load: push this teacher's preferred View
+      // Options into Canvas's own settings tray so they never have to do it
+      // by hand per course. A no-op unless syncViewOptionsToCanvas is on.
+      layout.syncViewOptions();
 
       // Slower safety tick: catches any rerender an observer missed. Cheap,
       // because unchanged cells are skipped by their paint signature. Also
@@ -414,7 +420,7 @@
     document.documentElement.classList.add('cgp-on');
     var settings = CGP.settings;
     var api = new CGP.CanvasApi();
-    var switcher = new CGP.CourseSwitcher({ api: api, courseId: courseId, settings: settings });
+    var switcher = new CGP.CourseSwitcher({ api: api, courseId: courseId, settings: settings, isGradebookPage: false });
     switcher.start();
     // Re-run (idempotent: start() itself refuses to mount a second toggle,
     // and does nothing at all while the setting is off) so flipping the

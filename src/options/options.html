@@ -125,6 +125,53 @@
               <span class="unit">px</span>
             </div>
           </div>
+          <div class="setting">
+            <label class="setting__label" for="hideTestStudent">Hide the Test Student row
+              <span class="hint">Removes Canvas's Student View row from the grid so a grade is never typed into it by
+                accident.</span>
+            </label>
+            <input id="hideTestStudent" type="checkbox" class="switch">
+          </div>
+
+          <h2 class="panel__group">Canvas View Options</h2>
+          <p class="hint">Canvas's own Gradebook Settings &rarr; View Options, set here once instead of per course.
+            Turn on the switch below to have this extension apply them to Canvas automatically; leave it off and
+            these are just remembered preferences.</p>
+          <div class="setting">
+            <label class="setting__label" for="syncViewOptionsToCanvas">Apply these to Canvas's own settings automatically</label>
+            <input id="syncViewOptionsToCanvas" type="checkbox" class="switch">
+          </div>
+          <div class="setting">
+            <label class="setting__label" for="gbShowNotes">Notes</label>
+            <input id="gbShowNotes" type="checkbox" class="switch">
+          </div>
+          <div class="setting">
+            <label class="setting__label" for="gbShowUnpublishedAssignments">Unpublished Assignments</label>
+            <input id="gbShowUnpublishedAssignments" type="checkbox" class="switch">
+          </div>
+          <div class="setting">
+            <label class="setting__label" for="gbSplitStudentNames">Split Student Names</label>
+            <input id="gbSplitStudentNames" type="checkbox" class="switch">
+          </div>
+          <div class="setting">
+            <label class="setting__label" for="gbHideAssignmentGroupTotals">Hide Assignment Group Totals</label>
+            <input id="gbHideAssignmentGroupTotals" type="checkbox" class="switch">
+          </div>
+          <div class="setting">
+            <label class="setting__label" for="gbHideTotalColumn">Hide Total Column</label>
+            <input id="gbHideTotalColumn" type="checkbox" class="switch">
+          </div>
+          <div class="setting">
+            <label class="setting__label" for="gbViewHiddenGradesIndicator">View hidden grades indicator</label>
+            <input id="gbViewHiddenGradesIndicator" type="checkbox" class="switch">
+          </div>
+          <div class="setting">
+            <label class="setting__label" for="gbEnableStatusIcons">Enable Gradebook Status Icons
+              <span class="hint">Leave this off if you'd rather rely on this extension's own Missing/Late badges,
+                which are drawn to fully replace Canvas's own icon so the two never overlap.</span>
+            </label>
+            <input id="gbEnableStatusIcons" type="checkbox" class="switch">
+          </div>
         </section>
 
         <section class="panel" id="panel-indicators" role="tabpanel" aria-labelledby="tab-indicators" data-panel="indicators" hidden>

@@ -366,6 +366,40 @@
     return null;
   };
 
+  /* Canvas's Student View / "Test Student" pseudo-enrollee always renders
+   * with that exact, non-customizable display name - unlike a real student's
+   * id, which this extension deliberately never learns (teachingCourseList
+   * and the roster fetch both filter to type[]=StudentEnrollment, so the
+   * model itself never has this row's identity to key off of). Matching the
+   * literal name is therefore the stable signal, not an id lookup. */
+  P.isTestStudentRow = function (row) {
+    var link = row.querySelector('a[href*="/grades/"], a[href*="/users/"], .student-name');
+    if (!link) return false;
+    return String(link.textContent || '').trim() === 'Test Student';
+  };
+
+  /* Cross-pane check: is the row AT THIS VERTICAL POSITION the Test Student?
+   * isTestStudentRow() alone only ever sees the name, which only the frozen
+   * pane renders - a grade cell's own row (in the scrolling pane) carries no
+   * name to check, so resolving identity there by whatever data attribute
+   * Canvas happens to expose could still hand back the pseudo-user's real
+   * id. Cross-checking every identity resolution against the frozen pane's
+   * row at the same `top` - the one place this extension can actually see
+   * the name - is what keeps the Test Student unresolvable everywhere
+   * (bulk paste, Shift-click ranges, a single M/E/L keystroke), not merely
+   * invisible. See hideTestStudentRows() in layout.js for the (separate)
+   * purely cosmetic hiding. */
+  P.isTestStudentAtTop = function (top) {
+    if (top === null || top === undefined) return false;
+    var frozen = this.canvases()[0];
+    if (!frozen) return false;
+    var rows = frozen.querySelectorAll(':scope > .slick-row');
+    for (var i = 0; i < rows.length; i++) {
+      if (this.rowTop(rows[i]) === top) return this.isTestStudentRow(rows[i]);
+    }
+    return false;
+  };
+
   P.rowTop = function (row) {
     var top = parseFloat((row.style && row.style.top) || '');
     if (isFinite(top)) return Math.round(top);
@@ -382,12 +416,42 @@
     var sampled = 0;
     var reordered = false;
     var seen = [];   // {top, idx, sid} actually read live this pass
+
+    // Computed once per pass, not per row: the Test Student must never be
+    // resolvable to a rowIndex/userId at all - not merely hidden - so
+    // nothing downstream (bulk paste's consecutive-row mapping, a
+    // Shift-click range, a single M/E/L keystroke) can ever target it.
+    var testTops = {};
+    var frozen = canvases[0];
+    if (frozen) {
+      var frozenRows = frozen.querySelectorAll(':scope > .slick-row');
+      for (var fi = 0; fi < frozenRows.length; fi++) {
+        if (self.isTestStudentRow(frozenRows[fi])) {
+          var ftop = self.rowTop(frozenRows[fi]);
+          if (ftop !== null) testTops[ftop] = true;
+        }
+      }
+    }
+
     canvases.forEach(function (canvas) {
       var rows = canvas.querySelectorAll(':scope > .slick-row');
       for (var i = 0; i < rows.length; i++) {
         var row = rows[i];
         var top = self.rowTop(row);
         if (top === null) continue;
+        if (testTops[top]) {
+          // Wipe any stale entry too, not just skip refreshing it - a prior
+          // pass (or a live read elsewhere, e.g. cellInfo()) may have
+          // already cached this position's real id before this row was
+          // known to be the Test Student.
+          var staleIdx = gridMap.rowIndexFromTop(top, h);
+          var staleSid = self.topToStudent.get(top);
+          self.topToStudent.delete(top);
+          if (staleIdx !== null) self.rowIndexToStudent.delete(staleIdx);
+          if (staleSid) self.studentToRowIndex.delete(String(staleSid));
+          unresolved++;
+          continue;
+        }
         var idx = gridMap.rowIndexFromTop(top, h);
         var live = self.studentIdFromRow(row);
         var sid = live || self.topToStudent.get(top) ||
@@ -527,6 +591,17 @@
     var live = this.studentIdFromRow(row);
     var studentId = live || (top !== null && this.topToStudent.get(top)) ||
       (rowIndex !== null ? this.studentAt(rowIndex) : null) || null;
+    // This live read bypasses refreshRows()'s own Test Student exclusion (by
+    // design - see the comment above), so it needs the same cross-pane check
+    // applied here directly: a click or keystroke on a grade cell whose row
+    // happens to expose the pseudo-user's real id (through whichever
+    // attribute this Canvas build uses) must never resolve to it, and must
+    // never re-poison the cache with it either.
+    if (studentId && top !== null && this.isTestStudentAtTop(top)) {
+      studentId = null;
+      this.topToStudent.delete(top);
+      if (rowIndex !== null) this.rowIndexToStudent.delete(rowIndex);
+    }
     if (studentId && rowIndex !== null) {
       if (top !== null) this.topToStudent.set(top, studentId);
       this.rowIndexToStudent.set(rowIndex, studentId);
@@ -767,6 +842,17 @@
 
   P.hasFrozenPane = function () {
     return this.canvases().length > 1;
+  };
+
+  /* The actual pane element the frozen-Total CSS widens (see
+   * `.slick-pane-left` / `.slick-viewport-left` in gradebook.css) - NOT
+   * `.grid-canvas`, whose width SlickGrid sets to the sum of that pane's
+   * column widths rather than to the pane's own (CSS-overridden) box width.
+   * Measuring the canvas instead of this element is what made
+   * FrozenTotalController.verifyWidened() never see the widen take hold. */
+  P.frozenPaneLeft = function () {
+    return document.querySelector('.slick-pane-left') ||
+      document.querySelector('.slick-viewport-left') || null;
   };
 
   CGP.GradebookDomAdapter = GradebookDomAdapter;
