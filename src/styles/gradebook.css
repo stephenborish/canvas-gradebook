@@ -1255,6 +1255,15 @@ html.cgp-on .slick-header-columns {
 html.cgp-on .slick-header {
   border-bottom: 2px solid var(--cgp-brand) !important;
   box-shadow: 0 1px 4px rgba(19, 33, 44, 0.07);
+  /* .cgp-total-header (frozen-total.js) is absolutely positioned against
+   * this element on the assumption that SlickGrid's own stylesheet already
+   * makes it a positioned ancestor - true for every real SlickGrid build,
+   * but not guaranteed if Canvas's own CSS has not finished loading yet on
+   * a slow connection. Asserting it here too costs nothing and removes that
+   * race entirely, rather than leaving the Total header able to drift to
+   * position:absolute's fallback (the viewport) and overlap page chrome
+   * above the grid until Canvas's stylesheet catches up. */
+  position: relative;
 }
 html.cgp-on .slick-header-column {
   background: transparent !important;
