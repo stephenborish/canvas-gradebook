@@ -366,6 +366,18 @@
     return null;
   };
 
+  /* Canvas's Student View / "Test Student" pseudo-enrollee always renders
+   * with that exact, non-customizable display name - unlike a real student's
+   * id, which this extension deliberately never learns (teachingCourseList
+   * and the roster fetch both filter to type[]=StudentEnrollment, so the
+   * model itself never has this row's identity to key off of). Matching the
+   * literal name is therefore the stable signal, not an id lookup. */
+  P.isTestStudentRow = function (row) {
+    var link = row.querySelector('a[href*="/grades/"], a[href*="/users/"], .student-name');
+    if (!link) return false;
+    return String(link.textContent || '').trim() === 'Test Student';
+  };
+
   P.rowTop = function (row) {
     var top = parseFloat((row.style && row.style.top) || '');
     if (isFinite(top)) return Math.round(top);
@@ -767,6 +779,17 @@
 
   P.hasFrozenPane = function () {
     return this.canvases().length > 1;
+  };
+
+  /* The actual pane element the frozen-Total CSS widens (see
+   * `.slick-pane-left` / `.slick-viewport-left` in gradebook.css) - NOT
+   * `.grid-canvas`, whose width SlickGrid sets to the sum of that pane's
+   * column widths rather than to the pane's own (CSS-overridden) box width.
+   * Measuring the canvas instead of this element is what made
+   * FrozenTotalController.verifyWidened() never see the widen take hold. */
+  P.frozenPaneLeft = function () {
+    return document.querySelector('.slick-pane-left') ||
+      document.querySelector('.slick-viewport-left') || null;
   };
 
   CGP.GradebookDomAdapter = GradebookDomAdapter;

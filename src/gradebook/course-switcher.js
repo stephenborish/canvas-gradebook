@@ -18,6 +18,13 @@
     this.api = ctx.api;
     this.courseId = String(ctx.courseId);
     this.settings = ctx.settings;
+    // Only when the switcher was started on the actual gradebook page should
+    // picking another course jump straight to THAT course's gradebook. From
+    // every other page inside a course (assignments, modules, a student's
+    // grades, the course home page, ...) switching courses should land on the
+    // same kind of page in the new course, not force a detour through its
+    // gradebook - see go().
+    this.isGradebookPage = !!ctx.isGradebookPage;
     this.menu = null;
     this.toggle = null;
     this.courses = null;
@@ -163,7 +170,10 @@
       return '<div class="cgp-course-menu__item' + (i === self.activeIndex ? ' is-active' : '') +
         (current ? ' is-current' : '') + '" role="option" aria-selected="' + (i === self.activeIndex) +
         '" data-course-id="' + CGP.util.escapeHtml(String(c.id)) + '">' +
+        '<span class="cgp-course-menu__row">' +
         '<span class="cgp-course-menu__name">' + CGP.util.escapeHtml(c.name || c.course_code || ('Course ' + c.id)) + '</span>' +
+        (current ? '<span class="cgp-course-menu__current-tag">Current</span>' : '') +
+        '</span>' +
         (term ? '<span class="cgp-course-menu__term">' + CGP.util.escapeHtml(term) + '</span>' : '') +
         '</div>';
     }).join('');
@@ -173,7 +183,21 @@
 
   P.go = function (course) {
     this.close();
-    window.location.href = '/courses/' + encodeURIComponent(String(course.id)) + '/gradebook';
+    var newId = encodeURIComponent(String(course.id));
+    if (this.isGradebookPage) {
+      window.location.href = '/courses/' + newId + '/gradebook';
+      return;
+    }
+    // Not on the gradebook: keep whatever kind of page this is (assignments,
+    // modules, a student's grades, ...) and just swap the course id, so
+    // switching never force-jumps to the gradebook from somewhere else. A
+    // path that doesn't carry anything past the course id (or that somehow
+    // is the gradebook despite isGradebookPage being false) falls back to the
+    // new course's own home page.
+    var m = /^\/courses\/\d+(\/.*)?$/.exec(location.pathname || '');
+    var rest = (m && m[1]) || '';
+    if (/^\/gradebook\/?$/.test(rest)) rest = '';
+    window.location.href = '/courses/' + newId + rest;
   };
 
   P.loadCourses = function () {

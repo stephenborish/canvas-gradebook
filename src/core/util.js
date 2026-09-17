@@ -19,6 +19,21 @@
     frozenTotal: true,
     centerAssignmentColumns: true,
     showAssignmentDueDate: true,
+    hideTestStudent: true,
+    // Canvas's own "View Options" checkboxes (Gradebook Settings -> View
+    // Options), mirrored here so a teacher sets them once in this extension's
+    // options page instead of per-course in Canvas's own settings tray. Kept
+    // OFF (syncViewOptionsToCanvas) by default: applying them means driving
+    // Canvas's real settings tray the same way a click would, which is only
+    // worth doing when a teacher has actually opted in.
+    syncViewOptionsToCanvas: false,
+    gbShowNotes: false,
+    gbShowUnpublishedAssignments: false,
+    gbSplitStudentNames: false,
+    gbHideAssignmentGroupTotals: true,
+    gbHideTotalColumn: false,
+    gbViewHiddenGradesIndicator: true,
+    gbEnableStatusIcons: true,
     // indicators
     commentIndicator: true,
     showCommentCount: true,

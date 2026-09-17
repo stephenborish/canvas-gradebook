@@ -81,9 +81,14 @@
    * again brings it right back with no reload needed either way. */
   P.verifyWidened = function () {
     if (!this.naturalWidth) return false;
-    var canvas = this.adapter.canvases()[0];
-    if (!canvas) return false;
-    var have = Math.round(canvas.getBoundingClientRect().width);
+    // The CSS widen (see `.slick-pane-left` / `.slick-viewport-left` in
+    // gradebook.css) resizes the pane itself, not `.grid-canvas` - SlickGrid
+    // sets the canvas's own width to the sum of that pane's column widths
+    // regardless of the pane's CSS box width, so measuring the canvas here
+    // never confirmed a real widen.
+    var pane = this.adapter.frozenPaneLeft();
+    if (!pane) return false;
+    var have = Math.round(pane.getBoundingClientRect().width);
     var want = this.naturalWidth + this.width;
     // A little slack for a hairline border, a scrollbar gutter, or ordinary
     // sub-pixel layout rounding on an otherwise-correct widen.

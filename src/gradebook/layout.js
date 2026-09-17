@@ -155,6 +155,20 @@
    * it off, Canvas's own gear is already sitting right there and a second way
    * to reach it would just be clutter - so this is re-evaluated every time
    * start() runs again on a settings change, same as everything else here. */
+  var ARRANGE_OPTIONS = [
+    { value: '', label: 'Arrange columns…' },
+    { value: 'due_date', label: 'By due date' },
+    { value: 'name', label: 'By name' },
+    { value: 'points', label: 'By points' },
+    { value: 'module', label: 'By module' }
+  ];
+
+  /* A real control in this extension's own toolbar, not just a button that
+   * detours through Canvas's settings tray: picking an option here drives
+   * Canvas's own View Options -> Arrange By select and clicks Apply for the
+   * teacher, so the choice takes effect without Canvas's modal ever being
+   * seen. Canvas's own control still does the actual sorting - nothing here
+   * reorders columns itself - this only automates reaching it. */
   P.mountArrangeButton = function () {
     if (!this.settings.values.hideCanvasUtilityControls) {
       if (this._arrangeBar) { this._arrangeBar.remove(); this._arrangeBar = null; }
@@ -166,15 +180,34 @@
 
     var bar = document.createElement('div');
     bar.className = 'cgp-toolbar';
-    var btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'cgp-arrange-btn';
-    btn.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.8 4.2h10.4M2.8 8h7.4M2.8 11.8h4.4"/>' +
-      '<path d="M12.4 6.4v6.4M10 10.4l2.4 2.4 2.4-2.4"/></svg><span>Arrange columns…</span>';
-    btn.title = 'Open Canvas’s own column arrangement – by due date, name, points, module, or manually';
+
+    var select = document.createElement('select');
+    select.className = 'cgp-arrange-select';
+    select.title = 'Arrange assignment columns – uses Canvas’s own arrangement, applied automatically';
+    ARRANGE_OPTIONS.forEach(function (opt) {
+      var o = document.createElement('option');
+      o.value = opt.value;
+      o.textContent = opt.label;
+      select.appendChild(o);
+    });
     var self = this;
-    btn.addEventListener('click', function () { self.openArrangeMenu(); });
-    bar.appendChild(btn);
+    select.addEventListener('change', function () {
+      var value = select.value;
+      select.value = '';
+      if (!value) return;
+      self.arrangeColumnsBy(value);
+    });
+    bar.appendChild(select);
+
+    var manualBtn = document.createElement('button');
+    manualBtn.type = 'button';
+    manualBtn.className = 'cgp-arrange-btn';
+    manualBtn.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.8 4.2h10.4M2.8 8h7.4M2.8 11.8h4.4"/>' +
+      '<path d="M12.4 6.4v6.4M10 10.4l2.4 2.4 2.4-2.4"/></svg><span>More options…</span>';
+    manualBtn.title = 'Open Canvas’s own gradebook settings, on the View Options tab';
+    manualBtn.addEventListener('click', function () { self.openArrangeMenu(); });
+    bar.appendChild(manualBtn);
+
     grid.parentElement.insertBefore(bar, grid);
     this._arrangeBar = bar;
   };
@@ -185,19 +218,176 @@
    * shortcut, or that button, exists at all. Canvas's own modal actually
    * moves the columns - nothing here reimplements that by moving DOM nodes
    * around in a virtualized grid, which is exactly the kind of thing that
-   * would corrupt SlickGrid's own row/column bookkeeping. */
+   * would corrupt SlickGrid's own row/column bookkeeping.
+   *
+   * Clicking the gear alone only opens the modal on whichever tab it last
+   * had active (Late Policies, on a first open) - it never selects View
+   * Options itself, which used to be the whole bug. The tab is only clicked
+   * once it actually exists in the DOM, since the modal mounts asynchronously
+   * after the gear click. */
   P.openArrangeMenu = function () {
     if (this.controlsHidden) this.restoreControls();
     this.applyGeometry();
     var gear = this.findSettingsButton();
-    if (gear && gear.isConnected) {
-      gear.click();
-      CGP.diag.bump('layout.arrangeMenuOpened');
-    } else {
+    if (!gear || !gear.isConnected) {
       CGP.diag.warn('layout.arrangeMenu.gearNotFound');
       CGP.ui.error('Couldn’t find Canvas’s gradebook settings button. Look for the gear icon, then ' +
         'View Options → Arrange By, to sort assignments by due date, name, points or module.');
+      return Promise.resolve(false);
     }
+    gear.click();
+    CGP.diag.bump('layout.arrangeMenuOpened');
+    return this.selectViewOptionsTab();
+  };
+
+  /* Text this Canvas build might use for the tab; scanned the same way
+   * findSettingsButton()/findKeyboardShortcutsButton() scan for their own
+   * targets, since the tab is not guaranteed a stable id/test-id either. */
+  P.findViewOptionsTab = function () {
+    var tabs = document.querySelectorAll('[role="tab"], .ui-tabs-anchor, a[href*="view-options" i]');
+    for (var i = 0; i < tabs.length; i++) {
+      var label = (tabs[i].textContent || '').trim().toLowerCase();
+      if (label.indexOf('view options') >= 0) return tabs[i];
+    }
+    return null;
+  };
+
+  /* Polls briefly for the settings modal to actually mount (it appears
+   * asynchronously after the gear click) and then for the View Options tab
+   * inside it, clicking it the moment it is found. Resolves true/false so
+   * callers (openArrangeMenu, arrangeColumnsBy, syncViewOptions) can chain
+   * further automation once the right tab is showing. */
+  P.selectViewOptionsTab = function () {
+    var self = this;
+    return new Promise(function (resolve) {
+      var attempts = 0;
+      var tick = function () {
+        var tab = self.findViewOptionsTab();
+        attempts++;
+        if (tab) {
+          tab.click();
+          CGP.diag.bump('layout.viewOptionsTabOpened');
+          setTimeout(function () { resolve(true); }, 80);
+          return;
+        }
+        if (attempts >= 25) {
+          CGP.diag.warn('layout.arrangeMenu.viewOptionsTabNotFound');
+          resolve(false);
+          return;
+        }
+        setTimeout(tick, 100);
+      };
+      setTimeout(tick, 80);
+    });
+  };
+
+  /* Find the "Arrange By" control inside the (already open) View Options tab
+   * and Canvas's own Apply/Done button for that tray - scanned by label text,
+   * not a fixed id, for the same reason as everything else in this file. */
+  P.findArrangeBySelect = function () {
+    var selects = document.querySelectorAll('select');
+    for (var i = 0; i < selects.length; i++) {
+      var label = (selects[i].getAttribute('aria-label') || selects[i].getAttribute('name') || '').toLowerCase();
+      var labelledEl = selects[i].labels && selects[i].labels[0];
+      var text = (label + ' ' + (labelledEl ? labelledEl.textContent || '' : '')).toLowerCase();
+      if (text.indexOf('arrange') >= 0) return selects[i];
+    }
+    return null;
+  };
+
+  P.findTrayApplyButton = function () {
+    var buttons = document.querySelectorAll('button, [role="button"]');
+    for (var i = 0; i < buttons.length; i++) {
+      var label = (buttons[i].textContent || '').trim().toLowerCase();
+      if (label === 'apply' || label === 'update' || label === 'done') return buttons[i];
+    }
+    return null;
+  };
+
+  /* Toolbar dropdown handler: opens Canvas's settings straight to the
+   * Arrange By select, picks the requested arrangement, and applies it - the
+   * teacher never needs to see the modal at all in the common case. Falls
+   * back to leaving the tray open (with an error toast) the moment any step
+   * cannot be found, rather than silently doing nothing. */
+  P.arrangeColumnsBy = function (value) {
+    var self = this;
+    return this.openArrangeMenu().then(function (onTab) {
+      if (!onTab) return false;
+      var select = self.findArrangeBySelect();
+      if (!select) {
+        CGP.diag.warn('layout.arrangeMenu.selectNotFound');
+        CGP.ui.error('Couldn’t find Canvas’s “Arrange By” control on the View Options tab. ' +
+          'It’s still open if you’d like to pick one by hand.');
+        return false;
+      }
+      select.value = value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      var apply = self.findTrayApplyButton();
+      if (apply) apply.click();
+      CGP.diag.bump('layout.arrangeApplied', { value: value });
+      return true;
+    });
+  };
+
+  /* Canvas's own "View Options" checkboxes, mirrored in this extension's
+   * options page (see options.html "Layout & Display") so a teacher sets
+   * them once instead of per course in Canvas's own settings tray. Off by
+   * default (syncViewOptionsToCanvas) - this drives Canvas's real controls
+   * exactly the way a click would (see the module note on dragResize for why
+   * that is preferred over guessing at an unverified internal API), so it is
+   * only worth doing when a teacher has actually opted in. Best-effort: any
+   * checkbox this Canvas build's markup doesn't match is simply left alone,
+   * never guessed at. */
+  var VIEW_OPTION_CHECKBOXES = [
+    { label: 'notes', key: 'gbShowNotes' },
+    { label: 'unpublished assignments', key: 'gbShowUnpublishedAssignments' },
+    { label: 'split student names', key: 'gbSplitStudentNames' },
+    { label: 'hide assignment group totals', key: 'gbHideAssignmentGroupTotals' },
+    { label: 'hide total column', key: 'gbHideTotalColumn' },
+    { label: 'view hidden grades indicator', key: 'gbViewHiddenGradesIndicator' },
+    { label: 'enable gradebook status icons', key: 'gbEnableStatusIcons' }
+  ];
+
+  P.findViewOptionCheckbox = function (labelText) {
+    var boxes = document.querySelectorAll('input[type="checkbox"]');
+    for (var i = 0; i < boxes.length; i++) {
+      var labelledEl = boxes[i].labels && boxes[i].labels[0];
+      var text = ((boxes[i].getAttribute('aria-label') || '') + ' ' +
+        (labelledEl ? labelledEl.textContent || '' : '')).trim().toLowerCase();
+      if (text.indexOf(labelText) >= 0) return boxes[i];
+    }
+    return null;
+  };
+
+  P.syncViewOptions = function () {
+    var s = this.settings.values;
+    if (!s.syncViewOptionsToCanvas) return Promise.resolve(false);
+    var self = this;
+    return this.openArrangeMenu().then(function (onTab) {
+      if (!onTab) return false;
+      var changed = 0;
+      var missing = 0;
+      VIEW_OPTION_CHECKBOXES.forEach(function (spec) {
+        var box = self.findViewOptionCheckbox(spec.label);
+        if (!box) { missing++; return; }
+        var want = !!s[spec.key];
+        if (box.checked === want) return;
+        box.click();
+        changed++;
+      });
+      if (changed) {
+        var apply = self.findTrayApplyButton();
+        if (apply) apply.click();
+      } else {
+        // Nothing to change: close the tray the same way opening it would
+        // have been undone, rather than leaving it sitting open for no
+        // reason.
+        var closeBtn = document.querySelector('[aria-label="Close" i], button[aria-label*="close" i]');
+        if (closeBtn) closeBtn.click();
+      }
+      CGP.diag.set('layout.viewOptionsSynced', { changed: changed, missing: missing });
+      return changed > 0;
+    });
   };
 
   P.bindShortcut = function () {
@@ -705,6 +895,35 @@
       var type = h.type || 'unknown';
       if (h.el.getAttribute('data-cgp-col') !== type) h.el.setAttribute('data-cgp-col', type);
     });
+  };
+
+  /* Canvas's Student View ("Test Student") row, hidden so a grade is never
+   * typed into it by accident. Run on every paint, not just once: SlickGrid
+   * recycles the same row nodes for different students as the grid scrolls
+   * or re-sorts, so a node marked hidden on one pass can legitimately hold a
+   * real student on the next - this re-derives the answer from the row's own
+   * current content every time rather than remembering a stale verdict.
+   * Visibility, not display:none, so the row's vertical space (and every
+   * other row's SlickGrid-computed offset below it) is left completely
+   * alone. */
+  P.hideTestStudentRows = function () {
+    var want = !!this.settings.values.hideTestStudent;
+    var frozen = this.adapter.canvases()[0];
+    if (!frozen) return;
+    var tops = {};
+    var self = this;
+    var rows = frozen.querySelectorAll(':scope > .slick-row');
+    for (var i = 0; i < rows.length; i++) {
+      var isTest = want && self.adapter.isTestStudentRow(rows[i]);
+      rows[i].classList.toggle('cgp-hidden-row', isTest);
+      if (isTest) tops[rows[i].style.top] = true;
+    }
+    var others = document.querySelectorAll('.grid-canvas > .slick-row, .cgp-total-cell');
+    for (var j = 0; j < others.length; j++) {
+      var el = others[j];
+      if (el.parentElement === frozen) continue; // handled above
+      el.classList.toggle('cgp-hidden-row', !!tops[el.style.top]);
+    }
   };
 
   CGP.CompactLayoutController = CompactLayoutController;
