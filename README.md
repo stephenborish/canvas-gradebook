@@ -495,11 +495,11 @@ Two things that no longer happen, as of this fix:
 - **Row height is unchanged.** SlickGrid computes row positions in JavaScript from its own row
   height; overriding it in CSS misaligns every row. Vertical space is won by collapsing Canvas's
   chrome instead.
-- **Column resizing uses Canvas's own resize handles.** A column whose drag fails twice outright
-  is left at its original width and not retried again until Canvas re-renders that column fresh
-  (a sort, a filter, its own update); everything else - including columns that were not on
-  screen yet, or that mounted after an earlier attempt - keeps being checked on every pass, so
-  one column having trouble never leaves the rest of the grid un-narrowed.
+- **Column resizing requires SlickGrid's supported API.** Gradebook+ waits for a stable, complete
+  column model, changes every requested width in one `setColumns` transaction, and then asks the
+  grid to invalidate, render, and resize its canvas. If Canvas does not expose that API, narrowing
+  remains presentation-only; Gradebook+ never simulates resize-handle drags that could persist a
+  partial set of widths as the teacher's preferences.
 - **Grading periods.** The frozen Total is read with the same grading-period filter Canvas's own
   Total column is currently using, learned from the page itself rather than assumed - so the two
   agree, including when a grading period is the server's own default rather than something
