@@ -329,7 +329,10 @@
         // life. resizeColumns() itself is cheap to call when nothing is out
         // of spec - one measurement pass, no drags - so this costs nothing in
         // the steady state.
-        layout.resizeColumns().then(function () { frozen.measure(); paint(); });
+        layout.resizeColumns().then(function (sized) {
+          if (sized) frozen.measure();
+          paint();
+        });
       }
 
       // Slower safety tick: catches any rerender an observer missed.
@@ -352,8 +355,8 @@
 
       // Canvas's own column widths, then re-measure the frozen pane.
       setTimeout(function () {
-        layout.resizeColumns().then(function () {
-          frozen.measure();
+        layout.resizeColumns().then(function (sized) {
+          if (sized) frozen.measure();
           paint();
         });
       }, 500);

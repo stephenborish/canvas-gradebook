@@ -19,6 +19,7 @@ require('./test-dom-adapter-panes');
 require('./test-frozen-total-geometry');
 require('./test-hide-test-student');
 require('./test-pane-scroll-identity');
+require('./test-layout-column-sizing');
 
 // run() awaits each case, so the process must not exit before it settles.
 harness.run().then((okAll) => {

@@ -5,11 +5,7 @@
  *     View Options). Hiding the buttons is not enough: their wrappers are
  *     collapsed too, but only when nothing visible is left inside them.
  *  2. Give the grid the rest of the viewport.
- *  3. Narrow the assignment columns. Column geometry in a SlickGrid comes from a
- *     generated stylesheet, so widths are changed through Canvas's own resize
- *     handles (which also persists them) rather than by fighting that CSS. If
- *     the first resize does not take, the whole feature stands down instead of
- *     leaving a half-resized grid. */
+ *  3. Narrow the assignment columns through SlickGrid's public column API. */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
@@ -91,15 +87,6 @@
     this.adapter = ctx.adapter;
     this.settings = ctx.settings;
     this.hidden = [];
-    // header element -> how many times dragResize has failed on it outright
-    // (both the first attempt and its one corrective retry). A column that
-    // keeps failing is left alone rather than retried every tick forever, but
-    // this is keyed on the ELEMENT, not on the column or a page-wide switch:
-    // Canvas swapping in a fresh header node for that same column (its own
-    // re-render, a sort, a filter change) is a clean slate and gets its own
-    // chances again. Nothing here ever disables resizing for the rest of the
-    // page - see resizeColumns() for why a single early failure used to.
-    this._resizeFailures = new WeakMap();
     this._lastHidePass = 0;
     this.controlsHidden = false;
     this.applyGeometry = CGP.util.debounce(this._applyGeometry.bind(this), 120);
@@ -252,8 +239,7 @@
    * options page (see options.html "Layout & Display") so a teacher sets
    * them once instead of per course in Canvas's own settings tray. Off by
    * default (syncViewOptionsToCanvas) - this drives Canvas's real controls
-   * exactly the way a click would (see the module note on dragResize for why
-   * that is preferred over guessing at an unverified internal API), so it is
+   * exactly the way a teacher click would, so it is
    * only worth doing when a teacher has actually opted in. Best-effort: any
    * checkbox this Canvas build's markup doesn't match is simply left alone,
    * never guessed at. */
@@ -631,133 +617,130 @@
 
   /* ------------------------------------------------------- column narrowing */
 
-  /* Safe to call often - a repeat visit with nothing left to do costs one
-   * cheap DOM measurement pass and returns immediately. That matters because
-   * this is no longer a single one-shot pass fired 500ms after boot: a
-   * gradebook whose columns are not all rendered yet at boot (a wide course,
-   * a slow Canvas render) used to leave every column that mounted after that
-   * one pass at Canvas's original, un-narrowed width forever - the "some
-   * columns are oddly wide and others are not" report. content.js's periodic
-   * safety tick now calls this on every pass instead, and the check above
-   * means that costs nothing once every currently-mounted column is already
-   * the right width. */
+  /* Canvas has used both direct properties and jQuery data to expose its
+   * SlickGrid over time. Accept only an object which implements the documented
+   * column and repaint APIs: finding something merely named `grid` is not
+   * enough reason to touch teacher-owned column preferences. */
+  P.slickGrid = function () {
+    var root = document.querySelector('#gradebook_grid') || this.adapter.gridRoot();
+    var candidates = [];
+    if (this.adapter && typeof this.adapter.gridInstance === 'function') {
+      candidates.push(this.adapter.gridInstance());
+    }
+    if (root) candidates.push(root.slickGrid, root.slickgrid, root.grid, root.__slickGrid);
+    var jq = globalThis.jQuery || globalThis.$;
+    if (root && typeof jq === 'function') {
+      try {
+        var data = jq(root).data();
+        if (data) candidates.push(data.slickGrid, data.slickgrid, data.grid);
+      } catch (e) { /* an unrelated `$` is not a grid API */ }
+    }
+    var owners = [globalThis.gradebook, globalThis.Gradebook];
+    owners.forEach(function (owner) {
+      if (owner) candidates.push(owner.grid, owner.slickGrid, owner.slickgrid);
+    });
+    for (var i = 0; i < candidates.length; i++) {
+      var grid = candidates[i];
+      if (grid && typeof grid.getColumns === 'function' &&
+        typeof grid.setColumns === 'function' && typeof grid.invalidate === 'function' &&
+        typeof grid.render === 'function' && typeof grid.resizeCanvas === 'function') return grid;
+    }
+    return null;
+  };
+
+  P.columnKind = function (column) {
+    var id = String((column && (column.id || column.field)) || '').toLowerCase();
+    if (id === 'student' || id === 'student_name' || id === 'name') return 'student';
+    if (/^assignment[_-]/.test(id) || (column && column.assignment_id != null)) return 'assignment';
+    return null;
+  };
+
+  P.columnSignature = function (columns) {
+    return columns.map(function (column) {
+      return String(column && (column.id || column.field) || '');
+    }).join('\u001f');
+  };
+
+  /* Wait for two identical complete models. This deliberately observes the
+   * model, not header DOM: virtualised wide courses never mount every header,
+   * and Canvas is free to replace a header while setColumns redraws it. */
+  P.stableColumns = function (grid) {
+    var self = this;
+    var previous = null;
+    var attempts = 0;
+    function poll() {
+      var columns;
+      try { columns = grid.getColumns(); } catch (e) { return Promise.resolve(null); }
+      if (!Array.isArray(columns) || !columns.length) return Promise.resolve(null);
+      var signature = self.columnSignature(columns);
+      if (signature === previous) return Promise.resolve(columns);
+      previous = signature;
+      attempts++;
+      if (attempts >= 20) return Promise.resolve(null);
+      return CGP.util.sleep(50).then(poll);
+    }
+    return poll();
+  };
+
+  /* Update a clone of the COMPLETE column model and submit it in one
+   * setColumns call. In particular, never synthesize pointer/mouse gestures:
+   * Canvas treats those as teacher actions and may persist an intermediate
+   * width when a long drag sequence is interrupted. */
   P.resizeColumns = function () {
     var s = this.settings.values;
     if (!s.narrowColumns || this._resizing) return Promise.resolve();
+    var grid = this.slickGrid();
+    if (!grid) {
+      document.documentElement.classList.add('cgp-column-sizing-presentation-only');
+      CGP.diag.warn('layout.columnApiUnavailable');
+      return Promise.resolve(false);
+    }
     var self = this;
-    var headers = this.adapter.refreshColumns();
-    var work = [];
-    headers.forEach(function (h) {
-      if (!h.el || !h.el.isConnected) return;
-      // A column whose element has already failed to resize twice is left
-      // alone - not retried every single tick forever - until Canvas swaps in
-      // a fresh element for it (a re-render, a sort), which gets a clean slate.
-      if ((self._resizeFailures.get(h.el) || 0) >= 2) return;
-      var want = h.type === 'assignment' ? s.assignmentColumnWidth
-        : (h.type === 'student' ? s.studentColumnWidth : null);
-      if (want === null) return;
-      var have = Math.round(h.el.getBoundingClientRect().width);
-      if (!have) return;
-      if (Math.abs(have - want) > 6) work.push({ el: h.el, want: want, have: have, type: h.type });
-    });
-    if (!work.length) return Promise.resolve();
-
     this._resizing = true;
-    var seq = Promise.resolve();
-    var applied = 0;
-    var abandonedRest = false;
-    work.slice(0, 40).forEach(function (item, i) {
-      seq = seq.then(function () {
-        if (abandonedRest) return;
-        return self.dragResize(item).then(function (ok) {
-          if (ok) { applied++; return; }
-          // The drag missed its target width. This batch can take seconds to
-          // work through every column, so by the time a later column's turn
-          // comes its width may already have moved on from what was measured
-          // when the batch was planned - and dragResize computes its distance
-          // from that same measurement. Driving the handle the wrong distance
-          // is exactly how a column ends up jammed against SlickGrid's own
-          // minimum width instead of ours: too narrow to read anything in.
-          // One corrective pass, re-measured fresh right now, fixes that
-          // instead of leaving the column at whatever width the miss landed
-          // on.
-          return self.dragResize(item).then(function (ok2) {
-            if (ok2) { applied++; return; }
-            self._resizeFailures.set(item.el, (self._resizeFailures.get(item.el) || 0) + 1);
-            CGP.diag.warn('layout.columnResizeMissed', { type: item.type, want: item.want });
-            // The very first column of this pass failing twice outright
-            // (rather than merely missing its target width) usually means
-            // Canvas has not finished mounting its resize handles yet, or a
-            // markup change means this build's do not match what dragResize
-            // expects - either way, burning through the rest of a 40-column
-            // batch on the same broken mechanism is pure jank with nothing to
-            // show for it. Abandon only the REST OF THIS CALL, not resizing
-            // forever: the next periodic call re-measures from scratch and
-            // tries again, which is exactly what picks this back up once
-            // Canvas has caught up.
-            if (i === 0 && applied === 0) abandonedRest = true;
-            // Two attempts at the target width both missed. This is Canvas's
-            // OWN real resize handle, so whatever odd width the failed drags
-            // left behind is not just a cosmetic glitch - Canvas persists it
-            // exactly as if the teacher had dragged it there themselves,
-            // including on their next login. Leaving it there with nothing
-            // but a diagnostics-only trace is worse than trying to put it
-            // back: drag it toward its ORIGINAL width instead, and only if
-            // that also fails, say so where the teacher can actually see it.
-            return self.dragResize({ el: item.el, want: item.have, type: item.type }).then(function (reverted) {
-              if (reverted) return;
-              if (self._resizeMissedNotified) return;
-              self._resizeMissedNotified = true;
-              CGP.ui.error('Gradebook+ couldn’t resize one or more columns to fit. ' +
-                'Check their widths in Canvas if they look off.');
-            });
-          });
-        });
+    return this.stableColumns(grid).then(function (columns) {
+      if (!columns) return false;
+      var changed = 0;
+      var next = columns.map(function (column) {
+        var copy = Object.assign({}, column);
+        var kind = self.columnKind(copy);
+        var want = kind === 'assignment' ? s.assignmentColumnWidth
+          : (kind === 'student' ? s.studentColumnWidth : null);
+        if (want !== null && Math.round(Number(copy.width)) !== want) {
+          copy.width = want;
+          changed++;
+        }
+        return copy;
       });
-    });
-    return seq.catch(function () { return null; }).then(function () {
+      if (!changed) return true;
+      try {
+        grid.setColumns(next);       // the sole, atomic model mutation
+        grid.invalidate();
+        grid.render();
+        grid.resizeCanvas();
+        document.documentElement.classList.remove('cgp-column-sizing-presentation-only');
+        CGP.diag.bump('layout.columnsResized', changed);
+        return true;
+      } catch (e) {
+        // No gestures have fired and no per-column persistence callbacks have
+        // run. Restore the complete snapshot in case a non-conforming wrapper
+        // mutated before throwing; never continue with a partial model.
+        try { grid.setColumns(columns); grid.invalidate(); grid.render(); grid.resizeCanvas(); } catch (ignored) { /* stand down */ }
+        document.documentElement.classList.add('cgp-column-sizing-presentation-only');
+        CGP.diag.warn('layout.columnSizingFailed');
+        return false;
+      }
+    }).catch(function () { return false; }).then(function (ok) {
       self._resizing = false;
-      CGP.diag.bump('layout.columnsResized', applied);
-      self.applyGeometry();
+      if (ok) self.applyGeometry();
+      return ok;
     });
   };
 
+  /* Kept as a compatibility surface for callers from older injected bundles.
+   * It intentionally performs no action: simulated drags can persist a
+   * half-applied teacher preference. */
   P.dragResize = function (item) {
-    var handle = item.el.querySelector('.slick-resizable-handle');
-    if (!handle) return Promise.resolve(false);
-    var rect = item.el.getBoundingClientRect();
-    // Measured now, not whenever this resize batch was planned - the column
-    // may have already been dragged once (a corrective retry) or the batch
-    // may simply have reached it seconds after `item.have` was snapshotted.
-    // Computing the distance to travel from a width that no longer matches
-    // reality is what drives the handle too far and jams the column against
-    // SlickGrid's own minimum width.
-    var have = Math.round(rect.width);
-    var y = Math.round(rect.top + rect.height / 2);
-    var startX = Math.round(rect.right - 1);
-    var delta = item.want - have;
-    if (!delta) return Promise.resolve(true);
-    var step = delta > 0 ? 3 : -3;
-
-    function fire(node, type, x) {
-      node.dispatchEvent(new MouseEvent(type, {
-        bubbles: true, cancelable: true, view: window,
-        clientX: x, clientY: y, button: 0, buttons: type === 'mouseup' ? 0 : 1
-      }));
-    }
-
-    fire(handle, 'mousedown', startX);
-    return CGP.util.sleep(16).then(function () {
-      fire(document, 'mousemove', startX + step);            // clear the drag threshold
-      fire(document, 'mousemove', startX + delta);
-      return CGP.util.sleep(16);
-    }).then(function () {
-      fire(document, 'mouseup', startX + delta);
-      return CGP.util.sleep(50);
-    }).then(function () {
-      var now = Math.round(item.el.getBoundingClientRect().width);
-      return Math.abs(now - item.want) <= 12;
-    }, function () { return false; });
+    return Promise.resolve(false);
   };
 
   /* Render one clean, non-interactive label over Canvas's assignment header.

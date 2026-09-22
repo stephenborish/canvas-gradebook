@@ -53,9 +53,9 @@ html.cgp-on {
  * `background: <tint>`. */
 
 /* --cgp-student-w and --cgp-assignment-w are published on <html> for reference
- * and for custom CSS. The extension does not set column widths through CSS:
- * SlickGrid generates its own stylesheet of per-column offsets, so widths are
- * changed through Canvas's own resize handles instead (see layout.js). */
+ * and for custom CSS. SlickGrid's complete model is resized atomically through
+ * its public setColumns API. If that API is unavailable, layout.js only marks
+ * presentation-only mode; it never simulates a drag that Canvas could persist. */
 
 /* ------------------------------------------------------- in-cell indicators */
 
