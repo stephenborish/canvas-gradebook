@@ -35,8 +35,21 @@
   var P = FrozenTotalController.prototype;
 
   P.start = function () {
+    if (this.enabled) return;
     if (!this.settings.values.frozenTotal) return;
     if (!this.adapter.hasFrozenPane()) {
+      // Not a permanent verdict - content.js calls start() exactly once, at
+      // the moment the grid clears its own minimal readiness bar (a header
+      // column plus a grid-canvas exist). Canvas can still be mid-render at
+      // that instant and split into its frozen/scrolling pane pair a beat
+      // later, especially on a slow course load. Leaving `enabled` false
+      // here (rather than latching some "gave up" flag) is what lets paint()
+      // below retry this exact check on every subsequent paint pass - cheap,
+      // since a real course only fails it for a handful of passes before the
+      // second pane exists - instead of the whole feature staying off for
+      // the rest of the page's life over a one-time timing race. That silent,
+      // permanent disable is exactly the "Total column just isn't frozen
+      // this time" report this replaces.
       CGP.diag.warn('frozenTotal.noFrozenPane');
       return;
     }
@@ -258,7 +271,14 @@
   };
 
   P.paint = function () {
-    if (!this.enabled) return;
+    if (!this.enabled) {
+      // Retry the one-time start() gate on every paint pass rather than only
+      // at boot - see start()'s own comment for why a single failed check
+      // there must never be the last word on whether this feature ever runs
+      // this page load.
+      this.start();
+      if (!this.enabled) return;
+    }
     this.measure();
 
     if (!this.verifyWidened()) {

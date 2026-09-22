@@ -35,7 +35,7 @@
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.IndicatorController) return;
 
-  var BUBBLE = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
+  var BUBBLE = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">' +
     '<path d="M2.2 2.9c0-.9.7-1.6 1.6-1.6h8.4c.9 0 1.6.7 1.6 1.6v5.6c0 .9-.7 1.6-1.6 1.6H7.5L4.3 13v-2.9h-.5c-.9 0-1.6-.7-1.6-1.6V2.9z"/></svg>';
 
   /* Submission glyphs. One silhouette per kind of thing a student can hand in,
@@ -395,7 +395,7 @@
     var cls = 'cgp-sub ' + (sub.submitted ? 'cgp-sub--in' : 'cgp-sub--out');
     return '<a class="' + cls + '" href="' + CGP.util.escapeHtml(this.speedGraderHref(info.assignmentId, info.studentId)) +
       '" target="_blank" rel="noopener" title="' + CGP.util.escapeHtml(tip) + '" aria-label="' +
-      CGP.util.escapeHtml(tip) + '"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
+      CGP.util.escapeHtml(tip) + '"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">' +
       glyph + '</svg></a>';
   };
 

@@ -173,6 +173,59 @@ suite('frozen-total: pane geometry preserves the grid\'s total footprint', (test
       'the one pane that is SUPPOSED to keep its own horizontal scroll is left untouched');
   });
 
+  test('a frozen pane that only appears after start() retries successfully on the next paint(), instead of staying disabled all page load', () => {
+    // Reproduces the exact boot race this test guards against: content.js
+    // calls start() exactly once, at the moment adapter.isReady() first
+    // passes - which only requires a single header column and a single
+    // grid-canvas to exist, not that Canvas has finished splitting into its
+    // frozen/scrolling pane pair yet. Before this fix, hasFrozenPane()
+    // failing at that one moment latched `enabled = false` forever, with
+    // nothing left to ever flip it back - the whole feature silently never
+    // ran for the rest of the page's life even though the frozen pane shows
+    // up moments later.
+    const CGP = loadGradebookDom();
+    const grid = buildGrid(CGP);
+    const adapter = new CGP.GradebookDomAdapter();
+    const ctrl = makeController(CGP, adapter);
+
+    // Simulate "only one pane rendered yet" by removing the right canvas
+    // before the first start(), the same shape hasFrozenPane() (canvases()
+    // .length > 1) checks against.
+    grid.canvasRight.parentElement.removeChild(grid.canvasRight);
+
+    ctrl.start();
+    a.eq(ctrl.enabled, false, 'refuses to enable itself with only one pane rendered');
+
+    // Canvas finishes rendering the second pane a beat later. Nothing calls
+    // start() again in production - only paint(), on the next render pass.
+    grid.viewportRight.appendChild(grid.canvasRight);
+    ctrl.paint();
+
+    a.eq(ctrl.enabled, true, 'paint() retries start() and picks up the now-present frozen pane');
+    const left = adapter.bodyPanes()[0];
+    a.eq(parseFloat(left.style.getPropertyValue('width')), 190 + 84,
+      'the widen actually applied once retried, not just the enabled flag');
+  });
+
+  test('turning the setting off stops the controller even after a successful start', () => {
+    const CGP = loadGradebookDom();
+    const grid = buildGrid(CGP);
+    const adapter = new CGP.GradebookDomAdapter();
+    const settings = { values: { frozenTotal: true } };
+    const ctrl = makeController(CGP, adapter, { settings: settings });
+    ctrl.start();
+    a.eq(ctrl.enabled, true);
+
+    settings.values.frozenTotal = false;
+    ctrl.stop();
+    a.eq(ctrl.enabled, false);
+
+    // start() must not re-latch itself back on while the setting is off, even
+    // though nothing about the DOM changed.
+    ctrl.start();
+    a.eq(ctrl.enabled, false, 'start() respects the setting being off');
+  });
+
   test('stop() undoes both the pane pins and the ancestor overflow clamp', () => {
     const CGP = loadGradebookDom();
     const grid = buildGrid(CGP);

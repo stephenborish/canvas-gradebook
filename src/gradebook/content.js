@@ -428,6 +428,14 @@
       CGP.settings.onChange(function () {
         registry.invalidateAll();
         layout.start();
+        // frozen.paint() (called from the render loop below) already retries
+        // start() on its own while the setting is on and not yet enabled -
+        // but turning the setting OFF has no such path back, since paint()
+        // only ever checks in the other direction. Stop explicitly here so
+        // toggling it off actually removes the overlay and restores Canvas's
+        // own pane geometry immediately, instead of leaving both in place
+        // until the next full page load.
+        if (!CGP.settings.values.frozenTotal && frozen.enabled) frozen.stop();
         paint();
       });
       CGP.gradebook = {
