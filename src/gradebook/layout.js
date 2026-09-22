@@ -122,6 +122,7 @@
     this.settleQuickly();
     this.applyGeometry();
     this.bindShortcut();
+    this.bindResizeTracking();
     if (!this._resizeBound) {
       this._resizeBound = this.onWindowResize.bind(this);
       window.addEventListener('resize', this._resizeBound);
@@ -642,21 +643,76 @@
     });
   };
 
+  /* Bind once: tracks a pointer-driven column drag on Canvas's own resize
+   * handle so resizeColumns() can hold off while a teacher's own gesture is
+   * in flight (see isUserBusy()). A short grace period after mouseup also
+   * covers the moment right after the drag ends, before Canvas has finished
+   * persisting the width the teacher actually chose. */
+  P.bindResizeTracking = function () {
+    if (this._resizeTrackBound) return;
+    this._resizeTrackBound = true;
+    var self = this;
+    document.addEventListener('mousedown', function (e) {
+      if (e.target && e.target.closest && e.target.closest('.slick-resizable-handle')) {
+        self._pointerResizing = true;
+      }
+    }, true);
+    document.addEventListener('mouseup', function () {
+      if (!self._pointerResizing) return;
+      self._pointerResizing = false;
+      self._pointerResizedAt = Date.now();
+    }, true);
+  };
+
+  /* Any of these mean a teacher is actively doing something the grid would
+   * visibly disrupt if this extension rewrote the column model right now: an
+   * open grade-cell editor, an open column "..." menu, or a resize drag still
+   * (or just) in progress. resizeColumns() simply skips its turn - the next
+   * reconciliation, once the interaction ends, catches it up. */
+  P.isUserBusy = function () {
+    if (this._pointerResizing) return true;
+    if (this._pointerResizedAt && Date.now() - this._pointerResizedAt < 500) return true;
+    if (this.adapter.isEditing && this.adapter.isEditing()) return true;
+    if (this.adapter.isColumnMenuOpen && this.adapter.isColumnMenuOpen()) return true;
+    return false;
+  };
+
   /* Update a clone of the COMPLETE column model and submit it in one
    * setColumns call. In particular, never synthesize pointer/mouse gestures:
    * Canvas treats those as teacher actions and may persist an intermediate
-   * width when a long drag sequence is interrupted. */
+   * width when a long drag sequence is interrupted.
+   *
+   * A transient 'unstable' result (the page bridge could not find a settled
+   * column model yet) is not treated as a hard failure: it backs off
+   * exponentially instead of being retried on every reconciliation, and only
+   * falls through to presentation-only mode after a small bounded number of
+   * attempts - never touching whichever columns DID size correctly in an
+   * earlier, successful transaction. */
   P.resizeColumns = function () {
     var s = this.settings.values;
     if (!s.narrowColumns || this._resizing) return Promise.resolve();
+    if (this.isUserBusy()) return Promise.resolve(false);
+    if (this._resizeBackoffUntil && Date.now() < this._resizeBackoffUntil) return Promise.resolve(false);
     var self = this;
     this._resizing = true;
     return this.requestColumnSizing(s.studentColumnWidth, s.assignmentColumnWidth).then(function (result) {
       if (result && result.ok) {
         document.documentElement.classList.remove('cgp-column-sizing-presentation-only');
+        self._resizeAttempts = 0;
+        self._resizeBackoffUntil = 0;
         if (result.changed) CGP.diag.bump('layout.columnsResized', result.changed);
         return true;
       }
+      if (result && result.reason === 'unstable') {
+        self._resizeAttempts = (self._resizeAttempts || 0) + 1;
+        self._resizeBackoffUntil = Date.now() + Math.min(30000, 1000 * Math.pow(2, self._resizeAttempts - 1));
+        if (self._resizeAttempts >= 5) {
+          document.documentElement.classList.add('cgp-column-sizing-presentation-only');
+          CGP.diag.warn('layout.columnSizingUnstable');
+        }
+        return false;
+      }
+      self._resizeAttempts = 0;
       document.documentElement.classList.add('cgp-column-sizing-presentation-only');
       CGP.diag.warn(result && result.reason === 'failed' ? 'layout.columnSizingFailed' : 'layout.columnApiUnavailable');
       return false;

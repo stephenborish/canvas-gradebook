@@ -118,3 +118,75 @@ suite('layout.resizeColumns(): atomic SlickGrid sizing', (test) => {
     } finally { f.restore(); }
   });
 });
+
+suite('layout.resizeColumns(): holds off during teacher interaction', (test) => {
+  test('skips the transaction while a grade cell is being edited', async () => {
+    const f = fixture([{ id: 'student', width: 260 }, { id: 'assignment_1', width: 140 }]);
+    f.layout.adapter.isEditing = () => true;
+    let requested = 0;
+    const original = f.layout.requestColumnSizing.bind(f.layout);
+    f.layout.requestColumnSizing = function () { requested++; return original.apply(this, arguments); };
+    try {
+      a.eq(await f.layout.resizeColumns(), false);
+      a.eq(requested, 0, 'never even asks the page bridge while an editor is open');
+      a.eq(f.calls.filter((x) => x === 'setColumns').length, 0);
+    } finally { f.restore(); }
+  });
+
+  test('skips the transaction while a column "..." menu is open', async () => {
+    const f = fixture([{ id: 'student', width: 260 }, { id: 'assignment_1', width: 140 }]);
+    f.layout.adapter.isColumnMenuOpen = () => true;
+    try {
+      a.eq(await f.layout.resizeColumns(), false);
+      a.eq(f.calls.filter((x) => x === 'setColumns').length, 0);
+    } finally { f.restore(); }
+  });
+
+  test('skips the transaction while a pointer-driven column drag is in progress, and briefly after it ends', async () => {
+    const f = fixture([{ id: 'student', width: 260 }, { id: 'assignment_1', width: 140 }]);
+    f.layout._pointerResizing = true;
+    try {
+      a.eq(await f.layout.resizeColumns(), false);
+      a.eq(f.calls.filter((x) => x === 'setColumns').length, 0, 'not resized mid-drag');
+
+      f.layout._pointerResizing = false;
+      f.layout._pointerResizedAt = Date.now();
+      a.eq(await f.layout.resizeColumns(), false, 'still held off just after mouseup');
+      a.eq(f.calls.filter((x) => x === 'setColumns').length, 0);
+
+      f.layout._pointerResizedAt = Date.now() - 1000;
+      a.eq(await f.layout.resizeColumns(), true, 'resumes once the grace period has passed');
+      a.eq(f.calls.filter((x) => x === 'setColumns').length, 1);
+    } finally { f.restore(); }
+  });
+});
+
+suite('layout.resizeColumns(): backs off on a transient "unstable" result', (test) => {
+  test('does not mark presentation-only or hammer the bridge on a single transient miss', async () => {
+    const f = fixture([{ id: 'student', width: 260 }, { id: 'assignment_1', width: 140 }]);
+    let requested = 0;
+    f.layout.requestColumnSizing = function () { requested++; return Promise.resolve({ ok: false, reason: 'unstable' }); };
+    try {
+      a.eq(await f.layout.resizeColumns(), false);
+      a.eq(requested, 1);
+      a.ok(!f.doc.documentElement.classList.contains('cgp-column-sizing-presentation-only'),
+        'a single transient miss is not treated as a hard failure');
+
+      a.eq(await f.layout.resizeColumns(), false, 'a second call inside the backoff window is a no-op');
+      a.eq(requested, 1, 'the bridge is not re-queried while backed off');
+    } finally { f.restore(); }
+  });
+
+  test('falls through to presentation-only after enough transient misses', async () => {
+    const f = fixture([{ id: 'student', width: 260 }, { id: 'assignment_1', width: 140 }]);
+    f.layout.requestColumnSizing = function () { return Promise.resolve({ ok: false, reason: 'unstable' }); };
+    try {
+      for (let i = 0; i < 5; i++) {
+        f.layout._resizeBackoffUntil = 0; // simulate the backoff window having elapsed each time
+        await f.layout.resizeColumns();
+      }
+      a.ok(f.doc.documentElement.classList.contains('cgp-column-sizing-presentation-only'),
+        'gives up after a small bounded number of attempts');
+    } finally { f.restore(); }
+  });
+});
