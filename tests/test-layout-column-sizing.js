@@ -28,13 +28,29 @@ function fixture(columns, hooks) {
     adapter: { gridRoot: () => root },
     settings: { values: { narrowColumns: true, studentColumnWidth: 180, assignmentColumnWidth: 72 } }
   });
+  // The production implementation sends these widths to env-bridge.js. Model
+  // that page-world endpoint here so this controller test remains deterministic.
+  layout.requestColumnSizing = function (studentWidth, assignmentWidth) {
+    const columns = grid.getColumns();
+    const next = columns.map(function (column) {
+      const copy = Object.assign({}, column);
+      const id = String(copy.id || copy.field || '').toLowerCase();
+      if (id === 'student' || id === 'student_name' || id === 'name') copy.width = studentWidth;
+      else if (/^assignment[_-]/.test(id) || copy.assignment_id != null) copy.width = assignmentWidth;
+      return copy;
+    });
+    try {
+      grid.setColumns(next); grid.invalidate(); grid.render(); grid.resizeCanvas();
+      return Promise.resolve({ ok: true, changed: next.filter((c, i) => c.width !== columns[i].width).length });
+    } catch (e) {
+      try { grid.setColumns(columns); grid.invalidate(); grid.render(); grid.resizeCanvas(); } catch (ignored) {}
+      return Promise.resolve({ ok: false, reason: 'failed' });
+    }
+  };
   let geometry = 0;
   layout.applyGeometry = function () { geometry++; };
-  // Keep the test focused on the readiness algorithm without a wall-clock wait.
-  const oldSleep = CGP.util.sleep;
-  CGP.util.sleep = function () { return Promise.resolve(); };
   return { CGP, doc, root, grid, layout, calls, model: () => model, geometry: () => geometry,
-    restore: () => { CGP.util.sleep = oldSleep; } };
+    restore: () => {} };
 }
 
 suite('layout.resizeColumns(): atomic SlickGrid sizing', (test) => {
@@ -73,7 +89,7 @@ suite('layout.resizeColumns(): atomic SlickGrid sizing', (test) => {
 
   test('stands down without gestures or model writes when no supported API exists', async () => {
     const f = fixture([{ id: 'assignment_1', width: 140 }]);
-    delete f.root.slickGrid;
+    f.layout.requestColumnSizing = function () { return Promise.resolve({ ok: false, reason: 'unavailable' }); };
     let dispatched = 0;
     f.root.dispatchEvent = function () { dispatched++; };
     try {

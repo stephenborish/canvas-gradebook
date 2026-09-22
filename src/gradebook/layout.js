@@ -617,69 +617,29 @@
 
   /* ------------------------------------------------------- column narrowing */
 
-  /* Canvas has used both direct properties and jQuery data to expose its
-   * SlickGrid over time. Accept only an object which implements the documented
-   * column and repaint APIs: finding something merely named `grid` is not
-   * enough reason to touch teacher-owned column preferences. */
-  P.slickGrid = function () {
-    var root = document.querySelector('#gradebook_grid') || this.adapter.gridRoot();
-    var candidates = [];
-    if (this.adapter && typeof this.adapter.gridInstance === 'function') {
-      candidates.push(this.adapter.gridInstance());
-    }
-    if (root) candidates.push(root.slickGrid, root.slickgrid, root.grid, root.__slickGrid);
-    var jq = globalThis.jQuery || globalThis.$;
-    if (root && typeof jq === 'function') {
-      try {
-        var data = jq(root).data();
-        if (data) candidates.push(data.slickGrid, data.slickgrid, data.grid);
-      } catch (e) { /* an unrelated `$` is not a grid API */ }
-    }
-    var owners = [globalThis.gradebook, globalThis.Gradebook];
-    owners.forEach(function (owner) {
-      if (owner) candidates.push(owner.grid, owner.slickGrid, owner.slickgrid);
+  /* Ask the page-context bridge to transact against Canvas's SlickGrid. The
+   * grid object itself cannot cross Chrome's isolated-world boundary. */
+  P.requestColumnSizing = function (studentWidth, assignmentWidth) {
+    return new Promise(function (resolve) {
+      var id = 'cgp-grid-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+      var timer;
+      function finish(result) {
+        window.removeEventListener('message', onMessage);
+        clearTimeout(timer);
+        resolve(result || { ok: false, reason: 'unavailable' });
+      }
+      function onMessage(event) {
+        var message = event.data;
+        if (event.source !== window || !message || message.source !== 'cgp-grid-response' || message.id !== id) return;
+        finish(message.result);
+      }
+      window.addEventListener('message', onMessage);
+      timer = setTimeout(function () { finish({ ok: false, reason: 'timeout' }); }, 1600);
+      window.postMessage({
+        source: 'cgp-grid-request', id: id,
+        studentWidth: studentWidth, assignmentWidth: assignmentWidth
+      }, window.location.origin);
     });
-    for (var i = 0; i < candidates.length; i++) {
-      var grid = candidates[i];
-      if (grid && typeof grid.getColumns === 'function' &&
-        typeof grid.setColumns === 'function' && typeof grid.invalidate === 'function' &&
-        typeof grid.render === 'function' && typeof grid.resizeCanvas === 'function') return grid;
-    }
-    return null;
-  };
-
-  P.columnKind = function (column) {
-    var id = String((column && (column.id || column.field)) || '').toLowerCase();
-    if (id === 'student' || id === 'student_name' || id === 'name') return 'student';
-    if (/^assignment[_-]/.test(id) || (column && column.assignment_id != null)) return 'assignment';
-    return null;
-  };
-
-  P.columnSignature = function (columns) {
-    return columns.map(function (column) {
-      return String(column && (column.id || column.field) || '');
-    }).join('\u001f');
-  };
-
-  /* Wait for two identical complete models. This deliberately observes the
-   * model, not header DOM: virtualised wide courses never mount every header,
-   * and Canvas is free to replace a header while setColumns redraws it. */
-  P.stableColumns = function (grid) {
-    var self = this;
-    var previous = null;
-    var attempts = 0;
-    function poll() {
-      var columns;
-      try { columns = grid.getColumns(); } catch (e) { return Promise.resolve(null); }
-      if (!Array.isArray(columns) || !columns.length) return Promise.resolve(null);
-      var signature = self.columnSignature(columns);
-      if (signature === previous) return Promise.resolve(columns);
-      previous = signature;
-      attempts++;
-      if (attempts >= 20) return Promise.resolve(null);
-      return CGP.util.sleep(50).then(poll);
-    }
-    return poll();
   };
 
   /* Update a clone of the COMPLETE column model and submit it in one
@@ -689,46 +649,17 @@
   P.resizeColumns = function () {
     var s = this.settings.values;
     if (!s.narrowColumns || this._resizing) return Promise.resolve();
-    var grid = this.slickGrid();
-    if (!grid) {
-      document.documentElement.classList.add('cgp-column-sizing-presentation-only');
-      CGP.diag.warn('layout.columnApiUnavailable');
-      return Promise.resolve(false);
-    }
     var self = this;
     this._resizing = true;
-    return this.stableColumns(grid).then(function (columns) {
-      if (!columns) return false;
-      var changed = 0;
-      var next = columns.map(function (column) {
-        var copy = Object.assign({}, column);
-        var kind = self.columnKind(copy);
-        var want = kind === 'assignment' ? s.assignmentColumnWidth
-          : (kind === 'student' ? s.studentColumnWidth : null);
-        if (want !== null && Math.round(Number(copy.width)) !== want) {
-          copy.width = want;
-          changed++;
-        }
-        return copy;
-      });
-      if (!changed) return true;
-      try {
-        grid.setColumns(next);       // the sole, atomic model mutation
-        grid.invalidate();
-        grid.render();
-        grid.resizeCanvas();
+    return this.requestColumnSizing(s.studentColumnWidth, s.assignmentColumnWidth).then(function (result) {
+      if (result && result.ok) {
         document.documentElement.classList.remove('cgp-column-sizing-presentation-only');
-        CGP.diag.bump('layout.columnsResized', changed);
+        if (result.changed) CGP.diag.bump('layout.columnsResized', result.changed);
         return true;
-      } catch (e) {
-        // No gestures have fired and no per-column persistence callbacks have
-        // run. Restore the complete snapshot in case a non-conforming wrapper
-        // mutated before throwing; never continue with a partial model.
-        try { grid.setColumns(columns); grid.invalidate(); grid.render(); grid.resizeCanvas(); } catch (ignored) { /* stand down */ }
-        document.documentElement.classList.add('cgp-column-sizing-presentation-only');
-        CGP.diag.warn('layout.columnSizingFailed');
-        return false;
       }
+      document.documentElement.classList.add('cgp-column-sizing-presentation-only');
+      CGP.diag.warn(result && result.reason === 'failed' ? 'layout.columnSizingFailed' : 'layout.columnApiUnavailable');
+      return false;
     }).catch(function () { return false; }).then(function (ok) {
       self._resizing = false;
       if (ok) self.applyGeometry();
