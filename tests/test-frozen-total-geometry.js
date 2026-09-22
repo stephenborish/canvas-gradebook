@@ -173,6 +173,109 @@ suite('frozen-total: pane geometry preserves the grid\'s total footprint', (test
       'the one pane that is SUPPOSED to keep its own horizontal scroll is left untouched');
   });
 
+  test('a frozen pane that only appears after start() retries successfully on the next paint(), instead of staying disabled all page load', () => {
+    // Reproduces the exact boot race this test guards against: content.js
+    // calls start() exactly once, at the moment adapter.isReady() first
+    // passes - which only requires a single header column and a single
+    // grid-canvas to exist, not that Canvas has finished splitting into its
+    // frozen/scrolling pane pair yet. Before this fix, hasFrozenPane()
+    // failing at that one moment latched `enabled = false` forever, with
+    // nothing left to ever flip it back - the whole feature silently never
+    // ran for the rest of the page's life even though the frozen pane shows
+    // up moments later.
+    const CGP = loadGradebookDom();
+    const grid = buildGrid(CGP);
+    const adapter = new CGP.GradebookDomAdapter();
+    const ctrl = makeController(CGP, adapter);
+
+    // Simulate "only one pane rendered yet" by removing the right canvas
+    // before the first start(), the same shape hasFrozenPane() (canvases()
+    // .length > 1) checks against.
+    grid.canvasRight.parentElement.removeChild(grid.canvasRight);
+
+    ctrl.start();
+    a.eq(ctrl.enabled, false, 'refuses to enable itself with only one pane rendered');
+
+    // Canvas finishes rendering the second pane a beat later. Nothing calls
+    // start() again in production - only paint(), on the next render pass.
+    grid.viewportRight.appendChild(grid.canvasRight);
+    ctrl.paint();
+
+    a.eq(ctrl.enabled, true, 'paint() retries start() and picks up the now-present frozen pane');
+    const left = adapter.bodyPanes()[0];
+    a.eq(parseFloat(left.style.getPropertyValue('width')), 190 + 84,
+      'the widen actually applied once retried, not just the enabled flag');
+  });
+
+  test('turning the setting off stops the controller even after a successful start', () => {
+    const CGP = loadGradebookDom();
+    const grid = buildGrid(CGP);
+    const adapter = new CGP.GradebookDomAdapter();
+    const settings = { values: { frozenTotal: true } };
+    const ctrl = makeController(CGP, adapter, { settings: settings });
+    ctrl.start();
+    a.eq(ctrl.enabled, true);
+
+    settings.values.frozenTotal = false;
+    ctrl.stop();
+    a.eq(ctrl.enabled, false);
+
+    // start() must not re-latch itself back on while the setting is off, even
+    // though nothing about the DOM changed.
+    ctrl.start();
+    a.eq(ctrl.enabled, false, 'start() respects the setting being off');
+  });
+
+  test('stop() restores a pane\'s PRIOR inline width/left, not just an empty property (Codex review, PR #19)', () => {
+    // Some Canvas builds set these panes' own width/left inline (not just
+    // through a stylesheet) as part of SlickGrid's normal layout. Before this
+    // fix, restorePaneGeometry() only ever removed the property outright,
+    // which is indistinguishable from "restoring" it correctly ONLY when
+    // there was nothing there to begin with - on a build that really does set
+    // these inline, deleting the property left the pane with no explicit
+    // geometry at all until Canvas happened to recompute its own layout on
+    // some unrelated trigger, rather than putting back what was actually
+    // there before this feature ever touched it.
+    const CGP = loadGradebookDom();
+    const grid = buildGrid(CGP);
+    const adapter = new CGP.GradebookDomAdapter();
+    const ctrl = makeController(CGP, adapter);
+
+    const right = adapter.bodyPanes()[1];
+    const headerRight = adapter.headerPanes()[1];
+    // Stand in for Canvas/SlickGrid's own inline geometry, set before this
+    // feature ever runs.
+    right.style.setProperty('width', '810px');
+    right.style.setProperty('left', '190px');
+    headerRight.style.setProperty('width', '810px');
+    headerRight.style.setProperty('left', '190px');
+
+    ctrl.start();
+    // Confirm the widen actually overwrote those values (otherwise this test
+    // would trivially pass without exercising the restore path at all).
+    a.eq(right.style.getPropertyValue('width'), (1000 - 190 - 84) + 'px');
+
+    ctrl.stop();
+
+    a.eq(right.style.getPropertyValue('width'), '810px', 'the body pane\'s original width is put back exactly, not deleted');
+    a.eq(right.style.getPropertyValue('left'), '190px', 'the body pane\'s original left is put back exactly, not deleted');
+    a.eq(headerRight.style.getPropertyValue('width'), '810px', 'the header pane\'s original width is put back too');
+    a.eq(headerRight.style.getPropertyValue('left'), '190px', 'the header pane\'s original left is put back too');
+  });
+
+  test('a pane with no prior inline width/left still ends up with none after stop(), as before', () => {
+    const CGP = loadGradebookDom();
+    const grid = buildGrid(CGP);
+    const adapter = new CGP.GradebookDomAdapter();
+    const ctrl = makeController(CGP, adapter);
+    ctrl.start();
+    ctrl.stop();
+
+    const right = adapter.bodyPanes()[1];
+    a.eq(right.style.getPropertyValue('width'), '', 'nothing to restore, so the property is removed as it always was');
+    a.eq(right.style.getPropertyValue('left'), '', 'same for left');
+  });
+
   test('stop() undoes both the pane pins and the ancestor overflow clamp', () => {
     const CGP = loadGradebookDom();
     const grid = buildGrid(CGP);

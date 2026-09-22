@@ -139,13 +139,21 @@ html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-sub {
   width: 13px;
   height: 13px;
 }
-html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-sub svg { width: 9px; height: 9px; }
+html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-sub svg {
+  width: 8px;
+  height: 8px;
+  shape-rendering: geometricPrecision;
+}
 html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt {
   width: 14px;
   height: 14px;
   bottom: 1px;
 }
-html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt svg { width: 12px; height: 12px; }
+html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt svg {
+  width: 12px;
+  height: 12px;
+  shape-rendering: geometricPrecision;
+}
 html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt-count { right: 18px; }
 /* Neither marker's hit area may extend past its own edge here: a halo, sized
  * for a single full-size icon sitting alone in the cell, is exactly what let
@@ -156,7 +164,12 @@ html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-sub::after { inset: 0; 
 /* While a cell is actually being typed into, pull the hit area back to the
  * painted dot so it cannot swallow a click meant to place the caret. */
 html.cgp-on .slick-cell:has(input:not([type="hidden"])) .cgp-cmt::after { inset: 0; }
-html.cgp-on .cgp-cmt svg { width: 18px; height: 18px; fill: currentColor; display: block; }
+/* shape-rendering: geometricPrecision favours crisp, exactly-placed edges
+ * over the browser's default speed-optimized path rasterization - the
+ * difference is most visible on exactly the small, thin-stroked glyphs this
+ * extension draws, where a soft/blurred edge eats a much bigger share of the
+ * icon's total size than it would on anything larger. */
+html.cgp-on .cgp-cmt svg { width: 18px; height: 18px; fill: currentColor; display: block; shape-rendering: geometricPrecision; }
 html.cgp-on .cgp-cmt:hover {
   transform: scale(1.15);
   color: var(--cgp-brand-dark);
@@ -230,14 +243,23 @@ html.cgp-on .cgp-sub::after {
 }
 html.cgp-on .slick-cell:has(input:not([type="hidden"])) .cgp-sub::after { inset: 0; }
 html.cgp-on .cgp-sub svg {
-  width: 11px;
-  height: 11px;
+  /* 12px against the glyphs' own 16-unit viewBox is a 0.75 scale factor - a
+   * clean multiple that lands strokes on whole device pixels far more often
+   * than the previous 11px (0.6875), which is exactly the kind of
+   * off-grid scale that turns a crisp stroke into a soft, blurry one. */
+  width: 12px;
+  height: 12px;
   display: block;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.5;
+  /* A hair thicker for the same reason: a 1.5px stroke anti-aliases across
+   * a full pixel's worth of edge on either side at this size, which reads as
+   * fuzzy; 1.75px keeps a solid pixel-or-more of full-opacity color in the
+   * middle of the line instead of being almost all soft edge. */
+  stroke-width: 1.75;
   stroke-linecap: round;
   stroke-linejoin: round;
+  shape-rendering: geometricPrecision;
 }
 
 /* Handed in: a solid, confident badge. */

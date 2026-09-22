@@ -30,13 +30,36 @@
     this.cellPool = new Map(); // rowIndex -> element
     this.naturalWidth = 0;
     this._clampedAncestors = [];
+    // pane element -> { width?: originalValue, left?: originalValue }, as it
+    // stood before applyPaneGeometry() ever pinned that property. Captured
+    // lazily (see _captureOriginal) the first time each property is about to
+    // be overwritten, so restorePaneGeometry() can put back what Canvas/
+    // SlickGrid actually had there - which is not necessarily nothing: some
+    // Canvas builds set these panes' own left/width inline, and simply
+    // deleting the property (the old behaviour) left the pane with no
+    // explicit geometry at all until Canvas happened to recompute its own
+    // layout, rather than restoring it.
+    this._paneOriginal = new Map();
   }
 
   var P = FrozenTotalController.prototype;
 
   P.start = function () {
+    if (this.enabled) return;
     if (!this.settings.values.frozenTotal) return;
     if (!this.adapter.hasFrozenPane()) {
+      // Not a permanent verdict - content.js calls start() exactly once, at
+      // the moment the grid clears its own minimal readiness bar (a header
+      // column plus a grid-canvas exist). Canvas can still be mid-render at
+      // that instant and split into its frozen/scrolling pane pair a beat
+      // later, especially on a slow course load. Leaving `enabled` false
+      // here (rather than latching some "gave up" flag) is what lets paint()
+      // below retry this exact check on every subsequent paint pass - cheap,
+      // since a real course only fails it for a handful of passes before the
+      // second pane exists - instead of the whole feature staying off for
+      // the rest of the page's life over a one-time timing race. That silent,
+      // permanent disable is exactly the "Total column just isn't frozen
+      // this time" report this replaces.
       CGP.diag.warn('frozenTotal.noFrozenPane');
       return;
     }
@@ -56,18 +79,33 @@
   };
 
   /* Undo applyPaneGeometry()'s inline `!important` left/width pins so a
-   * teacher turning the setting off gets Canvas's own untouched pane
-   * geometry back, not whatever pixel values this feature last computed. */
+   * teacher turning the setting off gets Canvas's own ACTUAL prior pane
+   * geometry back, not just an empty property. Restores from _paneOriginal
+   * where this feature has a captured value for that element/property (set
+   * back to exactly what it was, not merely non-empty); only falls back to
+   * removeProperty for a property this feature never touched (or a pane
+   * geometry() was never called against), where there is nothing recorded to
+   * restore and Canvas's own CSS/JS is free to take over as it would have
+   * anyway. The snapshot is cleared after restoring so a later start() in
+   * the same page load captures a fresh "before" from whatever is actually
+   * on the element at that time, rather than reusing this one indefinitely. */
   P.restorePaneGeometry = function () {
     var self = this;
-    [this.adapter.bodyPanes(), this.adapter.headerPanes()].forEach(function (panes) {
-      panes.forEach(function (el) {
-        if (!el) return;
-        el.style.removeProperty('width');
-        el.style.removeProperty('left');
+    ['width', 'left'].forEach(function (prop) {
+      [self.adapter.bodyPanes(), self.adapter.headerPanes()].forEach(function (panes) {
+        panes.forEach(function (el) {
+          if (!el) return;
+          var entry = self._paneOriginal.get(el);
+          if (entry && Object.prototype.hasOwnProperty.call(entry, prop)) {
+            if (entry[prop]) el.style.setProperty(prop, entry[prop]);
+            else el.style.removeProperty(prop);
+          } else {
+            el.style.removeProperty(prop);
+          }
+        });
       });
-      void self;
     });
+    this._paneOriginal.clear();
   };
 
   /* Belt-and-braces against the exact failure mode reported live: BOTH panes
@@ -141,10 +179,20 @@
     var newRightLeft = newLeftWidth;
     var newRightWidth = Math.max(0, gridWidth - newLeftWidth);
 
+    var self = this;
     function pin(el, prop, px) {
       if (!el) return;
       var value = px + 'px';
       if (el.style.getPropertyValue(prop) === value) return;
+      // Capture BEFORE the first overwrite only - once _paneOriginal has an
+      // entry for this element/property, every later call here is pinning
+      // this feature's OWN previous value, never Canvas's, so it must never
+      // clobber the real original captured the first time.
+      var entry = self._paneOriginal.get(el);
+      if (!entry) { entry = {}; self._paneOriginal.set(el, entry); }
+      if (!Object.prototype.hasOwnProperty.call(entry, prop)) {
+        entry[prop] = el.style.getPropertyValue(prop) || null;
+      }
       el.style.setProperty(prop, value, 'important');
     }
 
@@ -258,7 +306,14 @@
   };
 
   P.paint = function () {
-    if (!this.enabled) return;
+    if (!this.enabled) {
+      // Retry the one-time start() gate on every paint pass rather than only
+      // at boot - see start()'s own comment for why a single failed check
+      // there must never be the last word on whether this feature ever runs
+      // this page load.
+      this.start();
+      if (!this.enabled) return;
+    }
     this.measure();
 
     if (!this.verifyWidened()) {
