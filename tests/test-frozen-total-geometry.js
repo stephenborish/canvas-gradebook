@@ -226,6 +226,56 @@ suite('frozen-total: pane geometry preserves the grid\'s total footprint', (test
     a.eq(ctrl.enabled, false, 'start() respects the setting being off');
   });
 
+  test('stop() restores a pane\'s PRIOR inline width/left, not just an empty property (Codex review, PR #19)', () => {
+    // Some Canvas builds set these panes' own width/left inline (not just
+    // through a stylesheet) as part of SlickGrid's normal layout. Before this
+    // fix, restorePaneGeometry() only ever removed the property outright,
+    // which is indistinguishable from "restoring" it correctly ONLY when
+    // there was nothing there to begin with - on a build that really does set
+    // these inline, deleting the property left the pane with no explicit
+    // geometry at all until Canvas happened to recompute its own layout on
+    // some unrelated trigger, rather than putting back what was actually
+    // there before this feature ever touched it.
+    const CGP = loadGradebookDom();
+    const grid = buildGrid(CGP);
+    const adapter = new CGP.GradebookDomAdapter();
+    const ctrl = makeController(CGP, adapter);
+
+    const right = adapter.bodyPanes()[1];
+    const headerRight = adapter.headerPanes()[1];
+    // Stand in for Canvas/SlickGrid's own inline geometry, set before this
+    // feature ever runs.
+    right.style.setProperty('width', '810px');
+    right.style.setProperty('left', '190px');
+    headerRight.style.setProperty('width', '810px');
+    headerRight.style.setProperty('left', '190px');
+
+    ctrl.start();
+    // Confirm the widen actually overwrote those values (otherwise this test
+    // would trivially pass without exercising the restore path at all).
+    a.eq(right.style.getPropertyValue('width'), (1000 - 190 - 84) + 'px');
+
+    ctrl.stop();
+
+    a.eq(right.style.getPropertyValue('width'), '810px', 'the body pane\'s original width is put back exactly, not deleted');
+    a.eq(right.style.getPropertyValue('left'), '190px', 'the body pane\'s original left is put back exactly, not deleted');
+    a.eq(headerRight.style.getPropertyValue('width'), '810px', 'the header pane\'s original width is put back too');
+    a.eq(headerRight.style.getPropertyValue('left'), '190px', 'the header pane\'s original left is put back too');
+  });
+
+  test('a pane with no prior inline width/left still ends up with none after stop(), as before', () => {
+    const CGP = loadGradebookDom();
+    const grid = buildGrid(CGP);
+    const adapter = new CGP.GradebookDomAdapter();
+    const ctrl = makeController(CGP, adapter);
+    ctrl.start();
+    ctrl.stop();
+
+    const right = adapter.bodyPanes()[1];
+    a.eq(right.style.getPropertyValue('width'), '', 'nothing to restore, so the property is removed as it always was');
+    a.eq(right.style.getPropertyValue('left'), '', 'same for left');
+  });
+
   test('stop() undoes both the pane pins and the ancestor overflow clamp', () => {
     const CGP = loadGradebookDom();
     const grid = buildGrid(CGP);
