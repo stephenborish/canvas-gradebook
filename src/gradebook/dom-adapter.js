@@ -671,6 +671,24 @@
     return cellEl.querySelector('input:not([type=hidden]), textarea, select') || null;
   };
 
+  /* Whether a grade cell is currently open for editing - SlickGrid mounts an
+   * <input>/<textarea> inside the active cell only while its editor is live.
+   * Used to hold off any layout change (column widths, frozen-pane geometry)
+   * that would tear down and rebuild DOM a teacher is mid-keystroke in. */
+  P.isEditing = function () {
+    return !!this.editorInput(this.activeCellEl());
+  };
+
+  /* Best-effort: Canvas exposes a column's "..." menu (sort, hide, arrange)
+   * as a popup toggled from a header button. Builds differ in class names, so
+   * this checks the one thing they share - the trigger reporting itself open
+   * via aria-expanded - rather than guessing a specific menu class. */
+  P.isColumnMenuOpen = function () {
+    var header = document.querySelector('.slick-header');
+    if (!header) return false;
+    return !!header.querySelector('[aria-expanded="true"]');
+  };
+
   P.isEditableGradeCell = function (info) {
     if (!info || info.columnType !== 'assignment' || !info.assignmentId || !info.studentId) return false;
     if (info.el.classList.contains('cannot_edit')) return false;

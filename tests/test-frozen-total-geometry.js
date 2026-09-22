@@ -276,6 +276,26 @@ suite('frozen-total: pane geometry preserves the grid\'s total footprint', (test
     a.eq(right.style.getPropertyValue('left'), '', 'same for left');
   });
 
+  test('paint() does nothing while a column-sizing transaction is reported pending', () => {
+    // Reproduces the frozen/resize race directly: if paint() measured the
+    // frozen pane while layout.js's setColumns() transaction was still in
+    // flight, it could compute pane geometry from a grid whose column widths
+    // are momentarily between Canvas's old model and the narrowed one.
+    const CGP = loadGradebookDom();
+    const grid = buildGrid(CGP);
+    const adapter = new CGP.GradebookDomAdapter();
+    let pending = true;
+    const ctrl = makeController(CGP, adapter, { isSizingPending: () => pending });
+
+    ctrl.paint();
+    a.eq(ctrl.enabled, false, 'start() is never even attempted while sizing is pending');
+    a.eq(ctrl.layer, null, 'no overlay is built from a grid mid-transaction');
+
+    pending = false;
+    ctrl.paint();
+    a.eq(ctrl.enabled, true, 'resumes normally once sizing is no longer pending');
+  });
+
   test('stop() undoes both the pane pins and the ancestor overflow clamp', () => {
     const CGP = loadGradebookDom();
     const grid = buildGrid(CGP);

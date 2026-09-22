@@ -15,6 +15,11 @@
     this.adapter = ctx.adapter;
     this.model = ctx.model;
     this.settings = ctx.settings;
+    // Reports true while layout.js has a column-sizing transaction in
+    // flight, so paint()/measure() can hold off rather than measuring the
+    // frozen pane against a grid whose column widths are momentarily
+    // between Canvas's old model and the extension's narrowed one.
+    this.isSizingPending = ctx.isSizingPending || function () { return false; };
     this.width = 84;
     this.enabled = false;   // the setting is on and a frozen pane was found at start
     // Verified to actually be showing, not merely attempted - see
@@ -306,6 +311,7 @@
   };
 
   P.paint = function () {
+    if (this.isSizingPending()) return;
     if (!this.enabled) {
       // Retry the one-time start() gate on every paint pass rather than only
       // at boot - see start()'s own comment for why a single failed check
