@@ -283,12 +283,50 @@
     // depends on them. Debounced so a burst of header mutations (Canvas
     // replacing several column nodes in one re-render) triggers exactly one
     // transaction rather than one per mutation record.
+    //
+    // resizeColumns() can legitimately decline to run this pass - the bridge
+    // reports the column model still settling, or a teacher is mid-edit, in
+    // a column menu, or mid-drag (see layout.js's isUserBusy()/backoff). None
+    // of those states has any OTHER trigger that will ever ask again: with
+    // the old unconditional 1.5s tick gone, a visible tab that sees no
+    // further header mutation or visibility change would otherwise sit at
+    // Canvas's default widths indefinitely. So a decline reschedules its own
+    // retry instead of just repainting and giving up - narrowColumns being on
+    // is itself the standing request to keep trying until it succeeds (or is
+    // turned off).
+    var _reconcileRetryTimer = null;
+    function scheduleReconcileRetry() {
+      if (_reconcileRetryTimer) return;
+      _reconcileRetryTimer = setTimeout(function () {
+        _reconcileRetryTimer = null;
+        reconcileColumns();
+      }, 1000);
+    }
     var reconcileColumns = CGP.util.debounce(function () {
       layout.resizeColumns().then(function (sized) {
-        if (sized) frozen.measure();
+        if (sized) { frozen.measure(); paint(); return; }
         paint();
+        if (settings.values.narrowColumns) scheduleReconcileRetry();
       });
     }, 200);
+
+    function mutationTouchesHeader(record) {
+      if (record.target && record.target.closest && record.target.closest('.slick-header')) return true;
+      // Canvas can replace the `.slick-header` element itself, not just a
+      // node inside it - the mutation's target is then the header's PARENT,
+      // so target.closest('.slick-header') finds nothing even though the
+      // added/removed node IS (or contains) the header. Checking those nodes
+      // directly catches that wholesale-replacement case too.
+      var moved = Array.prototype.slice.call(record.addedNodes || [])
+        .concat(Array.prototype.slice.call(record.removedNodes || []));
+      for (var i = 0; i < moved.length; i++) {
+        var node = moved[i];
+        if (node.nodeType !== 1) continue;
+        if (node.classList && node.classList.contains('slick-header')) return true;
+        if (node.querySelector && node.querySelector('.slick-header')) return true;
+      }
+      return false;
+    }
 
     function observeGrid() {
       var root = adapter.gridRoot() || document.querySelector('#content') || document.body;
@@ -298,9 +336,7 @@
         for (var i = 0; i < records.length; i++) {
           if (isOurMutation(records[i])) continue;
           relevant = true;
-          if (records[i].target && records[i].target.closest && records[i].target.closest('.slick-header')) {
-            headerChanged = true;
-          }
+          if (mutationTouchesHeader(records[i])) headerChanged = true;
         }
         if (relevant) paint();
         // A header replacement is exactly the event narrowColumns needs to
