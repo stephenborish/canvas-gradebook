@@ -35,8 +35,12 @@
    * objects cannot be passed to the isolated content script, so perform the
    * complete, atomic column transaction here and return only its outcome. */
   function validGrid(grid) {
-    return grid && typeof grid.getColumns === 'function' &&
-      typeof grid.setColumns === 'function';
+    try {
+      return grid && typeof grid.getColumns === 'function' &&
+        typeof grid.setColumns === 'function';
+    } catch (e) {
+      return false;
+    }
   }
 
   function findGrid() {
@@ -162,7 +166,9 @@
     for (var i = 0; i < candidates.length; i++) {
       var c = candidates[i];
       if (validGrid(c)) return c;
-      if (c && validGrid(c.current)) return c.current;
+      try {
+        if (c && validGrid(c.current)) return c.current;
+      } catch (e) {}
     }
     return null;
   }
