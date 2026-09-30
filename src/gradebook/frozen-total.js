@@ -182,10 +182,13 @@
     var gridWidth = Math.round(root.getBoundingClientRect().width);
     if (!gridWidth) return;
     var newLeftWidth = this.naturalWidth + this.width;
-    var nativeAtFront = !!(this.adapter && this.adapter.nativeTotalInScrollingPane && this.adapter.nativeTotalInScrollingPane());
+    var nativeTotal = this.adapter && this.adapter.nativeTotalInScrollingPane && this.adapter.nativeTotalInScrollingPane();
+    var nativeAtFront = !!nativeTotal;
     document.documentElement.classList.toggle('cgp-native-total-front', nativeAtFront);
-    var newRightLeft = nativeAtFront ? this.naturalWidth : newLeftWidth;
+    var nativeWidth = nativeTotal ? (nativeTotal.width || 84) : 84;
+    var newRightLeft = nativeAtFront ? Math.max(0, this.naturalWidth + this.width - nativeWidth) : newLeftWidth;
     var newRightWidth = Math.max(0, gridWidth - newRightLeft);
+    document.documentElement.style.setProperty('--cgp-right-left', newRightLeft + 'px');
 
     var self = this;
     function pin(el, prop, px) {
@@ -232,6 +235,7 @@
     this.working = false;
     document.documentElement.classList.remove('cgp-frozen-total-active');
     document.documentElement.classList.remove('cgp-native-total-front');
+    document.documentElement.style.removeProperty('--cgp-right-left');
     if (this.layer) { this.layer.remove(); this.layer = null; }
     if (this.header) { this.header.remove(); this.header = null; }
     this.cellPool.clear();

@@ -263,38 +263,83 @@
 
   var cgpState = window.__cgpState = window.__cgpState || { hideTotal: false, studentWidth: null, assignmentWidth: null };
 
-  function patchGrid(grid) {
-    if (!grid || grid.__cgpPatchedSetColumns) return;
-    var orig = grid.setColumns;
-    if (typeof orig !== 'function') return;
-    grid.setColumns = function(columns) {
-      if (!Array.isArray(columns)) return orig.call(this, columns);
-      columns.forEach(function(col) {
-        var kind = columnKind(col);
-        if (kind === 'student') {
-          var sWant = cgpState.studentWidth;
-          if (sWant !== null && sWant !== undefined) {
-            if (Math.round(Number(col.width)) !== sWant) col.width = sWant;
-            col.minWidth = sWant;
-            col.maxWidth = sWant;
-          }
-        } else if (kind === 'total') {
-          if (cgpState.hideTotal) {
-            col.width = 84;
-            col.minWidth = 84;
-            col.maxWidth = 84;
-          }
-        } else {
-          var aWant = cgpState.assignmentWidth;
-          if (aWant !== null && aWant !== undefined) {
-            if (Math.round(Number(col.width)) !== aWant) col.width = aWant;
-            col.minWidth = aWant;
-            col.maxWidth = aWant;
+  function enforceColumnWidths(grid) {
+    if (!grid || typeof grid.getColumns !== 'function') return false;
+    var columns;
+    try { columns = grid.getColumns(); } catch (e) { return false; }
+    if (!Array.isArray(columns) || !columns.length) return false;
+    var changed = false;
+    columns.forEach(function(col) {
+      if (!col) return;
+      var kind = columnKind(col);
+      if (kind === 'student') {
+        var sWant = cgpState.studentWidth;
+        if (sWant !== null && sWant !== undefined) {
+          if (Math.round(Number(col.width)) !== sWant || col.minWidth !== sWant || col.maxWidth !== sWant) {
+            col.width = sWant; col.minWidth = sWant; col.maxWidth = sWant; changed = true;
           }
         }
-      });
-      return orig.call(this, columns);
+      } else if (kind === 'total') {
+        if (cgpState.hideTotal) {
+          if (Math.round(Number(col.width)) !== 84 || col.minWidth !== 84 || col.maxWidth !== 84) {
+            col.width = 84; col.minWidth = 84; col.maxWidth = 84; changed = true;
+          }
+        }
+      } else {
+        var aWant = cgpState.assignmentWidth;
+        if (aWant !== null && aWant !== undefined) {
+          if (Math.round(Number(col.width)) !== aWant || col.minWidth !== aWant || col.maxWidth !== aWant) {
+            col.width = aWant; col.minWidth = aWant; col.maxWidth = aWant; changed = true;
+          }
+        }
+      }
+    });
+    return changed;
+  }
+
+  function patchGrid(grid) {
+    if (!grid || grid.__cgpPatchedSetColumns) return;
+    if (typeof grid.setOptions === 'function') {
+      try { grid.setOptions({ forceFitColumns: false }); } catch (e) {}
+    }
+    grid.autosizeColumns = function() {
+      enforceColumnWidths(this);
     };
+
+    var orig = grid.setColumns;
+    if (typeof orig === 'function') {
+      grid.setColumns = function(columns) {
+        if (Array.isArray(columns)) {
+          columns.forEach(function(col) {
+            if (!col) return;
+            var kind = columnKind(col);
+            if (kind === 'student') {
+              var sWant = cgpState.studentWidth;
+              if (sWant !== null && sWant !== undefined) {
+                if (Math.round(Number(col.width)) !== sWant) col.width = sWant;
+                col.minWidth = sWant;
+                col.maxWidth = sWant;
+              }
+            } else if (kind === 'total') {
+              if (cgpState.hideTotal) {
+                col.width = 84;
+                col.minWidth = 84;
+                col.maxWidth = 84;
+              }
+            } else {
+              var aWant = cgpState.assignmentWidth;
+              if (aWant !== null && aWant !== undefined) {
+                if (Math.round(Number(col.width)) !== aWant) col.width = aWant;
+                col.minWidth = aWant;
+                col.maxWidth = aWant;
+              }
+            }
+          });
+        }
+        return orig.call(this, columns);
+      };
+    }
+
     grid.__cgpPatchedSetColumns = true;
   }
 

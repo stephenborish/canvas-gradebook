@@ -148,7 +148,7 @@
       }
     });
     var keyboard = new CGP.KeyboardGradingController({
-      adapter: adapter, model: model, writer: writer, selection: selection,
+      adapter: adapter, model: model, writer: writer, selection: selection, registry: registry,
       settings: settings, requestPaint: requestPaint, bulkComment: bulkComment
     });
     // Header-level action: post the grades a column is still hiding from

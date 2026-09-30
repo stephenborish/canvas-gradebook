@@ -121,10 +121,8 @@
       this.settings.values.showCommentCount ? 1 : 0,
       this.settings.values.resubmissionIndicator ? 1 : 0,
       this.settings.values.hiddenGradeIndicator ? 1 : 0,
-      // Whether the student can see this grade yet is now painted (the left
-      // edge bar), so a post - which changes nothing else about the record -
-      // has to move the signature or the repaint would be skipped and the
-      // bar would stay on a cell that is no longer hidden.
+      rec.enteredScore != null ? rec.enteredScore : (rec.score != null ? rec.score : (rec.grade || '')),
+      rec.excused ? 1 : 0,
       CGP.postOps.needsPost(rec) ? 1 : 0,
       status
     ].join('|');
@@ -157,19 +155,33 @@
    * Canvas rewrites the cell's contents but never its class list, so the
    * classes we set alongside the markup are a reliable record of what SHOULD
    * be inside. Where they disagree with what is, the cell is repainted. */
-  P.marksIntact = function (cell) {
-    if (cell.classList.contains('cgp-has-comment') &&
-      !cell.querySelector(':scope > .cgp-marks > .cgp-cmt')) return false;
-    if (cell.classList.contains('cgp-has-resub') &&
-      !cell.querySelector(':scope > .cgp-marks > .cgp-resub')) return false;
-    if (cell.classList.contains('cgp-has-sub') &&
-      !cell.querySelector(':scope > .cgp-marks > .cgp-sub')) return false;
-    if (cell.classList.contains('cgp-has-unposted') &&
-      !cell.querySelector(':scope > .cgp-marks > .cgp-unposted')) return false;
-    if (cell.classList.contains('cgp-has-status-badge') &&
-      !cell.querySelector(':scope > .cgp-marks > .cgp-status-badge')) return false;
+  P.marksIntact = function (cell, rec, status) {
     if (cell.classList.contains('cgp-override') &&
       !cell.querySelector(':scope > .cgp-val')) return false;
+
+    var s = this.settings.values;
+    var comments = (rec && rec.comments) || null;
+    var wantComment = !!(s.commentIndicator && comments && comments.hasInstructorComment);
+    var sub = (s.submissionIndicator && rec) ? this.model.submissionState(rec.assignmentId, rec.userId) : null;
+    var wantSub = !!sub;
+    var wantResub = !!(s.resubmissionIndicator && rec && rec.gradedAt && rec.gradeMatchesCurrent === false);
+    var wantBadge = status === 'missing' || status === 'late';
+    var hasAny = wantComment || wantSub || wantResub || wantBadge;
+
+    if (!hasAny) {
+      if (cell.classList.contains('cgp-has-comment') && !cell.querySelector(':scope > .cgp-marks > .cgp-cmt')) return false;
+      if (cell.classList.contains('cgp-has-resub') && !cell.querySelector(':scope > .cgp-marks > .cgp-resub')) return false;
+      if (cell.classList.contains('cgp-has-sub') && !cell.querySelector(':scope > .cgp-marks > .cgp-sub')) return false;
+      if (cell.classList.contains('cgp-has-status-badge') && !cell.querySelector(':scope > .cgp-marks > .cgp-status-badge')) return false;
+      return true;
+    }
+
+    var host = cell.querySelector(':scope > .cgp-marks');
+    if (!host) return false;
+    if (wantComment && !host.querySelector('.cgp-cmt')) return false;
+    if (wantSub && !host.querySelector('.cgp-sub')) return false;
+    if (wantResub && !host.querySelector('.cgp-resub')) return false;
+    if (wantBadge && !host.querySelector('.cgp-status-badge')) return false;
     return true;
   };
 
@@ -278,7 +290,7 @@
     var known = this.model.everLoadedAssignments.has(String(info.assignmentId)) || !!(rec && rec.pending);
     var status = this.syncStatus(cell, known ? rec : null);
     var sig = this.signatureFor(info, rec);
-    if (!this.registry.needsPaint(cell, sig) && this.marksIntact(cell)) return;
+    if (!this.registry.needsPaint(cell, sig) && this.marksIntact(cell, rec, status)) return;
     this.registry.markPainted(cell, sig);
 
     var host = this.marksHost(cell);
@@ -335,12 +347,31 @@
     cell.classList.toggle('cgp-has-status-badge', showMissingBadge || showLateBadge);
     cell.classList.toggle('cgp-pending-write', !!(rec && rec.pending));
 
-    // Value overlay: only used when we wrote through the API and Canvas's own
-    // rendering has not caught up. Cleared as soon as Canvas agrees.
-    var override = rec && rec.override !== null && rec.override !== undefined ? String(rec.override) : null;
-    if (override !== null) {
+    // Grade overlay: ensure the student's accurate grade is displayed in the cell,
+    // especially when Canvas's native view replaces a graded submission with an icon
+    // (e.g. late submissions, resubmissions, or missing assignments that are now graded).
+    var wantedGrade = null;
+    if (rec) {
+      if (rec.override !== null && rec.override !== undefined) {
+        wantedGrade = String(rec.override);
+      } else if (rec.excused) {
+        wantedGrade = 'EX';
+      } else if (rec.enteredScore !== null && rec.enteredScore !== undefined) {
+        wantedGrade = String(rec.enteredScore);
+      } else if (rec.score !== null && rec.score !== undefined) {
+        wantedGrade = String(rec.score);
+      } else if (rec.grade !== null && rec.grade !== undefined && rec.grade !== '') {
+        wantedGrade = String(rec.grade);
+      }
+    }
+
+    if (wantedGrade !== null) {
       var canvasText = this.canvasCellText(cell);
-      if (canvasText === override) {
+      var textMatches = canvasText === wantedGrade;
+      if (!textMatches && canvasText !== '' && !isNaN(Number(canvasText)) && !isNaN(Number(wantedGrade))) {
+        textMatches = Number(canvasText) === Number(wantedGrade);
+      }
+      if (textMatches) {
         cell.classList.remove('cgp-override');
         var stale = cell.querySelector(':scope > .cgp-val');
         if (stale) stale.remove();
@@ -351,7 +382,7 @@
           val.className = 'cgp-val';
           cell.appendChild(val);
         }
-        val.textContent = override;
+        val.textContent = wantedGrade;
         cell.classList.add('cgp-override');
       }
     } else {

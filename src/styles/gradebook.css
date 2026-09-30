@@ -372,6 +372,9 @@ html.cgp-on .cgp-resub {
 html.cgp-on .slick-cell.cgp-override > *:not(.cgp-marks):not(.cgp-val):not(:has(button, a, [role="button"], [aria-haspopup])) {
   visibility: hidden;
 }
+html.cgp-on .slick-cell.cgp-override .Grid__GradeCell__Content {
+  visibility: hidden !important;
+}
 html.cgp-on .slick-cell.cgp-override > *:has(button, a, [role="button"], [aria-haspopup]) {
   position: relative;
   z-index: 3;
@@ -588,13 +591,15 @@ html.cgp-on .slick-cell .Grid__GradeCell__Content textarea {
 html.cgp-on .slick-cell:has(input:not([type="hidden"])) .Grid__GradeCell__Content > :not(input):not(textarea):not(:has(input)):not(:has(textarea)) {
   display: none !important;
 }
-/* When cell is actively being edited, hide synthetic score overlay and markers so editor has full cell width */
-html.cgp-on .slick-cell.active .cgp-marks,
-html.cgp-on .slick-cell:has(input:not([type="hidden"])) .cgp-marks,
+/* When cell is actively being edited, hide synthetic score overlay so editor has full cell width */
 html.cgp-on .slick-cell.active > .cgp-val,
 html.cgp-on .slick-cell:has(input:not([type="hidden"])) > .cgp-val {
   display: none !important;
   pointer-events: none !important;
+}
+html.cgp-on .slick-cell.active .Grid__GradeCell__Content,
+html.cgp-on .slick-cell:has(input:not([type="hidden"])) .Grid__GradeCell__Content {
+  visibility: visible !important;
 }
 
 /* What you type looks like what you get.
@@ -721,12 +726,12 @@ html.cgp-frozen-total .slick-viewport-left {
 }
 html.cgp-frozen-total.cgp-native-total-front .slick-pane-right,
 html.cgp-frozen-total.cgp-native-total-front .slick-pane-header-right {
-  left: var(--cgp-frozen-natural) !important;
-  width: calc(100% - var(--cgp-frozen-natural)) !important;
+  left: var(--cgp-right-left, var(--cgp-frozen-natural)) !important;
+  width: calc(100% - var(--cgp-right-left, var(--cgp-frozen-natural))) !important;
 }
 html.cgp-frozen-total.cgp-native-total-front .slick-header-right:not(.slick-pane-right *):not(.slick-pane-header-right *) {
-  left: var(--cgp-frozen-natural) !important;
-  width: calc(100% - var(--cgp-frozen-natural)) !important;
+  left: var(--cgp-right-left, var(--cgp-frozen-natural)) !important;
+  width: calc(100% - var(--cgp-right-left, var(--cgp-frozen-natural))) !important;
 }
 html.cgp-frozen-total:not(.cgp-native-total-front) .slick-pane-right,
 html.cgp-frozen-total:not(.cgp-native-total-front) .slick-pane-header-right {
@@ -1771,8 +1776,10 @@ html.cgp-on .slick-cell > .cgp-val { box-sizing: border-box !important; }
 /* Hide Canvas's native submission and comment icons from assignment cells
  * to prevent them from pushing the grade score off-center. Our extension
  * renders its own absolute-positioned indicators instead (.cgp-marks). */
-html.cgp-on .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content > i,
-html.cgp-on .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content > svg {
+html.cgp-on .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content i,
+html.cgp-on .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content svg,
+html.cgp-on .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content [class*="icon"],
+html.cgp-on .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content [class*="submission"] {
   display: none !important;
 }
 

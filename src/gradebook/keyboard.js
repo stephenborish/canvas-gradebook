@@ -37,6 +37,7 @@
     this.selection = ctx.selection;
     this.settings = ctx.settings;
     this.requestPaint = ctx.requestPaint;
+    this.registry = ctx.registry || null;
     this.bulkComment = ctx.bulkComment || null;
     this._editorWatch = new WeakMap();
     this._refreshTimers = new Map();
@@ -87,6 +88,14 @@
 
   P.onFocusOut = function (e) {
     var el = e.target;
+    var cell = el && el.closest ? el.closest('.slick-cell') : null;
+    if (cell && this.registry) {
+      this.registry.invalidate(cell);
+    }
+    if (this.requestPaint) {
+      this.requestPaint();
+    }
+
     var watch = this._editorWatch.get(el);
     if (!watch) return;
     this._editorWatch.delete(el);
@@ -94,19 +103,18 @@
     if (now === watch.value) return;
     if (!watch.assignmentId || !watch.userId) return;
     if (this._nativeMPending.has(watch.assignmentId + ':' + watch.userId)) return;
-    // A grade committed just now through Canvas's own editor is a local
-    // write exactly as much as one of ours (M/E/L, paste, a comment) is - see
-    // model.markLocalWrite / applySubmission - but until now nothing ever
-    // marked it as one. A column-wide fetch already in flight when this
-    // commit happens could land afterwards carrying the pre-write state and
-    // silently revert what the teacher just typed (the status/indicators
-    // reverting while Canvas's own cell text stays correct), with nothing
-    // left to ever re-correct it since the column is already marked loaded.
-    // Stamped here, synchronously, rather than only once refreshCell's own
-    // fetch goes out 1200ms from now in scheduleReconcile - an in-flight
-    // fetch dispatched in that window must see this write happened before it.
+
+    var numVal = parseFloat(now);
+    var patch = {
+      grade: now,
+      score: isNaN(numVal) ? null : numVal,
+      enteredScore: isNaN(numVal) ? null : numVal,
+      override: null
+    };
+    this.model.patchCell(watch.assignmentId, watch.userId, patch, { silent: false });
     this.model.markLocalWrite(watch.assignmentId, watch.userId);
     this.scheduleReconcile(watch.assignmentId, watch.userId);
+    if (this.requestPaint) this.requestPaint();
   };
 
   /** Canvas committed a grade its own way: re-read it so we stay truthful. */
