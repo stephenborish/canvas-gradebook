@@ -129,7 +129,13 @@
   };
 
   P.marksHost = function (cellEl) {
-    var host = cellEl.querySelector(':scope > .cgp-marks');
+    var hosts = cellEl.querySelectorAll(':scope > .cgp-marks');
+    if (hosts.length > 1) {
+      for (var i = 1; i < hosts.length; i++) {
+        hosts[i].remove();
+      }
+    }
+    var host = hosts[0];
     if (!host) {
       host = document.createElement('span');
       host.className = 'cgp-marks';
@@ -165,7 +171,9 @@
     var sub = (s.submissionIndicator && rec) ? this.model.submissionState(rec.assignmentId, rec.userId) : null;
     var wantSub = !!sub;
     var wantResub = !!(s.resubmissionIndicator && rec && rec.gradedAt && rec.gradeMatchesCurrent === false);
-    var wantBadge = status === 'missing' || status === 'late';
+    var wantMissing = status === 'missing';
+    var wantLate = status === 'late';
+    var wantBadge = wantMissing || wantLate;
     var hasAny = wantComment || wantSub || wantResub || wantBadge;
 
     if (!hasAny) {
@@ -181,7 +189,9 @@
     if (wantComment && !host.querySelector('.cgp-cmt')) return false;
     if (wantSub && !host.querySelector('.cgp-sub')) return false;
     if (wantResub && !host.querySelector('.cgp-resub')) return false;
-    if (wantBadge && !host.querySelector('.cgp-status-badge')) return false;
+    if (wantMissing && !host.querySelector('.cgp-status-badge--missing')) return false;
+    if (wantLate && !host.querySelector('.cgp-status-badge--late')) return false;
+    if (!wantBadge && host.querySelector('.cgp-status-badge')) return false;
     return true;
   };
 
@@ -249,6 +259,14 @@
         }
       });
     });
+
+    // Strip Canvas native status icons from the cell so they never collide with our badges
+    var nativeIcons = cell.querySelectorAll('.Grid__GradeCell__StartContainer, .Grid__GradeCell__Status, [class*="icon-late"], [class*="icon-missing"], [class*="status-icon"], [class*="late-icon"], [class*="missing-icon"], svg[class*="late"], svg[class*="missing"]');
+    for (var ni = 0; ni < nativeIcons.length; ni++) {
+      nativeIcons[ni].style.setProperty('display', 'none', 'important');
+      nativeIcons[ni].style.setProperty('visibility', 'hidden', 'important');
+    }
+
     return status;
   };
 
@@ -338,6 +356,14 @@
     // moment it goes the grade in that cell is live. needsPost() is the same
     // test the column's Post button counts with, so a cell wearing the bar is
     var showHidden = false; // Do not paint colored bar on the left side of cell
+
+    // Ensure no stray status badges exist anywhere in the cell outside the active host
+    var strayBadges = cell.querySelectorAll('.cgp-status-badge');
+    for (var bi = 0; bi < strayBadges.length; bi++) {
+      if (strayBadges[bi].parentElement !== host) {
+        strayBadges[bi].remove();
+      }
+    }
 
     host.innerHTML = parts.join('');
     cell.classList.toggle('cgp-has-comment', !!showComment);

@@ -93,11 +93,20 @@ html.cgp-on .slick-cell textarea {
 /* Sits above Canvas's own cell content - including its open grade editor - so
  * a comment bubble stays both visible and clickable while a cell is being
  * typed into, rather than vanishing the moment the teacher clicks the cell. */
-html.cgp-on .slick-cell .cgp-marks {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 6;
+html.cgp-on .slick-cell .cgp-marks,
+html.cgp-on .slick-cell > .cgp-marks {
+  position: absolute !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  display: block !important;
+  pointer-events: none !important;
+  z-index: 6 !important;
+  box-sizing: border-box !important;
 }
 
 /* Bottom-RIGHT corner, deliberately: comments are the marker a teacher reaches
@@ -115,15 +124,15 @@ html.cgp-on .slick-cell .cgp-marks {
  * resubmission wedge moved to bottom-left to make room, so the two markers
  * this extension paints still never collide with each other either. */
 html.cgp-on .cgp-cmt {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  right: 3px;
-  width: 18px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: absolute !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  right: 3px !important;
+  width: 18px !important;
+  height: 18px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   /* The bubble is the glyph itself, drawn big and blue - not a small white
    * mark inside a coloured disc. The disc was the problem: at this size the
    * ring around the glyph ate most of the space, leaving a speck of white in
@@ -158,15 +167,17 @@ html.cgp-on .cgp-cmt::after {
 /* Both right-hand markers in one cell: the submission badge and the
  * comment bubble. The comment bubble is placed cleanly to the left of the paper icon. */
 html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-sub {
-  top: 50%;
-  transform: translateY(-50%);
-  right: 3px;
+  position: absolute !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  right: 3px !important;
 }
 html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt {
-  top: 50%;
-  transform: translateY(-50%);
-  bottom: auto;
-  right: 22px;
+  position: absolute !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  bottom: auto !important;
+  right: 22px !important;
 }
 /* Neither marker's hit area may extend past its own edge */
 html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt::after,
@@ -219,15 +230,15 @@ html.cgp-on .cgp-cmt-count {
  * actually handed something in - and is a direct link into SpeedGrader for
  * exactly this student and assignment. */
 html.cgp-on .cgp-sub {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  right: 3px;
+  position: absolute !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  right: 3px !important;
   width: 16px;
   height: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   box-sizing: border-box;
   border-radius: 4px;
   pointer-events: auto;
@@ -355,14 +366,15 @@ html.cgp-on .slick-cell.cgp-status-excused::before {
 }
 
 html.cgp-on .cgp-resub {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 0;
-  height: 0;
-  border-bottom: 8px solid var(--cgp-resub);
-  border-right: 8px solid transparent;
-  pointer-events: auto;
+  position: absolute !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  border-bottom: 8px solid var(--cgp-resub) !important;
+  border-right: 8px solid transparent !important;
+  pointer-events: auto !important;
+  z-index: 6 !important;
 }
 
 /* Value written through the API while Canvas's own render is stale. Canvas's
@@ -375,22 +387,28 @@ html.cgp-on .slick-cell.cgp-override > *:not(.cgp-marks):not(.cgp-val):not(:has(
 html.cgp-on .slick-cell.cgp-override .Grid__GradeCell__Content {
   visibility: hidden !important;
 }
-html.cgp-on .slick-cell.cgp-override > *:has(button, a, [role="button"], [aria-haspopup]) {
+html.cgp-on .slick-cell.cgp-override > *:not(.cgp-marks):not(.cgp-val):has(button, a, [role="button"], [aria-haspopup]) {
   position: relative;
   z-index: 3;
 }
 html.cgp-on .cgp-val {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: absolute !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   font-size: var(--cgp-grade-font, 16px);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
   color: var(--cgp-ink-strong);
-  z-index: 2;
+  z-index: 2 !important;
   pointer-events: none !important;
 }
 html.cgp-on .slick-cell.cgp-pending-write .cgp-val { opacity: 0.55; }
@@ -450,42 +468,56 @@ html.cgp-on .slick-cell.cgp-status-excused::before {
  * status icon there - a solid ring keeps it legible against literally any
  * background colour Canvas or this extension paints behind it. */
 html.cgp-on .cgp-status-badge {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 17px;
-  height: 17px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1;
-  font-family: inherit;
-  pointer-events: auto;
-  cursor: default;
-  z-index: 6;
-  box-shadow: 0 0 0 1.5px #fff, 0 1px 2px rgba(19, 33, 44, 0.35);
+  position: absolute !important;
+  top: 2px !important;
+  left: 2px !important;
+  width: 17px !important;
+  height: 17px !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+  font-family: inherit !important;
+  pointer-events: auto !important;
+  cursor: default !important;
+  z-index: 6 !important;
+  box-shadow: 0 0 0 1.5px #fff, 0 1px 2px rgba(19, 33, 44, 0.35) !important;
 }
 html.cgp-on .cgp-status-badge--missing {
-  background: var(--cgp-missing-badge);
-  color: var(--cgp-missing-badge-ink);
+  background: var(--cgp-missing-badge) !important;
+  color: var(--cgp-missing-badge-ink) !important;
 }
 html.cgp-on .cgp-status-badge--late {
-  background: var(--cgp-late-badge);
-  color: var(--cgp-late-badge-ink);
+  background: var(--cgp-late-badge) !important;
+  color: var(--cgp-late-badge-ink) !important;
 }
 /* Canvas draws its own late-clock / missing-"?" icon as a real child element
  * at the same leading (top-left) corner - not merely a background tint - so a
  * solid ring around our own badge does not reliably cover it (the icon can be
  * a different size/shape, or simply sit beside rather than fully underneath
  * our circle). Rather than guess at Canvas's icon markup, our badge replaces
- * it outright: whenever this extension is showing its own Missing/Late badge
- * for a cell, Canvas's own icon container for that same cell is hidden, so
- * there is exactly one indicator, never two overlapping ones. */
-html.cgp-on .slick-cell.cgp-has-status-badge .Grid__GradeCell__StartContainer {
+ * it outright: all Canvas native status icons and start containers in assignment
+ * cells are completely hidden, so there is exactly one indicator, never two
+ * overlapping ones. */
+html.cgp-on .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__StartContainer,
+html.cgp-on .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Status,
+html.cgp-on .slick-cell[data-cgp-col="assignment"] [class*="icon-late"],
+html.cgp-on .slick-cell[data-cgp-col="assignment"] [class*="icon-missing"],
+html.cgp-on .slick-cell[data-cgp-col="assignment"] [class*="status-icon"],
+html.cgp-on .slick-cell[data-cgp-col="assignment"] [class*="late-icon"],
+html.cgp-on .slick-cell[data-cgp-col="assignment"] [class*="missing-icon"],
+html.cgp-on .slick-cell[data-cgp-col="assignment"] svg[class*="late"],
+html.cgp-on .slick-cell[data-cgp-col="assignment"] svg[class*="missing"],
+html.cgp-on .slick-cell.cgp-has-status-badge .Grid__GradeCell__StartContainer,
+html.cgp-on .slick-cell.cgp-status-missing .Grid__GradeCell__StartContainer,
+html.cgp-on .slick-cell.cgp-status-late .Grid__GradeCell__StartContainer {
+  display: none !important;
   visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 /* ------------------------------------------------------- cell selection */
