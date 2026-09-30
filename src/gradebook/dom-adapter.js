@@ -9,7 +9,8 @@
  * DOM order alone, because rows and columns virtualize):
  *   column -> header element id "slickgrid_<uid>_assignment_<id>", or
  *             data-column-id, or an /assignments/<id> link in the header
- *   cell   -> absolute column index from the SlickGrid "l<n>" class
+ *   cell   -> absolute column index from Canvas's SlickGrid "b<n>" class
+ *             (upstream SlickGrid's "l<n>" is only a fallback)
  *   row    -> style.top / rowHeight, with the student id read from the
  *             /courses/<id>/grades/<user_id> link in the frozen student cell
  * Both maps are remembered for the life of the page, so a cell that scrolls
@@ -89,6 +90,20 @@
     if (list.length < 2) return list;
     var self = this;
 
+    // 0. Canvas's own pane names. Canvas's SlickGrid fork builds its two panes
+    // as container_0/_1 holding headers_0/_1, viewport_0/_1 and canvas_0/_1
+    // (0 = frozen, 1 = scrolling) - none of which the "-left"/"-right" checks
+    // below ever match. These names never move with scroll position.
+    var frozen0 = null, scroll1 = null;
+    for (var k = 0; k < list.length; k++) {
+      var side = canvasPaneSide(list[k]);
+      if (side === 0 && !frozen0) frozen0 = list[k];
+      else if (side === 1 && !scroll1) scroll1 = list[k];
+    }
+    if (frozen0 && scroll1) {
+      return [frozen0, scroll1].concat(list.filter(function (e) { return e !== frozen0 && e !== scroll1; }));
+    }
+
     // 1. Direct class suffix check on elements or their ancestors
     var leftItem = null, rightItem = null;
     for (var i = 0; i < list.length; i++) {
@@ -132,6 +147,17 @@
     });
   };
 
+  /* 0 for an element in Canvas's frozen pane, 1 for its scrolling pane, or
+   * null when the element carries neither of Canvas's own pane names. */
+  var PANE_0 = '.container_0, .headers_0, .viewport_0, .canvas_0, .headerScroller_0';
+  var PANE_1 = '.container_1, .headers_1, .viewport_1, .canvas_1, .headerScroller_1';
+  function canvasPaneSide(el) {
+    if (!el || !el.closest) return null;
+    if (el.closest(PANE_0)) return 0;
+    if (el.closest(PANE_1)) return 1;
+    return null;
+  }
+
   P.viewports = function () {
     return Array.prototype.slice.call(document.querySelectorAll('.slick-viewport'));
   };
@@ -140,7 +166,8 @@
     var vps = this.viewports();
     if (!vps.length) return null;
     var left = vps.filter(function (v) {
-      return /viewport-left/.test(v.className) || (v.closest && v.closest('.slick-pane-left, .slick-header-left'));
+      return canvasPaneSide(v) === 0 || /viewport-left/.test(v.className) ||
+        (v.closest && v.closest('.slick-pane-left, .slick-header-left'));
     });
     if (left.length) return left[0];
     return vps.slice().sort(function (a, b) {
@@ -154,7 +181,8 @@
     var vps = this.viewports();
     if (!vps.length) return null;
     var right = vps.filter(function (v) {
-      return /viewport-right/.test(v.className) || (v.closest && v.closest('.slick-pane-right, .slick-header-right'));
+      return canvasPaneSide(v) === 1 || /viewport-right/.test(v.className) ||
+        (v.closest && v.closest('.slick-pane-right, .slick-header-right'));
     });
     if (right.length) return right[0];
     var scrollable = vps.filter(function (v) { return v.scrollWidth > v.clientWidth + 4; });
@@ -320,12 +348,20 @@
     var seen = [];
     var unresolved = 0;
     var sampled = 0;
-    this.paneOffsets = [];
-    this.paneColumns = [];
+    // Built into FRESH maps and swapped in at the end. Canvas renders every
+    // header column (only body cells virtualize), so one pass sees the whole
+    // column set; merging into the old maps instead kept whatever used to sit
+    // at an index after a column was hidden, shown or dragged elsewhere, and
+    // a cell at that index then resolved to the column that USED to be there.
+    var byIndex = new Map();
+    var byId = new Map();
+    var totalIndex = null;
+    var paneOffsets = [];
+    var paneColumns = [];
     this.headerContainers().forEach(function (container, paneIdx) {
-      self.paneOffsets.push(index);
+      paneOffsets.push(index);
       var currentPaneCols = [];
-      self.paneColumns.push(currentPaneCols);
+      paneColumns.push(currentPaneCols);
       var cols = container.querySelectorAll('.slick-header-column');
       for (var i = 0; i < cols.length; i++) {
         var el = cols[i];
@@ -357,13 +393,13 @@
         var thisIndex = index;
         if (cm) {
           var parsedNum = Number(cm[1]);
-          if (parsedNum >= self.paneOffsets[paneIdx]) {
+          if (parsedNum >= paneOffsets[paneIdx]) {
             thisIndex = parsedNum;
-          } else if (paneIdx > 0 && parsedNum < self.paneOffsets[paneIdx]) {
-            thisIndex = self.paneOffsets[paneIdx] + parsedNum;
+          } else if (paneIdx > 0 && parsedNum < paneOffsets[paneIdx]) {
+            thisIndex = paneOffsets[paneIdx] + parsedNum;
           }
         }
-        if (info.type === 'total') self._totalColIndex = thisIndex;
+        if (info.type === 'total') totalIndex = thisIndex;
         var entry = {
           index: thisIndex,
           columnId: columnId,
@@ -372,8 +408,8 @@
           groupId: info.groupId || null,
           el: el
         };
-        self.colIndexToColumn.set(thisIndex, entry);
-        if (columnId) self.columnIdToIndex.set(columnId, thisIndex);
+        byIndex.set(thisIndex, entry);
+        if (columnId) byId.set(columnId, thisIndex);
         else {
           unresolved++;
           // Keep a couple of real samples so diagnostics can show *why* a
@@ -392,6 +428,14 @@
         index++;
       }
     });
+    // No headers at all (grid not built yet, or torn down mid-rebuild): keep
+    // what we had rather than forgetting every column.
+    if (!seen.length) return seen;
+    this.colIndexToColumn = byIndex;
+    this.columnIdToIndex = byId;
+    this.paneOffsets = paneOffsets;
+    this.paneColumns = paneColumns;
+    this._totalColIndex = totalIndex;
     if (self._totalColIndex !== null && self._totalColIndex !== undefined) {
       if (!self.colIndexToColumn.has(self._totalColIndex)) {
         self.colIndexToColumn.set(self._totalColIndex, {
@@ -471,6 +515,7 @@
 
   /** Column index for a body cell.
    * Resolves the cell to its column index using:
+   * 0. Canvas's own "b<n>" column class - authoritative whenever present
    * 1. Direct assignment ID detection from cell DOM attributes/children
    * 2. SlickGrid class names (l<n>, c<n>, r<n>) with pane offset adjustment
    * 3. Geometric matching by horizontal position (style.left / offsetLeft / getBoundingClientRect)
@@ -490,6 +535,28 @@
     if (paneIndex < 0) paneIndex = 0;
     var offset = (this.paneOffsets && this.paneOffsets[paneIndex]) || 0;
     var paneCols = (this.paneColumns && this.paneColumns[paneIndex]) || [];
+
+    // 0. Canvas's own "b<n>" column class (see grid-map.js): the absolute
+    // column index Canvas itself uses. When it is present it is the answer,
+    // full stop - nothing below is allowed to second-guess it. Earlier
+    // versions only knew upstream SlickGrid's "l<n>", never matched Canvas's
+    // cells at all, and fell through to the geometric guess in step 3, which
+    // drifts as the grid scrolls horizontally and lands on a NEIGHBOURING
+    // column's header - showing that other assignment's grade (and its
+    // comment bubbles, or lack of them) under this column's header.
+    var canvasIdx = gridMap.canvasColumnIndexFromClassName(cell.className);
+    if (canvasIdx !== null) {
+      // The index must fall inside the pane this cell was rendered in. If it
+      // does not, our header-pane bookkeeping disagrees with Canvas (panes
+      // mis-ordered, headers mid-rebuild) and the column behind this index
+      // cannot be trusted: leave the cell unresolved rather than paint
+      // another assignment's data into it.
+      if (paneCols.length && (canvasIdx < offset || canvasIdx >= offset + paneCols.length)) {
+        CGP.diag.bump('adapter.cells.paneIndexMismatch');
+        return null;
+      }
+      return this.colIndexToColumn.has(canvasIdx) ? canvasIdx : null;
+    }
 
     // 1. Structural assignment ID detection from cell DOM
     var aid = this.assignmentIdFromCell(cell);
