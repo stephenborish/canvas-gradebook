@@ -402,14 +402,30 @@
         var stale = cell.querySelector(':scope > .cgp-val');
         if (stale) stale.remove();
       } else {
-        var val = cell.querySelector(':scope > .cgp-val');
-        if (!val) {
-          val = document.createElement('span');
-          val.className = 'cgp-val';
-          cell.appendChild(val);
+        // Only overlay if:
+        // 1. There is an active local write/override in flight (rec.override !== null || rec.pending), OR
+        // 2. The cell contains Canvas's submission icon / placeholder (e.g. paper icon for late/missing submission that is now graded), OR
+        // 3. Canvas text is non-empty but differs (e.g. formatting difference).
+        // If Canvas cell is completely empty (no submission icon, no text) and there is no local override,
+        // it means Canvas considers this cell ungraded/unsubmitted - never inject a synthetic grade overlay!
+        var hasNativeIcon = !!cell.querySelector('.Grid__GradeCell__Content i, .Grid__GradeCell__Content svg, .Grid__GradeCell__Content [class*="icon"], .Grid__GradeCell__Content [class*="submission"]');
+        var isLocalWrite = !!(rec && ((rec.override !== null && rec.override !== undefined) || rec.pending));
+        var shouldOverlay = isLocalWrite || hasNativeIcon || canvasText !== '';
+
+        if (shouldOverlay) {
+          var val = cell.querySelector(':scope > .cgp-val');
+          if (!val) {
+            val = document.createElement('span');
+            val.className = 'cgp-val';
+            cell.appendChild(val);
+          }
+          val.textContent = wantedGrade;
+          cell.classList.add('cgp-override');
+        } else {
+          cell.classList.remove('cgp-override');
+          var staleVal = cell.querySelector(':scope > .cgp-val');
+          if (staleVal) staleVal.remove();
         }
-        val.textContent = wantedGrade;
-        cell.classList.add('cgp-override');
       }
     } else {
       cell.classList.remove('cgp-override');

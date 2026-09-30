@@ -162,6 +162,8 @@ suite('grid cell mapping', (test) => {
   test('a body cell reveals its column index through its class list', () => {
     a.eq(CGP.gridMap.columnIndexFromClassName('slick-cell l7 r7'), 7);
     a.eq(CGP.gridMap.columnIndexFromClassName('slick-cell l0 r0 active'), 0);
+    a.eq(CGP.gridMap.columnIndexFromClassName('slick-cell c5'), 5);
+    a.eq(CGP.gridMap.columnIndexFromClassName('slick-cell r12'), 12);
     a.eq(CGP.gridMap.columnIndexFromClassName('slick-cell'), null);
   });
 

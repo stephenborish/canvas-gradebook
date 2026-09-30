@@ -46,8 +46,14 @@
   }
 
   function columnIndexFromClassName(className) {
-    var m = /(?:^|\s)l(\d+)(?:\s|$)/.exec(String(className || ''));
-    return m ? Number(m[1]) : null;
+    var str = String(className || '');
+    var m = /(?:^|\s)l(\d+)(?:\s|$)/.exec(str);
+    if (m) return Number(m[1]);
+    m = /(?:^|\s)c(\d+)(?:\s|$)/.exec(str);
+    if (m) return Number(m[1]);
+    m = /(?:^|\s)r(\d+)(?:\s|$)/.exec(str);
+    if (m) return Number(m[1]);
+    return null;
   }
 
   function rowIndexFromTop(top, rowHeight) {

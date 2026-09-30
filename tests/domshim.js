@@ -24,8 +24,8 @@ function toCamel(name) {
 /* ------------------------------------------------------------- selectors */
 
 function parseAttr(body) {
-  var m = /^([-\w]+)\s*([*^$]?=)?\s*"?([^"]*)"?$/.exec(body.trim());
-  return { name: m[1], op: m[2] || null, value: m[3] || '' };
+  var m = /^([-\w]+)\s*([*^$]?=)?\s*"?([^"\]]*)"?\s*[iIsS]?$/.exec(body.trim());
+  return m ? { name: m[1], op: m[2] || null, value: m[3] || '' } : { name: body, op: null, value: '' };
 }
 
 function compileCompound(tok) {
@@ -184,6 +184,11 @@ function FakeElement(tagName) {
   this.dataset = {};
   this._rect = { left: 0, top: 0, width: 0, height: 0 };
 }
+
+Object.defineProperty(FakeElement.prototype, 'id', {
+  get: function () { return this.getAttribute('id') || ''; },
+  set: function (v) { this.setAttribute('id', v); }
+});
 
 Object.defineProperty(FakeElement.prototype, 'className', {
   get: function () { return this._className; },

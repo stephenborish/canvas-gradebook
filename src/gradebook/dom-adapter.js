@@ -182,7 +182,8 @@
   };
 
   P.columnIdForHeader = function (el) {
-    var fromId = gridMap.parseSlickColumnId(el.id || '');
+    var idVal = el.id || (el.getAttribute && el.getAttribute('id')) || '';
+    var fromId = gridMap.parseSlickColumnId(idVal);
     if (fromId) return fromId;
 
     var attr = el.getAttribute('data-column-id') || (el.dataset && el.dataset.columnId);
@@ -320,8 +321,11 @@
     var unresolved = 0;
     var sampled = 0;
     this.paneOffsets = [];
-    this.headerContainers().forEach(function (container) {
+    this.paneColumns = [];
+    this.headerContainers().forEach(function (container, paneIdx) {
       self.paneOffsets.push(index);
+      var currentPaneCols = [];
+      self.paneColumns.push(currentPaneCols);
       var cols = container.querySelectorAll('.slick-header-column');
       for (var i = 0; i < cols.length; i++) {
         var el = cols[i];
@@ -350,7 +354,15 @@
           }
         }
         var cm = /(?:^|\s)[cl](\d+)(?:\s|$)/.exec(String(el.className || ''));
-        var thisIndex = cm ? Number(cm[1]) : index;
+        var thisIndex = index;
+        if (cm) {
+          var parsedNum = Number(cm[1]);
+          if (parsedNum >= self.paneOffsets[paneIdx]) {
+            thisIndex = parsedNum;
+          } else if (paneIdx > 0 && parsedNum < self.paneOffsets[paneIdx]) {
+            thisIndex = self.paneOffsets[paneIdx] + parsedNum;
+          }
+        }
         if (info.type === 'total') self._totalColIndex = thisIndex;
         var entry = {
           index: thisIndex,
@@ -376,6 +388,7 @@
           }
         }
         seen.push(entry);
+        currentPaneCols.push(entry);
         index++;
       }
     });
@@ -422,24 +435,151 @@
     return null;
   };
 
-  /** Column index for a body cell. Prefers SlickGrid's own "l<n>" class; falls
-   * back to the cell's position among its row's siblings plus that pane's
-   * starting offset, so a different l/r naming convention cannot blind us. */
+  /** Extract assignment ID from cell or its inner DOM if present. */
+  P.assignmentIdFromCell = function (cell) {
+    if (!cell) return null;
+    var direct = cell.getAttribute('data-assignment-id');
+    if (direct) return String(direct);
+
+    var colAttr = cell.getAttribute('data-column-id');
+    if (colAttr) {
+      var mCol = /^assignment_(\d+)$/.exec(colAttr);
+      if (mCol) return mCol[1];
+    }
+
+    var desc = cell.querySelector('[data-assignment-id]');
+    if (desc) {
+      var aid = desc.getAttribute('data-assignment-id');
+      if (aid) return String(aid);
+    }
+
+    var link = cell.querySelector('a[href*="/assignments/"]');
+    if (link) {
+      var m = /\/assignments\/(\d+)/.exec(link.getAttribute('href') || '');
+      if (m) return m[1];
+    }
+
+    var btn = cell.querySelector('[aria-controls*="assignment_"], [data-testid*="assignment_"], [id*="assignment_"]');
+    if (btn) {
+      var raw = (btn.getAttribute('aria-controls') || btn.getAttribute('data-testid') || btn.getAttribute('id') || '');
+      var m2 = /assignment_(\d+)/i.exec(raw);
+      if (m2) return m2[1];
+    }
+
+    return null;
+  };
+
+  /** Column index for a body cell.
+   * Resolves the cell to its column index using:
+   * 1. Direct assignment ID detection from cell DOM attributes/children
+   * 2. SlickGrid class names (l<n>, c<n>, r<n>) with pane offset adjustment
+   * 3. Geometric matching by horizontal position (style.left / offsetLeft / getBoundingClientRect)
+   * 4. Single-column pane matching
+   * 5. Non-virtualized row fallback (ONLY when the row contains all columns of that pane)
+   * Never guesses offset + local on horizontally virtualized rows to prevent column misalignment.
+   */
   P.resolveColIndexForCell = function (cell, row) {
-    var idx = gridMap.columnIndexFromClassName(cell.className);
-    if (idx !== null) return idx;
-    if (!this.paneOffsets || !this.paneOffsets.length) this.refreshColumns();
+    if (!cell) return null;
+    if (!this.paneOffsets || !this.paneOffsets.length || !this.paneColumns) this.refreshColumns();
+
     var canvases = this.canvases();
-    var canvas = (row && row.closest && row.closest('.grid-canvas')) || (row && row.parentElement);
+    var canvas = (row && row.closest && row.closest('.grid-canvas')) ||
+                 (cell.closest && cell.closest('.grid-canvas')) ||
+                 (row && row.parentElement);
     var paneIndex = canvas ? canvases.indexOf(canvas) : -1;
     if (paneIndex < 0) paneIndex = 0;
-    var offset = this.paneOffsets[paneIndex] || 0;
-    if (!row) return null;
-    var siblings = Array.prototype.filter.call(row.children, function (c) {
-      return c.classList && c.classList.contains('slick-cell');
-    });
-    var local = siblings.indexOf(cell);
-    return local < 0 ? null : offset + local;
+    var offset = (this.paneOffsets && this.paneOffsets[paneIndex]) || 0;
+    var paneCols = (this.paneColumns && this.paneColumns[paneIndex]) || [];
+
+    // 1. Structural assignment ID detection from cell DOM
+    var aid = this.assignmentIdFromCell(cell);
+    if (aid) {
+      var colIdx = this.columnIdToIndex.get('assignment_' + aid);
+      if (colIdx !== undefined && colIdx !== null) return colIdx;
+    }
+
+    // 2. Class name detection on the cell (l<n>, c<n>, r<n>)
+    var rawIdx = gridMap.columnIndexFromClassName(cell.className);
+    if (rawIdx !== null) {
+      if (this.colIndexToColumn.has(rawIdx)) {
+        if (paneIndex === 0 || rawIdx >= offset) return rawIdx;
+        var adj = offset + rawIdx;
+        if (this.colIndexToColumn.has(adj)) return adj;
+      } else if (paneIndex > 0) {
+        var adj2 = offset + rawIdx;
+        if (this.colIndexToColumn.has(adj2)) return adj2;
+      }
+    }
+
+    // 3. Geometric matching by horizontal position (style.left / offsetLeft / rect.left)
+    if (paneCols.length > 0) {
+      // 3a. Inline style.left or offsetLeft relative to container
+      var cellLeft = parseFloat(cell.style && cell.style.left);
+      if (!isFinite(cellLeft)) cellLeft = cell.offsetLeft;
+      if (isFinite(cellLeft)) {
+        var bestCol = null;
+        var bestDiff = Infinity;
+        for (var i = 0; i < paneCols.length; i++) {
+          var pCol = paneCols[i];
+          if (!pCol.el) continue;
+          var hLeft = pCol.el.offsetLeft;
+          if (!isFinite(hLeft) && pCol.el.style) hLeft = parseFloat(pCol.el.style.left);
+          if (isFinite(hLeft)) {
+            var diff = Math.abs(hLeft - cellLeft);
+            if (diff < bestDiff) {
+              bestDiff = diff;
+              bestCol = pCol;
+            }
+          }
+        }
+        if (bestCol && bestDiff < 30) {
+          return bestCol.index;
+        }
+      }
+
+      // 3b. Screen position comparison (getBoundingClientRect)
+      if (cell.getBoundingClientRect) {
+        var cellRect = cell.getBoundingClientRect();
+        if (cellRect && isFinite(cellRect.left) && cellRect.width > 0) {
+          var bestRectCol = null;
+          var bestRectDiff = Infinity;
+          for (var j = 0; j < paneCols.length; j++) {
+            var prCol = paneCols[j];
+            if (!prCol.el || !prCol.el.getBoundingClientRect) continue;
+            var hRect = prCol.el.getBoundingClientRect();
+            if (hRect && isFinite(hRect.left) && hRect.width > 0) {
+              var rDiff = Math.abs(hRect.left - cellRect.left);
+              if (rDiff < bestRectDiff) {
+                bestRectDiff = rDiff;
+                bestRectCol = prCol;
+              }
+            }
+          }
+          if (bestRectCol && bestRectDiff < 30) {
+            return bestRectCol.index;
+          }
+        }
+      }
+    }
+
+    // 4. Single-column pane
+    if (paneCols.length === 1) {
+      return paneCols[0].index;
+    }
+
+    // 5. Non-virtualized row fallback: ONLY valid if the row actually contains
+    // all columns for that pane. Never guess on a horizontally virtualized row!
+    if (row && row.children) {
+      var siblings = Array.prototype.filter.call(row.children, function (c) {
+        return c.classList && c.classList.contains('slick-cell');
+      });
+      if (paneCols.length > 0 && siblings.length === paneCols.length) {
+        var local = siblings.indexOf(cell);
+        return local < 0 ? null : offset + local;
+      }
+    }
+
+    return null;
   };
 
   P.studentIdFromRow = function (row) {

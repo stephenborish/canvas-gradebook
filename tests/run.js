@@ -21,6 +21,7 @@ require('./test-hide-test-student');
 require('./test-pane-scroll-identity');
 require('./test-layout-column-sizing');
 require('./test-page-grid-bridge');
+require('./test-scrolled-column-resolution');
 
 // run() awaits each case, so the process must not exit before it settles.
 harness.run().then((okAll) => {
