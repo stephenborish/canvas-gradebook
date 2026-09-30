@@ -155,7 +155,7 @@ suite('comment cache updates after a new comment', (test) => {
 
 suite('frozen Total column synchronization', (test) => {
   test('Canvas percentages are formatted, never recomputed', () => {
-    a.eq(CGP.totals.formatTotal({ currentScore: 87.456 }).text, '87.46%');
+    a.eq(CGP.totals.formatTotal({ currentScore: 87.456 }).text, '87.5%');
     a.eq(CGP.totals.formatTotal({ currentScore: 90 }).text, '90%');
     a.eq(CGP.totals.formatTotal({ currentScore: 0 }).text, '0%', 'a real zero is not "no grade"');
   });

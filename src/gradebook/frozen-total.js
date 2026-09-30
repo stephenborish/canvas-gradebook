@@ -79,6 +79,7 @@
     this.enabled = false;
     this.restorePaneGeometry();
     document.documentElement.classList.remove('cgp-frozen-total');
+    document.documentElement.classList.remove('cgp-native-total-front');
     this.restoreAncestorOverflow();
     this.teardownDrawn();
   };
@@ -181,8 +182,10 @@
     var gridWidth = Math.round(root.getBoundingClientRect().width);
     if (!gridWidth) return;
     var newLeftWidth = this.naturalWidth + this.width;
-    var newRightLeft = newLeftWidth;
-    var newRightWidth = Math.max(0, gridWidth - newLeftWidth);
+    var nativeAtFront = !!(this.adapter && this.adapter.nativeTotalInScrollingPane && this.adapter.nativeTotalInScrollingPane());
+    document.documentElement.classList.toggle('cgp-native-total-front', nativeAtFront);
+    var newRightLeft = nativeAtFront ? this.naturalWidth : newLeftWidth;
+    var newRightWidth = Math.max(0, gridWidth - newRightLeft);
 
     var self = this;
     function pin(el, prop, px) {
@@ -228,6 +231,7 @@
   P.teardownDrawn = function () {
     this.working = false;
     document.documentElement.classList.remove('cgp-frozen-total-active');
+    document.documentElement.classList.remove('cgp-native-total-front');
     if (this.layer) { this.layer.remove(); this.layer = null; }
     if (this.header) { this.header.remove(); this.header = null; }
     this.cellPool.clear();

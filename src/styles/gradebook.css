@@ -585,8 +585,16 @@ html.cgp-on .slick-cell .Grid__GradeCell__Content textarea {
   z-index: 5 !important;
 }
 /* Hide duplicate background/static score and total points denominator when input editor is open so there is no text overlap */
-html.cgp-on .slick-cell:has(input:not([type="hidden"])) .Grid__GradeCell__Content > :not(input):not(textarea) {
+html.cgp-on .slick-cell:has(input:not([type="hidden"])) .Grid__GradeCell__Content > :not(input):not(textarea):not(:has(input)):not(:has(textarea)) {
   display: none !important;
+}
+/* When cell is actively being edited, hide synthetic score overlay and markers so editor has full cell width */
+html.cgp-on .slick-cell.active .cgp-marks,
+html.cgp-on .slick-cell:has(input:not([type="hidden"])) .cgp-marks,
+html.cgp-on .slick-cell.active > .cgp-val,
+html.cgp-on .slick-cell:has(input:not([type="hidden"])) > .cgp-val {
+  display: none !important;
+  pointer-events: none !important;
 }
 
 /* What you type looks like what you get.
@@ -691,14 +699,37 @@ html.cgp-on .slick-cell:not(:has(.Grid__GradeCell)) *:has(> input):has(> button)
  * actual fix; the class-name rules below exist only so nothing looks broken
  * for the one rendered frame before that JS gets there, or on a Canvas build
  * whose pane class names happen to match them exactly. */
-html.cgp-frozen-total .slick-pane-left { width: var(--cgp-frozen-w) !important; }
+html.cgp-frozen-total .slick-pane-left {
+  width: var(--cgp-frozen-w) !important;
+  z-index: 10 !important;
+  background: #ffffff !important;
+}
 html.cgp-frozen-total .slick-pane-left .slick-header,
 html.cgp-frozen-total .slick-header-left,
-html.cgp-frozen-total .slick-pane-header-left { width: var(--cgp-frozen-w) !important; position: relative !important; }
+html.cgp-frozen-total .slick-pane-header-left {
+  width: var(--cgp-frozen-w) !important;
+  position: relative !important;
+  z-index: 10 !important;
+  background: #ffffff !important;
+}
 html.cgp-frozen-total .slick-pane-left .slick-viewport,
-html.cgp-frozen-total .slick-viewport-left { width: var(--cgp-frozen-w) !important; overflow-x: hidden !important; }
-html.cgp-frozen-total .slick-pane-right,
-html.cgp-frozen-total .slick-pane-header-right {
+html.cgp-frozen-total .slick-viewport-left {
+  width: var(--cgp-frozen-w) !important;
+  overflow-x: hidden !important;
+  z-index: 10 !important;
+  background: #ffffff !important;
+}
+html.cgp-frozen-total.cgp-native-total-front .slick-pane-right,
+html.cgp-frozen-total.cgp-native-total-front .slick-pane-header-right {
+  left: var(--cgp-frozen-natural) !important;
+  width: calc(100% - var(--cgp-frozen-natural)) !important;
+}
+html.cgp-frozen-total.cgp-native-total-front .slick-header-right:not(.slick-pane-right *):not(.slick-pane-header-right *) {
+  left: var(--cgp-frozen-natural) !important;
+  width: calc(100% - var(--cgp-frozen-natural)) !important;
+}
+html.cgp-frozen-total:not(.cgp-native-total-front) .slick-pane-right,
+html.cgp-frozen-total:not(.cgp-native-total-front) .slick-pane-header-right {
   left: var(--cgp-frozen-w) !important;
   width: calc(100% - var(--cgp-frozen-w)) !important;
 }
@@ -710,7 +741,7 @@ html.cgp-frozen-total .slick-pane-header-right .slick-header-right {
   width: 100% !important;
 }
 /* Standalone header right (only if not inside a pane) */
-html.cgp-frozen-total .slick-header-right:not(.slick-pane-right *):not(.slick-pane-header-right *) {
+html.cgp-frozen-total:not(.cgp-native-total-front) .slick-header-right:not(.slick-pane-right *):not(.slick-pane-header-right *) {
   left: var(--cgp-frozen-w) !important;
   width: calc(100% - var(--cgp-frozen-w)) !important;
 }
@@ -800,25 +831,19 @@ html.cgp-frozen-total .cgp-total-cell.cgp-row-hover {
   background-image: linear-gradient(var(--cgp-row-hover), var(--cgp-row-hover));
 }
 
-/* Canvas's own native Total column - wherever it actually sits (some
- * gradebooks show it right after student name, most at the far right past
- * every assignment) - completely collapsed and hidden when frozen total is active
- * so it never leaves a blank gap between frozen columns and assignments. */
-html.cgp-frozen-total-active [data-cgp-col="total"],
+/* Canvas's own native Total column in the scrolling pane - visually hidden
+ * so it never overlaps or peeks out, but preserves its layout width in SlickGrid
+ * so assignment headers and cells remain strictly aligned 1:1. */
 html.cgp-frozen-total-active .slick-header-column[data-cgp-col="total"],
 html.cgp-frozen-total-active .slick-header-column[id*="total_grade"],
 html.cgp-frozen-total-active .slick-header-column[id*="total"],
 html.cgp-frozen-total-active .slick-cell[data-cgp-col="total"],
 html.cgp-frozen-total-active .slick-cell[id*="total_grade"],
 html.cgp-frozen-total-active .slick-cell[class*="total_grade"] {
-  display: none !important;
-  width: 0 !important;
-  min-width: 0 !important;
-  max-width: 0 !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  border: none !important;
-  overflow: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
 }
 
 /* ------------------------------------------------------- compact layout */

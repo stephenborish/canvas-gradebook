@@ -149,7 +149,7 @@
     if (score === null || score === undefined || score === '') return '\u2014';
     var n = Number(score);
     if (!isFinite(n)) return '\u2014';
-    return (Math.round(n * 100) / 100) + '%';
+    return (Math.round(n * 10) / 10) + '%';
   };
 
   util.fmtDateTime = function (iso) {
