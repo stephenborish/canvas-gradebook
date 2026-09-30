@@ -61,7 +61,19 @@
     } catch (e) { CGP.diag.warn('env.injectFailed'); }
   }
 
+  function injectFonts() {
+    try {
+      if (document.getElementById('cgp-fonts')) return;
+      var link = document.createElement('link');
+      link.id = 'cgp-fonts';
+      link.rel = 'stylesheet';
+      link.href = 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Lexend:wght@400;500;600;700&display=swap';
+      (document.head || document.documentElement).appendChild(link);
+    } catch (e) { /* ignore */ }
+  }
+
   function startGradebook(courseId) {
+    injectFonts();
     var settings = CGP.settings;
     var api = new CGP.CanvasApi();
     var model = new CGP.GradebookModel(api, courseId);
@@ -131,7 +143,9 @@
       // of step - see layout.resizeColumns(). Skipping paint()/measure()
       // for that narrow window means the overlay is only ever built from a
       // grid Canvas has finished laying out, never a half-applied one.
-      isSizingPending: function () { return !!layout._resizing; }
+      isSizingPending: function () {
+        return !!(layout._resizing && layout._resizeStartedAt && (Date.now() - layout._resizeStartedAt < 2000));
+      }
     });
     var keyboard = new CGP.KeyboardGradingController({
       adapter: adapter, model: model, writer: writer, selection: selection,
@@ -295,18 +309,20 @@
     // is itself the standing request to keep trying until it succeeds (or is
     // turned off).
     var _reconcileRetryTimer = null;
+    var _reconcileAttempts = 0;
     function scheduleReconcileRetry() {
-      if (_reconcileRetryTimer) return;
+      if (_reconcileRetryTimer || _reconcileAttempts >= 5) return;
+      _reconcileAttempts++;
       _reconcileRetryTimer = setTimeout(function () {
         _reconcileRetryTimer = null;
         reconcileColumns();
-      }, 1000);
+      }, 1200);
     }
     var reconcileColumns = CGP.util.debounce(function () {
       layout.resizeColumns().then(function (sized) {
-        if (sized) { frozen.measure(); paint(); return; }
+        if (sized) { _reconcileAttempts = 0; frozen.measure(); paint(); return; }
         paint();
-        if (settings.values.narrowColumns) scheduleReconcileRetry();
+        if (settings.values.narrowColumns || settings.values.frozenTotal) scheduleReconcileRetry();
       });
     }, 200);
 
@@ -364,6 +380,7 @@
       bindDocumentScroll();
       observeGrid();
       paint();
+      reconcileColumns();
 
       // Best-effort, once per page load: push this teacher's preferred View
       // Options into Canvas's own settings tray so they never have to do it

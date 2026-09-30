@@ -255,7 +255,7 @@
     var want = this.naturalWidth + this.width;
     // A little slack for a hairline border, a scrollbar gutter, or ordinary
     // sub-pixel layout rounding on an otherwise-correct widen.
-    return Math.abs(have - want) <= 8;
+    return Math.abs(have - want) <= 12;
   };
 
   P.measure = function () {
@@ -279,7 +279,11 @@
   };
 
   P.ensureHeader = function () {
-    var headerPane = document.querySelector('.slick-header');
+    var headerPanes = this.adapter.headerPanes();
+    var headerPane = (headerPanes && headerPanes[0]) ||
+      document.querySelector('.slick-header-left') ||
+      document.querySelector('.slick-pane-header-left') ||
+      document.querySelector('.slick-header');
     if (!headerPane) return null;
     if (this.header && this.header.isConnected && this.header.parentElement === headerPane) return this.header;
     var el = headerPane.querySelector(':scope > .cgp-total-header');

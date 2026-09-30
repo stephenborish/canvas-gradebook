@@ -620,7 +620,7 @@
 
   /* Ask the page-context bridge to transact against Canvas's SlickGrid. The
    * grid object itself cannot cross Chrome's isolated-world boundary. */
-  P.requestColumnSizing = function (studentWidth, assignmentWidth) {
+  P.requestColumnSizing = function (studentWidth, assignmentWidth, hideTotal) {
     return new Promise(function (resolve) {
       var id = 'cgp-grid-' + Date.now() + '-' + Math.random().toString(36).slice(2);
       var timer;
@@ -635,10 +635,11 @@
         finish(message.result);
       }
       window.addEventListener('message', onMessage);
-      timer = setTimeout(function () { finish({ ok: false, reason: 'timeout' }); }, 1600);
+      timer = setTimeout(function () { finish({ ok: false, reason: 'timeout' }); }, 3500);
       window.postMessage({
         source: 'cgp-grid-request', id: id,
-        studentWidth: studentWidth, assignmentWidth: assignmentWidth
+        studentWidth: studentWidth, assignmentWidth: assignmentWidth,
+        hideTotal: !!hideTotal
       }, window.location.origin);
     });
   };
@@ -690,12 +691,17 @@
    * earlier, successful transaction. */
   P.resizeColumns = function () {
     var s = this.settings.values;
-    if (!s.narrowColumns || this._resizing) return Promise.resolve();
+    var needSizing = s.narrowColumns || s.frozenTotal;
+    if (!needSizing || this._resizing) return Promise.resolve();
     if (this.isUserBusy()) return Promise.resolve(false);
     if (this._resizeBackoffUntil && Date.now() < this._resizeBackoffUntil) return Promise.resolve(false);
     var self = this;
     this._resizing = true;
-    return this.requestColumnSizing(s.studentColumnWidth, s.assignmentColumnWidth).then(function (result) {
+    this._resizeStartedAt = Date.now();
+    var studentW = s.narrowColumns ? s.studentColumnWidth : 190;
+    var assignmentW = s.narrowColumns ? s.assignmentColumnWidth : 124;
+    var hideTotal = !!s.frozenTotal;
+    return this.requestColumnSizing(studentW, assignmentW, hideTotal).then(function (result) {
       if (result && result.ok) {
         document.documentElement.classList.remove('cgp-column-sizing-presentation-only');
         self._resizeAttempts = 0;
@@ -718,6 +724,7 @@
       return false;
     }).catch(function () { return false; }).then(function (ok) {
       self._resizing = false;
+      self._resizeStartedAt = 0;
       if (ok) self.applyGeometry();
       return ok;
     });

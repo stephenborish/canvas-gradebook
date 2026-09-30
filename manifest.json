@@ -44,6 +44,16 @@
         "*://*.instructure.com/courses/*"
       ],
       "js": [
+        "src/page/env-bridge.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "*://*.instructure.com/courses/*"
+      ],
+      "js": [
         "src/core/util.js",
         "src/core/canvas-api.js",
         "src/core/grade-ops.js",

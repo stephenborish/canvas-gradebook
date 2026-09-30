@@ -87,6 +87,23 @@
   P.orderPaneElements = function (nodeList) {
     var list = Array.prototype.slice.call(nodeList);
     if (list.length < 2) return list;
+    var self = this;
+
+    // 1. Direct class suffix check on elements or their ancestors
+    var leftItem = null, rightItem = null;
+    for (var i = 0; i < list.length; i++) {
+      var el = list[i];
+      if (el.closest && el.closest('.slick-pane-left, .slick-header-left, .slick-viewport-left, [class*="-left"]')) {
+        if (!leftItem) leftItem = el;
+      } else if (el.closest && el.closest('.slick-pane-right, .slick-header-right, .slick-viewport-right, [class*="-right"]')) {
+        if (!rightItem) rightItem = el;
+      }
+    }
+    if (leftItem && rightItem && leftItem !== rightItem) {
+      return [leftItem, rightItem].concat(list.filter(function (e) { return e !== leftItem && e !== rightItem; }));
+    }
+
+    // 2. Viewport containment for body canvas elements
     var left = this.leftViewport();
     var right = this.rightViewport();
     if (left && right && left !== right) {
@@ -97,8 +114,21 @@
       });
       if (inLeft.length && inRight.length) return inLeft.concat(inRight, rest);
     }
+
+    // 3. Compare stationary positioned ancestor rects (NEVER the scrolled child's rect!)
+    // Outer clipping panes (slick-pane-left/right) are stationary and their rect.left
+    // does not change during internal horizontal scroll.
     return list.sort(function (a, b) {
-      return a.getBoundingClientRect().left - b.getBoundingClientRect().left;
+      var ancA = self.positionedAncestor(a) || a.parentElement || a;
+      var ancB = self.positionedAncestor(b) || b.parentElement || b;
+      var leftA = ancA.getBoundingClientRect().left;
+      var leftB = ancB.getBoundingClientRect().left;
+      if (Math.abs(leftA - leftB) > 1) return leftA - leftB;
+      // Preserve original DOM order when ancestors align or cannot be distinguished
+      if (a.compareDocumentPosition) {
+        return (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1;
+      }
+      return 0;
     });
   };
 
@@ -109,17 +139,23 @@
   P.leftViewport = function () {
     var vps = this.viewports();
     if (!vps.length) return null;
-    var left = vps.filter(function (v) { return /viewport-left/.test(v.className); });
+    var left = vps.filter(function (v) {
+      return /viewport-left/.test(v.className) || (v.closest && v.closest('.slick-pane-left, .slick-header-left'));
+    });
     if (left.length) return left[0];
     return vps.slice().sort(function (a, b) {
-      return a.getBoundingClientRect().left - b.getBoundingClientRect().left;
+      var ancA = (a.closest && a.closest('.slick-pane-left, .slick-header-left')) || a;
+      var ancB = (b.closest && b.closest('.slick-pane-left, .slick-header-left')) || b;
+      return ancA.getBoundingClientRect().left - ancB.getBoundingClientRect().left;
     })[0];
   };
 
   P.rightViewport = function () {
     var vps = this.viewports();
     if (!vps.length) return null;
-    var right = vps.filter(function (v) { return /viewport-right/.test(v.className); });
+    var right = vps.filter(function (v) {
+      return /viewport-right/.test(v.className) || (v.closest && v.closest('.slick-pane-right, .slick-header-right'));
+    });
     if (right.length) return right[0];
     var scrollable = vps.filter(function (v) { return v.scrollWidth > v.clientWidth + 4; });
     if (scrollable.length) return scrollable[scrollable.length - 1];
@@ -179,8 +215,10 @@
       if (m2) return 'assignment_' + m2[1];
     }
 
+    var titleAttr = (el.getAttribute('title') || el.getAttribute('aria-label') || '').trim().toLowerCase();
+    if (/^total/.test(titleAttr) || titleAttr.indexOf('total') >= 0 || /^to(\.|$)/.test(titleAttr)) return 'total_grade';
     var text = (el.textContent || '').trim().toLowerCase();
-    if (/^total/.test(text)) return 'total_grade';
+    if (/^total/.test(text) || /^to(\.|$)/.test(text) || text.indexOf('total') >= 0) return 'total_grade';
     if (/^student/.test(text) || text.indexOf('student name') >= 0) return 'student';
     return null;
   };
@@ -311,16 +349,19 @@
             }
           }
         }
+        var cm = /(?:^|\s)[cl](\d+)(?:\s|$)/.exec(String(el.className || ''));
+        var thisIndex = cm ? Number(cm[1]) : index;
+        if (info.type === 'total') self._totalColIndex = thisIndex;
         var entry = {
-          index: index,
+          index: thisIndex,
           columnId: columnId,
           type: info.type,
           assignmentId: info.assignmentId || null,
           groupId: info.groupId || null,
           el: el
         };
-        self.colIndexToColumn.set(index, entry);
-        if (columnId) self.columnIdToIndex.set(columnId, index);
+        self.colIndexToColumn.set(thisIndex, entry);
+        if (columnId) self.columnIdToIndex.set(columnId, thisIndex);
         else {
           unresolved++;
           // Keep a couple of real samples so diagnostics can show *why* a
@@ -338,6 +379,18 @@
         index++;
       }
     });
+    if (self._totalColIndex !== null && self._totalColIndex !== undefined) {
+      if (!self.colIndexToColumn.has(self._totalColIndex)) {
+        self.colIndexToColumn.set(self._totalColIndex, {
+          index: self._totalColIndex,
+          columnId: 'total_grade',
+          type: 'total',
+          assignmentId: null,
+          groupId: null,
+          el: null
+        });
+      }
+    }
     this._lastUnresolvedColumns = unresolved;
     CGP.diag.set('columnsMapped', this.colIndexToColumn.size);
     CGP.diag.set('columnsUnresolved', unresolved);
@@ -345,8 +398,28 @@
   };
 
   P.columnAt = function (colIndex) {
-    var e = this.colIndexToColumn.get(Number(colIndex));
+    var num = Number(colIndex);
+    if (this._totalColIndex !== null && this._totalColIndex !== undefined && num === this._totalColIndex) {
+      return this.colIndexToColumn.get(num) || { index: num, columnId: 'total_grade', type: 'total' };
+    }
+    var e = this.colIndexToColumn.get(num);
     return e || null;
+  };
+
+  P.nativeTotalInScrollingPane = function () {
+    var headers = this.headerContainers();
+    if (headers.length < 2) return null;
+    var rightHeader = headers[1];
+    var firstCol = rightHeader.querySelector('.slick-header-column');
+    if (!firstCol) return null;
+    var colId = this.columnIdForHeader(firstCol);
+    var info = gridMap.classifyColumnId(colId || '');
+    var text = (firstCol.textContent || '').trim().toLowerCase();
+    if (info.type === 'total' || /^total/.test(text) || text.indexOf('total') >= 0) {
+      var w = Math.round(firstCol.getBoundingClientRect().width) || 130;
+      return { el: firstCol, width: w };
+    }
+    return null;
   };
 
   /** Column index for a body cell. Prefers SlickGrid's own "l<n>" class; falls
@@ -885,10 +958,16 @@
   P.frozenNaturalWidth = function () {
     var container = this.headerContainers()[0];
     if (!container) return 0;
-    var w = 0;
     var cols = container.querySelectorAll('.slick-header-column');
+    // Guard: frozen student pane only ever holds 1-3 columns (student name / split names).
+    // If more than 4 columns are found, this is the scrolling assignments pane, not the frozen pane!
+    if (cols.length > 4) return this._lastNaturalWidth || 190;
+    var w = 0;
     for (var i = 0; i < cols.length; i++) w += cols[i].getBoundingClientRect().width;
-    return Math.round(w);
+    w = Math.round(w);
+    if (w > 600) return this._lastNaturalWidth || 190;
+    if (w > 0) this._lastNaturalWidth = w;
+    return w;
   };
 
   P.hasFrozenPane = function () {

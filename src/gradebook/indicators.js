@@ -325,17 +325,13 @@
     // is the difference: while it is there the student sees nothing, and the
     // moment it goes the grade in that cell is live. needsPost() is the same
     // test the column's Post button counts with, so a cell wearing the bar is
-    // always one of the grades that button would post.
-    var showHidden = !!(s.hiddenGradeIndicator && known && CGP.postOps.needsPost(rec));
-    if (showHidden) {
-      parts.push('<span class="cgp-unposted" title="Hidden from this student until this column\u2019s grades are posted"></span>');
-    }
+    var showHidden = false; // Do not paint colored bar on the left side of cell
 
     host.innerHTML = parts.join('');
     cell.classList.toggle('cgp-has-comment', !!showComment);
     cell.classList.toggle('cgp-has-resub', !!showResub);
     cell.classList.toggle('cgp-has-sub', !!showSub);
-    cell.classList.toggle('cgp-has-unposted', !!showHidden);
+    cell.classList.toggle('cgp-has-unposted', false);
     cell.classList.toggle('cgp-has-status-badge', showMissingBadge || showLateBadge);
     cell.classList.toggle('cgp-pending-write', !!(rec && rec.pending));
 

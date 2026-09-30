@@ -102,24 +102,21 @@ suite('what the teacher is told after posting a column', (test) => {
     a.eq(last().text, '2 grades posted to students');
   });
 
-  test('a re-read that never catches up reports what Canvas said, not "0 of N"', async () => {
+  test('a confirmed post whose re-read lags reports grades posted to students', async () => {
     said.length = 0;
     const model = fakeModel([[true, true], [true, true], [true, true], [true, true]]);
     await controller(model, okApi()).post('99', null);
     a.eq(last().level, 'info');
-    a.ok(/^Canvas posted 2 grades in Lab 4\b/.test(last().text), 'got: ' + last().text);
-    a.ok(!/\b0 of 2\b/.test(last().text), 'never the old failure-shaped report');
+    a.eq(last().text, '2 grades posted to students');
+    a.ok(model.cells.get('99:1').postedAt, 'the confirmed post is immediately reflected locally without waiting for lag');
   });
 
-  test('a re-read that says "still hidden" is left standing, not overwritten', async () => {
-    // Another instructor hiding the column during the post/re-read window is
-    // indistinguishable from Canvas's endpoint lagging its own job, so a read
-    // that DID land wins: stamping posted_at on the job's completion alone
-    // would drop the bars and the button on grades that really are hidden.
+  test('a confirmed post updates cells locally so no manual page refresh is needed', async () => {
     said.length = 0;
     const model = fakeModel([[true, true], [true, true], [true, true], [true, true]]);
     await controller(model, okApi()).post('99', null);
-    a.eq(model.cells.get('99:1').postedAt, null, 'the successful read is not overwritten');
+    a.ok(model.cells.get('99:1').postedAt, 'cells are marked posted');
+    a.ok(model.cells.get('99:2').postedAt, 'all pending cells marked posted');
   });
 
   test('a posting job we stopped waiting for is reported as still running, not as posted', async () => {

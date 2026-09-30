@@ -36,33 +36,155 @@
    * complete, atomic column transaction here and return only its outcome. */
   function validGrid(grid) {
     return grid && typeof grid.getColumns === 'function' &&
-      typeof grid.setColumns === 'function' && typeof grid.invalidate === 'function' &&
-      typeof grid.render === 'function' && typeof grid.resizeCanvas === 'function';
+      typeof grid.setColumns === 'function';
   }
 
   function findGrid() {
-    var root = document.querySelector('#gradebook_grid');
     var candidates = [];
-    if (root) candidates.push(root.slickGrid, root.slickgrid, root.grid, root.__slickGrid);
-    var jq = window.jQuery || window.$;
-    if (root && typeof jq === 'function') {
-      try {
-        var data = jq(root).data();
-        if (data) candidates.push(data.slickGrid, data.slickgrid, data.grid);
-      } catch (e) { /* an unrelated `$` is not a grid API */ }
-    }
-    [window.gradebook, window.Gradebook].forEach(function (owner) {
-      if (owner) candidates.push(owner.grid, owner.slickGrid, owner.slickgrid);
+
+    // 1. Check window globals and properties
+    [
+      window.gradebook, window.Gradebook, window.grid, window.slickGrid,
+      window.slickgrid, window._grid, window.gradebookGrid, window.canvasGradebook,
+      window.INST, window.INST && window.INST.gradebook, window.INST && window.INST.Gradebook,
+      window.INST && window.INST.grid
+    ].forEach(function (g) {
+      if (g) candidates.push(g, g.grid, g.slickGrid, g.slickgrid);
     });
-    for (var i = 0; i < candidates.length; i++) if (validGrid(candidates[i])) return candidates[i];
+
+    // Scan window top-level properties safely
+    try {
+      var winKeys = Object.keys(window);
+      for (var k = 0; k < winKeys.length; k++) {
+        var key = winKeys[k];
+        try {
+          var val = window[key];
+          if (val && typeof val === 'object' && val !== window) {
+            candidates.push(val);
+            if (val.grid) candidates.push(val.grid);
+            if (val.slickGrid) candidates.push(val.slickGrid);
+            if (val.slickgrid) candidates.push(val.slickgrid);
+            if (val._grid) candidates.push(val._grid);
+          }
+        } catch (e) {}
+      }
+    } catch (e) {}
+
+    // 2. Candidate DOM elements across all known Canvas selectors
+    var domRoots = [];
+    try {
+      var queried = document.querySelectorAll(
+        '#gradebook_grid, .gradebook-grid, [data-component="GradebookGrid"], .slickgrid-container, .slick-pane, .slick-viewport, .slick-viewport-left, .slick-viewport-right, .slick-header, .grid-canvas, #content, .ic-Layout-contentMain, [class*="gradebook"]'
+      );
+      domRoots = Array.prototype.slice.call(queried);
+    } catch (e) {}
+
+    // Also climb up from any .slick-header-columns or .grid-canvas
+    var sample = document.querySelector('.slick-header-columns, .grid-canvas');
+    var curr = sample;
+    for (var depth = 0; depth < 10 && curr && curr !== document.body; depth++) {
+      if (domRoots.indexOf(curr) < 0) domRoots.push(curr);
+      curr = curr.parentElement;
+    }
+
+    var jq = window.jQuery || window.$;
+
+    for (var d = 0; d < domRoots.length; d++) {
+      var el = domRoots[d];
+      if (!el) continue;
+
+      // Direct properties
+      candidates.push(el.slickGrid, el.slickgrid, el.grid, el.__slickGrid, el._grid, el.gridInstance);
+
+      // jQuery data
+      if (typeof jq === 'function') {
+        try {
+          var data = jq(el).data();
+          if (data) {
+            candidates.push(data.slickGrid, data.slickgrid, data.grid, data._grid);
+            for (var dk in data) {
+              if (data[dk] && typeof data[dk] === 'object') {
+                candidates.push(data[dk], data[dk].grid, data[dk].slickGrid, data[dk].slickgrid);
+              }
+            }
+          }
+        } catch (e) {}
+      }
+
+      // React Fiber traversal
+      try {
+        var keys = Object.keys(el);
+        for (var ki = 0; ki < keys.length; ki++) {
+          var propName = keys[ki];
+          if (propName.indexOf('__reactFiber') === 0 || propName.indexOf('__reactInternalInstance') === 0) {
+            var fiber = el[propName];
+            var fCurr = fiber;
+            for (var fDepth = 0; fDepth < 20 && fCurr; fDepth++) {
+              var sn = fCurr.stateNode;
+              if (sn && typeof sn === 'object') {
+                candidates.push(sn, sn.grid, sn.slickGrid, sn.slickgrid, sn._grid);
+                if (sn.state && typeof sn.state === 'object') candidates.push(sn.state.grid, sn.state.slickGrid);
+                if (sn.props && typeof sn.props === 'object') candidates.push(sn.props.grid, sn.props.slickGrid);
+              }
+              var mp = fCurr.memoizedProps;
+              if (mp && typeof mp === 'object') {
+                candidates.push(mp.grid, mp.slickGrid, mp.slickgrid, mp._grid);
+              }
+              var ms = fCurr.memoizedState;
+              if (ms && typeof ms === 'object') {
+                candidates.push(ms.grid, ms.slickGrid, ms.slickgrid, ms._grid);
+                var hook = ms;
+                for (var hDepth = 0; hDepth < 20 && hook; hDepth++) {
+                  if (hook.memoizedState && typeof hook.memoizedState === 'object') {
+                    var hs = hook.memoizedState;
+                    candidates.push(hs, hs.current, hs.grid, hs._grid);
+                    if (hs.current && typeof hs.current === 'object') {
+                      candidates.push(hs.current.grid, hs.current._grid, hs.current.slickGrid);
+                    }
+                  }
+                  hook = hook.next;
+                }
+              }
+              // Also check children if stateNode was empty
+              if (fCurr.child && fDepth < 5) {
+                var ch = fCurr.child;
+                if (ch.stateNode && typeof ch.stateNode === 'object') {
+                  candidates.push(ch.stateNode, ch.stateNode.grid, ch.stateNode.slickGrid);
+                }
+              }
+              fCurr = fCurr.return;
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
+    for (var i = 0; i < candidates.length; i++) {
+      var c = candidates[i];
+      if (validGrid(c)) return c;
+      if (c && validGrid(c.current)) return c.current;
+    }
     return null;
   }
 
   function columnKind(column) {
-    var id = String((column && (column.id || column.field)) || '').toLowerCase();
-    if (id === 'student' || id === 'student_name' || id === 'name') return 'student';
-    if (/^assignment[_-]/.test(id) || (column && column.assignment_id != null)) return 'assignment';
-    return null;
+    if (!column) return null;
+    var rawId = String(column.id || '').toLowerCase();
+    var field = String(column.field || '').toLowerCase();
+    var rawName = String(column.name || column.title || '');
+    var textName = rawName.replace(/<[^>]*>/g, '').trim().toLowerCase();
+    var cleanId = rawId.replace(/^slickgrid_\d+_?/, '');
+
+    if (cleanId === 'student' || cleanId === 'student_name' || cleanId === 'name' || textName === 'student name' || field === 'student') return 'student';
+    if (/^total/.test(cleanId) || /(?:^|_)total(?:_|$)/.test(rawId) || field === 'total_grade' || field === 'total' ||
+        column.is_total || /^total/.test(textName) || /^to(\.|$)/.test(textName) || textName === 'total' ||
+        cleanId === 'final_grade' || field === 'final_grade') {
+      return 'total';
+    }
+    if (/^assignment_group_/.test(cleanId) || column.group_id != null || field.indexOf('assignment_group') >= 0) return 'group';
+    if (/^custom_col_/.test(cleanId) || cleanId === 'notes' || field.indexOf('custom_col') >= 0) return 'custom';
+    if (/^assignment[_-]/.test(cleanId) || column.assignment_id != null || /^\d+$/.test(cleanId) || column.points_possible != null || field.indexOf('assignment') >= 0) return 'assignment';
+    return 'assignment';
   }
 
   function signature(columns) {
@@ -90,33 +212,115 @@
     });
   }
 
-  function resizeColumns(studentWidth, assignmentWidth) {
-    var grid = findGrid();
-    if (!grid) return Promise.resolve({ ok: false, reason: 'unavailable' });
-    return stableColumns(grid).then(function (columns) {
-      if (!columns) return { ok: false, reason: 'unstable' };
-      var changed = 0;
-      var next = columns.map(function (column) {
-        var copy = Object.assign({}, column);
+  function waitForGrid(timeoutMs) {
+    var g = findGrid();
+    if (g) return Promise.resolve(g);
+    return new Promise(function (resolve) {
+      var start = Date.now();
+      var timer = setInterval(function () {
+        var found = findGrid();
+        if (found) {
+          clearInterval(timer);
+          resolve(found);
+          return;
+        }
+        if (Date.now() - start > timeoutMs) {
+          clearInterval(timer);
+          resolve(null);
+        }
+      }, 50);
+    });
+  }
+
+  var cgpState = window.__cgpState = window.__cgpState || { hideTotal: false, studentWidth: null, assignmentWidth: null };
+
+  function patchGrid(grid) {
+    if (!grid || grid.__cgpPatchedSetColumns) return;
+    var orig = grid.setColumns;
+    if (typeof orig !== 'function') return;
+    grid.setColumns = function(columns) {
+      if (cgpState.hideTotal) {
+        columns = columns.filter(function(col) {
+          return columnKind(col) !== 'total';
+        });
+      }
+      columns = columns.map(function(col) {
+        var copy = Object.assign({}, col);
         var kind = columnKind(copy);
-        var want = kind === 'student' ? studentWidth : (kind === 'assignment' ? assignmentWidth : null);
-        if (want !== null && Math.round(Number(copy.width)) !== want) {
-          copy.width = want;
-          changed++;
+        var want = kind === 'student' ? cgpState.studentWidth : (kind === 'assignment' ? cgpState.assignmentWidth : null);
+        if (want !== null && want !== undefined) {
+          if (Math.round(Number(copy.width)) !== want) copy.width = want;
+          if (typeof copy.minWidth === 'number' && copy.minWidth > want) copy.minWidth = want;
+          if (typeof copy.maxWidth === 'number' && copy.maxWidth < want) copy.maxWidth = want;
         }
         return copy;
       });
-      if (!changed) return { ok: true, changed: 0 };
+      return orig.call(this, columns);
+    };
+    grid.__cgpPatchedSetColumns = true;
+  }
+
+  function doResize(grid, studentWidth, assignmentWidth, hideTotal) {
+    cgpState.hideTotal = !!hideTotal;
+    cgpState.studentWidth = studentWidth;
+    cgpState.assignmentWidth = assignmentWidth;
+    patchGrid(grid);
+    return stableColumns(grid).then(function (columns) {
+      if (!columns) return { ok: false, reason: 'unstable' };
+      var changed = 0;
+      var columnsToSize = columns;
+      if (hideTotal) {
+        columnsToSize = columns.filter(function (col) {
+          var isTotal = columnKind(col) === 'total';
+          if (isTotal) changed++;
+          return !isTotal;
+        });
+      }
+      var next = columnsToSize.map(function (column) {
+        var copy = Object.assign({}, column);
+        var kind = columnKind(copy);
+        var want = kind === 'student' ? studentWidth : (kind === 'assignment' ? assignmentWidth : null);
+        if (want !== null) {
+          if (Math.round(Number(copy.width)) !== want) {
+            copy.width = want;
+            changed++;
+          }
+          if (typeof copy.minWidth === 'number' && copy.minWidth > want) {
+            copy.minWidth = want;
+          }
+          if (typeof copy.maxWidth === 'number' && copy.maxWidth < want) {
+            copy.maxWidth = want;
+          }
+        }
+        return copy;
+      });
+      if (!changed && next.length === columns.length) return { ok: true, changed: 0 };
       try {
         grid.setColumns(next);
-        grid.invalidate();
-        grid.render();
-        grid.resizeCanvas();
+        if (typeof grid.invalidate === 'function') grid.invalidate();
+        if (typeof grid.render === 'function') grid.render();
+        if (typeof grid.invalidateAllRows === 'function') grid.invalidateAllRows();
+        if (typeof grid.resizeCanvas === 'function') grid.resizeCanvas();
         return { ok: true, changed: changed };
       } catch (e) {
-        try { grid.setColumns(columns); grid.invalidate(); grid.render(); grid.resizeCanvas(); } catch (ignored) { /* stand down */ }
+        try {
+          grid.setColumns(columns);
+          if (typeof grid.invalidate === 'function') grid.invalidate();
+          if (typeof grid.render === 'function') grid.render();
+          if (typeof grid.invalidateAllRows === 'function') grid.invalidateAllRows();
+          if (typeof grid.resizeCanvas === 'function') grid.resizeCanvas();
+        } catch (ignored) { /* stand down */ }
         return { ok: false, reason: 'failed' };
       }
+    });
+  }
+
+  function resizeColumns(studentWidth, assignmentWidth, hideTotal) {
+    var grid = findGrid();
+    if (grid) return doResize(grid, studentWidth, assignmentWidth, hideTotal);
+    return waitForGrid(3000).then(function (g) {
+      if (!g) return { ok: false, reason: 'unavailable' };
+      return doResize(g, studentWidth, assignmentWidth, hideTotal);
     });
   }
 
@@ -125,8 +329,9 @@
     if (event.source !== window || !message || message.source !== 'cgp-grid-request' || !message.id) return;
     var studentWidth = Number(message.studentWidth);
     var assignmentWidth = Number(message.assignmentWidth);
+    var hideTotal = !!message.hideTotal;
     if (!isFinite(studentWidth) || !isFinite(assignmentWidth) || studentWidth < 1 || assignmentWidth < 1) return;
-    resizeColumns(Math.round(studentWidth), Math.round(assignmentWidth)).then(function (result) {
+    resizeColumns(Math.round(studentWidth), Math.round(assignmentWidth), hideTotal).then(function (result) {
       window.postMessage({ source: 'cgp-grid-response', id: message.id, result: result }, window.location.origin);
     });
   });

@@ -112,4 +112,64 @@ suite('dom-adapter: pane order survives a horizontal scroll', (test) => {
     a.ok(headers[0] === headerColsA, 'frozen header pane is still first');
     a.ok(headers[1] === headerColsB, 'scrolling header pane is still second');
   });
+
+  test('headerContainers() survives realistic Canvas DOM hierarchy where headers are outside viewports and scrolling header rect.left is negative', () => {
+    const CGP = loadGradebookDom();
+    const doc = domshim.install();
+    const FakeElement = domshim.FakeElement;
+
+    const root = new FakeElement('div');
+    root.setAttribute('id', 'gradebook_grid');
+    root.setRect({ left: 0, top: 0, width: 1000, height: 400 });
+    doc.body.appendChild(root);
+
+    // Realistic SlickGrid header hierarchy:
+    // Header panes are stationary siblings of the viewports!
+    const headerPaneLeft = new FakeElement('div');
+    headerPaneLeft.classList.add('slick-pane', 'slick-pane-header', 'slick-pane-left');
+    headerPaneLeft.setRect({ left: 0, top: 0, width: 190, height: 40 });
+    root.appendChild(headerPaneLeft);
+
+    const headerLeft = new FakeElement('div');
+    headerLeft.classList.add('slick-header', 'slick-header-left');
+    headerLeft.setRect({ left: 0, top: 0, width: 190, height: 40 });
+    headerPaneLeft.appendChild(headerLeft);
+
+    const headerColsLeft = new FakeElement('div');
+    headerColsLeft.classList.add('slick-header-columns', 'slick-header-columns-left');
+    headerColsLeft.setRect({ left: 0, top: 0, width: 190, height: 40 });
+    headerLeft.appendChild(headerColsLeft);
+
+    const headerPaneRight = new FakeElement('div');
+    headerPaneRight.classList.add('slick-pane', 'slick-pane-header', 'slick-pane-right');
+    headerPaneRight.setRect({ left: 190, top: 0, width: 810, height: 40 });
+    root.appendChild(headerPaneRight);
+
+    const headerRight = new FakeElement('div');
+    headerRight.classList.add('slick-header', 'slick-header-right');
+    headerRight.setRect({ left: 190, top: 0, width: 810, height: 40 });
+    headerPaneRight.appendChild(headerRight);
+
+    // Scrolled far right (e.g. 500px scrollLeft): its own rect.left is -310px!
+    const headerColsRight = new FakeElement('div');
+    headerColsRight.classList.add('slick-header-columns', 'slick-header-columns-right');
+    headerColsRight.setRect({ left: 190 - 500, top: 0, width: 3000, height: 40 });
+    headerRight.appendChild(headerColsRight);
+
+    // Viewports below headers
+    const viewportLeft = new FakeElement('div');
+    viewportLeft.classList.add('slick-viewport', 'slick-viewport-left');
+    viewportLeft.setRect({ left: 0, top: 40, width: 190, height: 360 });
+    root.appendChild(viewportLeft);
+
+    const viewportRight = new FakeElement('div');
+    viewportRight.classList.add('slick-viewport', 'slick-viewport-right');
+    viewportRight.setRect({ left: 190, top: 40, width: 810, height: 360 });
+    root.appendChild(viewportRight);
+
+    const adapter = new CGP.GradebookDomAdapter();
+    const headers = adapter.headerContainers();
+    a.ok(headers[0] === headerColsLeft, 'frozen header pane is STILL first when headers are outside viewports');
+    a.ok(headers[1] === headerColsRight, 'scrolling header pane is STILL second');
+  });
 });

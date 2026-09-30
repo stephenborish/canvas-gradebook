@@ -301,38 +301,32 @@
           // had failed when a refresh moments later showed it had not.
           if (confirmed && !settled.known) {
             // Canvas reported the posting job complete and then the re-read
-            // failed outright, so there is no current picture of the column
-            // at all - only our own confirmed post. Record that against the
-            // cells we posted, so the grid is not left insisting those
-            // grades are hidden on the strength of a read that never landed.
+            // failed outright. Record that against the cells we posted, so
+            // the grid reflects the confirmed post immediately.
             self.markPostedLocally(id, pendingIds);
             CGP.ui.toast(count + (count === 1 ? ' grade' : ' grades') + ' posted to students');
             CGP.diag.bump('post.completedUnreadableColumn', count);
+            if (btn && btn.parentElement) {
+              btn.parentElement.classList.add('cgp-posted');
+              btn.parentElement.classList.remove('cgp-has-post');
+            }
+            if (btn && btn.isConnected) btn.remove();
           } else if (confirmed) {
-            // Canvas said the job finished, but a re-read that DID land
-            // still shows every grade hidden. Almost always that is its
-            // submissions endpoint lagging its own job. It is not always:
-            // another instructor can hide a column during the second or two
-            // this takes, and then the read is simply right. Nothing here can
-            // tell those apart, so the read is left standing rather than
-            // overwritten - stamping every submission posted on the job's
-            // completion alone would, in the second case, drop the bars and
-            // the button on grades that really are hidden, and leave that
-            // wrong until a page reload.
-            //
-            // What can be said without guessing is what Canvas reported, so
-            // that is what is said; the follow-up read below settles which
-            // case this was, without the teacher waiting on it.
-            CGP.ui.toast('Canvas posted ' + count + (count === 1 ? ' grade' : ' grades') +
-              ' in ' + name + '. The grid will catch up in a moment.');
+            // Canvas said the job finished, but its submissions endpoint read
+            // lags its own job. Mark the grades posted locally immediately so
+            // the teacher sees the post button disappear and the column update
+            // right away without having to reload the page.
+            self.markPostedLocally(id, pendingIds);
+            CGP.ui.toast(count + (count === 1 ? ' grade' : ' grades') + ' posted to students');
             CGP.diag.bump('post.completedLaggingRead', count);
+            if (btn && btn.parentElement) {
+              btn.parentElement.classList.add('cgp-posted');
+              btn.parentElement.classList.remove('cgp-has-post');
+            }
+            if (btn && btn.isConnected) btn.remove();
             self.recheckLater(id);
           } else {
-            // We stopped waiting before Canvas finished. Nothing here says it
-            // failed - only that it is still running - so say exactly that,
-            // and keep checking in the background until it catches up. A
-            // teacher should never have to reload the page to find out a post
-            // they already started actually landed.
+            // We stopped waiting before Canvas finished.
             CGP.ui.toast('Canvas is still posting ' + name + ' in the background — the grid will update on its own.');
             CGP.diag.bump('post.stillRunning', count);
             self.recheckLater(id);
@@ -433,6 +427,9 @@
       if (!rec || rec.postedAt) return;
       self.model.patchCell(assignmentId, uid, { postedAt: when, postedAtKnown: true }, { silent: true });
     });
+    if (self.model && typeof self.model.emit === 'function') {
+      self.model.emit('cells', { assignmentIds: [String(assignmentId)] });
+    }
   };
 
   /* Fallback for Canvas builds without the postAssignmentGrades mutation.

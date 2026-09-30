@@ -54,4 +54,52 @@ suite('page-context SlickGrid bridge', (test) => {
     a.eq(calls.filter((name) => name === 'setColumns').length, 1, 'one complete model write');
     a.deep(calls.slice(-4), ['setColumns', 'invalidate', 'render', 'resizeCanvas']);
   });
+
+  test('filters out total_grade column when hideTotal is true', async () => {
+    let model = [{ id: 'student', width: 260 }, { id: 'total_grade', width: 130 }, { id: 'assignment_1', width: 140 }];
+    const calls = [];
+    const grid = {
+      getColumns: function () { calls.push('getColumns'); return model; },
+      setColumns: function (columns) { calls.push('setColumns'); model = columns; },
+      invalidate: function () { calls.push('invalidate'); },
+      render: function () { calls.push('render'); },
+      resizeCanvas: function () { calls.push('resizeCanvas'); }
+    };
+    const listeners = [];
+    const responses = [];
+    const win = {
+      ENV: {},
+      location: { origin: 'https://canvas.example.edu' },
+      addEventListener: function (type, listener) { if (type === 'message') listeners.push(listener); },
+      postMessage: function (message) {
+        responses.push(message);
+        listeners.slice().forEach(function (listener) { listener({ source: win, data: message }); });
+      }
+    };
+    const context = {
+      window: win,
+      document: { querySelector: function () { return { slickGrid: grid }; } },
+      Promise: Promise,
+      Object: Object,
+      Array: Array,
+      String: String,
+      Number: Number,
+      Math: Math,
+      isFinite: isFinite,
+      setTimeout: function (fn) { fn(); }
+    };
+    vm.runInNewContext(fs.readFileSync('src/page/env-bridge.js', 'utf8'), context);
+
+    win.postMessage({
+      source: 'cgp-grid-request', id: 'test-hide-total', studentWidth: 190, assignmentWidth: 124, hideTotal: true
+    }, win.location.origin);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const response = responses.find((message) => message.source === 'cgp-grid-response' && message.id === 'test-hide-total');
+    a.ok(response, 'answered hideTotal request');
+    a.ok(response.result && response.result.ok, 'result ok');
+    a.deep(model.map((column) => column.id), ['student', 'assignment_1'], 'total_grade column filtered out completely');
+    a.deep(model.map((column) => column.width), [190, 124]);
+  });
 });

@@ -17,7 +17,7 @@
    * we can rely on the exact shape of (it has been seen with and without a
    * separating underscore, numeric and alphanumeric). Anchoring on a known
    * column-id shape at the END of the string sidesteps that entirely. */
-  var KNOWN_COLUMN_ID = /(assignment_group_\d+|assignment_\d+|total_grade_override|total_grade|custom_col_\d+|student)$/;
+  var KNOWN_COLUMN_ID = /(assignment_group_\d+|assignment_\d+|total_grade_override|total_grade|total|custom_col_\d+|student)$/;
 
   function parseSlickColumnId(elementId) {
     var id = String(elementId || '');
@@ -37,8 +37,9 @@
     var id = String(columnId || '');
     var m;
     if ((m = /^assignment_(\d+)$/.exec(id))) return { type: 'assignment', assignmentId: m[1] };
+    if ((m = /^(\d+)$/.exec(id))) return { type: 'assignment', assignmentId: m[1] };
     if ((m = /^assignment_group_(\d+)$/.exec(id))) return { type: 'group', groupId: m[1] };
-    if (/^total_grade/.test(id)) return { type: 'total' };
+    if (/^total/.test(id) || id === 'final_grade') return { type: 'total' };
     if (/^student/.test(id)) return { type: 'student' };
     if (/^custom_col_/.test(id)) return { type: 'custom' };
     return { type: id ? 'other' : 'unknown' };

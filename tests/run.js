@@ -24,5 +24,5 @@ require('./test-page-grid-bridge');
 
 // run() awaits each case, so the process must not exit before it settles.
 harness.run().then((okAll) => {
-  if (!okAll) process.exitCode = 1;
+  process.exit(okAll ? 0 : 1);
 });
