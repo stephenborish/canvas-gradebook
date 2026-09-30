@@ -97,7 +97,7 @@ suite('page-context SlickGrid bridge', (test) => {
     await Promise.resolve();
 
     const response = responses.find((message) => message.source === 'cgp-grid-response' && message.id === 'test-hide-total');
-    a.deep(model.map((column) => column.id), ['student', 'total_grade', 'assignment_1'], 'preserves column integrity without dropping indices');
-    a.deep(model.map((column) => column.width), [190, 0, 124], 'total_grade column width collapsed to 0');
+    a.deep(model.map((column) => column.id), ['student', 'assignment_1', 'total_grade'], 'moves native total column to the end to prevent duplicate column and header desync');
+    a.deep(model.map((column) => column.width), [190, 124, 0], 'total_grade column width collapsed to 0 at the end');
   });
 });

@@ -1183,8 +1183,8 @@ html.cgp-on .slick-cell[data-cgp-col="total"] *,
 html.cgp-on .slick-cell[class*="total"] * {
   font-size: inherit !important;
 }
-html.cgp-on .slick-cell[data-cgp-col="total"],
-html.cgp-on .slick-cell[class*="total"] {
+html.cgp-on:not(.cgp-frozen-total-active) .slick-cell[data-cgp-col="total"],
+html.cgp-on:not(.cgp-frozen-total-active) .slick-cell[class*="total"] {
   font-weight: 700 !important;
   color: var(--cgp-ink-strong) !important;
   min-width: 84px !important;

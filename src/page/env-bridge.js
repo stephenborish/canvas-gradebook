@@ -205,7 +205,9 @@
     if (cleanId === 'student' || cleanId === 'student_name' || cleanId === 'name' || textName === 'student name' || field === 'student') return 'student';
     if (/^total/.test(cleanId) || /(?:^|_)total(?:_|$)/.test(rawId) || field === 'total_grade' || field === 'total' ||
         column.is_total || /^total/.test(textName) || /^to(\.|$)/.test(textName) || textName === 'total' ||
-        cleanId === 'final_grade' || field === 'final_grade') {
+        cleanId === 'final_grade' || field === 'final_grade' ||
+        cleanId === 'total_grade_override' || field === 'total_grade_override' ||
+        cleanId.indexOf('total_grade') >= 0 || field.indexOf('total_grade') >= 0) {
       return 'total';
     }
     if (/^assignment_group_/.test(cleanId) || column.group_id != null || field.indexOf('assignment_group') >= 0) return 'group';
@@ -267,7 +269,21 @@
     if (typeof orig !== 'function') return;
     grid.setColumns = function(columns) {
       if (!Array.isArray(columns)) return orig.call(this, columns);
+      var studentCols = [];
+      var assignmentCols = [];
+      var totalCols = [];
       columns.forEach(function(col) {
+        var kind = columnKind(col);
+        if (kind === 'student') studentCols.push(col);
+        else if (kind === 'total') totalCols.push(col);
+        else assignmentCols.push(col);
+      });
+
+      var ordered = (cgpState.hideTotal && totalCols.length)
+        ? studentCols.concat(assignmentCols, totalCols)
+        : columns;
+
+      ordered.forEach(function(col) {
         var kind = columnKind(col);
         if (cgpState.hideTotal && kind === 'total') {
           col.width = 0;
@@ -282,7 +298,7 @@
           }
         }
       });
-      return orig.call(this, columns);
+      return orig.call(this, ordered);
     };
     grid.__cgpPatchedSetColumns = true;
   }
@@ -294,9 +310,23 @@
     patchGrid(grid);
     return stableColumns(grid).then(function (columns) {
       if (!columns) return { ok: false, reason: 'unstable' };
+      var studentCols = [];
+      var assignmentCols = [];
+      var totalCols = [];
+      columns.forEach(function (col) {
+        var copy = Object.assign({}, col);
+        var kind = columnKind(copy);
+        if (kind === 'student') studentCols.push(copy);
+        else if (kind === 'total') totalCols.push(copy);
+        else assignmentCols.push(copy);
+      });
+
+      var next = (hideTotal && totalCols.length)
+        ? studentCols.concat(assignmentCols, totalCols)
+        : columns.map(function (c) { return Object.assign({}, c); });
+
       var changed = 0;
-      var next = columns.map(function (column) {
-        var copy = Object.assign({}, column);
+      next.forEach(function (copy) {
         var kind = columnKind(copy);
         if (hideTotal && kind === 'total') {
           if (copy.width !== 0 || copy.minWidth !== 0 || copy.maxWidth !== 0) {
@@ -305,20 +335,31 @@
           copy.width = 0;
           copy.minWidth = 0;
           copy.maxWidth = 0;
-          return copy;
-        }
-        var want = kind === 'student' ? studentWidth : (kind === 'assignment' ? assignmentWidth : null);
-        if (want !== null) {
-          if (Math.round(Number(copy.width)) !== want) {
-            copy.width = want;
-            changed++;
+        } else {
+          var want = kind === 'student' ? studentWidth : (kind === 'assignment' ? assignmentWidth : null);
+          if (want !== null) {
+            if (Math.round(Number(copy.width)) !== want) {
+              copy.width = want;
+              changed++;
+            }
+            copy.minWidth = want;
+            copy.maxWidth = want;
           }
-          copy.minWidth = want;
-          copy.maxWidth = want;
         }
-        return copy;
       });
-      if (!changed && next.length === columns.length) return { ok: true, changed: 0 };
+
+      var orderChanged = false;
+      if (next.length === columns.length) {
+        for (var oi = 0; oi < next.length; oi++) {
+          if (next[oi].id !== columns[oi].id) {
+            orderChanged = true;
+            break;
+          }
+        }
+      }
+      if (orderChanged) changed++;
+
+      if (!changed && next.length === columns.length && !orderChanged) return { ok: true, changed: 0 };
       try {
         grid.setColumns(next);
         if (typeof grid.invalidate === 'function') grid.invalidate();
