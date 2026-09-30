@@ -697,19 +697,20 @@ html.cgp-frozen-total .slick-header-left,
 html.cgp-frozen-total .slick-pane-header-left { width: var(--cgp-frozen-w) !important; position: relative !important; }
 html.cgp-frozen-total .slick-pane-left .slick-viewport,
 html.cgp-frozen-total .slick-viewport-left { width: var(--cgp-frozen-w) !important; overflow-x: hidden !important; }
-html.cgp-frozen-total .slick-pane-right {
+html.cgp-frozen-total .slick-pane-right,
+html.cgp-frozen-total .slick-pane-header-right {
   left: var(--cgp-frozen-w) !important;
   width: calc(100% - var(--cgp-frozen-w)) !important;
 }
-/* The header row's own right-hand pane was never covered here at all before -
- * only the body's .slick-pane-right was - which is a real, separate bug from
- * the whole-grid-scrolls-together one: whatever this Canvas build calls the
- * header's right pane kept its ORIGINAL `left` while the body pane next to it
- * moved, so the assignment headers rendered --cgp-total-w pixels to the left
- * of the columns they actually label. Kept in sync with the body rule above
- * for exactly the reason its own comment gives. */
-html.cgp-frozen-total .slick-header-right,
-html.cgp-frozen-total .slick-pane-header-right {
+/* When .slick-header-right is nested inside .slick-pane-right or .slick-pane-header-right,
+ * it must stay at left: 0 so it is not shifted doubly relative to its pane */
+html.cgp-frozen-total .slick-pane-right .slick-header-right,
+html.cgp-frozen-total .slick-pane-header-right .slick-header-right {
+  left: 0 !important;
+  width: 100% !important;
+}
+/* Standalone header right (only if not inside a pane) */
+html.cgp-frozen-total .slick-header-right:not(.slick-pane-right *):not(.slick-pane-header-right *) {
   left: var(--cgp-frozen-w) !important;
   width: calc(100% - var(--cgp-frozen-w)) !important;
 }
@@ -755,6 +756,7 @@ html.cgp-frozen-total .cgp-total-header {
   align-items: center;
   justify-content: center;
   border-left: 1px solid var(--cgp-hairline-strong);
+  border-right: 1px solid var(--cgp-hairline-strong);
   background: linear-gradient(180deg, var(--cgp-header-top), var(--cgp-header-bottom));
   font-size: 12px;
   font-weight: 700;
@@ -780,6 +782,7 @@ html.cgp-frozen-total .cgp-total-cell {
   align-items: center;
   justify-content: center;
   border-left: 1px solid var(--cgp-hairline-strong);
+  border-right: 1px solid var(--cgp-hairline-strong);
   border-bottom: 1px solid var(--cgp-hairline);
   background: #fff;
   font-size: 13px;
@@ -789,6 +792,9 @@ html.cgp-frozen-total .cgp-total-cell {
   font-feature-settings: "tnum" 1;
   pointer-events: auto;
 }
+html.cgp-frozen-total .cgp-total-cell.odd {
+  background: #f2f4f4;
+}
 html.cgp-frozen-total .cgp-total-cell--empty { color: var(--cgp-muted); font-weight: 500; }
 html.cgp-frozen-total .cgp-total-cell.cgp-row-hover {
   background-image: linear-gradient(var(--cgp-row-hover), var(--cgp-row-hover));
@@ -796,23 +802,23 @@ html.cgp-frozen-total .cgp-total-cell.cgp-row-hover {
 
 /* Canvas's own native Total column - wherever it actually sits (some
  * gradebooks show it right after student name, most at the far right past
- * every assignment) - hidden ONLY once frozen-total.js has confirmed its own
- * replacement is genuinely showing (html.cgp-frozen-total-active, added by
- * paint()'s verifyWidened() check, never by start() alone). That ordering is
- * the whole point: a course is never left with ZERO working Total columns
- * because our own could not be confirmed - Canvas's own stays fully visible
- * unless and until ours is proven to be standing in for it. data-cgp-col is
- * set on both the header and every body cell of whichever column Canvas
- * itself classifies as a Total (see dom-adapter.js), so this reaches it
- * wherever it is without knowing its exact position.
- *
- * visibility, not display: the column's WIDTH is left exactly as Canvas
- * sized it - collapsing it would mean fighting the same SlickGrid column-
- * width internals the narrowing feature above goes to such lengths not to
- * fight - so what remains is an intentionally blank column, not a second
- * number that can disagree with this extension's own. */
-html.cgp-frozen-total-active [data-cgp-col="total"] {
-  visibility: hidden !important;
+ * every assignment) - completely collapsed and hidden when frozen total is active
+ * so it never leaves a blank gap between frozen columns and assignments. */
+html.cgp-frozen-total-active [data-cgp-col="total"],
+html.cgp-frozen-total-active .slick-header-column[data-cgp-col="total"],
+html.cgp-frozen-total-active .slick-header-column[id*="total_grade"],
+html.cgp-frozen-total-active .slick-header-column[id*="total"],
+html.cgp-frozen-total-active .slick-cell[data-cgp-col="total"],
+html.cgp-frozen-total-active .slick-cell[id*="total_grade"],
+html.cgp-frozen-total-active .slick-cell[class*="total_grade"] {
+  display: none !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  overflow: hidden !important;
 }
 
 /* ------------------------------------------------------- compact layout */
@@ -1381,9 +1387,9 @@ html.cgp-on .slick-header-column[data-cgp-col="student"] .slick-column-name {
   letter-spacing: 0.2px;
   color: var(--cgp-ink-strong);
 }
-html.cgp-on .slick-header-column[data-cgp-col="total"],
-html.cgp-on .slick-header-column[id*="total_grade"],
-html.cgp-on .slick-header-column[id*="total"] {
+html.cgp-on:not(.cgp-frozen-total-active) .slick-header-column[data-cgp-col="total"],
+html.cgp-on:not(.cgp-frozen-total-active) .slick-header-column[id*="total_grade"],
+html.cgp-on:not(.cgp-frozen-total-active) .slick-header-column[id*="total"] {
   min-width: 84px !important;
 }
 html.cgp-on .slick-header-column[data-cgp-col="total"] .slick-column-name,

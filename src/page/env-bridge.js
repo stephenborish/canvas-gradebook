@@ -266,18 +266,20 @@
     var orig = grid.setColumns;
     if (typeof orig !== 'function') return;
     grid.setColumns = function(columns) {
-      if (cgpState.hideTotal) {
-        columns = columns.filter(function(col) {
-          return columnKind(col) !== 'total';
-        });
-      }
+      if (!Array.isArray(columns)) return orig.call(this, columns);
       columns.forEach(function(col) {
         var kind = columnKind(col);
-        var want = kind === 'student' ? cgpState.studentWidth : (kind === 'assignment' ? cgpState.assignmentWidth : null);
-        if (want !== null && want !== undefined) {
-          if (Math.round(Number(col.width)) !== want) col.width = want;
-          col.minWidth = want;
-          col.maxWidth = want;
+        if (cgpState.hideTotal && kind === 'total') {
+          col.width = 0;
+          col.minWidth = 0;
+          col.maxWidth = 0;
+        } else {
+          var want = kind === 'student' ? cgpState.studentWidth : (kind === 'assignment' ? cgpState.assignmentWidth : null);
+          if (want !== null && want !== undefined) {
+            if (Math.round(Number(col.width)) !== want) col.width = want;
+            col.minWidth = want;
+            col.maxWidth = want;
+          }
         }
       });
       return orig.call(this, columns);
@@ -293,17 +295,18 @@
     return stableColumns(grid).then(function (columns) {
       if (!columns) return { ok: false, reason: 'unstable' };
       var changed = 0;
-      var columnsToSize = columns;
-      if (hideTotal) {
-        columnsToSize = columns.filter(function (col) {
-          var isTotal = columnKind(col) === 'total';
-          if (isTotal) changed++;
-          return !isTotal;
-        });
-      }
-      var next = columnsToSize.map(function (column) {
+      var next = columns.map(function (column) {
         var copy = Object.assign({}, column);
         var kind = columnKind(copy);
+        if (hideTotal && kind === 'total') {
+          if (copy.width !== 0 || copy.minWidth !== 0 || copy.maxWidth !== 0) {
+            changed++;
+          }
+          copy.width = 0;
+          copy.minWidth = 0;
+          copy.maxWidth = 0;
+          return copy;
+        }
         var want = kind === 'student' ? studentWidth : (kind === 'assignment' ? assignmentWidth : null);
         if (want !== null) {
           if (Math.round(Number(copy.width)) !== want) {

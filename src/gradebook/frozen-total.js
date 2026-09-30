@@ -211,6 +211,14 @@
       if (!right || right === left) return;
       pin(right, 'left', newRightLeft);
       pin(right, 'width', newRightWidth);
+      if (right.querySelectorAll) {
+        var nested = right.querySelectorAll('.slick-header-right, .slick-header');
+        for (var ni = 0; ni < nested.length; ni++) {
+          if (nested[ni] !== right) {
+            nested[ni].style.setProperty('left', '0px', 'important');
+          }
+        }
+      }
     });
   };
 
@@ -376,6 +384,7 @@
       if (el.textContent !== row.text) el.textContent = row.text;
       if (el.title !== row.title) el.title = row.title;
       el.classList.toggle('cgp-total-cell--empty', !row.resolved);
+      el.classList.toggle('odd', row.rowIndex % 2 === 1);
     });
 
     this.cellPool.forEach(function (el, rowIndex) {
