@@ -1048,6 +1048,17 @@
   P.headerPanes = function () {
     var self = this;
     return this.headerContainers().map(function (container) {
+      var headerRow = container.closest ? container.closest('.slick-header') : null;
+      if (headerRow) {
+        var node = container;
+        while (node && node !== headerRow) {
+          try {
+            if (getComputedStyle(node).position === 'absolute') return node;
+          } catch (e) {}
+          node = node.parentElement;
+        }
+        return container.parentElement || container;
+      }
       return self.positionedAncestor(container) || container.parentElement || container;
     });
   };

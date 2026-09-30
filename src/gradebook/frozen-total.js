@@ -279,10 +279,10 @@
   };
 
   P.ensureHeader = function () {
-    var headerPanes = this.adapter.headerPanes();
-    var headerPane = (headerPanes && headerPanes[0]) ||
-      document.querySelector('.slick-header-left') ||
+    var headerPane = document.querySelector('.slick-header-left') ||
       document.querySelector('.slick-pane-header-left') ||
+      (this.adapter.headerContainers()[0] && (this.adapter.headerContainers()[0].closest ? this.adapter.headerContainers()[0].closest('.slick-header-left, .slick-pane-header-left, .slick-header') : this.adapter.headerContainers()[0].parentElement)) ||
+      (this.adapter.headerPanes() && this.adapter.headerPanes()[0]) ||
       document.querySelector('.slick-header');
     if (!headerPane) return null;
     if (this.header && this.header.isConnected && this.header.parentElement === headerPane) return this.header;

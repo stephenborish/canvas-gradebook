@@ -302,11 +302,11 @@
     if (showComment) {
       var tip = CGP.commentAnalysis.tooltip(comments);
       var cls = 'cgp-cmt' + (comments.studentRepliedAfter ? ' cgp-cmt--reply' : '');
+      var countHtml = (s.showCommentCount && comments.instructorCount > 1)
+        ? '<span class="cgp-cmt-count" aria-hidden="true">' + comments.instructorCount + '</span>'
+        : '';
       parts.push('<span class="' + cls + '" role="button" tabindex="-1" aria-label="' +
-        CGP.util.escapeHtml(tip) + '">' + BUBBLE + '</span>');
-      if (s.showCommentCount && comments.instructorCount > 1) {
-        parts.push('<span class="cgp-cmt-count" aria-hidden="true">' + comments.instructorCount + '</span>');
-      }
+        CGP.util.escapeHtml(tip) + '">' + BUBBLE + countHtml + '</span>');
     }
 
     var sub = s.submissionIndicator ? this.model.submissionState(info.assignmentId, info.studentId) : null;

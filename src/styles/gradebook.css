@@ -152,12 +152,11 @@ html.cgp-on .cgp-cmt {
 html.cgp-on .cgp-cmt::after {
   content: "";
   position: absolute;
-  inset: -3px;
+  inset: 0;
   border-radius: 6px;
 }
 /* Both right-hand markers in one cell: the submission badge and the
- * comment bubble. Both stay full size (the larger size) so legibility is
- * never compromised. The comment bubble is placed to the left of the paper icon. */
+ * comment bubble. The comment bubble is placed cleanly to the left of the paper icon. */
 html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-sub {
   top: 50%;
   transform: translateY(-50%);
@@ -167,19 +166,11 @@ html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt {
   top: 50%;
   transform: translateY(-50%);
   bottom: auto;
-  right: 24px;
+  right: 22px;
 }
-html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt-count {
-  right: 44px;
-  top: 50%;
-  transform: translateY(-50%);
-  bottom: auto;
-}
-/* Neither marker's hit area may extend past its own edge here */
+/* Neither marker's hit area may extend past its own edge */
 html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-cmt::after,
 html.cgp-on .slick-cell.cgp-has-sub.cgp-has-comment .cgp-sub::after { inset: 0; }
-/* While a cell is actually being typed into, pull the hit area back to the
- * painted dot so it cannot swallow a click meant to place the caret. */
 html.cgp-on .slick-cell:has(input:not([type="hidden"])) .cgp-cmt::after { inset: 0; }
 /* shape-rendering: geometricPrecision favours crisp, exactly-placed edges
  * over the browser's default speed-optimized path rasterization - the
@@ -211,71 +202,55 @@ html.cgp-on .cgp-cmt--reply svg { fill: currentColor; stroke: none; }
 
 html.cgp-on .cgp-cmt-count {
   position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  right: 23px;
-  font-size: 9.5px;
-  line-height: 16px;
-  color: var(--cgp-comment);
-  font-weight: 700;
+  top: 45%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 8.5px;
+  line-height: 1;
+  color: #fff;
+  font-weight: 800;
   pointer-events: none;
-  text-shadow: 0 0 2px #fff, 0 0 2px #fff;
+  font-family: var(--cgp-font), sans-serif;
+  text-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.4);
 }
 
 /* ---------------------------------------------- submission marker (top-right)
-
  * Says, at a glance and without opening anything, whether this student has
  * actually handed something in - and is a direct link into SpeedGrader for
- * exactly this student and assignment.
- *
- * The top-right corner is free because this extension now hides Canvas's own
- * tray arrow there (see .cgp-hide-arrow below); double-clicking the cell does
- * what that arrow did. The two states share one silhouette on purpose - the
- * glyph shape tells you WHAT kind of thing is expected (a file, a text entry,
- * a URL, a recording), and filled-versus-outlined tells you whether it is
- * there yet - so a column can be read down in one pass without decoding two
- * unrelated icons. */
+ * exactly this student and assignment. */
 html.cgp-on .cgp-sub {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
   right: 3px;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  border-radius: 5px;
+  border-radius: 4px;
   pointer-events: auto;
   cursor: pointer;
   text-decoration: none !important;
   line-height: 0;
   transition: transform 110ms ease, box-shadow 110ms ease, background 110ms ease;
 }
-/* Same generous, invisible hit area as the comment bubble. */
+/* Hit area contained strictly to icon */
 html.cgp-on .cgp-sub::after {
   content: "";
   position: absolute;
-  inset: -4px;
-  border-radius: 7px;
+  inset: 0;
+  border-radius: 4px;
 }
 html.cgp-on .slick-cell:has(input:not([type="hidden"])) .cgp-sub::after { inset: 0; }
 html.cgp-on .cgp-sub svg {
-  /* 12px against the glyphs' own 16-unit viewBox is a 0.75 scale factor - a
-   * clean multiple that lands strokes on whole device pixels far more often
-   * than the previous 11px (0.6875), which is exactly the kind of
-   * off-grid scale that turns a crisp stroke into a soft, blurry one. */
-  width: 18px;
-  height: 18px;
+  width: 12px;
+  height: 12px;
   display: block;
   fill: none;
   stroke: currentColor;
-  /* A hair thicker for the same reason: a 1.5px stroke anti-aliases across
-   * a full pixel's worth of edge on either side at this size, which reads as
-   * fuzzy; 1.75px keeps a solid pixel-or-more of full-opacity color in the
-   * middle of the line instead of being almost all soft edge. */
-  stroke-width: 1.75;
+  stroke-width: 1.6;
   stroke-linecap: round;
   stroke-linejoin: round;
   shape-rendering: geometricPrecision;
@@ -285,16 +260,14 @@ html.cgp-on .cgp-sub svg {
 html.cgp-on .cgp-sub--in {
   background: var(--cgp-submitted);
   color: #fff;
-  box-shadow: 0 0 0 1.5px #fff, 0 1px 3px rgba(19, 33, 44, 0.32);
+  box-shadow: 0 0 0 1px #fff, 0 1px 2px rgba(19, 33, 44, 0.25);
 }
 html.cgp-on .cgp-sub--in svg { stroke-width: 1.6; }
-/* Nothing handed in: the same shape, hollow and quiet, so a screenful of them
- * never shouts. It is still a link - an empty submission is a thing a teacher
- * often wants to open and look at. */
+/* Nothing handed in: the same shape, hollow and quiet */
 html.cgp-on .cgp-sub--out {
   background: transparent;
   color: var(--cgp-nosub);
-  box-shadow: inset 0 0 0 1.3px currentColor;
+  box-shadow: inset 0 0 0 1.2px currentColor;
   opacity: 0.75;
 }
 html.cgp-on .cgp-sub:hover {
@@ -415,6 +388,7 @@ html.cgp-on .cgp-val {
   font-feature-settings: "tnum" 1;
   color: var(--cgp-ink-strong);
   z-index: 2;
+  pointer-events: none !important;
 }
 html.cgp-on .slick-cell.cgp-pending-write .cgp-val { opacity: 0.55; }
 /* The moment a cell is actually being typed into, the overlay gets out of the
@@ -775,6 +749,7 @@ html.cgp-frozen-total .cgp-total-header {
   left: var(--cgp-frozen-natural);
   width: var(--cgp-total-w);
   height: 100%;
+  max-height: var(--cgp-header-h, 56px);
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -1765,9 +1740,8 @@ html.cgp-on .slick-cell > .cgp-val { box-sizing: border-box !important; }
 /* Hide Canvas's native submission and comment icons from assignment cells
  * to prevent them from pushing the grade score off-center. Our extension
  * renders its own absolute-positioned indicators instead (.cgp-marks). */
-html.cgp-on .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content i,
-html.cgp-on .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content svg,
-html.cgp-on .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content [class*="icon"] {
+html.cgp-on .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content > i,
+html.cgp-on .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content > svg {
   display: none !important;
 }
 

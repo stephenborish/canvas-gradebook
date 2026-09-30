@@ -271,16 +271,14 @@
           return columnKind(col) !== 'total';
         });
       }
-      columns = columns.map(function(col) {
-        var copy = Object.assign({}, col);
-        var kind = columnKind(copy);
+      columns.forEach(function(col) {
+        var kind = columnKind(col);
         var want = kind === 'student' ? cgpState.studentWidth : (kind === 'assignment' ? cgpState.assignmentWidth : null);
         if (want !== null && want !== undefined) {
-          if (Math.round(Number(copy.width)) !== want) copy.width = want;
-          if (typeof copy.minWidth === 'number' && copy.minWidth > want) copy.minWidth = want;
-          if (typeof copy.maxWidth === 'number' && copy.maxWidth < want) copy.maxWidth = want;
+          if (Math.round(Number(col.width)) !== want) col.width = want;
+          col.minWidth = want;
+          col.maxWidth = want;
         }
-        return copy;
       });
       return orig.call(this, columns);
     };
@@ -312,12 +310,8 @@
             copy.width = want;
             changed++;
           }
-          if (typeof copy.minWidth === 'number' && copy.minWidth > want) {
-            copy.minWidth = want;
-          }
-          if (typeof copy.maxWidth === 'number' && copy.maxWidth < want) {
-            copy.maxWidth = want;
-          }
+          copy.minWidth = want;
+          copy.maxWidth = want;
         }
         return copy;
       });
