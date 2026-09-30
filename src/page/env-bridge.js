@@ -31,12 +31,25 @@
     /* Canvas layout differences must never break the page */
   }
 
+  function isWindow(obj) {
+    if (!obj) return false;
+    try {
+      if (obj === window) return true;
+      if (typeof Window !== 'undefined' && obj instanceof Window) return true;
+      if (obj.window === obj || obj.self === obj) return true;
+    } catch (e) {
+      return true;
+    }
+    return false;
+  }
+
   /* SlickGrid is also owned by Canvas's page world. Function-bearing grid
    * objects cannot be passed to the isolated content script, so perform the
    * complete, atomic column transaction here and return only its outcome. */
   function validGrid(grid) {
+    if (!grid || typeof grid !== 'object' || isWindow(grid)) return false;
     try {
-      return grid && typeof grid.getColumns === 'function' &&
+      return typeof grid.getColumns === 'function' &&
         typeof grid.setColumns === 'function';
     } catch (e) {
       return false;
@@ -53,7 +66,14 @@
       window.INST, window.INST && window.INST.gradebook, window.INST && window.INST.Gradebook,
       window.INST && window.INST.grid
     ].forEach(function (g) {
-      if (g) candidates.push(g, g.grid, g.slickGrid, g.slickgrid);
+      try {
+        if (g && typeof g === 'object' && !isWindow(g)) {
+          candidates.push(g);
+          if (g.grid && !isWindow(g.grid)) candidates.push(g.grid);
+          if (g.slickGrid && !isWindow(g.slickGrid)) candidates.push(g.slickGrid);
+          if (g.slickgrid && !isWindow(g.slickgrid)) candidates.push(g.slickgrid);
+        }
+      } catch (e) {}
     });
 
     // Scan window top-level properties safely
@@ -61,14 +81,15 @@
       var winKeys = Object.keys(window);
       for (var k = 0; k < winKeys.length; k++) {
         var key = winKeys[k];
+        if (/^\d+$/.test(key)) continue;
         try {
           var val = window[key];
-          if (val && typeof val === 'object' && val !== window) {
+          if (val && typeof val === 'object' && !isWindow(val)) {
             candidates.push(val);
-            if (val.grid) candidates.push(val.grid);
-            if (val.slickGrid) candidates.push(val.slickGrid);
-            if (val.slickgrid) candidates.push(val.slickgrid);
-            if (val._grid) candidates.push(val._grid);
+            if (val.grid && !isWindow(val.grid)) candidates.push(val.grid);
+            if (val.slickGrid && !isWindow(val.slickGrid)) candidates.push(val.slickGrid);
+            if (val.slickgrid && !isWindow(val.slickgrid)) candidates.push(val.slickgrid);
+            if (val._grid && !isWindow(val._grid)) candidates.push(val._grid);
           }
         } catch (e) {}
       }
