@@ -635,7 +635,7 @@
         finish(message.result);
       }
       window.addEventListener('message', onMessage);
-      timer = setTimeout(function () { finish({ ok: false, reason: 'timeout' }); }, 3500);
+      timer = setTimeout(function () { finish({ ok: false, reason: 'timeout' }); }, 5000);
       window.postMessage({
         source: 'cgp-grid-request', id: id,
         studentWidth: studentWidth, assignmentWidth: assignmentWidth,
@@ -698,8 +698,8 @@
     var self = this;
     this._resizing = true;
     this._resizeStartedAt = Date.now();
-    var studentW = s.narrowColumns ? s.studentColumnWidth : 190;
-    var assignmentW = s.narrowColumns ? s.assignmentColumnWidth : 124;
+    var studentW = s.studentColumnWidth || 190;
+    var assignmentW = s.assignmentColumnWidth || 124;
     var hideTotal = !!s.frozenTotal;
     return this.requestColumnSizing(studentW, assignmentW, hideTotal).then(function (result) {
       if (result && result.ok) {

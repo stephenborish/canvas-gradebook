@@ -310,13 +310,17 @@
     // turned off).
     var _reconcileRetryTimer = null;
     var _reconcileAttempts = 0;
+    var _lastReconcileAttemptAt = 0;
     function scheduleReconcileRetry() {
-      if (_reconcileRetryTimer || _reconcileAttempts >= 5) return;
+      if (_reconcileRetryTimer) return;
+      if (_reconcileAttempts >= 5 && Date.now() - _lastReconcileAttemptAt < 5000) return;
+      if (Date.now() - _lastReconcileAttemptAt >= 5000) _reconcileAttempts = 0;
       _reconcileAttempts++;
+      _lastReconcileAttemptAt = Date.now();
       _reconcileRetryTimer = setTimeout(function () {
         _reconcileRetryTimer = null;
         reconcileColumns();
-      }, 1200);
+      }, 1500);
     }
     var reconcileColumns = CGP.util.debounce(function () {
       layout.resizeColumns().then(function (sized) {
@@ -358,7 +362,10 @@
         // A header replacement is exactly the event narrowColumns needs to
         // react to - Canvas rebuilding the header row is what leaves column
         // widths at their un-narrowed defaults again.
-        if (headerChanged) reconcileColumns();
+        if (headerChanged) {
+          _reconcileAttempts = 0;
+          reconcileColumns();
+        }
       });
       observer.observe(root, { childList: true, subtree: true });
       CGP.diag.log('observer.attached');
@@ -405,6 +412,9 @@
         // open. The settings gear is covered by the utility-strip re-hide
         // below, plus a CSS rule that needs no JS at all.
         layout.hideKeyboardShortcutsButton();
+        if (settings.values.narrowColumns && document.documentElement.classList.contains('cgp-column-sizing-presentation-only')) {
+          reconcileColumns();
+        }
       }
 
       // Slower safety tick: catches any rerender an observer missed.
