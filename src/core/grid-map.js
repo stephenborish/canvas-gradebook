@@ -45,8 +45,22 @@
     return { type: id ? 'other' : 'unknown' };
   }
 
+  /* Canvas's own SlickGrid fork (canvas-lms packages/slickgrid) does NOT use
+   * upstream SlickGrid's "l<n> r<n>" cell classes. It renders every body cell
+   * as "slick-cell b<n> f<m>", where n is the cell's ABSOLUTE index into the
+   * grid's column array (frozen and scrolling panes alike) and m is the last
+   * column it spans. Canvas's own getCellFromNode() reads exactly this "b<n>"
+   * class to decide which column a cell is, so it is the one authoritative
+   * answer - no pane offset, no geometry. */
+  function canvasColumnIndexFromClassName(className) {
+    var m = /(?:^|\s)b(\d+)(?:\s|$)/.exec(String(className || ''));
+    return m ? Number(m[1]) : null;
+  }
+
   function columnIndexFromClassName(className) {
     var str = String(className || '');
+    var b = canvasColumnIndexFromClassName(str);
+    if (b !== null) return b;
     var m = /(?:^|\s)l(\d+)(?:\s|$)/.exec(str);
     if (m) return Number(m[1]);
     m = /(?:^|\s)c(\d+)(?:\s|$)/.exec(str);
@@ -130,6 +144,7 @@
   CGP.gridMap = {
     parseSlickColumnId: parseSlickColumnId,
     classifyColumnId: classifyColumnId,
+    canvasColumnIndexFromClassName: canvasColumnIndexFromClassName,
     columnIndexFromClassName: columnIndexFromClassName,
     rowIndexFromTop: rowIndexFromTop,
     cellKey: cellKey,
