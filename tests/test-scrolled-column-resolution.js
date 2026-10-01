@@ -313,4 +313,90 @@ suite('indicators: wantedGrade safety guard against empty/ungraded Canvas cells'
     a.ok(val !== null, 'synthetic cgp-val is injected for local write');
     a.eq(val.textContent, '95', 'optimistic write value is displayed');
   });
+
+  test('paint() triggers verifyVisibleComments for visible assignment columns that are unverified', async () => {
+    const CGP = loadGradebookDom();
+    const FakeElement = domshim.FakeElement;
+
+    const cell = new FakeElement('div');
+    cell.classList.add('slick-cell', 'b2', 'f2');
+    const row = new FakeElement('div');
+    row.classList.add('slick-row');
+    row.appendChild(cell);
+
+    const verifiedCalls = [];
+    const mockModel = {
+      ready: true,
+      loadedAssignments: new Set(['101']),
+      everLoadedAssignments: new Set(['101']),
+      commentVerifiedAssignments: new Set(),
+      cell: () => null,
+      submissionState: () => null,
+      verifyVisibleComments: (ids) => {
+        verifiedCalls.push(ids.slice());
+        return Promise.resolve();
+      },
+      stats: () => ({})
+    };
+
+    const mockAdapter = {
+      visibleCells: () => [{
+        el: cell,
+        row: row,
+        columnType: 'assignment',
+        assignmentId: '101',
+        studentId: '501'
+      }]
+    };
+
+    const mockRegistry = {
+      sync: (cells) => cells,
+      needsPaint: () => true,
+      markPainted: () => {}
+    };
+
+    const controller = new CGP.IndicatorController({
+      model: mockModel,
+      adapter: mockAdapter,
+      registry: mockRegistry,
+      settings: { values: { commentIndicator: true, submissionIndicator: true } }
+    });
+
+    controller.paint();
+    a.eq(verifiedCalls.length, 1, 'verifyVisibleComments was called once');
+    a.deep(verifiedCalls[0], ['101'], 'verifyVisibleComments was called for assignment 101');
+  });
+
+  test('applySubmission preserves verified comments when subsequent bulk reads return empty comments', () => {
+    const CGP = loadGradebookDom();
+    const model = new CGP.GradebookModel(null, '1');
+    model.instructorId = '99';
+    model.commentVerifiedAssignments.add('101');
+
+    // 1. Initial authoritative comment verification
+    model.applySubmission({
+      assignment_id: 101,
+      user_id: 501,
+      submission_comments: [{ author_id: 99, comment: 'Great job!', created_at: '2026-09-01T10:00:00Z' }]
+    });
+
+    const c1 = model.cell('101', '501');
+    a.ok(c1 !== null);
+    a.ok(c1.comments.hasInstructorComment, 'hasInstructorComment is true');
+    a.eq(c1.comments.instructorCount, 1, 'instructorCount is 1');
+
+    // 2. Subsequent bulk read from students/submissions with empty comments array
+    model.applySubmission({
+      assignment_id: 101,
+      user_id: 501,
+      score: 95,
+      submission_comments: []
+    });
+
+    const c2 = model.cell('101', '501');
+    a.ok(c2.comments.hasInstructorComment, 'verified comments preserved after bulk read with empty comments array');
+    a.eq(c2.comments.instructorCount, 1, 'instructorCount preserved');
+    a.eq(c2.score, 95, 'score was updated from the bulk read');
+  });
 });
+

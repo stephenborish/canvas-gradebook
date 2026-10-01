@@ -77,6 +77,7 @@
     this.onCommentLeave = ctx.onCommentLeave || function () {};
     this.onCommentDismiss = ctx.onCommentDismiss || this.onCommentLeave;
     this.requested = new Set();
+    this.requestedComments = new Set();
     this._hoverIcon = null;
   }
 
@@ -96,8 +97,9 @@
     // stays away until they have, so "not loaded" and "loaded, nothing to
     // show" must be two different signatures or the marker would never appear
     // on a cell that had no record at the moment of its first paint.
-    var loaded = this.model.everLoadedAssignments.has(String(info.assignmentId)) ? 'L' : '-';
-    if (!rec) return id + '|none|' + loaded;
+    var loaded = (this.model.everLoadedAssignments && this.model.everLoadedAssignments.has(String(info.assignmentId))) ? 'L' : '-';
+    var verified = (this.model.commentVerifiedAssignments && this.model.commentVerifiedAssignments.has(String(info.assignmentId))) ? 'V' : '-';
+    if (!rec) return id + '|none|' + loaded + '|' + verified;
     
     var c = rec.comments || {};
     // The status is part of what the cell LOOKS like now that we paint it
@@ -108,12 +110,14 @@
     return [
       id,
       c.instructorCount || 0,
+      c.hasInstructorComment ? 1 : 0,
       c.studentRepliedAfter ? 1 : 0,
       rec.gradeMatchesCurrent === false ? 1 : 0,
       rec.gradedAt ? 1 : 0,
       rec.pending ? 1 : 0,
       rec.override === null || rec.override === undefined ? '' : rec.override,
       loaded,
+      verified,
       rec.submittedAt ? 1 : 0,
       rec.submissionType || '',
       this.settings.values.commentIndicator ? 1 : 0,
@@ -513,19 +517,33 @@
     var cells = this.registry.sync(this.adapter.visibleCells());
     var self = this;
     var neededAssignments = [];
+    var neededComments = [];
+    var visibleAssignmentIds = [];
+
     cells.forEach(function (info) {
-      if (info.columnType === 'assignment' && info.assignmentId &&
-        !self.model.loadedAssignments.has(String(info.assignmentId)) &&
-        !self.requested.has(String(info.assignmentId))) {
-        self.requested.add(String(info.assignmentId));
-        neededAssignments.push(String(info.assignmentId));
+      if (info.columnType === 'assignment' && info.assignmentId) {
+        var aid = String(info.assignmentId);
+        if (visibleAssignmentIds.indexOf(aid) < 0) {
+          visibleAssignmentIds.push(aid);
+          if (self.model.loadedAssignments && !self.model.loadedAssignments.has(aid) && !self.requested.has(aid)) {
+            self.requested.add(aid);
+            neededAssignments.push(aid);
+          }
+          if (self.settings && self.settings.values && self.settings.values.commentIndicator &&
+              self.model.commentVerifiedAssignments && !self.model.commentVerifiedAssignments.has(aid) &&
+              !self.requestedComments.has(aid)) {
+            self.requestedComments.add(aid);
+            neededComments.push(aid);
+          }
+        }
       }
       self.paintCell(info);
     });
-    if (neededAssignments.length) {
+
+    if (neededAssignments.length && this.model.ensureAssignments) {
       this.model.ensureAssignments(neededAssignments).then(function () {
         neededAssignments.forEach(function (id) { self.requested.delete(String(id)); });
-        var st = self.model.stats();
+        var st = self.model.stats ? self.model.stats() : {};
         CGP.diag.set('cellsWithInstructorComment', st.cellsWithInstructorComment || 0);
         CGP.diag.set('submissionsLoaded', st.cells || 0);
       }, function () {
@@ -533,6 +551,15 @@
         neededAssignments.forEach(function (id) { self.requested.delete(String(id)); });
       });
     }
+
+    if (neededComments.length && this.model.verifyVisibleComments) {
+      this.model.verifyVisibleComments(neededComments).then(function () {
+        neededComments.forEach(function (id) { self.requestedComments.delete(String(id)); });
+      }, function () {
+        neededComments.forEach(function (id) { self.requestedComments.delete(String(id)); });
+      });
+    }
+
     CGP.diag.bump('paint.passes');
   };
 

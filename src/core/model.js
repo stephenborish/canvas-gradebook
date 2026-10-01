@@ -295,6 +295,8 @@
           if (Array.isArray(sub && sub.submission_comments)) raw += sub.submission_comments.length;
           self.applySubmission(sub, { silent: true, staleIfWrittenAfter: fetchStartedAt });
         });
+        self.loadedAssignments.add(id);
+        self.everLoadedAssignments.add(id);
         CGP.diag.bump('comments.verifiedAssignments');
         CGP.diag.bump('comments.verifiedRaw', raw);
         return id;
@@ -352,8 +354,17 @@
 
     var prev = this.cells.get(k) || {};
 
-    var comments = Array.isArray(sub.submission_comments) ? sub.submission_comments
-      : (prev.commentList || null);
+    var comments;
+    if (Array.isArray(sub.submission_comments) && sub.submission_comments.length > 0) {
+      comments = sub.submission_comments;
+    } else if (prev.commentList && prev.commentList.length > 0 &&
+               (!sub.submission_comments || (this.commentVerifiedAssignments && this.commentVerifiedAssignments.has(assignmentId)))) {
+      comments = prev.commentList;
+    } else if (Array.isArray(sub.submission_comments)) {
+      comments = sub.submission_comments;
+    } else {
+      comments = prev.commentList || null;
+    }
     var analysis = comments
       ? CGP.commentAnalysis.analyze(comments, { instructorId: this.instructorId, instructorNames: this.instructorNames, studentId: userId })
       : (prev.comments || CGP.commentAnalysis.analyze([], { instructorId: this.instructorId, instructorNames: this.instructorNames, studentId: userId }));
@@ -460,6 +471,7 @@
     if (!this.assignments.has(id)) return Promise.resolve(null);
     this.loadedAssignments.delete(id);
     this.pendingAssignments.delete(id);
+    this.commentVerifiedAssignments.delete(id);
     return this.ensureAssignments([id], opts);
   };
 
