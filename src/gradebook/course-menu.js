@@ -48,12 +48,15 @@
   };
 
   P.ensureContainer = function () {
+    if (this.drawerEl && document.body && document.body.contains(this.drawerEl)) {
+      return this.drawerEl;
+    }
     var leftSide = (document.getElementById ? document.getElementById('left-side') : null) ||
-                   (document.querySelector ? document.querySelector('#left-side') : null);
+                   (document.querySelector ? document.querySelector('#left-side, .cgp-course-menu-drawer') : null);
     if (!leftSide) {
       leftSide = document.createElement('div');
       leftSide.id = 'left-side';
-      leftSide.className = 'ic-app-course-menu';
+      leftSide.className = 'ic-app-course-menu cgp-course-menu-drawer';
       var wrapper = (document.getElementById ? document.getElementById('wrapper') : null) ||
                     (document.querySelector ? document.querySelector('#wrapper') : null) ||
                     (document.getElementById ? document.getElementById('application') : null) ||
@@ -64,6 +67,8 @@
       } else if (wrapper && wrapper.appendChild) {
         wrapper.appendChild(leftSide);
       }
+    } else {
+      leftSide.classList.add('cgp-course-menu-drawer');
     }
     this.drawerEl = leftSide;
     return leftSide;
@@ -168,7 +173,8 @@
 
   P.isTabsPopulated = function () {
     if (!this.drawerEl) return false;
-    var links = this.drawerEl.querySelectorAll('a[href]');
+    if (!this.drawerEl.classList.contains('cgp-course-menu-ready')) return false;
+    var links = this.drawerEl.querySelectorAll('.cgp-section-tab a[href]');
     return links.length >= 2;
   };
 
@@ -181,7 +187,9 @@
       return t && t.visibility !== 'none' && t.label;
     });
 
-    if (!list.length) return;
+    if (!list.length) {
+      list = defaultCourseTabs(this.courseId);
+    }
 
     // Clear existing children
     drawer.textContent = '';
@@ -258,22 +266,109 @@
     drawer.classList.add('cgp-course-menu-ready');
   };
 
+  P.isCourseMenuToggle = function (target) {
+    if (!target) return null;
+    var el = (target.nodeType === 1) ? target : (target.parentElement || null);
+    if (!el) return null;
+
+    // Look for enclosing button, anchor, or role="button"
+    var btn = null;
+    if (typeof el.closest === 'function') {
+      btn = el.closest('button, a, [role="button"], #courseMenuToggle, .ic-app-course-nav-toggle');
+    }
+    if (!btn && (el.tagName === 'BUTTON' || el.tagName === 'A' || el.getAttribute('role') === 'button')) {
+      btn = el;
+    }
+    if (!btn && el.parentElement && typeof el.parentElement.closest === 'function') {
+      btn = el.parentElement.closest('button, a, [role="button"]');
+    }
+    if (!btn) return null;
+
+    // Never match extension's own controls
+    if (btn.classList && (
+      btn.classList.contains('cgp-crumb-toggle') ||
+      btn.classList.contains('cgp-find-student') ||
+      btn.classList.contains('cgp-course-menu-close') ||
+      btn.classList.contains('cgp-course-switcher')
+    )) {
+      return null;
+    }
+    if (btn.closest && (
+      btn.closest('.cgp-course-switcher') ||
+      btn.closest('.cgp-find-student-dialog') ||
+      btn.closest('.cgp-course-menu-drawer') ||
+      btn.closest('#cgp-toast')
+    )) {
+      return null;
+    }
+
+    // 1. Direct ID or classic Canvas class
+    if (btn.id === 'courseMenuToggle' || (btn.classList && btn.classList.contains('ic-app-course-nav-toggle'))) {
+      return btn;
+    }
+
+    // 2. Attribute checks (aria-label, title, class, data attributes)
+    var label = (btn.getAttribute('aria-label') || '').trim().toLowerCase();
+    var title = (btn.getAttribute('title') || '').trim().toLowerCase();
+    var className = (btn.className && typeof btn.className === 'string' ? btn.className : '').toLowerCase();
+    var track = (btn.getAttribute('data-track-category') || '').toLowerCase();
+    var testId = (btn.getAttribute('data-testid') || '').toLowerCase();
+
+    // Canvas uses "Courses Navigation Menu", "Course Navigation Menu", "Courses navigation", etc.
+    var navPattern = /(?:course|courses|navigation|nav).*(?:menu|nav)|(?:menu|nav).*(?:course|courses)|courses?\s+navigation|hamburger/i;
+    if (navPattern.test(label) || navPattern.test(title) || navPattern.test(className) || navPattern.test(track) || navPattern.test(testId)) {
+      return btn;
+    }
+
+    if (/navigation\s+menu/i.test(label) || /navigation\s+menu/i.test(title) || /course\s+menu/i.test(label) || /course\s+menu/i.test(title)) {
+      return btn;
+    }
+
+    // 3. Breadcrumb / header location check:
+    // In Canvas, the breadcrumb header (.ic-app-nav-toggle-and-crumbs, #breadcrumbs, .ic-app-crumbs)
+    // contains the course title links and exactly one icon button: the course navigation hamburger toggle.
+    var inBreadcrumbs = btn.closest && btn.closest('.ic-app-nav-toggle-and-crumbs, #breadcrumbs, .ic-app-crumbs, .navigation-tray-container');
+    if (inBreadcrumbs) {
+      if (btn.tagName === 'BUTTON' || btn.getAttribute('role') === 'button') {
+        var hasIcon = !!(btn.querySelector && btn.querySelector('svg, i, [class*="icon"], [class*="Button"]'));
+        var text = (btn.textContent || '').trim();
+        if (hasIcon || text.length === 0 || /menu|nav|course/i.test(text)) {
+          return btn;
+        }
+      }
+    }
+
+    // 4. Hamburger icon check inside button
+    if (btn.querySelector && btn.querySelector('.icon-hamburger, [class*="icon-hamburger"], svg[name*="Hamburger" i], svg[class*="Hamburger" i]')) {
+      return btn;
+    }
+
+    return null;
+  };
+
   P.findToggleButtons = function () {
     var selectors = [
       '#courseMenuToggle',
       'button.ic-app-course-nav-toggle',
       'a.ic-app-course-nav-toggle',
+      'button[aria-label*="courses navigation" i]',
       'button[aria-label*="course navigation" i]',
+      'button[aria-label*="navigation menu" i]',
+      'button[aria-label*="courses menu" i]',
+      'button[aria-label*="course menu" i]',
+      'button[title*="courses navigation" i]',
       'button[title*="course navigation" i]',
-      '.ic-app-course-nav-toggle',
-      '#breadcrumbs button:has(.icon-hamburger)',
+      'button[title*="navigation menu" i]',
+      'button[data-track-category*="course_navigation" i]',
+      '#breadcrumbs button:not(.cgp-crumb-toggle):not(.cgp-find-student):not(.cgp-course-menu-close)',
+      '.ic-app-crumbs button:not(.cgp-crumb-toggle):not(.cgp-find-student):not(.cgp-course-menu-close)',
+      '.ic-app-nav-toggle-and-crumbs button:not(.cgp-crumb-toggle):not(.cgp-find-student):not(.cgp-course-menu-close)',
       '#breadcrumbs .icon-hamburger',
       'button:has(.icon-hamburger)'
     ];
     try {
       return Array.prototype.slice.call(document.querySelectorAll(selectors.join(', ')));
     } catch (e) {
-      // In case :has is not supported in an older engine
       return Array.prototype.slice.call(document.querySelectorAll('#courseMenuToggle, button.ic-app-course-nav-toggle, .ic-app-course-nav-toggle'));
     }
   };
@@ -298,13 +393,7 @@
       }
 
       // Check if clicked the course menu toggle / hamburger
-      var toggleBtn = target.closest && target.closest(
-        '#courseMenuToggle, button.ic-app-course-nav-toggle, a.ic-app-course-nav-toggle, button[aria-label*="course navigation" i], button[title*="course navigation" i], .ic-app-course-nav-toggle'
-      );
-      if (!toggleBtn && target.classList && target.classList.contains('icon-hamburger')) {
-        toggleBtn = target.closest('button, a') || target;
-      }
-
+      var toggleBtn = self.isCourseMenuToggle(target);
       if (toggleBtn) {
         e.preventDefault();
         e.stopPropagation();
@@ -373,6 +462,22 @@
       }
     }
     drawer.style.setProperty('--cgp-nav-left-offset', offsetLeft + 'px');
+    drawer.style.setProperty('position', 'fixed', 'important');
+    drawer.style.setProperty('top', '0px', 'important');
+    drawer.style.setProperty('bottom', '0px', 'important');
+    drawer.style.setProperty('left', offsetLeft + 'px', 'important');
+    drawer.style.setProperty('width', '260px', 'important');
+    drawer.style.setProperty('max-width', '85vw', 'important');
+    drawer.style.setProperty('background', '#ffffff', 'important');
+    drawer.style.setProperty('z-index', '100005', 'important');
+    drawer.style.setProperty('box-shadow', '4px 0 24px rgba(0, 0, 0, 0.18)', 'important');
+    drawer.style.setProperty('border-right', '1px solid #d8dcde', 'important');
+    drawer.style.setProperty('display', 'flex', 'important');
+    drawer.style.setProperty('flex-direction', 'column', 'important');
+    drawer.style.setProperty('visibility', 'visible', 'important');
+    drawer.style.setProperty('overflow', 'hidden', 'important');
+    drawer.style.setProperty('margin', '0px', 'important');
+    drawer.style.setProperty('padding', '0px', 'important');
 
     drawer.classList.add('cgp-course-menu-open');
     document.documentElement.classList.add('cgp-course-menu-expanded');
@@ -390,6 +495,8 @@
     this.isOpen = false;
     if (this.drawerEl) {
       this.drawerEl.classList.remove('cgp-course-menu-open');
+      this.drawerEl.style.setProperty('display', 'none', 'important');
+      this.drawerEl.style.setProperty('visibility', 'hidden', 'important');
     }
     document.documentElement.classList.remove('cgp-course-menu-expanded');
 

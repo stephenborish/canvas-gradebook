@@ -81,6 +81,7 @@
     var registry = new CGP.CellRegistry();
 
     document.documentElement.classList.add('cgp-gradebook');
+    document.documentElement.classList.add('cgp-on');
 
     // Bound and injected as early as possible - before the model's own first
     // network round trip even starts, ideally - so the grading period Canvas
@@ -110,6 +111,7 @@
 
     if (CGP.CourseMenuController) {
       var courseMenu = new CGP.CourseMenuController({ api: api, courseId: courseId, settings: settings });
+      CGP.courseMenu = courseMenu;
       courseMenu.start();
     }
 
