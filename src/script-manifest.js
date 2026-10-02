@@ -30,6 +30,7 @@ export const CONTENT_JS = [
   'src/gradebook/bulk-comment.js',
   'src/gradebook/course-switcher.js',
   'src/gradebook/student-search.js',
+  'src/gradebook/course-menu.js',
   'src/speedgrader/content.js',
   'src/gradebook/content.js'
 ];

@@ -139,6 +139,7 @@
     var out = [];
     var node = root;
     for (var i = 0; i < 12 && node && node !== document.body && node !== document.documentElement; i++) {
+      if (node.id === 'application' || node.id === 'wrapper') break;
       if (node !== rightViewport && !node.style.getPropertyValue('overflow-x')) {
         node.style.setProperty('overflow-x', 'hidden', 'important');
         out.push(node);

@@ -14,11 +14,16 @@
     return { start: pos - m[0].length, end: pos, name: m[1] };
   }
 
+  function normalizeTrigger(t) {
+    return String(t || '').replace(/^\/+/, '').trim().toLowerCase();
+  }
+
   function lookup(name, snippets) {
-    var key = String(name || '').toLowerCase();
+    var key = normalizeTrigger(name);
+    if (!key) return null;
     var list = Array.isArray(snippets) ? snippets : [];
     for (var i = 0; i < list.length; i++) {
-      if (String(list[i].trigger || '').toLowerCase() === key) return list[i];
+      if (normalizeTrigger(list[i].trigger) === key) return list[i];
     }
     return null;
   }
@@ -34,5 +39,5 @@
     return { text: next, caret: hit.start + snip.text.length, snippet: snip };
   }
 
-  CGP.snippets = { findTrigger: findTrigger, lookup: lookup, expand: expand };
+  CGP.snippets = { findTrigger: findTrigger, lookup: lookup, expand: expand, normalizeTrigger: normalizeTrigger };
 })();

@@ -222,4 +222,32 @@ suite('comment snippets', (test) => {
     const out = CGP.snippets.expand(text, 9, snips);
     a.eq(out.text, 'Tie it back to your data. and keep going');
   });
+
+  test('lookup is case-insensitive and slash-agnostic', () => {
+    const list = [
+      { trigger: 'evidence', text: 'Data tie-in.' },
+      { trigger: '/late', text: 'Please submit soon.' }
+    ];
+    a.ok(CGP.snippets.lookup('evidence', list));
+    a.ok(CGP.snippets.lookup('/evidence', list));
+    a.ok(CGP.snippets.lookup('EVIDENCE', list));
+    a.ok(CGP.snippets.lookup('late', list));
+    a.ok(CGP.snippets.lookup('/late', list));
+    a.ok(CGP.snippets.lookup('LATE', list));
+  });
+
+  test('expand works when snippet was stored with a leading slash', () => {
+    const list = [{ trigger: '/late', text: 'Please submit soon.' }];
+    const out = CGP.snippets.expand('Work was /late', 14, list);
+    a.ok(out);
+    a.eq(out.text, 'Work was Please submit soon.');
+  });
+
+  test('expand works case-insensitively with multiline text', () => {
+    const multiline = 'Great job!\n\nPlease review question 3.';
+    const list = [{ trigger: 'review', text: multiline }];
+    const out = CGP.snippets.expand('/REVIEW', 7, list);
+    a.ok(out);
+    a.eq(out.text, multiline);
+  });
 });

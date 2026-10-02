@@ -108,6 +108,11 @@
     var studentSearch = new CGP.StudentSearch({ api: api, courseId: courseId, settings: settings });
     studentSearch.start();
 
+    if (CGP.CourseMenuController) {
+      var courseMenu = new CGP.CourseMenuController({ api: api, courseId: courseId, settings: settings });
+      courseMenu.start();
+    }
+
     var requestPaint = function () { paint(); };
 
     var cellActions = new CGP.CellActionsController({ adapter: adapter, settings: settings, courseId: courseId });

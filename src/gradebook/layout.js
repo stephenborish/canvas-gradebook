@@ -358,7 +358,8 @@
     if (gear) push(gear);
     Array.prototype.slice.call(document.querySelectorAll('#content button, #content [role="button"]')).forEach(function (btn) {
       if (btn.closest('.slick-header') || btn.closest('.grid-canvas') || btn.closest('#breadcrumbs')) return;
-      if (btn.closest('.cgp-course-menu') || btn.classList.contains('cgp-crumb-toggle')) return;
+      if (btn.closest('.cgp-course-menu') || btn.closest('#left-side') || btn.classList.contains('cgp-crumb-toggle')) return;
+      if (btn.id === 'courseMenuToggle' || btn.classList.contains('ic-app-course-nav-toggle')) return;
       if (btn.classList.contains('cgp-find-student')) return;
       var label = ((btn.textContent || '') + ' ' + (btn.getAttribute('aria-label') || '') + ' ' +
         (btn.getAttribute('title') || '')).trim().toLowerCase().replace(/\s+/g, ' ');
@@ -485,6 +486,10 @@
     if (!el || el === document.body || el === document.documentElement) return true;
     if (el.id === 'content' || el.id === 'main' || el.id === 'application' || el.id === 'wrapper') return true;
     if (el.id === 'breadcrumbs' || el.closest('#breadcrumbs') === el) return true;
+    if (el.id === 'left-side' || (el.closest && el.closest('#left-side'))) return true;
+    if (el.id === 'course-nav' || (el.closest && el.closest('#course-nav'))) return true;
+    if (el.id === 'section-tabs' || (el.closest && el.closest('#section-tabs'))) return true;
+    if (el.id === 'courseMenuToggle' || el.classList.contains('ic-app-course-nav-toggle') || (el.closest && el.closest('#courseMenuToggle, .ic-app-course-nav-toggle, .cgp-course-menu'))) return true;
     if (el.querySelector('.slick-header, .grid-canvas, #gradebook_grid')) return true;
     if (el.querySelector('select')) return true;                     // gradebook selector
     if (el.classList.contains('cgp-total-header')) return true;

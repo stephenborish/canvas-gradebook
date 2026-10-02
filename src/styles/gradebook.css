@@ -792,7 +792,6 @@ html.cgp-frozen-total:not(.cgp-native-total-front) .slick-header-right:not(.slic
  * and is the authoritative version of this - these rules only cover the one
  * rendered frame before that JS runs, same as the pane rules above. */
 html.cgp-frozen-total #gradebook_grid,
-html.cgp-frozen-total #application,
 html.cgp-frozen-total #content,
 html.cgp-frozen-total .ic-Layout-contentMain {
   overflow-x: hidden !important;
@@ -1819,4 +1818,126 @@ html.cgp-on .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content [cl
 html.cgp-on .slick-cell,
 html.cgp-on .slick-header-column {
   font-family: var(--cgp-font) !important;
+}
+
+/* ------------------------------------------------ Course Navigation Menu Drawer */
+#left-side.cgp-course-menu-open {
+  position: fixed !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  left: var(--cgp-nav-left-offset, 0px) !important;
+  width: 260px !important;
+  max-width: 85vw !important;
+  background: #ffffff !important;
+  z-index: 100005 !important;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.18) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  visibility: visible !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.cgp-course-menu-backdrop {
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(15, 23, 42, 0.4) !important;
+  z-index: 100004 !important;
+  backdrop-filter: blur(1.5px);
+}
+
+.cgp-course-menu-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 14px 18px !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  background: #f8fafc !important;
+  flex-shrink: 0 !important;
+}
+
+.cgp-course-menu-title {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+  letter-spacing: -0.01em;
+}
+
+.cgp-course-menu-close {
+  background: transparent !important;
+  border: none !important;
+  font-size: 22px !important;
+  line-height: 1 !important;
+  color: #64748b !important;
+  cursor: pointer !important;
+  padding: 4px 8px !important;
+  border-radius: 6px !important;
+  transition: background 0.15s ease, color 0.15s ease !important;
+}
+
+.cgp-course-menu-close:hover {
+  background: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+.cgp-course-nav {
+  flex: 1 1 auto !important;
+  overflow-y: auto !important;
+  padding: 8px 0 !important;
+}
+
+.cgp-section-tabs {
+  list-style: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.cgp-section-tab {
+  margin: 0 !important;
+  padding: 0 !important;
+  list-style: none !important;
+}
+
+.cgp-section-tab a {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 9px 18px !important;
+  color: #334155 !important;
+  text-decoration: none !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+  transition: background 0.15s ease, color 0.15s ease !important;
+  border-left: 3px solid transparent !important;
+}
+
+.cgp-section-tab a:hover {
+  background: #f1f5f9 !important;
+  color: #0284c7 !important;
+}
+
+.cgp-section-tab a.active {
+  background: #e0f2fe !important;
+  color: #0369a1 !important;
+  font-weight: 700 !important;
+  border-left-color: #0284c7 !important;
+}
+
+.cgp-tab-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  color: #94a3b8 !important;
+  margin-left: 8px !important;
+}
+
+.cgp-course-menu-loading {
+  padding: 24px 18px !important;
+  color: #64748b !important;
+  font-size: 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
 }

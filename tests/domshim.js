@@ -300,6 +300,7 @@ function makeDocument() {
     body: body,
     nodeType: 9,
     createElement: function (tag) { return new FakeElement(tag); },
+    getElementById: function (id) { return doc.querySelector('#' + id); },
     querySelectorAll: function (sel) { return html.querySelectorAll.call(html, sel).concat(
       matchesSelectorList(html, compileSelectorList(sel), html) ? [html] : []); },
     querySelector: function (sel) { return doc.querySelectorAll(sel)[0] || null; },

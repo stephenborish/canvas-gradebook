@@ -52,13 +52,24 @@
   function isCommentEditor(el) {
     if (!el || !el.matches) return false;
     if (el.matches(TEXTAREA_SELECTORS)) return true;
-    if (!el.matches('[contenteditable="true"]')) return false;
-    if (el.closest('#speedgrader_comment_textarea_mount_point, #add_a_comment, #discussion, .comment_area')) return true;
-    var label = ((el.getAttribute('aria-label') || '') + ' ' +
-      (el.getAttribute('data-testid') || '') + ' ' +
-      (el.getAttribute('class') || '') + ' ' +
-      (el.getAttribute('role') || '')).toLowerCase();
-    return /comment|feedback|message/.test(label);
+    var tag = el.tagName ? el.tagName.toLowerCase() : '';
+    if (tag === 'textarea' || el.matches('[contenteditable="true"]') || el.matches('input[type="text"]')) {
+      if (el.closest(
+        '#speedgrader_comment_textarea_mount_point, #add_a_comment, #discussion, .comment_area, ' +
+        '#right_side, .rubric_container, #rubric_assessments, .grade-detail-tray, [data-testid*="comment" i], ' +
+        '.cgp-pop, .cgp-comment-popover, #comment-form, .comments, .comment_list, [class*="grade-detail" i]'
+      )) return true;
+      var label = ((el.getAttribute('aria-label') || '') + ' ' +
+        (el.getAttribute('placeholder') || '') + ' ' +
+        (el.getAttribute('name') || '') + ' ' +
+        (el.getAttribute('id') || '') + ' ' +
+        (el.getAttribute('data-testid') || '') + ' ' +
+        (el.getAttribute('class') || '') + ' ' +
+        (el.getAttribute('role') || '')).toLowerCase();
+      if (/comment|feedback|message|rubric|note/i.test(label)) return true;
+      if (el.closest('#right_side') && tag === 'textarea') return true;
+    }
+    return false;
   }
 
   function pointAtTextOffset(root, offset) {

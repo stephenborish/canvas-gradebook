@@ -20,20 +20,216 @@
 
   /* ------------------------------------------------------------- snippets */
 
+  var MAX_SNIPPETS = 15;
+  var MAX_SNIPPET_TEXT = 280;
+  var currentSnippets = [];
+  var isRawMode = false;
+
   function snippetsToText(list) {
-    return (list || []).map(function (s) { return s.trigger + '\n' + s.text; }).join('\n\n');
+    return (list || []).map(function (s) {
+      var trig = String((s && s.trigger) || '').replace(/^\/+/, '').trim();
+      return trig + '\n' + String((s && s.text) || '').trim();
+    }).join('\n\n');
   }
 
   function textToSnippets(text) {
-    return String(text || '')
-      .replace(/\r\n?/g, '\n')
-      .split(/\n{2,}/)
+    var raw = String(text || '').replace(/\r\n?/g, '\n').trim();
+    if (!raw) return [];
+
+    // Support dashed delimiter separator (--- or ===) between snippets if present
+    if (raw.indexOf('\n---\n') >= 0 || raw.indexOf('\n===\n') >= 0) {
+      return raw.split(/\n(?:---|===)\n/)
+        .map(function (block) {
+          var lines = block.trim().split('\n');
+          var trigger = (lines.shift() || '').trim().replace(/^trigger:\s*/i, '').replace(/^\/+/, '');
+          return { trigger: trigger, text: lines.join('\n').trim() };
+        })
+        .filter(function (s) { return s.trigger && s.text; });
+    }
+
+    // Default double-newline block separator: first line is trigger, subsequent lines are comment
+    return raw.split(/\n{2,}/)
       .map(function (block) {
-        var lines = block.split('\n');
-        var trigger = (lines.shift() || '').trim();
+        var lines = block.trim().split('\n');
+        var trigger = (lines.shift() || '').trim().replace(/^trigger:\s*/i, '').replace(/^\/+/, '');
         return { trigger: trigger, text: lines.join('\n').trim() };
       })
       .filter(function (s) { return s.trigger && s.text; });
+  }
+
+  function updateSnippetsCounter() {
+    var counterEl = $('snippets-counter');
+    if (!counterEl) return;
+    var count = currentSnippets.length;
+    counterEl.textContent = count + ' of ' + MAX_SNIPPETS + ' snippets';
+    var addBtn = $('btn-add-snippet');
+    if (addBtn) addBtn.disabled = count >= MAX_SNIPPETS;
+  }
+
+  function renderSnippetCards(list) {
+    currentSnippets = Array.isArray(list) ? list.slice() : [];
+    var container = $('snippets-card-list');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (!currentSnippets.length) {
+      var emptyEl = document.createElement('div');
+      emptyEl.className = 'snippets-empty';
+      emptyEl.innerHTML = '<p>No comment snippets yet. Click <strong>+ Add Snippet</strong> above to create your first feedback template!</p>';
+      container.appendChild(emptyEl);
+      updateSnippetsCounter();
+      return;
+    }
+
+    currentSnippets.forEach(function (snip, idx) {
+      var card = document.createElement('div');
+      card.className = 'snippet-card';
+      card.dataset.index = String(idx);
+
+      var head = document.createElement('div');
+      head.className = 'snippet-card__head';
+
+      var triggerWrap = document.createElement('div');
+      triggerWrap.className = 'snippet-card__trigger-wrap';
+
+      var slashBadge = document.createElement('span');
+      slashBadge.className = 'snippet-card__slash-badge';
+      slashBadge.textContent = '/';
+
+      var triggerInput = document.createElement('input');
+      triggerInput.type = 'text';
+      triggerInput.className = 'snippet-card__trigger-input';
+      triggerInput.placeholder = 'shortcut (e.g. late)';
+      triggerInput.value = String(snip.trigger || '').replace(/^\/+/, '');
+      triggerInput.maxLength = 32;
+      triggerInput.spellcheck = false;
+
+      triggerWrap.appendChild(slashBadge);
+      triggerWrap.appendChild(triggerInput);
+
+      var delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'snippet-card__delete-btn';
+      delBtn.title = 'Delete snippet';
+      delBtn.setAttribute('aria-label', 'Delete snippet');
+      delBtn.innerHTML = '&times;';
+
+      head.appendChild(triggerWrap);
+      head.appendChild(delBtn);
+
+      var body = document.createElement('div');
+      body.className = 'snippet-card__body';
+
+      var textArea = document.createElement('textarea');
+      textArea.className = 'snippet-card__text-input';
+      textArea.rows = 3;
+      textArea.placeholder = 'Enter feedback comment template here...';
+      textArea.value = snip.text || '';
+      textArea.maxLength = MAX_SNIPPET_TEXT;
+
+      var foot = document.createElement('div');
+      foot.className = 'snippet-card__foot';
+
+      var chars = document.createElement('span');
+      chars.className = 'snippet-card__chars';
+      chars.textContent = (snip.text || '').length + ' / ' + MAX_SNIPPET_TEXT;
+
+      foot.appendChild(chars);
+      body.appendChild(textArea);
+      body.appendChild(foot);
+
+      card.appendChild(head);
+      card.appendChild(body);
+      container.appendChild(card);
+
+      triggerInput.addEventListener('input', function () {
+        currentSnippets[idx].trigger = triggerInput.value.trim().replace(/^\/+/, '');
+      });
+
+      textArea.addEventListener('input', function () {
+        currentSnippets[idx].text = textArea.value;
+        chars.textContent = textArea.value.length + ' / ' + MAX_SNIPPET_TEXT;
+      });
+
+      delBtn.addEventListener('click', function () {
+        currentSnippets.splice(idx, 1);
+        renderSnippetCards(currentSnippets);
+      });
+    });
+
+    updateSnippetsCounter();
+  }
+
+  function toggleRawMode() {
+    isRawMode = !isRawMode;
+    var rawContainer = $('snippets-raw-container');
+    var cardList = $('snippets-card-list');
+    var toggleBtn = $('btn-toggle-raw');
+    var addBtn = $('btn-add-snippet');
+
+    if (isRawMode) {
+      $('snippets').value = snippetsToText(currentSnippets);
+      rawContainer.style.display = 'block';
+      cardList.style.display = 'none';
+      toggleBtn.textContent = 'Switch to Card view';
+      toggleBtn.setAttribute('aria-expanded', 'true');
+      if (addBtn) addBtn.style.display = 'none';
+    } else {
+      currentSnippets = textToSnippets($('snippets').value);
+      renderSnippetCards(currentSnippets);
+      rawContainer.style.display = 'none';
+      cardList.style.display = 'grid';
+      toggleBtn.textContent = 'Bulk / Plain text';
+      toggleBtn.setAttribute('aria-expanded', 'false');
+      if (addBtn) addBtn.style.display = 'inline-flex';
+    }
+  }
+
+  function initSnippetsUI() {
+    var addBtn = $('btn-add-snippet');
+    if (addBtn) {
+      addBtn.addEventListener('click', function () {
+        if (currentSnippets.length >= MAX_SNIPPETS) return;
+        currentSnippets.push({ trigger: '', text: '' });
+        renderSnippetCards(currentSnippets);
+        var inputs = document.querySelectorAll('.snippet-card__trigger-input');
+        if (inputs.length) {
+          inputs[inputs.length - 1].focus();
+        }
+      });
+    }
+
+    var toggleBtn = $('btn-toggle-raw');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', toggleRawMode);
+    }
+
+    var testInput = $('snippet-test-input');
+    var testFeedback = $('snippet-test-feedback');
+    if (testInput && testFeedback) {
+      testInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Tab' && !e.shiftKey) {
+          var snippetsToUse = isRawMode ? textToSnippets($('snippets').value) : currentSnippets;
+          var out = CGP.snippets && CGP.snippets.expand(testInput.value, testInput.selectionStart, snippetsToUse);
+          if (out) {
+            e.preventDefault();
+            testInput.value = out.text;
+            testInput.setSelectionRange(out.caret, out.caret);
+            testFeedback.className = 'snippet-test-feedback is-success';
+            testFeedback.textContent = '✓ Expanded "/' + (out.snippet.trigger || '') + '" snippet!';
+            return;
+          }
+          var hit = CGP.snippets && CGP.snippets.findTrigger(testInput.value, testInput.selectionStart);
+          if (hit) {
+            testFeedback.className = 'snippet-test-feedback is-warning';
+            testFeedback.textContent = 'Shortcut "/' + hit.name + '" not found in snippets above.';
+          } else {
+            testFeedback.className = 'snippet-test-feedback';
+            testFeedback.textContent = 'Type a shortcut starting with "/" (e.g. /evidence) then press Tab.';
+          }
+        }
+      });
+    }
   }
 
   /* --------------------------------------------------------------- form io */
@@ -41,14 +237,25 @@
   function fill(values) {
     BOOLS.forEach(function (k) { var el = $(k); if (el) el.checked = !!values[k]; });
     NUMS.forEach(function (k) { var el = $(k); if (el) el.value = values[k]; });
-    $('snippets').value = snippetsToText(values.snippets);
+    var snips = Array.isArray(values.snippets) ? values.snippets.slice() : [];
+    renderSnippetCards(snips);
+    $('snippets').value = snippetsToText(snips);
   }
 
   function read() {
     var patch = {};
     BOOLS.forEach(function (k) { var el = $(k); if (el) patch[k] = el.checked; });
     NUMS.forEach(function (k) { var el = $(k); if (el) patch[k] = Number(el.value); });
-    patch.snippets = textToSnippets($('snippets').value);
+    if (isRawMode) {
+      patch.snippets = textToSnippets($('snippets').value);
+    } else {
+      patch.snippets = currentSnippets.map(function (s) {
+        return {
+          trigger: String(s.trigger || '').replace(/^\/+/, '').trim(),
+          text: String(s.text || '').trim()
+        };
+      }).filter(function (s) { return s.trigger && s.text; });
+    }
     return CGP.sanitizeSettings(patch);
   }
 
@@ -300,6 +507,7 @@
   });
 
   initTabs();
+  initSnippetsUI();
 
   load().then(function () {
     listDomains();
