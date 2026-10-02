@@ -1821,7 +1821,7 @@ html.cgp-on .slick-header-column {
 }
 
 /* ------------------------------------------------ Course Navigation Menu Drawer */
-#left-side.cgp-course-menu-open {
+html.cgp-gradebook #left-side.cgp-course-menu-open {
   position: fixed !important;
   top: 0 !important;
   bottom: 0 !important;
@@ -1840,7 +1840,7 @@ html.cgp-on .slick-header-column {
   padding: 0 !important;
 }
 
-html.cgp-on #left-side:not(.cgp-course-menu-open) {
+html.cgp-gradebook #left-side:not(.cgp-course-menu-open) {
   display: none !important;
 }
 
