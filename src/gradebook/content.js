@@ -259,6 +259,9 @@
         // show. Ordering it last closes that window every single pass.
         frozen.paint();
         layout.hideTestStudentRows();
+        if (courseMenu && typeof courseMenu.attachDirectListeners === 'function') {
+          courseMenu.attachDirectListeners();
+        }
       } finally {
         painting = false;
       }

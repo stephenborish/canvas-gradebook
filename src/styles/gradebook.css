@@ -1822,13 +1822,15 @@ html.cgp-on .slick-header-column {
 
 /* ------------------------------------------------ Course Navigation Menu Drawer */
 html.cgp-gradebook #left-side.cgp-course-menu-open,
-html.cgp-gradebook .cgp-course-menu-drawer.cgp-course-menu-open {
+html.cgp-gradebook .cgp-course-menu-drawer.cgp-course-menu-open,
+html.cgp-gradebook #cgp-course-menu-drawer.cgp-course-menu-open {
   position: fixed !important;
   top: 0 !important;
   bottom: 0 !important;
   left: var(--cgp-nav-left-offset, 54px) !important;
   width: 260px !important;
   max-width: 85vw !important;
+  height: 100vh !important;
   background: #ffffff !important;
   z-index: 100005 !important;
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.18) !important;
@@ -1839,11 +1841,17 @@ html.cgp-gradebook .cgp-course-menu-drawer.cgp-course-menu-open {
   overflow: hidden !important;
   margin: 0 !important;
   padding: 0 !important;
+  transform: none !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
 }
 
 html.cgp-gradebook #left-side:not(.cgp-course-menu-open),
-html.cgp-gradebook .cgp-course-menu-drawer:not(.cgp-course-menu-open) {
+html.cgp-gradebook .cgp-course-menu-drawer:not(.cgp-course-menu-open),
+html.cgp-gradebook #cgp-course-menu-drawer:not(.cgp-course-menu-open) {
   display: none !important;
+  visibility: hidden !important;
+  transform: translateX(-100%) !important;
 }
 
 .cgp-course-menu-header {

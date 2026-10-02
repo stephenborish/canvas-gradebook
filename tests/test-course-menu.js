@@ -282,9 +282,39 @@ suite('CourseMenuController & layout protection', (test) => {
     a.eq(drawer.style.position, 'fixed', 'open sets inline position: fixed');
     a.eq(drawer.style.zIndex, '100005', 'open sets z-index: 100005');
     a.eq(drawer.style.visibility, 'visible', 'open sets inline visibility: visible');
+    a.eq(drawer.style.transform, 'none', 'open sets inline transform: none');
+    a.eq(drawer.style.opacity, '1', 'open sets inline opacity: 1');
+    a.eq(drawer.style.height, '100vh', 'open sets inline height: 100vh');
 
     ctrl.close();
     a.eq(drawer.style.display, 'none', 'close sets inline display: none');
     a.eq(drawer.style.visibility, 'hidden', 'close sets inline visibility: hidden');
+    a.eq(drawer.style.transform, 'translateX(-100%)', 'close sets inline transform: translateX(-100%)');
+  });
+
+  test('attachDirectListeners binds capture-phase listeners to hamburger button', () => {
+    const CGP = loadGradebookDom();
+    const doc = domshim.install();
+    const FakeElement = domshim.FakeElement;
+
+    const crumbs = new FakeElement('div');
+    crumbs.id = 'breadcrumbs';
+    doc.body.appendChild(crumbs);
+
+    const hamburger = new FakeElement('button');
+    hamburger.id = 'courseMenuToggle';
+    crumbs.appendChild(hamburger);
+
+    const ctrl = new CGP.CourseMenuController({
+      api: { get: () => Promise.resolve(sampleTabs) },
+      courseId: '379',
+      settings: { values: {} }
+    });
+
+    ctrl.ensureContainer();
+    a.eq(hamburger._cgpMenuAttached, undefined, 'not attached initially');
+
+    ctrl.attachDirectListeners();
+    a.eq(hamburger._cgpMenuAttached, true, 'attached marker set on hamburger button');
   });
 });

@@ -41,10 +41,21 @@
     this.ensureContainer();
     this.loadCachedTabs();
     this.bindEvents();
+    this.attachDirectListeners();
     // Warm tabs cache in background so the drawer opens with zero latency
     if (!this._tabs) {
       this.fetchTabs();
     }
+    // Poll to attach direct listeners as soon as Canvas/React finishes mounting breadcrumbs
+    var self = this;
+    var attempts = 0;
+    var poll = setInterval(function () {
+      attempts++;
+      self.attachDirectListeners();
+      if (attempts >= 25 || (self.findHamburgerButton() && self.findHamburgerButton()._cgpMenuAttached)) {
+        clearInterval(poll);
+      }
+    }, 200);
   };
 
   P.ensureContainer = function () {
@@ -266,87 +277,195 @@
     drawer.classList.add('cgp-course-menu-ready');
   };
 
-  P.isCourseMenuToggle = function (target) {
-    if (!target) return null;
-    var el = (target.nodeType === 1) ? target : (target.parentElement || null);
-    if (!el) return null;
-
-    // Look for enclosing button, anchor, or role="button"
-    var btn = null;
-    if (typeof el.closest === 'function') {
-      btn = el.closest('button, a, [role="button"], #courseMenuToggle, .ic-app-course-nav-toggle');
-    }
-    if (!btn && (el.tagName === 'BUTTON' || el.tagName === 'A' || el.getAttribute('role') === 'button')) {
-      btn = el;
-    }
-    if (!btn && el.parentElement && typeof el.parentElement.closest === 'function') {
-      btn = el.parentElement.closest('button, a, [role="button"]');
-    }
-    if (!btn) return null;
-
-    // Never match extension's own controls
-    if (btn.classList && (
-      btn.classList.contains('cgp-crumb-toggle') ||
-      btn.classList.contains('cgp-find-student') ||
-      btn.classList.contains('cgp-course-menu-close') ||
-      btn.classList.contains('cgp-course-switcher')
+  P.isExtensionControl = function (el) {
+    if (!el) return true;
+    if (el.classList && (
+      el.classList.contains('cgp-crumb-toggle') ||
+      el.classList.contains('cgp-find-student') ||
+      el.classList.contains('cgp-course-menu-close') ||
+      el.classList.contains('cgp-course-switcher')
     )) {
-      return null;
+      return true;
     }
-    if (btn.closest && (
-      btn.closest('.cgp-course-switcher') ||
-      btn.closest('.cgp-find-student-dialog') ||
-      btn.closest('.cgp-course-menu-drawer') ||
-      btn.closest('#cgp-toast')
+    if (el.closest && (
+      el.closest('.cgp-course-switcher') ||
+      el.closest('.cgp-find-student-dialog') ||
+      el.closest('.cgp-course-menu-drawer') ||
+      el.closest('#cgp-course-menu-drawer') ||
+      el.closest('.cgp-pop') ||
+      el.closest('#cgp-toast')
     )) {
-      return null;
+      return true;
+    }
+    return false;
+  };
+
+  P.findHamburgerButton = function () {
+    // 1. Explicit ID or classic Canvas class
+    var primarySelectors = [
+      '#courseMenuToggle',
+      'button.ic-app-course-nav-toggle',
+      'a.ic-app-course-nav-toggle',
+      '.ic-app-course-nav-toggle',
+      'button[aria-controls="left-side"]'
+    ];
+    for (var i = 0; i < primarySelectors.length; i++) {
+      try {
+        var el = document.querySelector(primarySelectors[i]);
+        if (el && !this.isExtensionControl(el) && (!el.closest || !el.closest('#header, .ic-app-header'))) return el;
+      } catch (e) {}
     }
 
-    // 1. Direct ID or classic Canvas class
-    if (btn.id === 'courseMenuToggle' || (btn.classList && btn.classList.contains('ic-app-course-nav-toggle'))) {
-      return btn;
-    }
-
-    // 2. Attribute checks (aria-label, title, class, data attributes)
-    var label = (btn.getAttribute('aria-label') || '').trim().toLowerCase();
-    var title = (btn.getAttribute('title') || '').trim().toLowerCase();
-    var className = (btn.className && typeof btn.className === 'string' ? btn.className : '').toLowerCase();
-    var track = (btn.getAttribute('data-track-category') || '').toLowerCase();
-    var testId = (btn.getAttribute('data-testid') || '').toLowerCase();
-
-    // Canvas uses "Courses Navigation Menu", "Course Navigation Menu", "Courses navigation", etc.
-    var navPattern = /(?:course|courses|navigation|nav).*(?:menu|nav)|(?:menu|nav).*(?:course|courses)|courses?\s+navigation|hamburger/i;
-    if (navPattern.test(label) || navPattern.test(title) || navPattern.test(className) || navPattern.test(track) || navPattern.test(testId)) {
-      return btn;
-    }
-
-    if (/navigation\s+menu/i.test(label) || /navigation\s+menu/i.test(title) || /course\s+menu/i.test(label) || /course\s+menu/i.test(title)) {
-      return btn;
-    }
-
-    // 3. Breadcrumb / header location check:
-    // In Canvas, the breadcrumb header (.ic-app-nav-toggle-and-crumbs, #breadcrumbs, .ic-app-crumbs)
-    // contains the course title links and exactly one icon button: the course navigation hamburger toggle.
-    var inBreadcrumbs = btn.closest && btn.closest('.ic-app-nav-toggle-and-crumbs, #breadcrumbs, .ic-app-crumbs, .navigation-tray-container');
-    if (inBreadcrumbs) {
-      if (btn.tagName === 'BUTTON' || btn.getAttribute('role') === 'button') {
-        var hasIcon = !!(btn.querySelector && btn.querySelector('svg, i, [class*="icon"], [class*="Button"]'));
-        var text = (btn.textContent || '').trim();
-        if (hasIcon || text.length === 0 || /menu|nav|course/i.test(text)) {
+    // 2. Position-based lookup in breadcrumbs header (never matches global nav)
+    var crumbContainers = document.querySelectorAll(
+      '.ic-app-nav-toggle-and-crumbs, #breadcrumbs, .ic-app-crumbs, [class*="nav-toggle-and-crumbs"], header[role="banner"]'
+    );
+    for (var c = 0; c < crumbContainers.length; c++) {
+      var container = crumbContainers[c];
+      if (container.closest && container.closest('#header, .ic-app-header')) continue;
+      var buttons = container.querySelectorAll('button, [role="button"]');
+      for (var b = 0; b < buttons.length; b++) {
+        var btn = buttons[b];
+        if (!this.isExtensionControl(btn)) {
           return btn;
         }
       }
     }
 
-    // 4. Hamburger icon check inside button
-    if (btn.querySelector && btn.querySelector('.icon-hamburger, [class*="icon-hamburger"], svg[name*="Hamburger" i], svg[class*="Hamburger" i]')) {
+    // 3. Look adjacent to the course link in breadcrumbs
+    var courseCrumb = document.querySelector(
+      '#breadcrumbs a[href*="/courses/"], .ic-app-crumbs a[href*="/courses/"], nav[aria-label*="crumb" i] a[href*="/courses/"]'
+    );
+    if (courseCrumb) {
+      var parent = (courseCrumb.closest && courseCrumb.closest('.ic-app-nav-toggle-and-crumbs, #breadcrumbs, .ic-app-crumbs, nav, header')) || courseCrumb.parentElement;
+      if (parent) {
+        var btns = parent.querySelectorAll('button, [role="button"]');
+        for (var j = 0; j < btns.length; j++) {
+          if (!this.isExtensionControl(btns[j])) {
+            return btns[j];
+          }
+        }
+      }
+      var prev = (courseCrumb.closest('li') || courseCrumb).previousElementSibling;
+      while (prev) {
+        var prevBtn = (prev.matches && prev.matches('button, [role="button"]')) ? prev : (prev.querySelector ? prev.querySelector('button, [role="button"]') : null);
+        if (prevBtn && !this.isExtensionControl(prevBtn)) {
+          return prevBtn;
+        }
+        prev = prev.previousElementSibling;
+      }
+    }
+
+    // 4. Any button in top-left region with hamburger/nav label or icon (excluding global nav #header)
+    var allButtons = document.querySelectorAll('button, [role="button"]');
+    for (var k = 0; k < allButtons.length; k++) {
+      var candidate = allButtons[k];
+      if (this.isExtensionControl(candidate)) continue;
+      if (candidate.closest && candidate.closest('#header, .ic-app-header')) continue;
+      var label = (candidate.getAttribute('aria-label') || '').toLowerCase();
+      var title = (candidate.getAttribute('title') || '').toLowerCase();
+      var combined = label + ' ' + title;
+      if (/(?:course|courses|nav|navigation|menu|hamburger)/i.test(combined)) {
+        if (candidate.getBoundingClientRect) {
+          var r = candidate.getBoundingClientRect();
+          if (r.top >= 0 && r.top < 120 && r.left >= 30 && r.left < 300) {
+            return candidate;
+          }
+        }
+      }
+    }
+
+    // 5. Fallback: Any button with icon in top-left region outside global header
+    for (var m = 0; m < allButtons.length; m++) {
+      var bEl = allButtons[m];
+      if (this.isExtensionControl(bEl)) continue;
+      if (bEl.closest && bEl.closest('#header, .ic-app-header')) continue;
+      if (bEl.querySelector && bEl.querySelector('svg, i, [class*="icon"], [class*="hamburger"]')) {
+        if (bEl.getBoundingClientRect) {
+          var rect = bEl.getBoundingClientRect();
+          if (rect.top >= 0 && rect.top < 100 && rect.left >= 30 && rect.left < 200) {
+            return bEl;
+          }
+        }
+      }
+    }
+
+    return null;
+  };
+
+  P.isCourseMenuToggle = function (target) {
+    if (!target) return null;
+    var el = (target.nodeType === 1) ? target : (target.parentElement || null);
+    if (!el) return null;
+
+    if (this.isExtensionControl(el)) return null;
+    if (el.closest && el.closest('#header, .ic-app-header')) return null;
+
+    var btn = null;
+    if (typeof el.closest === 'function') {
+      btn = el.closest('button, [role="button"], a, #courseMenuToggle, .ic-app-course-nav-toggle, [class*="nav-toggle"], [class*="menu-toggle"]');
+    }
+    if (!btn && (el.tagName === 'BUTTON' || el.getAttribute('role') === 'button' || el.tagName === 'A')) {
+      btn = el;
+    }
+    if (!btn && el.parentElement && typeof el.parentElement.closest === 'function') {
+      btn = el.parentElement.closest('button, [role="button"], a');
+    }
+    if (!btn) return null;
+
+    if (this.isExtensionControl(btn)) return null;
+    if (btn.closest && btn.closest('#header, .ic-app-header')) return null;
+
+    // Reject navigation links to pages like <a href="/courses/376">
+    if (btn.tagName === 'A' && btn.getAttribute('href') && !btn.getAttribute('href').startsWith('#') && !btn.classList.contains('ic-app-course-nav-toggle')) {
+      return null;
+    }
+
+    // 1. Direct match with findHamburgerButton()
+    var known = this.findHamburgerButton();
+    if (known && (btn === known || known.contains(btn))) {
+      return known;
+    }
+
+    // 2. ID / class direct check
+    if (btn.id === 'courseMenuToggle' || (btn.classList && btn.classList.contains('ic-app-course-nav-toggle'))) {
       return btn;
+    }
+
+    // 3. Breadcrumb container check: Any button inside breadcrumb bar
+    if (btn.closest && btn.closest('.ic-app-nav-toggle-and-crumbs, #breadcrumbs, .ic-app-crumbs, [class*="nav-toggle-and-crumbs"]')) {
+      return btn;
+    }
+
+    // 4. Attribute checks
+    var label = (btn.getAttribute('aria-label') || '').toLowerCase();
+    var title = (btn.getAttribute('title') || '').toLowerCase();
+    var className = (btn.className && typeof btn.className === 'string' ? btn.className : '').toLowerCase();
+    var controls = (btn.getAttribute('aria-controls') || '').toLowerCase();
+    var combined = label + ' ' + title + ' ' + className + ' ' + controls;
+
+    if (/(?:course|courses|nav|navigation|menu|hamburger)/i.test(combined)) {
+      return btn;
+    }
+
+    // 5. Position check: Button with icon in top-left breadcrumbs region
+    if (btn.querySelector && btn.querySelector('svg, i, [class*="icon"], [class*="hamburger"]')) {
+      if (btn.getBoundingClientRect) {
+        var r = btn.getBoundingClientRect();
+        if (r.top >= 0 && r.top < 120 && r.left >= 30 && r.left < 250) {
+          return btn;
+        }
+      }
     }
 
     return null;
   };
 
   P.findToggleButtons = function () {
+    var list = [];
+    var known = this.findHamburgerButton();
+    if (known) list.push(known);
+
     var selectors = [
       '#courseMenuToggle',
       'button.ic-app-course-nav-toggle',
@@ -356,9 +475,13 @@
       'button[aria-label*="navigation menu" i]',
       'button[aria-label*="courses menu" i]',
       'button[aria-label*="course menu" i]',
+      'button[aria-label*="nav" i]',
+      'button[aria-label*="menu" i]',
       'button[title*="courses navigation" i]',
       'button[title*="course navigation" i]',
       'button[title*="navigation menu" i]',
+      'button[title*="nav" i]',
+      'button[title*="menu" i]',
       'button[data-track-category*="course_navigation" i]',
       '#breadcrumbs button:not(.cgp-crumb-toggle):not(.cgp-find-student):not(.cgp-course-menu-close)',
       '.ic-app-crumbs button:not(.cgp-crumb-toggle):not(.cgp-find-student):not(.cgp-course-menu-close)',
@@ -367,9 +490,34 @@
       'button:has(.icon-hamburger)'
     ];
     try {
-      return Array.prototype.slice.call(document.querySelectorAll(selectors.join(', ')));
-    } catch (e) {
-      return Array.prototype.slice.call(document.querySelectorAll('#courseMenuToggle, button.ic-app-course-nav-toggle, .ic-app-course-nav-toggle'));
+      var found = document.querySelectorAll(selectors.join(', '));
+      for (var i = 0; i < found.length; i++) {
+        var b = found[i];
+        if (!this.isExtensionControl(b) && list.indexOf(b) < 0) {
+          list.push(b);
+        }
+      }
+    } catch (e) {}
+    return list;
+  };
+
+  P.attachDirectListeners = function () {
+    var self = this;
+    var btn = this.findHamburgerButton();
+    if (btn && !btn._cgpMenuAttached) {
+      btn._cgpMenuAttached = true;
+      var handler = function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        self.toggle();
+      };
+      btn.addEventListener('click', handler, true);
+      btn.addEventListener('pointerdown', function (e) {
+        e.stopPropagation();
+      }, true);
+      btn.addEventListener('mousedown', function (e) {
+        e.stopPropagation();
+      }, true);
     }
   };
 
@@ -468,6 +616,7 @@
     drawer.style.setProperty('left', offsetLeft + 'px', 'important');
     drawer.style.setProperty('width', '260px', 'important');
     drawer.style.setProperty('max-width', '85vw', 'important');
+    drawer.style.setProperty('height', '100vh', 'important');
     drawer.style.setProperty('background', '#ffffff', 'important');
     drawer.style.setProperty('z-index', '100005', 'important');
     drawer.style.setProperty('box-shadow', '4px 0 24px rgba(0, 0, 0, 0.18)', 'important');
@@ -478,6 +627,9 @@
     drawer.style.setProperty('overflow', 'hidden', 'important');
     drawer.style.setProperty('margin', '0px', 'important');
     drawer.style.setProperty('padding', '0px', 'important');
+    drawer.style.setProperty('transform', 'none', 'important');
+    drawer.style.setProperty('opacity', '1', 'important');
+    drawer.style.setProperty('pointer-events', 'auto', 'important');
 
     drawer.classList.add('cgp-course-menu-open');
     document.documentElement.classList.add('cgp-course-menu-expanded');
@@ -497,6 +649,7 @@
       this.drawerEl.classList.remove('cgp-course-menu-open');
       this.drawerEl.style.setProperty('display', 'none', 'important');
       this.drawerEl.style.setProperty('visibility', 'hidden', 'important');
+      this.drawerEl.style.setProperty('transform', 'translateX(-100%)', 'important');
     }
     document.documentElement.classList.remove('cgp-course-menu-expanded');
 
