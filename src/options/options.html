@@ -302,18 +302,21 @@
             <h2 class="snippets-instructions__title">How Comment Snippets Work</h2>
             <ol class="snippets-steps">
               <li>
-                <strong>1. Choose a shortcut trigger:</strong> Enter a short trigger name (e.g. <code>late</code>, <code>evidence</code>, <code>goodjob</code>). You can include the <code>/</code> or leave it off &ndash; both work automatically.
+                <strong>1. Choose a shortcut name:</strong> Enter a short keyword (e.g. <code>late</code>, <code>PDF</code>, <code>evidence</code>). The <code>/</code> is optional &ndash; both work automatically.
               </li>
               <li>
-                <strong>2. Write your feedback template:</strong> Enter your full comment below. Supports multiple sentences and paragraphs (up to 280 characters).
+                <strong>2. Write your feedback template:</strong> Enter your comment message below. Supports multiple sentences and paragraphs (up to 280 characters).
               </li>
               <li>
-                <strong>3. Expand while grading:</strong> In SpeedGrader, the Grade Detail Tray, or Gradebook comments, type <code>/</code> followed by your shortcut (e.g. <kbd>/late</kbd>) and press the <kbd>Tab</kbd> key.
+                <strong>3. Save your changes:</strong> Click the blue <strong>Save changes</strong> button at the bottom-left to save your snippets to Chrome.
+              </li>
+              <li>
+                <strong>4. Expand while grading:</strong> In SpeedGrader, Grade Detail Tray, or Gradebook comments, type <code>/</code> followed by your shortcut (e.g. <kbd>/late</kbd>), then press the <kbd>Tab</kbd> key.
               </li>
             </ol>
             <div class="snippets-tip">
               <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M10 2a6 6 0 0 0-6 6c0 2.2 1.2 4.1 3 5.2V15a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1.8c1.8-1.1 3-3 3-5.2a6 6 0 0 0-6-6zm-1 15h2v1H9v-1z"/></svg>
-              <span><strong>Helpful Tip:</strong> Triggers are case-insensitive (<kbd>/hw</kbd> and <kbd>/HW</kbd> both match). Pressing <kbd>Tab</kbd> expands the snippet in place without submitting the comment or moving focus.</span>
+              <span><strong>Helpful Tip:</strong> Pressing <kbd>Tab</kbd> instantly replaces your shortcut with the full comment in place. Shortcuts are case-insensitive (<kbd>/hw</kbd> and <kbd>/HW</kbd> both match). Focus never leaves your comment box.</span>
             </div>
           </div>
 
@@ -342,10 +345,11 @@
               <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M11.3 1.8 4.3 11.6h4.9L8 18.2l7.7-9.7h-5z"/></svg>
               Interactive Test Playground
             </h2>
-            <p class="hint">Try your snippets right here! Type a shortcut like <kbd>/evidence</kbd> or <kbd>/units</kbd> below and press <kbd>Tab</kbd>:</p>
+            <p id="snippet-test-instructions" class="hint">Click any active shortcut chip below to test instantly, or type it in the box and press <kbd>Tab</kbd>:</p>
+            <div id="snippet-test-chips" class="snippet-test-chips"></div>
             <div class="snippets-test-input-wrap">
-              <textarea id="snippet-test-input" rows="3" placeholder="Type /shortcut and press Tab here to test..."></textarea>
-              <div id="snippet-test-feedback" class="snippet-test-feedback">Ready &ndash; type a slash shortcut and press Tab.</div>
+              <textarea id="snippet-test-input" rows="3" placeholder="Type a shortcut and press Tab here to test..."></textarea>
+              <div id="snippet-test-feedback" class="snippet-test-feedback">Ready &ndash; click a shortcut chip above or type /shortcut and press Tab.</div>
             </div>
           </div>
         </section>
@@ -425,6 +429,7 @@
     </main>
   </div>
   <script src="../core/util.js"></script>
+  <script src="../core/snippets.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

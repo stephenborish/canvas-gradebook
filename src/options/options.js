@@ -66,6 +66,74 @@
     if (addBtn) addBtn.disabled = count >= MAX_SNIPPETS;
   }
 
+  function escapeHtml(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function renderSnippetTestChips() {
+    var chipsContainer = $('snippet-test-chips');
+    var testInstructions = $('snippet-test-instructions');
+    var testInput = $('snippet-test-input');
+    var testFeedback = $('snippet-test-feedback');
+    if (!chipsContainer) return;
+    chipsContainer.innerHTML = '';
+
+    var snippetsToUse = isRawMode ? textToSnippets($('snippets').value) : currentSnippets;
+    var validSnippets = (snippetsToUse || []).filter(function (s) {
+      return s && s.trigger && String(s.trigger).trim();
+    });
+
+    if (validSnippets.length === 0) {
+      var emptyChip = document.createElement('span');
+      emptyChip.className = 'snippet-test-chip snippet-test-chip--empty';
+      emptyChip.textContent = 'No snippets saved yet. Click "+ Add Snippet" above to create one!';
+      chipsContainer.appendChild(emptyChip);
+      if (testInstructions) {
+        testInstructions.innerHTML = 'Add a snippet template above, then test it here:';
+      }
+      if (testInput) {
+        testInput.placeholder = 'Type /shortcut and press Tab here to test...';
+      }
+      return;
+    }
+
+    var firstTrig = String(validSnippets[0].trigger).replace(/^\/+/, '').trim();
+    if (testInstructions) {
+      testInstructions.innerHTML = 'Click any active shortcut chip below to test instantly, or type <kbd>/' + escapeHtml(firstTrig) + '</kbd> in the box and press <kbd>Tab</kbd>:';
+    }
+    if (testInput) {
+      testInput.placeholder = 'Type /' + firstTrig + ' and press Tab...';
+    }
+
+    validSnippets.forEach(function (snip) {
+      var trig = String(snip.trigger).replace(/^\/+/, '').trim();
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'snippet-test-chip';
+      btn.textContent = '/' + trig;
+      btn.title = 'Click to test /' + trig;
+      btn.addEventListener('click', function () {
+        if (!testInput) return;
+        testInput.value = '/' + trig;
+        testInput.focus();
+        var out = CGP.snippets && CGP.snippets.expand(testInput.value, testInput.value.length, snippetsToUse);
+        if (out) {
+          testInput.value = out.text;
+          testInput.setSelectionRange(out.caret, out.caret);
+          if (testFeedback) {
+            testFeedback.className = 'snippet-test-feedback is-success';
+            testFeedback.textContent = '✓ Successfully expanded "/' + trig + '"! Works in SpeedGrader and Gradebook.';
+          }
+        }
+      });
+      chipsContainer.appendChild(btn);
+    });
+  }
+
   function renderSnippetCards(list) {
     currentSnippets = Array.isArray(list) ? list.slice() : [];
     var container = $('snippets-card-list');
@@ -78,6 +146,7 @@
       emptyEl.innerHTML = '<p>No comment snippets yet. Click <strong>+ Add Snippet</strong> above to create your first feedback template!</p>';
       container.appendChild(emptyEl);
       updateSnippetsCounter();
+      renderSnippetTestChips();
       return;
     }
 
@@ -144,11 +213,13 @@
 
       triggerInput.addEventListener('input', function () {
         currentSnippets[idx].trigger = triggerInput.value.trim().replace(/^\/+/, '');
+        renderSnippetTestChips();
       });
 
       textArea.addEventListener('input', function () {
         currentSnippets[idx].text = textArea.value;
         chars.textContent = textArea.value.length + ' / ' + MAX_SNIPPET_TEXT;
+        renderSnippetTestChips();
       });
 
       delBtn.addEventListener('click', function () {
@@ -158,6 +229,7 @@
     });
 
     updateSnippetsCounter();
+    renderSnippetTestChips();
   }
 
   function toggleRawMode() {
@@ -183,6 +255,7 @@
       toggleBtn.setAttribute('aria-expanded', 'false');
       if (addBtn) addBtn.style.display = 'inline-flex';
     }
+    renderSnippetTestChips();
   }
 
   function initSnippetsUI() {
@@ -204,28 +277,69 @@
       toggleBtn.addEventListener('click', toggleRawMode);
     }
 
+    var rawArea = $('snippets');
+    if (rawArea) {
+      rawArea.addEventListener('input', function () {
+        renderSnippetTestChips();
+      });
+    }
+
     var testInput = $('snippet-test-input');
     var testFeedback = $('snippet-test-feedback');
     if (testInput && testFeedback) {
       testInput.addEventListener('keydown', function (e) {
         if (e.key === 'Tab' && !e.shiftKey) {
+          // ALWAYS prevent browser default tab navigation so focus stays in test playground!
+          e.preventDefault();
+          e.stopPropagation();
+
           var snippetsToUse = isRawMode ? textToSnippets($('snippets').value) : currentSnippets;
           var out = CGP.snippets && CGP.snippets.expand(testInput.value, testInput.selectionStart, snippetsToUse);
           if (out) {
-            e.preventDefault();
             testInput.value = out.text;
             testInput.setSelectionRange(out.caret, out.caret);
             testFeedback.className = 'snippet-test-feedback is-success';
             testFeedback.textContent = '✓ Expanded "/' + (out.snippet.trigger || '') + '" snippet!';
             return;
           }
+
           var hit = CGP.snippets && CGP.snippets.findTrigger(testInput.value, testInput.selectionStart);
+          var activeTriggers = (snippetsToUse || [])
+            .map(function (s) { return s.trigger ? '/' + String(s.trigger).replace(/^\/+/, '').trim() : ''; })
+            .filter(Boolean);
+
           if (hit) {
             testFeedback.className = 'snippet-test-feedback is-warning';
-            testFeedback.textContent = 'Shortcut "/' + hit.name + '" not found in snippets above.';
+            if (activeTriggers.length > 0) {
+              testFeedback.textContent = 'Shortcut "/' + hit.name + '" not found. Your active shortcuts: ' + activeTriggers.join(', ');
+            } else {
+              testFeedback.textContent = 'Shortcut "/' + hit.name + '" not found in snippets above.';
+            }
+            return;
+          }
+
+          // Check if teacher typed the trigger word without leading slash (e.g. typed "PDF" then hit Tab)
+          var valBefore = testInput.value.slice(0, testInput.selectionStart);
+          var lastWordMatch = /([A-Za-z0-9_-]+)$/.exec(valBefore);
+          if (lastWordMatch) {
+            var word = lastWordMatch[1];
+            var matchedSnip = CGP.snippets && CGP.snippets.lookup(word, snippetsToUse);
+            if (matchedSnip) {
+              var startIdx = valBefore.length - word.length;
+              testInput.value = testInput.value.slice(0, startIdx) + matchedSnip.text + testInput.value.slice(testInput.selectionStart);
+              var newCaret = startIdx + matchedSnip.text.length;
+              testInput.setSelectionRange(newCaret, newCaret);
+              testFeedback.className = 'snippet-test-feedback is-success';
+              testFeedback.textContent = '✓ Expanded "/' + matchedSnip.trigger + '"! (Tip: in SpeedGrader, start with a slash, e.g. /' + matchedSnip.trigger + ')';
+              return;
+            }
+          }
+
+          testFeedback.className = 'snippet-test-feedback is-hint';
+          if (activeTriggers.length > 0) {
+            testFeedback.textContent = 'Type a slash shortcut (e.g. ' + activeTriggers[0] + ') then press Tab.';
           } else {
-            testFeedback.className = 'snippet-test-feedback';
-            testFeedback.textContent = 'Type a shortcut starting with "/" (e.g. /evidence) then press Tab.';
+            testFeedback.textContent = 'Add a snippet template above, then type its shortcut here and press Tab.';
           }
         }
       });

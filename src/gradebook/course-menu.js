@@ -32,7 +32,6 @@
     this._fetching = false;
     this._bound = false;
     this.drawerEl = null;
-    this.backdropEl = null;
   }
 
   var P = CourseMenuController.prototype;
@@ -84,12 +83,31 @@
     } catch (e) { /* ignore cache read errors */ }
   };
 
+  function defaultCourseTabs(courseId) {
+    return [
+      { id: 'home', label: 'Home', html_url: '/courses/' + courseId, visibility: 'public' },
+      { id: 'announcements', label: 'Announcements', html_url: '/courses/' + courseId + '/announcements', visibility: 'public' },
+      { id: 'assignments', label: 'Assignments', html_url: '/courses/' + courseId + '/assignments', visibility: 'public' },
+      { id: 'grades', label: 'Grades', html_url: '/courses/' + courseId + '/grades', visibility: 'public' },
+      { id: 'modules', label: 'Modules', html_url: '/courses/' + courseId + '/modules', visibility: 'public' },
+      { id: 'quizzes', label: 'Quizzes', html_url: '/courses/' + courseId + '/quizzes', visibility: 'public' },
+      { id: 'people', label: 'People', html_url: '/courses/' + courseId + '/users', visibility: 'public' },
+      { id: 'settings', label: 'Settings', html_url: '/courses/' + courseId + '/settings', visibility: 'admins' }
+    ];
+  }
+
   P.fetchTabs = function () {
     var self = this;
-    if (this._fetching || !this.api) return Promise.resolve(this._tabs || []);
-    this._fetching = true;
-    return this.api.get('/api/v1/courses/' + this.courseId + '/tabs').then(function (tabs) {
-      self._fetching = false;
+    if (this._tabs && this._tabs.length) return Promise.resolve(this._tabs);
+    if (this._fetchPromise) return this._fetchPromise;
+    if (!this.api) {
+      var fb = defaultCourseTabs(this.courseId);
+      this._tabs = fb;
+      this.renderTabs(fb);
+      return Promise.resolve(fb);
+    }
+    this._fetchPromise = this.api.get('/api/v1/courses/' + this.courseId + '/tabs').then(function (tabs) {
+      self._fetchPromise = null;
       if (Array.isArray(tabs) && tabs.length > 0) {
         self._tabs = tabs;
         try {
@@ -100,12 +118,52 @@
         self.renderTabs(tabs);
         return tabs;
       }
-      return [];
+      var fallback = defaultCourseTabs(self.courseId);
+      self._tabs = fallback;
+      self.renderTabs(fallback);
+      return fallback;
     }).catch(function (err) {
-      self._fetching = false;
+      self._fetchPromise = null;
       CGP.diag.warn('courseMenu.fetchFailed', { courseId: self.courseId, error: String(err && err.message) });
-      return self._tabs || [];
+      var fallback = self._tabs || defaultCourseTabs(self.courseId);
+      self._tabs = fallback;
+      self.renderTabs(fallback);
+      return fallback;
     });
+    return this._fetchPromise;
+  };
+
+  P.renderLoading = function () {
+    var drawer = this.ensureContainer();
+    if (!drawer) return;
+    drawer.textContent = '';
+
+    var header = document.createElement('div');
+    header.className = 'cgp-course-menu-header';
+
+    var headingWrap = document.createElement('div');
+    headingWrap.className = 'cgp-course-menu-heading';
+
+    var title = document.createElement('span');
+    title.className = 'cgp-course-menu-title';
+    title.textContent = 'Course Navigation';
+    headingWrap.appendChild(title);
+
+    var closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'cgp-course-menu-close';
+    closeBtn.setAttribute('aria-label', 'Close course navigation');
+    closeBtn.title = 'Close (Esc)';
+    closeBtn.textContent = '×';
+
+    header.appendChild(headingWrap);
+    header.appendChild(closeBtn);
+    drawer.appendChild(header);
+
+    var loading = document.createElement('div');
+    loading.className = 'cgp-course-menu-loading';
+    loading.textContent = 'Loading course navigation…';
+    drawer.appendChild(loading);
   };
 
   P.isTabsPopulated = function () {
@@ -254,14 +312,17 @@
         return;
       }
 
-      // Click on backdrop
-      if (self.isOpen && target.classList && target.classList.contains('cgp-course-menu-backdrop')) {
-        e.preventDefault();
-        self.close();
-        return;
+      // Click on link to current page (Grades) closes drawer
+      var link = target.closest && target.closest('a');
+      if (link && self.drawerEl && self.drawerEl.contains(link)) {
+        if (link.classList.contains('grades') || link.classList.contains('active')) {
+          e.preventDefault();
+          self.close();
+          return;
+        }
       }
 
-      // Click outside drawer while open
+      // Click outside drawer while open closes drawer without needing any backdrop
       if (self.isOpen && self.drawerEl && !self.drawerEl.contains(target)) {
         self.close();
       }
@@ -283,12 +344,17 @@
 
     this.isOpen = true;
 
+    // Move to document.body so no parent layout clipping or overflow can hide it
+    if (drawer.parentElement !== document.body && document.body) {
+      document.body.appendChild(drawer);
+    }
+
     // Ensure tabs are populated
     if (!this.isTabsPopulated()) {
       if (this._tabs && this._tabs.length) {
         this.renderTabs(this._tabs);
       } else {
-        drawer.innerHTML = '<div class="cgp-course-menu-loading"><div class="cgp-spinner"></div> Loading course navigation…</div>';
+        this.renderLoading();
         var self = this;
         this.fetchTabs().then(function (tabs) {
           if (self.isOpen) self.renderTabs(tabs);
@@ -297,11 +363,12 @@
     }
 
     // Measure Canvas global header (#header) to position drawer cleanly beside it
-    var header = document.getElementById('header');
-    var offsetLeft = 0;
-    if (header) {
+    var header = document.getElementById('header') ||
+                 (document.querySelector ? document.querySelector('.ic-app-header') : null);
+    var offsetLeft = 54;
+    if (header && header.getBoundingClientRect) {
       var rect = header.getBoundingClientRect();
-      if (rect.width > 0 && rect.left < 10 && rect.top < 10) {
+      if (rect.right > 0 && rect.right < 200) {
         offsetLeft = Math.round(rect.right);
       }
     }
@@ -309,15 +376,6 @@
 
     drawer.classList.add('cgp-course-menu-open');
     document.documentElement.classList.add('cgp-course-menu-expanded');
-
-    // Add backdrop
-    if (!this.backdropEl) {
-      var bd = document.createElement('div');
-      bd.className = 'cgp-course-menu-backdrop';
-      document.body.appendChild(bd);
-      this.backdropEl = bd;
-    }
-    this.backdropEl.style.display = 'block';
 
     // Synchronize toggle buttons aria-expanded
     var buttons = this.findToggleButtons();
@@ -334,10 +392,6 @@
       this.drawerEl.classList.remove('cgp-course-menu-open');
     }
     document.documentElement.classList.remove('cgp-course-menu-expanded');
-
-    if (this.backdropEl) {
-      this.backdropEl.style.display = 'none';
-    }
 
     var buttons = this.findToggleButtons();
     buttons.forEach(function (b) {

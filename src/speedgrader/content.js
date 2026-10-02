@@ -130,9 +130,35 @@
     if (e.__cgpSnippetHandled || e.key !== 'Tab' || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return false;
     var editor = e.target && e.target.closest ? e.target.closest('textarea, input, [contenteditable="true"]') : null;
     if (!isCommentEditor(editor)) return false;
-    var ok = editor.isContentEditable ? expandRichSnippet(editor, CGP.settings.values.snippets)
-      : expandTextareaSnippet(editor, CGP.settings.values.snippets);
-    if (!ok) return false;
+    var snippets = (CGP.settings && CGP.settings.values && CGP.settings.values.snippets) || [];
+    var ok = editor.isContentEditable ? expandRichSnippet(editor, snippets)
+      : expandTextareaSnippet(editor, snippets);
+    if (!ok) {
+      var textBefore = '';
+      if (editor.isContentEditable) {
+        var sel = window.getSelection && window.getSelection();
+        if (sel && sel.rangeCount && editor.contains(sel.anchorNode)) {
+          var caret = sel.getRangeAt(0);
+          if (caret.collapsed) {
+            var before = document.createRange();
+            before.selectNodeContents(editor);
+            before.setEnd(caret.endContainer, caret.endOffset);
+            textBefore = before.toString();
+          }
+        }
+      } else {
+        var pos = editor.selectionStart || 0;
+        textBefore = String(editor.value || '').slice(0, pos);
+      }
+      var hit = CGP.snippets && CGP.snippets.findTrigger(textBefore, textBefore.length);
+      if (hit) {
+        e.__cgpSnippetHandled = true;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return true;
+      }
+      return false;
+    }
     e.__cgpSnippetHandled = true;
     e.preventDefault();
     e.stopImmediatePropagation();

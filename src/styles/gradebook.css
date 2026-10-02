@@ -1825,12 +1825,13 @@ html.cgp-on .slick-header-column {
   position: fixed !important;
   top: 0 !important;
   bottom: 0 !important;
-  left: var(--cgp-nav-left-offset, 0px) !important;
+  left: var(--cgp-nav-left-offset, 54px) !important;
   width: 260px !important;
   max-width: 85vw !important;
   background: #ffffff !important;
   z-index: 100005 !important;
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.18) !important;
+  border-right: 1px solid #d8dcde !important;
   display: flex !important;
   flex-direction: column !important;
   visibility: visible !important;
@@ -1839,12 +1840,8 @@ html.cgp-on .slick-header-column {
   padding: 0 !important;
 }
 
-.cgp-course-menu-backdrop {
-  position: fixed !important;
-  inset: 0 !important;
-  background: rgba(15, 23, 42, 0.4) !important;
-  z-index: 100004 !important;
-  backdrop-filter: blur(1.5px);
+html.cgp-on #left-side:not(.cgp-course-menu-open) {
+  display: none !important;
 }
 
 .cgp-course-menu-header {

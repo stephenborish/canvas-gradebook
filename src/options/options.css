@@ -580,6 +580,61 @@ input.switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2p
   font-weight: 600;
 }
 
+.snippet-test-feedback.is-hint {
+  color: #0369a1;
+  font-weight: 500;
+}
+
+.snippet-test-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 12px 0;
+}
+
+.snippet-test-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  background: #ffffff;
+  border: 1px solid #86efac;
+  border-radius: 6px;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #15803d;
+  cursor: pointer;
+  transition: all 120ms ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.snippet-test-chip:hover {
+  background: #dcfce7;
+  border-color: #22c55e;
+  transform: translateY(-1px);
+}
+
+.snippet-test-chip:active {
+  transform: translateY(0);
+}
+
+.snippet-test-chip--empty {
+  cursor: default;
+  color: #64748b;
+  border: 1px dashed #cbd5e1;
+  background: #f8fafc;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: normal;
+  box-shadow: none;
+}
+
+.snippet-test-chip--empty:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  transform: none;
+}
+
 /* ------------------------------------------------------------- small screens */
 
 @media (max-width: 760px) {

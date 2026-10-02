@@ -106,6 +106,47 @@ suite('CourseMenuController & layout protection', (test) => {
     a.eq(toggleBtn.getAttribute('aria-expanded'), 'false', 'toggle button has aria-expanded=false');
   });
 
+  test('CourseMenuController falls back to default course tabs when API fails and never creates backdrops', async () => {
+    const CGP = loadGradebookDom();
+    const doc = domshim.install();
+    const FakeElement = domshim.FakeElement;
+
+    const wrapper = new FakeElement('div');
+    wrapper.id = 'wrapper';
+    doc.body.appendChild(wrapper);
+
+    const toggleBtn = new FakeElement('button');
+    toggleBtn.id = 'courseMenuToggle';
+    wrapper.appendChild(toggleBtn);
+
+    const failingApi = {
+      get: () => Promise.reject(new Error('Network error'))
+    };
+
+    const ctrl = new CGP.CourseMenuController({
+      api: failingApi,
+      courseId: '379',
+      settings: { values: {} }
+    });
+
+    ctrl.start();
+    const tabs = await ctrl.fetchTabs();
+    a.ok(tabs.length >= 6, 'fallback tabs returned on API failure');
+
+    const leftSide = doc.getElementById('left-side');
+    a.ok(leftSide, '#left-side exists');
+    const links = leftSide.querySelectorAll('a[href]');
+    a.ok(links.length >= 6, 'fallback links rendered in menu');
+
+    ctrl.open();
+    a.eq(ctrl.isOpen, true);
+    a.ok(leftSide.classList.contains('cgp-course-menu-open'), 'drawer is open');
+
+    // Ensure no backdrop element exists
+    const backdrops = doc.body.querySelectorAll('.cgp-course-menu-backdrop');
+    a.eq(backdrops.length, 0, 'zero backdrop elements created');
+  });
+
   test('layout controller protects course navigation elements from collapsing', () => {
     const CGP = loadGradebookDom();
     const doc = domshim.install();

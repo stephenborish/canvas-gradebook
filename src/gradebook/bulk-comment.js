@@ -110,11 +110,17 @@
     input.addEventListener('keydown', function (e) {
       e.stopPropagation();
       if (e.key === 'Tab' && !e.shiftKey) {
-        var out = CGP.snippets.expand(input.value, input.selectionStart, self.settings.values.snippets);
+        var snippets = (self.settings && self.settings.values && self.settings.values.snippets) || [];
+        var out = CGP.snippets && CGP.snippets.expand(input.value, input.selectionStart, snippets);
         if (out) {
           e.preventDefault();
           input.value = out.text;
           input.setSelectionRange(out.caret, out.caret);
+          return;
+        }
+        var hit = CGP.snippets && CGP.snippets.findTrigger(input.value, input.selectionStart);
+        if (hit) {
+          e.preventDefault();
           return;
         }
       }
