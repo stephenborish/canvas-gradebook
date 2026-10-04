@@ -620,8 +620,16 @@
     });
   });
 
+  function initVersion() {
+    var el = $('extensionVersion');
+    if (!el) return;
+    var ver = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest && chrome.runtime.getManifest().version) || CGP.VERSION || '1.9.2';
+    el.textContent = ver;
+  }
+
   initTabs();
   initSnippetsUI();
+  initVersion();
 
   load().then(function () {
     listDomains();

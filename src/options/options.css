@@ -123,6 +123,13 @@ body {
   border-top: 1px solid var(--line);
   padding: 14px 16px 16px;
 }
+.sidebar__version {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 10px;
+  letter-spacing: 0.2px;
+}
 .sidebar__actions { display: flex; flex-direction: column; gap: 8px; }
 .status { min-height: 15px; margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
 
