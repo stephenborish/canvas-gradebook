@@ -686,9 +686,12 @@
    * model itself never has this row's identity to key off of). Matching the
    * literal name is therefore the stable signal, not an id lookup. */
   P.isTestStudentRow = function (row) {
-    var link = row.querySelector('a[href*="/grades/"], a[href*="/users/"], .student-name');
-    if (!link) return false;
-    return String(link.textContent || '').trim() === 'Test Student';
+    if (!row || !row.querySelector) return false;
+    var link = row.querySelector('a[href*="/grades/"], a[href*="/users/"], .student-name, [data-testid*="student"]');
+    var raw = String((link && link.textContent) || (row.querySelector && row.querySelector('.slick-cell') && row.querySelector('.slick-cell').textContent) || '').trim();
+    if (!raw) return false;
+    var norm = raw.toLowerCase().replace(/[,\s]+/g, ' ').trim();
+    return norm === 'test student' || norm === 'student test';
   };
 
   /* Cross-pane check: is the row AT THIS VERTICAL POSITION the Test Student?

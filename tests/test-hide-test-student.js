@@ -90,6 +90,27 @@ suite('layout.hideTestStudentRows(): Test Student stays hidden across every pane
     a.not(grid.scrollingRows[2].classList.contains('cgp-hidden-row'));
   });
 
+  test('the Test Student row is hidden when formatted as "Student, Test" (last-name-first sort)', () => {
+    const CGP = loadGradebookDom();
+    const grid = buildTwoPaneGrid(CGP, [
+      { top: 0, name: 'Boylan, Chase', userId: '10' },
+      { top: 35, name: 'Student, Test', userId: '999' },
+      { top: 70, name: 'Yoder, Ryder', userId: '11' }
+    ]);
+    const adapter = new CGP.GradebookDomAdapter();
+    const layout = makeLayout(CGP, adapter, true);
+
+    layout.hideTestStudentRows();
+
+    a.not(grid.frozenRows[0].classList.contains('cgp-hidden-row'), 'real student Boylan stays visible');
+    a.ok(grid.frozenRows[1].classList.contains('cgp-hidden-row'), 'Student, Test is hidden in frozen pane');
+    a.not(grid.frozenRows[2].classList.contains('cgp-hidden-row'), 'real student Yoder stays visible');
+
+    a.not(grid.scrollingRows[0].classList.contains('cgp-hidden-row'));
+    a.ok(grid.scrollingRows[1].classList.contains('cgp-hidden-row'), 'Student, Test grade row is hidden in scrolling pane');
+    a.not(grid.scrollingRows[2].classList.contains('cgp-hidden-row'));
+  });
+
   test('a .cgp-total-cell at the Test Student\'s row top is hidden even when it is CREATED fresh on this same pass (frozen.paint() runs before hideTestStudentRows in content.js\'s paint order)', () => {
     const CGP = loadGradebookDom();
     const grid = buildTwoPaneGrid(CGP, [
