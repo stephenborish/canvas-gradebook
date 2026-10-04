@@ -595,11 +595,12 @@ html.cgp-on .slick-cell .Grid__GradeCell__Content {
   justify-content: center !important;
   text-align: center !important;
   margin: 0 auto !important;
-  padding: 0 6px !important;
-  gap: 3px !important;
+  padding: 0 4px !important;
+  gap: 4px !important;
   box-sizing: border-box !important;
   min-width: 0 !important;
-  overflow: hidden !important;
+  overflow: visible !important;
+  white-space: nowrap !important;
 }
 
 html.cgp-on .slick-cell .Grid__GradeCell__Content *,
@@ -610,18 +611,35 @@ html.cgp-on .slick-cell .gradebook-cell * {
 html.cgp-on .slick-cell .Grid__GradeCell__Content input,
 html.cgp-on .slick-cell .Grid__GradeCell__Content textarea {
   width: auto !important;
-  min-width: 28px !important;
+  min-width: 32px !important;
   max-width: 48px !important;
-  flex: 0 1 auto !important;
+  flex: 0 0 auto !important;
   box-sizing: border-box !important;
   text-align: center !important;
   background: #ffffff !important;
   position: relative !important;
-  z-index: 5 !important;
+  z-index: 2 !important;
 }
-/* Hide duplicate background/static score and total points denominator when input editor is open so there is no text overlap */
+/* Display the out-of-total-points denominator cleanly beside the input instead of covering it up */
+html.cgp-on .slick-cell:has(input:not([type="hidden"])) .Grid__GradeCell__Content {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 4px !important;
+  white-space: nowrap !important;
+}
 html.cgp-on .slick-cell:has(input:not([type="hidden"])) .Grid__GradeCell__Content > :not(input):not(textarea):not(:has(input)):not(:has(textarea)) {
-  display: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  color: var(--cgp-muted, #64748b) !important;
+  white-space: nowrap !important;
+  pointer-events: none !important;
+  line-height: 1 !important;
+  flex: 0 0 auto !important;
+  margin-left: 2px !important;
 }
 /* When cell is actively being edited, hide synthetic score overlay so editor has full cell width */
 html.cgp-on .slick-cell.active > .cgp-val,
@@ -1947,4 +1965,69 @@ html.cgp-gradebook #cgp-course-menu-drawer:not(.cgp-course-menu-open) {
   display: flex !important;
   align-items: center !important;
   gap: 10px !important;
+}
+
+/* ------------------------------------------------ Floating selection action bar */
+.cgp-selection-bar {
+  position: fixed !important;
+  bottom: 24px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  z-index: 100002 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  padding: 8px 16px !important;
+  background: #0f172a !important;
+  color: #ffffff !important;
+  border-radius: 30px !important;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.12) !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  pointer-events: auto !important;
+}
+
+.cgp-selection-bar__count {
+  color: #94a3b8 !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.2px !important;
+  padding-left: 2px !important;
+  user-select: none !important;
+}
+
+.cgp-selection-bar__btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  background: #0284c7 !important;
+  color: #ffffff !important;
+  border: none !important;
+  border-radius: 16px !important;
+  padding: 6px 14px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: background 0.15s ease, transform 0.1s ease !important;
+}
+
+.cgp-selection-bar__btn:hover {
+  background: #0369a1 !important;
+  transform: translateY(-1px) !important;
+}
+
+.cgp-selection-bar__close {
+  background: transparent !important;
+  border: none !important;
+  color: #94a3b8 !important;
+  font-size: 18px !important;
+  line-height: 1 !important;
+  padding: 2px 6px !important;
+  cursor: pointer !important;
+  border-radius: 4px !important;
+  transition: color 0.15s ease !important;
+}
+
+.cgp-selection-bar__close:hover {
+  color: #ffffff !important;
 }

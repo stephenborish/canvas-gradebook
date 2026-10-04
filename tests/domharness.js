@@ -17,7 +17,10 @@ const GRADEBOOK_FILES = [
   'src/gradebook/layout.js',
   'src/gradebook/frozen-total.js',
   'src/gradebook/indicators.js',
-  'src/gradebook/course-menu.js'
+  'src/gradebook/course-menu.js',
+  'src/gradebook/bulk-comment.js',
+  'src/gradebook/selection.js',
+  'src/gradebook/keyboard.js'
 ];
 
 let loaded = false;

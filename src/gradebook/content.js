@@ -141,8 +141,10 @@
       onCommentDismiss: function () { popover.hidePreview(); }
     });
     var selection = new CGP.SelectionController({
-      adapter: adapter, model: model, settings: settings, requestPaint: requestPaint
+      adapter: adapter, model: model, settings: settings, requestPaint: requestPaint, bulkComment: bulkComment
     });
+    CGP.selection = selection;
+    CGP.bulkComment = bulkComment;
     var frozen = new CGP.FrozenTotalController({
       adapter: adapter, model: model, settings: settings,
       // While a column-sizing transaction is in flight, the frozen pane's

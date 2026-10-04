@@ -13,6 +13,7 @@
     this.adapter = ctx.adapter;
     this.model = ctx.model;
     this.settings = ctx.settings;
+    this.bulkComment = ctx.bulkComment || null;
     this.requestPaint = ctx.requestPaint;
     this.keys = new Map();   // "assignmentId:userId" -> {assignmentId, userId, rowIndex, colIndex}
     this.anchor = null;
@@ -22,6 +23,7 @@
     // focused editor (predates this) from one genuinely focused since (does
     // not: it is what the teacher is looking at right now, selection or not).
     this.changedAt = 0;
+    this.barEl = null;
   }
 
   var P = SelectionController.prototype;
@@ -35,7 +37,53 @@
     });
   };
 
+  P.showBar = function () {
+    var count = this.keys.size;
+    if (count <= 1) {
+      this.hideBar();
+      return;
+    }
+    if (typeof document === 'undefined') return;
+    if (!this.barEl || !this.barEl.isConnected) {
+      var bar = document.createElement('div');
+      bar.id = 'cgp-selection-bar';
+      bar.className = 'cgp-selection-bar';
+      var self = this;
+      bar.addEventListener('click', function (e) {
+        var btn = e.target && e.target.closest ? e.target.closest('button') : null;
+        if (!btn) return;
+        if (btn.classList.contains('cgp-selection-bar__comment')) {
+          e.preventDefault();
+          e.stopPropagation();
+          var bc = self.bulkComment || CGP.bulkComment;
+          if (bc) bc.open(self.targets());
+        } else if (btn.classList.contains('cgp-selection-bar__close')) {
+          e.preventDefault();
+          e.stopPropagation();
+          self.clear();
+        }
+      });
+      (document.body || document.documentElement).appendChild(bar);
+      this.barEl = bar;
+    }
+    this.barEl.innerHTML =
+      '<span class="cgp-selection-bar__count">' + count + ' cells selected</span>' +
+      '<button type="button" class="cgp-selection-bar__btn cgp-selection-bar__comment" title="Add comment to selected cells (C)">' +
+        '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 10.5a2 2 0 0 1-2 2H5l-3 3V3.5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v7z"/></svg>' +
+        '<span>Comment (C)</span>' +
+      '</button>' +
+      '<button type="button" class="cgp-selection-bar__close" title="Clear selection (Esc)" aria-label="Clear selection">×</button>';
+    this.barEl.style.display = 'flex';
+  };
+
+  P.hideBar = function () {
+    if (this.barEl) {
+      this.barEl.style.display = 'none';
+    }
+  };
+
   P.clear = function (opts) {
+    this.hideBar();
     if (!this.keys.size && !this.pending) return;
     this.keys.clear();
     this.anchor = null;
@@ -53,6 +101,7 @@
     });
     this.anchor = { rowIndex: info.rowIndex, colIndex: info.colIndex };
     this.changedAt = Date.now();
+    this.showBar();
     return true;
   };
 
@@ -66,6 +115,7 @@
     } else {
       this.add(info);
     }
+    this.showBar();
     this.repaint();
   };
 
@@ -83,6 +133,7 @@
     });
     this.anchor = anchor;
     this.changedAt = Date.now();
+    this.showBar();
     this.repaint();
     CGP.diag.set('selectionSize', this.keys.size);
   };

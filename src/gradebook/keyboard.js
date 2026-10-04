@@ -232,11 +232,19 @@
     // alone). _lastTextFocusAt (set in onFocusIn, for every text entry, not
     // just assignment cells) against selection.changedAt is exactly that
     // comparison.
-    if (this.bulkComment && plain && key.length === 1 && key.toLowerCase() === 'c' && selectionSize > 0) {
-      var freshEdit = isTextEntry(target) && this._lastTextFocusAt > this.selection.changedAt;
-      if (!freshEdit) {
+    var isC = key && key.length === 1 && key.toLowerCase() === 'c';
+    var cMods = plain || (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey);
+    if (this.bulkComment && cMods && isC && selectionSize > 0) {
+      // If multiple cells are selected, pressing C is always intended as bulk comment,
+      // even if the last clicked cell in the range selection has an active input.
+      // If only 1 cell is selected, only trigger if not actively typing into a fresh editor.
+      var freshSingleEdit = (selectionSize === 1) && isTextEntry(target) && this._lastTextFocusAt > this.selection.changedAt;
+      if (!freshSingleEdit) {
         e.preventDefault();
         e.stopImmediatePropagation();
+        if (target && typeof target.blur === 'function') {
+          try { target.blur(); } catch (_) {}
+        }
         this.bulkComment.open(this.selection.targets());
         return;
       }
