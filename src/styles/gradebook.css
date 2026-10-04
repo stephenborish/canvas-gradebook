@@ -213,7 +213,7 @@ html.cgp-on .cgp-cmt--reply svg { fill: currentColor; stroke: none; }
 
 html.cgp-on .cgp-cmt-count {
   position: absolute;
-  top: 45%;
+  top: 34%;
   left: 50%;
   transform: translate(-50%, -50%);
   font-size: 8.5px;
@@ -223,6 +223,7 @@ html.cgp-on .cgp-cmt-count {
   pointer-events: none;
   font-family: var(--cgp-font), sans-serif;
   text-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.4);
+  letter-spacing: -0.5px;
 }
 
 /* ---------------------------------------------- submission marker (top-right)
@@ -403,11 +404,11 @@ html.cgp-on .cgp-val {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  font-size: var(--cgp-grade-font, 16px);
-  font-weight: 600;
+  font-size: var(--cgp-grade-font, 16px) !important;
+  font-weight: 600 !important;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
-  color: var(--cgp-ink-strong);
+  color: var(--cgp-ink-strong, #1a232b) !important;
   z-index: 2 !important;
   pointer-events: none !important;
 }
@@ -1247,20 +1248,25 @@ html.cgp-center .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content
  * from Canvas's em-dash placeholder. */
 html.cgp-on .slick-cell[data-cgp-col="assignment"],
 html.cgp-on .slick-cell[data-cgp-col="total"],
-html.cgp-on .slick-cell[class*="total"] {
+html.cgp-on .slick-cell[class*="total"],
+html.cgp-on .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content,
+html.cgp-on .slick-cell[data-cgp-col="total"] .Grid__GradeCell__Content,
+html.cgp-on .slick-cell[class*="total"] .Grid__GradeCell__Content {
   font-size: var(--cgp-grade-font, 16px) !important;
   font-weight: 600 !important;
-  color: var(--cgp-ink-strong) !important;
+  color: var(--cgp-ink-strong, #1a232b) !important;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
 }
 /* Canvas nests the score inside its own wrappers on several Gradebook builds,
- * and some of them carry a font-size of their own that would otherwise win
- * against the cell's. The markers this extension paints keep their own sizes. */
-html.cgp-on .slick-cell[data-cgp-col="assignment"] *:not(.cgp-marks):not(.cgp-marks *),
-html.cgp-on .slick-cell[data-cgp-col="total"] *,
-html.cgp-on .slick-cell[class*="total"] * {
+ * and some of them carry a font-size or color of their own that would otherwise win
+ * against the cell's. The markers this extension paints keep their own sizes and colors. */
+html.cgp-on .slick-cell[data-cgp-col="assignment"]:not(:has(input:not([type="hidden"]))) *:not(.cgp-marks):not(.cgp-marks *),
+html.cgp-on .slick-cell[data-cgp-col="total"]:not(:has(input:not([type="hidden"]))) *:not(.cgp-marks):not(.cgp-marks *),
+html.cgp-on .slick-cell[class*="total"]:not(:has(input:not([type="hidden"]))) *:not(.cgp-marks):not(.cgp-marks *) {
   font-size: inherit !important;
+  color: var(--cgp-ink-strong, #1a232b) !important;
+  font-weight: 600 !important;
 }
 html.cgp-on:not(.cgp-frozen-total-active) .slick-cell[data-cgp-col="total"],
 html.cgp-on:not(.cgp-frozen-total-active) .slick-cell[class*="total"] {
@@ -1413,12 +1419,7 @@ html.cgp-on .slick-cell textarea:focus {
   border-color: var(--cgp-brand) !important;
   box-shadow: var(--cgp-focus-ring) !important;
 }
-/* The "/5" out-of label Canvas prints beside the input while editing. */
-html.cgp-on .slick-cell .Grid__GradeCell__Content {
-  gap: 4px;
-  color: var(--cgp-muted);
-  font-size: 11px;
-}
+/* Note: The out-of-total denominator while editing is handled specifically above by .slick-cell:has(input) selectors */
 /* Canvas's trailing arrow button: a proper, reachable target rather than a
  * glyph pressed against the cell border. Double-clicking anywhere in the
  * cell now presses this same button (cell-actions.js). */
