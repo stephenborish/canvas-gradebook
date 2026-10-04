@@ -49,22 +49,39 @@
       bar.id = 'cgp-selection-bar';
       bar.className = 'cgp-selection-bar';
       var self = this;
+      bar.addEventListener('mousedown', function (e) {
+        // Prevent Canvas from stealing focus or triggering SlickGrid cell selection
+        e.stopPropagation();
+        var btn = e.target && e.target.closest ? e.target.closest('button') : null;
+        if (btn && btn.classList.contains('cgp-selection-bar__close')) {
+          e.preventDefault();
+          self.clear();
+        }
+      });
+      bar.addEventListener('pointerdown', function (e) {
+        e.stopPropagation();
+      });
       bar.addEventListener('click', function (e) {
+        e.stopPropagation();
         var btn = e.target && e.target.closest ? e.target.closest('button') : null;
         if (!btn) return;
         if (btn.classList.contains('cgp-selection-bar__comment')) {
           e.preventDefault();
-          e.stopPropagation();
           var bc = self.bulkComment || CGP.bulkComment;
           if (bc) bc.open(self.targets());
         } else if (btn.classList.contains('cgp-selection-bar__close')) {
           e.preventDefault();
-          e.stopPropagation();
           self.clear();
         }
       });
       (document.body || document.documentElement).appendChild(bar);
       this.barEl = bar;
+    }
+    this.barEl.classList.remove('cgp-selection-bar--hidden');
+    if (this.barEl.style && this.barEl.style.setProperty) {
+      this.barEl.style.setProperty('display', 'flex', 'important');
+    } else {
+      this.barEl.style.display = 'flex';
     }
     this.barEl.innerHTML =
       '<span class="cgp-selection-bar__count">' + count + ' cells selected</span>' +
@@ -73,12 +90,20 @@
         '<span>Comment (C)</span>' +
       '</button>' +
       '<button type="button" class="cgp-selection-bar__close" title="Clear selection (Esc)" aria-label="Clear selection">×</button>';
-    this.barEl.style.display = 'flex';
   };
 
   P.hideBar = function () {
     if (this.barEl) {
-      this.barEl.style.display = 'none';
+      this.barEl.classList.add('cgp-selection-bar--hidden');
+      if (this.barEl.style && this.barEl.style.setProperty) {
+        this.barEl.style.setProperty('display', 'none', 'important');
+      } else {
+        this.barEl.style.display = 'none';
+      }
+      if (this.barEl.parentElement) {
+        this.barEl.parentElement.removeChild(this.barEl);
+      }
+      this.barEl = null;
     }
   };
 
@@ -89,6 +114,7 @@
     this.anchor = null;
     this.pending = '';
     this.repaint();
+    CGP.diag.set('selectionSize', 0);
     if (!(opts && opts.silent)) CGP.diag.log('selection.cleared');
   };
 
@@ -146,6 +172,9 @@
   /** Applies selection classes to whatever cells are rendered right now. */
   P.paint = function (cells) {
     var self = this;
+    if (this.keys.size <= 1 && this.barEl) {
+      this.hideBar();
+    }
     (cells || []).forEach(function (info) {
       if (!info.el) return;
       var selected = !!(info.assignmentId && info.studentId &&
@@ -176,7 +205,14 @@
       var modifierRange = e.shiftKey;
       var info = self.adapter.cellInfo(e.target);
 
-      if (!info) { return; }
+      if (!info) {
+        var inOurControls = e.target && e.target.closest &&
+          e.target.closest('#cgp-selection-bar, #cgp-bulk-comment, .cgp-pop, [role="dialog"], .ui-dialog');
+        if (!inOurControls && !modifierAdd && !modifierRange && self.keys.size) {
+          self.clear({ silent: true });
+        }
+        return;
+      }
       if (!modifierAdd && !modifierRange) {
         if (self.keys.size) self.clear({ silent: true });
         // A plain click selects nothing of ours - Canvas activates the cell

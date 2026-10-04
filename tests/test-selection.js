@@ -1,10 +1,12 @@
-/* Tests for SelectionController and KeyboardGradingController multi-cell commenting:
+/* Tests for SelectionController, BulkCommentController, and CommentPopoverController:
  * 1. SelectionController displays a floating action bar (#cgp-selection-bar)
- *    when multiple cells are selected (keys.size > 1) and hides it when keys.size <= 1.
- * 2. KeyboardGradingController opens bulk comment on pressing 'C' (or 'Shift+C')
+ *    when multiple cells are selected (keys.size > 1) and removes it when cleared.
+ * 2. Clicking outside cell area with a plain click clears the multi-cell selection.
+ * 3. KeyboardGradingController opens bulk comment on pressing 'C' (or 'Shift+C')
  *    when selectionSize > 1, even if an input element was active from range selection.
- * 3. KeyboardGradingController does NOT intercept 'C' when typing into a single cell editor.
- * 4. options.html contains clean, un-duplicated step instructions for comment snippets.
+ * 4. KeyboardGradingController does NOT intercept 'C' when typing into a single cell editor.
+ * 5. BulkCommentController & CommentPopoverController render close buttons (x) in head.
+ * 6. options.html contains clean, un-duplicated step instructions for comment snippets.
  */
 'use strict';
 
@@ -14,7 +16,7 @@ const { suite, assert: a } = require('./harness');
 const { loadGradebookDom, domshim } = require('./domharness');
 
 suite('SelectionController & multi-cell bulk comment', (test) => {
-  test('SelectionController shows and updates floating bar when multi-selected, hides on single or clear', () => {
+  test('SelectionController shows and updates floating bar when multi-selected, hides and removes on clear', () => {
     const CGP = loadGradebookDom();
     const doc = domshim.install();
 
@@ -58,10 +60,60 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     a.eq(ctrl.size(), 3);
     a.ok(barMulti.innerHTML.includes('3 cells selected'), 'updates to 3 cells selected count');
 
-    // Clear selection -> bar hides
+    // Clear selection -> bar removed and hidden
     ctrl.clear();
     a.eq(ctrl.size(), 0);
-    a.eq(barMulti.style.display, 'none', 'bar hides on clear()');
+    a.eq(doc.getElementById('cgp-selection-bar'), null, 'bar element removed on clear()');
+  });
+
+  test('SelectionController clears selection when plain clicking outside cell area', () => {
+    const CGP = loadGradebookDom();
+    const doc = domshim.install();
+    const FakeElement = domshim.FakeElement;
+
+    let mousedownHandler = null;
+    doc.addEventListener = (event, fn, capture) => {
+      if (event === 'mousedown') mousedownHandler = fn;
+    };
+
+    const ctrl = new CGP.SelectionController({
+      adapter: {
+        cellInfo: (el) => {
+          if (el && el.classList.contains('slick-cell')) {
+            return { columnType: 'assignment', assignmentId: '101', studentId: '201', rowIndex: 0, colIndex: 1 };
+          }
+          return null;
+        }
+      },
+      model: {},
+      settings: { values: { multiCellSelection: true } },
+      requestPaint: () => {},
+      bulkComment: null
+    });
+
+    ctrl.start();
+    a.ok(mousedownHandler, 'mousedown capture listener registered');
+
+    // Add 2 cells
+    ctrl.add({ columnType: 'assignment', assignmentId: '101', studentId: '201', rowIndex: 0, colIndex: 1 });
+    ctrl.add({ columnType: 'assignment', assignmentId: '101', studentId: '202', rowIndex: 1, colIndex: 1 });
+    a.eq(ctrl.size(), 2);
+
+    // Simulate clicking on whitespace / header outside any cell
+    const headerEl = new FakeElement('div');
+    headerEl.classList.add('slick-header-column');
+    doc.body.appendChild(headerEl);
+
+    mousedownHandler({
+      button: 0,
+      target: headerEl,
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false
+    });
+
+    a.eq(ctrl.size(), 0, 'selection cleared on plain click outside cells');
+    a.eq(doc.getElementById('cgp-selection-bar'), null, 'selection bar removed');
   });
 
   test('KeyboardGradingController opens bulk comment on C when multi-selected, blurring active input', () => {
@@ -200,6 +252,25 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
 
     a.eq(prevented, false, 'normal typing of c is not prevented in single editor');
     a.eq(bulkTargets, null, 'bulkComment.open was NOT called');
+  });
+
+  test('BulkCommentController renders close button and closes on close()', () => {
+    const CGP = loadGradebookDom();
+    domshim.install();
+
+    const ctrl = new CGP.BulkCommentController({
+      model: {},
+      writer: {},
+      settings: { values: {} },
+      requestPaint: () => {}
+    });
+
+    ctrl.open([{ assignmentId: '101', userId: '201' }]);
+    a.ok(ctrl.isOpen(), 'bulk comment dialog is open');
+    a.ok(ctrl.el.innerHTML.includes('cgp-pop__close'), 'has close button');
+
+    ctrl.close();
+    a.eq(ctrl.isOpen(), false, 'bulk comment dialog closed');
   });
 
   test('options.html comment snippets instructions have no duplicate step numbers', () => {

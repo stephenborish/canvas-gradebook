@@ -1504,12 +1504,31 @@ html.cgp-on .cgp-pop {
 }
 html.cgp-on .cgp-pop--on { display: block; }
 html.cgp-on .cgp-pop__head {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 1px;
   padding-bottom: 8px;
+  padding-right: 24px;
   border-bottom: 1px solid #e8eaec;
   margin-bottom: 8px;
+}
+html.cgp-on .cgp-pop__close {
+  position: absolute;
+  top: -4px;
+  right: -2px;
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--cgp-muted);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: color 100ms ease;
+}
+html.cgp-on .cgp-pop__close:hover {
+  color: var(--cgp-ink-strong);
 }
 html.cgp-on .cgp-pop__who { font-weight: 700; color: var(--cgp-ink-strong); font-size: 13px; }
 html.cgp-on .cgp-pop__what { color: var(--cgp-muted); }
@@ -1986,6 +2005,12 @@ html.cgp-gradebook #cgp-course-menu-drawer:not(.cgp-course-menu-open) {
   font-size: 13px !important;
   font-weight: 500 !important;
   pointer-events: auto !important;
+}
+
+.cgp-selection-bar.cgp-selection-bar--hidden,
+.cgp-selection-bar[style*="display: none"],
+.cgp-selection-bar[style*="display:none"] {
+  display: none !important;
 }
 
 .cgp-selection-bar__count {

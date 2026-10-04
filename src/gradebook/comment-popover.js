@@ -101,6 +101,7 @@
     var head = '<div class="cgp-pop__head">' +
       '<span class="cgp-pop__who">' + CGP.util.escapeHtml((student && student.name) || 'Student') + '</span>' +
       '<span class="cgp-pop__what">' + CGP.util.escapeHtml((assignment && assignment.name) || '') + '</span>' +
+      '<button type="button" class="cgp-pop__close" title="Close (Esc)" aria-label="Close">×</button>' +
       '</div>';
 
     var body;
@@ -132,6 +133,14 @@
 
   P.wire = function (rec, info) {
     var self = this;
+    var closeBtn = this.el.querySelector('.cgp-pop__close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        self.close();
+      });
+    }
     var input = this.el.querySelector('.cgp-pop__input');
     var save = this.el.querySelector('.cgp-pop__save');
     if (!input || !save) return;

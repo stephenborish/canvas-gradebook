@@ -78,6 +78,7 @@
       '<div class="cgp-pop__head">' +
       '<span class="cgp-pop__who">Comment on ' + n + (n === 1 ? ' cell' : ' cells') + '</span>' +
       '<span class="cgp-pop__what">Posted as your own comment on each of the selected submissions.</span>' +
+      '<button type="button" class="cgp-pop__close" title="Close (Esc)" aria-label="Close">×</button>' +
       '</div>' +
       '<div class="cgp-pop__reply">' +
       '<textarea class="cgp-pop__input" rows="3" placeholder="Comment… (/snippet + Tab, Ctrl+Enter to save)"></textarea>' +
@@ -95,14 +96,24 @@
    * point the way there is for the single-cell comment popover. */
   P.position = function () {
     var el = this.el;
-    var width = Math.min(340, window.innerWidth - 24);
+    var winW = typeof window !== 'undefined' ? (window.innerWidth || 1024) : 1024;
+    var winH = typeof window !== 'undefined' ? (window.innerHeight || 768) : 768;
+    var width = Math.min(340, winW - 24);
     el.style.width = width + 'px';
-    el.style.left = Math.round((window.innerWidth - width) / 2) + 'px';
-    el.style.top = Math.round(Math.max(12, window.innerHeight * 0.2)) + 'px';
+    el.style.left = Math.round((winW - width) / 2) + 'px';
+    el.style.top = Math.round(Math.max(12, winH * 0.2)) + 'px';
   };
 
   P.wire = function () {
     var self = this;
+    var closeBtn = this.el.querySelector('.cgp-pop__close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        self.close();
+      });
+    }
     var input = this.el.querySelector('.cgp-pop__input');
     var save = this.el.querySelector('.cgp-pop__save');
     if (!input || !save) return;
