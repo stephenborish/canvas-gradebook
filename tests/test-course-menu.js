@@ -317,4 +317,86 @@ suite('CourseMenuController & layout protection', (test) => {
     ctrl.attachDirectListeners();
     a.eq(hamburger._cgpMenuAttached, true, 'attached marker set on hamburger button');
   });
+
+  test('CourseMenuController start() and ensureContainer() refuse to run in subframes', () => {
+    const CGP = loadGradebookDom();
+    const doc = domshim.install();
+
+    // Simulate child iframe: window.self !== window.top
+    const origWindow = global.window;
+    global.window = { self: {}, top: {} };
+
+    try {
+      const ctrl = new CGP.CourseMenuController({
+        api: { get: () => Promise.resolve(sampleTabs) },
+        courseId: '379',
+        settings: { values: {} }
+      });
+
+      ctrl.start();
+      const container = ctrl.ensureContainer();
+      a.eq(container, null, 'ensureContainer returns null in subframe');
+      a.eq(doc.getElementById('left-side'), null, '#left-side not created in subframe');
+    } finally {
+      global.window = origWindow;
+    }
+  });
+
+  test('CourseMenuController start() and ensureContainer() refuse to run on SpeedGrader', () => {
+    const CGP = loadGradebookDom();
+    const doc = domshim.install();
+
+    const origLocation = global.location;
+    global.location = { pathname: '/courses/379/gradebook/speed_grader' };
+
+    try {
+      const ctrl = new CGP.CourseMenuController({
+        api: { get: () => Promise.resolve(sampleTabs) },
+        courseId: '379',
+        settings: { values: {} }
+      });
+
+      ctrl.start();
+      const container = ctrl.ensureContainer();
+      a.eq(container, null, 'ensureContainer returns null on SpeedGrader');
+      a.eq(doc.getElementById('left-side'), null, '#left-side not created on SpeedGrader');
+    } finally {
+      global.location = origLocation;
+    }
+  });
+
+  test('isCourseMenuToggle ignores buttons and menus inside comments and right side panels', () => {
+    const CGP = loadGradebookDom();
+    const doc = domshim.install();
+    const FakeElement = domshim.FakeElement;
+
+    const rightSide = new FakeElement('div');
+    rightSide.id = 'right_side';
+    doc.body.appendChild(rightSide);
+
+    const commentForm = new FakeElement('form');
+    commentForm.id = 'comment-form';
+    rightSide.appendChild(commentForm);
+
+    const commentBtn = new FakeElement('button');
+    commentBtn.setAttribute('aria-label', 'Course Navigation Menu'); // misleading label in comment area
+    commentForm.appendChild(commentBtn);
+
+    const tray = new FakeElement('div');
+    tray.classList.add('grade-detail-tray');
+    doc.body.appendChild(tray);
+
+    const trayMenuBtn = new FakeElement('button');
+    trayMenuBtn.setAttribute('title', 'Navigation Menu');
+    tray.appendChild(trayMenuBtn);
+
+    const ctrl = new CGP.CourseMenuController({
+      api: { get: () => Promise.resolve(sampleTabs) },
+      courseId: '379',
+      settings: { values: {} }
+    });
+
+    a.eq(ctrl.isCourseMenuToggle(commentBtn), null, 'button inside right_side / comment form is ignored');
+    a.eq(ctrl.isCourseMenuToggle(trayMenuBtn), null, 'button inside grade-detail-tray is ignored');
+  });
 });

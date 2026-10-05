@@ -38,6 +38,10 @@
 
   P.start = function () {
     if (!this.courseId) return;
+    // Guard against running in subframes (e.g. TinyMCE/RCE comment iframes) or on SpeedGrader
+    if (typeof window !== 'undefined' && window.self !== window.top) return;
+    if (typeof location !== 'undefined' && /\/gradebook\/speed_grader/i.test(location.pathname)) return;
+
     this.ensureContainer();
     this.loadCachedTabs();
     this.bindEvents();
@@ -59,23 +63,30 @@
   };
 
   P.ensureContainer = function () {
+    if (typeof window !== 'undefined' && window.self !== window.top) return null;
+    if (typeof location !== 'undefined' && /\/gradebook\/speed_grader/i.test(location.pathname)) return null;
+
     if (this.drawerEl && document.body && document.body.contains(this.drawerEl)) {
       return this.drawerEl;
     }
     var leftSide = (document.getElementById ? document.getElementById('left-side') : null) ||
                    (document.querySelector ? document.querySelector('#left-side, .cgp-course-menu-drawer') : null);
     if (!leftSide) {
-      leftSide = document.createElement('div');
-      leftSide.id = 'left-side';
-      leftSide.className = 'ic-app-course-menu cgp-course-menu-drawer';
       var wrapper = (document.getElementById ? document.getElementById('wrapper') : null) ||
                     (document.querySelector ? document.querySelector('#wrapper') : null) ||
                     (document.getElementById ? document.getElementById('application') : null) ||
-                    (document.querySelector ? document.querySelector('#application') : null) ||
-                    document.body;
-      if (wrapper && wrapper.firstChild && wrapper.insertBefore) {
+                    (document.querySelector ? document.querySelector('#application') : null);
+      if (!wrapper && document.body && !document.querySelector('.mceContentBody, [contenteditable="true"]')) {
+        wrapper = document.body;
+      }
+      if (!wrapper) return null;
+
+      leftSide = document.createElement('div');
+      leftSide.id = 'left-side';
+      leftSide.className = 'ic-app-course-menu cgp-course-menu-drawer';
+      if (wrapper.firstChild && wrapper.insertBefore) {
         wrapper.insertBefore(leftSide, wrapper.firstChild);
-      } else if (wrapper && wrapper.appendChild) {
+      } else if (wrapper.appendChild) {
         wrapper.appendChild(leftSide);
       }
     } else {
@@ -399,7 +410,10 @@
     if (!el) return null;
 
     if (this.isExtensionControl(el)) return null;
-    if (el.closest && el.closest('#header, .ic-app-header')) return null;
+    if (el.closest && el.closest(
+      '#header, .ic-app-header, #right_side, .comments, #discussion, #add_a_comment, .comment_area, ' +
+      '.grade-detail-tray, [data-testid*="comment" i], .cgp-pop, .cgp-comment-popover, #comment-form'
+    )) return null;
 
     var btn = null;
     if (typeof el.closest === 'function') {
@@ -414,7 +428,10 @@
     if (!btn) return null;
 
     if (this.isExtensionControl(btn)) return null;
-    if (btn.closest && btn.closest('#header, .ic-app-header')) return null;
+    if (btn.closest && btn.closest(
+      '#header, .ic-app-header, #right_side, .comments, #discussion, #add_a_comment, .comment_area, ' +
+      '.grade-detail-tray, [data-testid*="comment" i], .cgp-pop, .cgp-comment-popover, #comment-form'
+    )) return null;
 
     // Reject navigation links to pages like <a href="/courses/376">
     if (btn.tagName === 'A' && btn.getAttribute('href') && !btn.getAttribute('href').startsWith('#') && !btn.classList.contains('ic-app-course-nav-toggle')) {

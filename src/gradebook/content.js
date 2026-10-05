@@ -567,10 +567,18 @@
   }
 
   function boot() {
+    // Only the top-level window should initialize the Gradebook, CourseSwitcher,
+    // or CourseMenuController. Subframes (such as TinyMCE/RCE comment iframes or
+    // document viewer frames) are injected solely so snippets/capture works in
+    // speedgrader/content.js; they must never run page boot or mount drawers.
+    if (typeof window !== 'undefined' && window.self !== window.top) {
+      return Promise.resolve(null);
+    }
+
     return CGP.settings.load().then(function () {
       var path = location.pathname;
-      var isSpeedGrader = /\/gradebook\/speed_grader/.test(path);
-      var isGradebook = !isSpeedGrader && /\/courses\/\d+\/gradebook\/?$/.test(path);
+      var isSpeedGrader = /\/gradebook\/speed_grader/i.test(path);
+      var isGradebook = !isSpeedGrader && /\/courses\/\d+\/gradebook\/?$/i.test(path);
       var courseId = CGP.util.courseIdFromPath(path);
       CGP.diag.set('page', isSpeedGrader ? 'speedgrader' : (isGradebook ? 'gradebook' : (courseId ? 'course-other' : 'other')));
 
