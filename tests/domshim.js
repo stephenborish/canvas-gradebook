@@ -242,6 +242,38 @@ FakeElement.prototype.removeChild = function (child) {
   child.parentElement = null;
   return child;
 };
+
+FakeElement.prototype.insertBefore = function (newChild, refChild) {
+  if (newChild.parentElement) newChild.parentElement.removeChild(newChild);
+  var idx = this.children.indexOf(refChild);
+  if (idx < 0) return this.appendChild(newChild);
+  this.children.splice(idx, 0, newChild);
+  newChild.parentElement = this;
+  return newChild;
+};
+
+FakeElement.prototype.insertAdjacentElement = function (position, element) {
+  if (position === 'beforebegin') {
+    if (this.parentElement) this.parentElement.insertBefore(element, this);
+    return element;
+  }
+  if (position === 'afterbegin') {
+    return this.insertBefore(element, this.children[0] || null);
+  }
+  if (position === 'beforeend') {
+    return this.appendChild(element);
+  }
+  if (position === 'afterend') {
+    if (this.parentElement) {
+      var idx = this.parentElement.children.indexOf(this);
+      var next = this.parentElement.children[idx + 1] || null;
+      return this.parentElement.insertBefore(element, next);
+    }
+    return element;
+  }
+  return null;
+};
+
 FakeElement.prototype.remove = function () {
   if (this.parentElement) this.parentElement.removeChild(this);
 };

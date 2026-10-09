@@ -80,19 +80,28 @@ suite('grade shortcuts (M / E / L / 0)', (test) => {
     a.eq(ops().operationFor(ops().parseToken('L'), { wasLate: false }).patch.late, true);
   });
 
-  test('grading a Missing (or Late) submission never touches its status', () => {
-    // Entering a grade must never flip Missing to Late, or clear either
-    // status - only the teacher's own M/L press does that.
+  test('grading a Missing submission clears Missing status automatically', () => {
+    // Entering a grade removes Missing status automatically while preserving Late if late.
     const op = ops().operationFor(ops().parseToken('7'), { wasExplicitMissing: true });
-    a.form(op.form, { 'submission[posted_grade]': '7' }, 'graded-while-missing form');
-    a.lacksKey(op.form, 'submission[late_policy_status]', 'a grade must not restate or change any status');
-    a.eq(op.patch.missing, undefined, 'the patch says nothing about Missing either way');
+    a.form(op.form, {
+      'submission[posted_grade]': '7',
+      'submission[late_policy_status]': 'none'
+    }, 'graded-while-missing form');
+    a.eq(op.patch.missing, false, 'the patch clears missing');
+    a.eq(op.patch.latePolicyStatus, null, 'latePolicyStatus is reset');
 
-    // Letter and percent grades take the same route.
-    a.lacksKey(ops().operationFor(ops().parseToken('B+'), { wasExplicitMissing: true }).form,
-      'submission[late_policy_status]');
-    a.lacksKey(ops().operationFor(ops().parseToken('80%'), { wasLate: true }).form,
-      'submission[late_policy_status]');
+    // Letter grades clear missing too
+    const letterOp = ops().operationFor(ops().parseToken('B+'), { wasExplicitMissing: true });
+    a.form(letterOp.form, {
+      'submission[posted_grade]': 'B+',
+      'submission[late_policy_status]': 'none'
+    });
+    a.eq(letterOp.patch.missing, false);
+
+    // Grading a Late submission preserves Late without adding late_policy_status
+    const lateOp = ops().operationFor(ops().parseToken('80%'), { wasLate: true });
+    a.lacksKey(lateOp.form, 'submission[late_policy_status]');
+    a.eq(lateOp.patch.latePolicyStatus, 'late');
   });
 
   test('a grade on a submission that was never Missing leaves late policy alone', () => {

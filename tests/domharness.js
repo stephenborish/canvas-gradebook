@@ -20,7 +20,9 @@ const GRADEBOOK_FILES = [
   'src/gradebook/course-menu.js',
   'src/gradebook/bulk-comment.js',
   'src/gradebook/selection.js',
-  'src/gradebook/keyboard.js'
+  'src/gradebook/keyboard.js',
+  'src/gradebook/course-switcher.js',
+  'src/gradebook/student-search.js'
 ];
 
 let loaded = false;

@@ -97,6 +97,16 @@
     }
 
     var watch = this._editorWatch.get(el);
+    if (!watch && cell) {
+      var fallbackInfo = this.adapter.cellInfo(cell);
+      if (fallbackInfo && fallbackInfo.columnType === 'assignment' && fallbackInfo.assignmentId && fallbackInfo.studentId) {
+        watch = {
+          value: '',
+          assignmentId: fallbackInfo.assignmentId,
+          userId: fallbackInfo.studentId
+        };
+      }
+    }
     if (!watch) return;
     this._editorWatch.delete(el);
     var now = String(el.value === undefined ? '' : el.value);
@@ -105,15 +115,64 @@
     if (this._nativeMPending.has(watch.assignmentId + ':' + watch.userId)) return;
 
     var numVal = parseFloat(now);
+    var isNum = !isNaN(numVal);
+    var hasGrade = now.trim() !== '' && now.trim() !== '-' && now.trim() !== '\u2013';
+    var prevRec = this.model.cell(watch.assignmentId, watch.userId);
+    var wasMissing = (prevRec && (prevRec.missing || prevRec.latePolicyStatus === 'missing')) ||
+                     (cell && (cell.classList.contains('cgp-status-missing') || cell.classList.contains('missing') || !!cell.querySelector('.cgp-status-badge--missing')));
+    var wasLate = (prevRec && (prevRec.late || prevRec.latePolicyStatus === 'late')) ||
+                  (cell && (cell.classList.contains('cgp-status-late') || cell.classList.contains('late') || !!cell.querySelector('.cgp-status-badge--late')));
+
     var patch = {
-      grade: now,
-      score: isNaN(numVal) ? null : numVal,
-      enteredScore: isNaN(numVal) ? null : numVal,
-      override: null
+      grade: hasGrade ? now : null,
+      score: isNum ? numVal : null,
+      enteredScore: isNum ? numVal : null,
+      override: hasGrade ? now : (now.trim() === '-' || now.trim() === '\u2013' ? '\u2013' : null)
     };
+    if (wasMissing) {
+      patch.missing = false;
+      patch.latePolicyStatus = wasLate ? 'late' : null;
+    }
     this.model.patchCell(watch.assignmentId, watch.userId, patch, { silent: false });
     this.model.markLocalWrite(watch.assignmentId, watch.userId);
+
+    var api = (this.writer && this.writer.api) || (this.model && this.model.api);
+    if (api && this.model && this.model.courseId) {
+      var aid = watch.assignmentId;
+      var uid = watch.userId;
+      var self = this;
+      var form = {};
+      if (hasGrade) {
+        form['submission[posted_grade]'] = now;
+        if (wasMissing) {
+          form['submission[late_policy_status]'] = wasLate ? 'late' : 'none';
+        }
+      } else if (now.trim() === '-' || now.trim() === '' || now.trim() === '\u2013') {
+        form['submission[posted_grade]'] = '';
+        if (wasMissing) {
+          form['submission[late_policy_status]'] = 'none';
+        }
+      }
+      if (Object.keys(form).length > 0) {
+        api.updateSubmission(this.model.courseId, aid, uid, form).then(function (sub) {
+          if (sub) {
+            var applied = self.model.applySubmission(sub);
+            if (applied && applied.grade !== null && applied.grade !== undefined && String(applied.grade) !== '') {
+              self.model.patchCell(aid, uid, { override: String(applied.grade) }, { silent: true });
+            }
+            self.model.queueTotalRefresh(uid);
+            if (self.requestPaint) self.requestPaint();
+          }
+        }).catch(function (err) {
+          CGP.diag.error('keyboard.gradeWriteFailed', { error: err && err.message });
+        });
+      }
+    }
+
     this.scheduleReconcile(watch.assignmentId, watch.userId);
+    if (cell && this.registry) {
+      this.registry.invalidate(cell);
+    }
     if (this.requestPaint) this.requestPaint();
   };
 
@@ -124,8 +183,10 @@
     if (this._refreshTimers.has(key)) clearTimeout(this._refreshTimers.get(key));
     this._refreshTimers.set(key, setTimeout(function () {
       self._refreshTimers.delete(key);
-      self.model.patchCell(assignmentId, userId, { override: null }, { silent: true });
-      self.model.refreshCell(assignmentId, userId).then(function () {
+      self.model.refreshCell(assignmentId, userId).then(function (sub) {
+        if (sub && sub.grade !== null && sub.grade !== undefined && String(sub.grade) !== '') {
+          self.model.patchCell(assignmentId, userId, { override: String(sub.grade) }, { silent: true });
+        }
         self.model.queueTotalRefresh(userId);
         if (self.requestPaint) self.requestPaint();
       });

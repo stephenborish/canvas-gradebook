@@ -37,21 +37,44 @@
   P.start = function () {
     if (!this.settings.values.courseSwitcher) return;
     var crumbLink = this.findCrumbLink();
-    if (!crumbLink) { CGP.diag.warn('switcher.noBreadcrumb'); return; }
-    if (crumbLink.parentElement.querySelector('.cgp-crumb-toggle')) return;
+    if (!crumbLink) {
+      if (!this._retryCount) this._retryCount = 0;
+      if (this._retryCount < 8) {
+        this._retryCount++;
+        var selfRetry = this;
+        setTimeout(function () { selfRetry.start(); }, 250);
+        return;
+      }
+      CGP.diag.warn('switcher.noBreadcrumb');
+      return;
+    }
+    if (crumbLink.parentElement.querySelector('.cgp-crumb-toggle:not(.cgp-find-student)')) return;
+    crumbLink.classList.add('cgp-crumb-link');
     // Keep this crumb's whole line - the course name plus Switch course and
     // Find student, both added next to it - from wrapping (see the CSS for
     // why that wrap is what actually misaligns the two controls).
     var crumbItem = crumbLink.closest('li') || crumbLink.parentElement;
-    if (crumbItem) crumbItem.classList.add('cgp-crumb-item');
+    if (crumbLink.parentElement) crumbLink.parentElement.classList.add('cgp-crumb-item');
+    if (crumbItem) {
+      crumbItem.classList.add('cgp-crumb-item');
+      if (crumbItem.style && crumbItem.style.maxWidth) crumbItem.style.maxWidth = 'none';
+    }
+
+    // InstUI TruncateText sets an inline width on its inner span equal to the
+    // pre-measured container width, creating an empty gap before the button.
+    var truncateSpan = crumbLink.querySelector && crumbLink.querySelector('[data-cid="TruncateText"] > span, span[style*="width"]');
+    if (truncateSpan && truncateSpan.style && truncateSpan.style.width) {
+      truncateSpan.style.width = 'auto';
+    }
 
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'cgp-crumb-toggle';
     btn.setAttribute('aria-haspopup', 'listbox');
     btn.setAttribute('aria-expanded', 'false');
-    btn.setAttribute('aria-label', 'Switch course gradebook');
-    btn.title = 'Switch course gradebook';
+    var labelText = this.isGradebookPage ? 'Switch course gradebook' : 'Switch course';
+    btn.setAttribute('aria-label', labelText);
+    btn.title = labelText;
     // A bare caret next to the breadcrumb was easy to miss entirely. A small
     // labeled, pill-shaped button reads as "a control" at a glance instead of
     // looking like part of the page furniture.
@@ -77,10 +100,10 @@
   P.findCrumbLink = function () {
     var links = document.querySelectorAll('#breadcrumbs a[href*="/courses/"], .ic-app-crumbs a[href*="/courses/"]');
     for (var i = 0; i < links.length; i++) {
-      var href = links[i].getAttribute('href') || '';
+      var href = (links[i].getAttribute('href') || '').split(/[?#]/)[0];
       if (/\/courses\/\d+\/?$/.test(href)) return links[i];
     }
-    return links.length ? links[links.length - 1] : null;
+    return links.length ? links[0] : null;
   };
 
   P.isOpen = function () { return !!(this.menu && this.menu.classList.contains('cgp-course-menu--on')); };

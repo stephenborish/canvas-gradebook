@@ -42,6 +42,15 @@ suite('cell status (what M and L must show immediately)', (test) => {
     a.eq(status({ missing: true, latePolicyStatus: null }), 'missing', 'past due, nothing handed in');
   });
 
+  test('graded submission with missing:true (e.g. turned in on paper) is not marked missing', () => {
+    a.eq(status({ score: 3, grade: '3', missing: true, latePolicyStatus: null }), 'none', 'graded paper submission is none');
+    a.eq(status({ enteredScore: 3, grade: '3', missing: true, latePolicyStatus: null }), 'none', 'enteredScore paper submission is none');
+    a.eq(status({ score: 3, grade: '3', missing: true, late: true, latePolicyStatus: null }), 'late', 'late paper submission is late');
+    a.eq(status({ missing: true, latePolicyStatus: 'none' }), 'none', 'explicit none status clears missing');
+    a.eq(status({ score: 0, missing: true, latePolicyStatus: 'missing' }), 'missing', 'explicit missing remains missing');
+  });
+
+
   test('a status Canvas owns and we do not is reported as-is, never as "none"', () => {
     a.eq(status({ latePolicyStatus: 'extended' }), 'extended');
     a.eq(CGP.gradeOps.PAINTED_STATUSES.indexOf('extended'), -1, 'and it is not one we paint');

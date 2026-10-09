@@ -198,4 +198,32 @@ suite('what the teacher is told after posting a column', (test) => {
     a.ok(model.reloadOpts.length >= 3, 'more than one re-read happened in this run');
     model.reloadOpts.forEach((opts) => a.eq(opts && opts.includeComments, false));
   });
+
+  test('a post with a button removes the button and updates header classes immediately', async () => {
+    said.length = 0;
+    const model = fakeModel([[true, true], [false, false]]);
+    let removed = false;
+    const parent = {
+      classList: {
+        classes: new Set(['cgp-has-post']),
+        add(c) { this.classes.add(c); },
+        remove(c) { this.classes.delete(c); }
+      }
+    };
+    const btn = {
+      parentElement: parent,
+      isConnected: true,
+      textContent: 'Post 2',
+      disabled: false,
+      classList: {
+        classes: new Set(),
+        toggle(c, v) { if (v) this.classes.add(c); else this.classes.delete(c); }
+      },
+      remove() { removed = true; this.isConnected = false; }
+    };
+    await controller(model, okApi()).post('99', btn);
+    a.eq(removed, true, 'button is removed from DOM');
+    a.eq(parent.classList.classes.has('cgp-has-post'), false, 'cgp-has-post is cleared');
+    a.eq(parent.classList.classes.has('cgp-posted'), true, 'cgp-posted is marked');
+  });
 });

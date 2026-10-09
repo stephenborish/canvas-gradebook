@@ -139,7 +139,20 @@
     if (!btn || !btn.isConnected) return;
     btn.disabled = !!busy;
     btn.classList.toggle('cgp-post--busy', !!busy);
-    if (text) btn.textContent = text;
+    if (text) {
+      btn.textContent = text;
+    } else if (!busy) {
+      var id = btn.dataset && btn.dataset.cgpAssignment;
+      if (id) {
+        var count = this.model.pendingPosts(id).length;
+        if (count > 0) {
+          var copy = this.label(count, this.model.assignment(id));
+          btn.textContent = copy.text;
+          btn.setAttribute('title', copy.title);
+          btn.setAttribute('aria-label', copy.title);
+        }
+      }
+    }
   };
 
   /* Re-read the column until Canvas's own view of it catches up.
@@ -282,15 +295,30 @@
           var left = settled.left;
           var name = (assignment && assignment.name) || 'this column';
           if (settled.known && !left) {
+            self.markPostedLocally(id, pendingIds);
             CGP.ui.toast(count + (count === 1 ? ' grade' : ' grades') + ' posted to students');
             CGP.diag.bump('post.completed', count);
+            if (btn && btn.parentElement) {
+              btn.parentElement.classList.add('cgp-posted');
+              btn.parentElement.classList.remove('cgp-has-post');
+            }
+            if (btn && btn.isConnected) btn.remove();
             return;
           }
           if (settled.known && left < count) {
             // Canvas posted some but not all - most often ungraded submissions,
             // which "post graded only" deliberately leaves hidden.
-            CGP.ui.toast((count - left) + ' of ' + count + ' grades posted in ' + name);
-            CGP.diag.bump('post.completed', count - left);
+            var postedCount = count - left;
+            var postedIds = pendingIds.slice(0, postedCount);
+            self.markPostedLocally(id, postedIds);
+            CGP.ui.toast(postedCount + ' of ' + count + ' grades posted in ' + name);
+            CGP.diag.bump('post.completed', postedCount);
+            var copy = self.label(left, self.model.assignment(id));
+            if (btn && btn.isConnected) {
+              btn.textContent = copy.text;
+              btn.setAttribute('title', copy.title);
+              btn.setAttribute('aria-label', copy.title);
+            }
             return;
           }
           // Nothing in the column looks different, even after re-reading it
@@ -329,6 +357,11 @@
             // We stopped waiting before Canvas finished.
             CGP.ui.toast('Canvas is still posting ' + name + ' in the background — the grid will update on its own.');
             CGP.diag.bump('post.stillRunning', count);
+            if (btn && btn.parentElement) {
+              btn.parentElement.classList.add('cgp-posted');
+              btn.parentElement.classList.remove('cgp-has-post');
+            }
+            if (btn && btn.isConnected) btn.remove();
             self.recheckLater(id);
           }
         }, function (err) {

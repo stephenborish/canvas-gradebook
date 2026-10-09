@@ -160,7 +160,8 @@
       // applied can be toggled off. Canvas reports missing: true for anything
       // merely past due and unsubmitted, and a first M on such a cell must
       // still APPLY the status rather than flip it off.
-      wasExplicitMissing: !!(currentRec && currentRec.latePolicyStatus === 'missing')
+      wasExplicitMissing: !!(currentRec && currentRec.latePolicyStatus === 'missing'),
+      wasMissing: !!(currentRec && (currentRec.missing || currentRec.latePolicyStatus === 'missing'))
     });
     if (!op) { result.skipped++; return Promise.resolve(); }
 

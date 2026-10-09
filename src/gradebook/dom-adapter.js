@@ -905,6 +905,19 @@
     // cell's row somehow was not found) keeps every other call site that
     // still legitimately needs the cache (off-screen rows) unaffected.
     var live = this.studentIdFromRow(row);
+    if (!live && top !== null) {
+      var canvases = this.canvases();
+      var frozen = canvases && canvases[0];
+      if (frozen && frozen !== (row && row.parentElement)) {
+        var frozenRows = frozen.querySelectorAll(':scope > .slick-row');
+        for (var fri = 0; fri < frozenRows.length; fri++) {
+          if (this.rowTop(frozenRows[fri]) === top) {
+            live = this.studentIdFromRow(frozenRows[fri]);
+            if (live) break;
+          }
+        }
+      }
+    }
     var studentId = live || (top !== null && this.topToStudent.get(top)) ||
       (rowIndex !== null ? this.studentAt(rowIndex) : null) || null;
     // This live read bypasses refreshRows()'s own Test Student exclusion (by

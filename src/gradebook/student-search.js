@@ -87,21 +87,31 @@
    * breadcrumb reads course -> switch course -> find student; otherwise
    * straight after the course crumb itself. */
   P.findAnchor = function () {
-    var existing = document.querySelector('#breadcrumbs .cgp-crumb-toggle, .ic-app-crumbs .cgp-crumb-toggle');
+    var existing = document.querySelector('#breadcrumbs .cgp-crumb-toggle:not(.cgp-find-student), .ic-app-crumbs .cgp-crumb-toggle:not(.cgp-find-student)');
     if (existing) return existing;
     var links = document.querySelectorAll('#breadcrumbs a[href*="/courses/"], .ic-app-crumbs a[href*="/courses/"]');
     for (var i = 0; i < links.length; i++) {
-      if (/\/courses\/\d+\/?$/.test(links[i].getAttribute('href') || '')) {
+      var href = (links[i].getAttribute('href') || '').split(/[?#]/)[0];
+      if (/\/courses\/\d+\/?$/.test(href)) {
         // Course switcher is off, so nothing has tagged this crumb yet - do
         // it here instead. See course-switcher.js for why: without it, this
         // button can wrap onto its own line, out of alignment with the
         // course name it sits beside.
+        links[i].classList.add('cgp-crumb-link');
         var li = links[i].closest('li') || links[i].parentElement;
-        if (li) li.classList.add('cgp-crumb-item');
+        if (links[i].parentElement) links[i].parentElement.classList.add('cgp-crumb-item');
+        if (li) {
+          li.classList.add('cgp-crumb-item');
+          if (li.style && li.style.maxWidth) li.style.maxWidth = 'none';
+        }
+        var truncateSpan = links[i].querySelector && links[i].querySelector('[data-cid="TruncateText"] > span, span[style*="width"]');
+        if (truncateSpan && truncateSpan.style && truncateSpan.style.width) {
+          truncateSpan.style.width = 'auto';
+        }
         return links[i];
       }
     }
-    return links.length ? links[links.length - 1] : null;
+    return links.length ? links[0] : null;
   };
 
   P.isOpen = function () { return !!(this.menu && this.menu.classList.contains('cgp-course-menu--on')); };

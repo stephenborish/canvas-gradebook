@@ -339,7 +339,7 @@
     function attempt(n) {
       return self.progress(progressId).then(function (p) {
         var state = (p && p.workflow_state) || '';
-        if (state === 'completed') return { done: true, progress: p };
+        if (state === 'completed' || state === 'complete' || (p && p.completion === 100)) return { done: true, progress: p };
         if (state === 'failed') {
           throw new CanvasApiError('Canvas could not finish posting these grades', {
             message: (p && p.message) || null
@@ -347,6 +347,8 @@
         }
         if (n + 1 >= maxTries) return { done: false, progress: p };
         return util.sleep(Math.min(2000, 300 + n * 200)).then(function () { return attempt(n + 1); });
+      }, function () {
+        return { done: false, progress: null };
       });
     }
     return attempt(0);

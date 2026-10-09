@@ -58,14 +58,11 @@
    * Canvas API form parameters + the optimistic local patch for a parsed token.
    * Returns null for SKIP / INVALID (callers must not write those).
    *
-   * Missing and Late are independent, instant status flags, each a toggle in
-   * exactly the same shape: never touching the grade in either direction, and
-   * never touching each other. Entering an ordinary grade (NUMBER / PERCENT /
-   * LETTER) never changes either status - a teacher who wants Missing or Late
-   * off presses M or L themselves. That is a deliberate choice: Canvas's own
-   * behaviour of quietly flipping a manually-applied Missing status to Late
-   * the moment a grade showed up was a surprise, not a convenience, so nothing
-   * here does that automatically any more.
+   * Missing and Late are independent, instant status flags. Entering an ordinary
+   * grade (NUMBER / PERCENT / LETTER) automatically removes Missing from the cell,
+   * setting missing to false and clearing late_policy_status (or keeping Late if the
+   * submission was late), so teachers never have to manually toggle M off or refresh.
+   * Late status is preserved when grading a late submission.
    *
    * Every patch that changes a status also carries latePolicyStatus, not just
    * the derived missing/late booleans: that raw field is what decides the next
@@ -141,18 +138,34 @@
           display: '\u2013'
         };
       case KIND.NUMBER: {
-        // No late_policy_status, ever: a grade never touches Missing or Late
-        // in either direction. A plain 0 is an ordinary zero, and a Missing or
-        // Late submission keeps that status after grading until the teacher
-        // presses M or L themselves to remove it.
         var numberForm = { 'submission[posted_grade]': String(parsed.value) };
-        var numberPatch = { score: Number(parsed.value), enteredScore: Number(parsed.value), grade: String(parsed.value), excused: false, workflowState: 'graded' };
+        if (opts.wasExplicitMissing || opts.wasMissing) {
+          numberForm['submission[late_policy_status]'] = opts.wasLate ? 'late' : 'none';
+        }
+        var numberPatch = {
+          score: Number(parsed.value),
+          enteredScore: Number(parsed.value),
+          grade: String(parsed.value),
+          excused: false,
+          missing: false,
+          latePolicyStatus: opts.wasLate ? 'late' : null,
+          workflowState: 'graded'
+        };
         return { kind: parsed.kind, summary: String(parsed.value), form: numberForm, patch: numberPatch, display: String(parsed.value) };
       }
       case KIND.PERCENT:
       case KIND.LETTER: {
         var gradeForm = { 'submission[posted_grade]': String(parsed.value) };
-        var gradePatch = { grade: String(parsed.value), excused: false, workflowState: 'graded' };
+        if (opts.wasExplicitMissing || opts.wasMissing) {
+          gradeForm['submission[late_policy_status]'] = opts.wasLate ? 'late' : 'none';
+        }
+        var gradePatch = {
+          grade: String(parsed.value),
+          excused: false,
+          missing: false,
+          latePolicyStatus: opts.wasLate ? 'late' : null,
+          workflowState: 'graded'
+        };
         return { kind: parsed.kind, summary: String(parsed.value), form: gradeForm, patch: gradePatch, display: String(parsed.value) };
       }
       default:
@@ -186,8 +199,20 @@
     if (!rec) return null;
     var explicit = rec.latePolicyStatus || null;
     if (rec.excused) return 'excused';
-    if (explicit && explicit !== 'none' && explicit !== 'missing' && explicit !== 'late') return explicit;
-    if (rec.missing || explicit === 'missing') return 'missing';
+    if (explicit === 'none') return 'none';
+    if (explicit && explicit !== 'missing' && explicit !== 'late') return explicit;
+    if (explicit === 'missing') return 'missing';
+    if (rec.missing) {
+      // If there is an entered score/grade and the teacher has not explicitly marked it missing,
+      // it is not missing (the student submitted work, e.g. on paper).
+      var hasScore = (rec.score !== null && rec.score !== undefined) ||
+                     (rec.enteredScore !== null && rec.enteredScore !== undefined) ||
+                     (rec.grade !== null && rec.grade !== undefined && rec.grade !== '' && rec.grade !== '-');
+      if (hasScore) {
+        return (rec.late || explicit === 'late') ? 'late' : 'none';
+      }
+      return 'missing';
+    }
     if (rec.late || explicit === 'late') return 'late';
     return 'none';
   }

@@ -1635,18 +1635,107 @@ html.cgp-on .cgp-preview__hint {
 
 /* ------------------------------------------------------- breadcrumb crumb */
 
-/* Canvas's breadcrumb list item wraps its own inline content - the course
- * link plus whatever this extension adds after it (Switch course, Find
- * student) - once that combined text no longer fits the item's own line box.
- * The visible symptom is "Switch course" staying put on the first line while
- * "Find student" drops to a second line of its own, out of alignment with
- * everything above it, while the NEXT breadcrumb crumb (e.g. "Grades") flows
- * up to share that same second line - normal inline wrapping, not a layout
- * bug in either button. Keeping the crumb's own content on one line, even if
- * that occasionally runs a little past where Canvas expected this crumb to
- * end, keeps both added controls glued to the course name they sit beside. */
-html.cgp-on .cgp-crumb-item {
+/* Canvas's breadcrumb bar and list items must stay on a single line.
+ * Both extension controls ("Switch course" and "Find student") sit beside
+ * the course name crumb. We enforce inline-flex / nowrap across the breadcrumb
+ * container, lists, items, and links so they never wrap onto separate lines. */
+html.cgp-on .ic-app-nav-toggle-and-crumbs,
+html.cgp-on #breadcrumbs,
+html.cgp-on .ic-app-crumbs,
+html.cgp-on nav[aria-label*="crumb" i] {
   white-space: nowrap !important;
+}
+
+html.cgp-on #breadcrumbs ul,
+html.cgp-on #breadcrumbs ol,
+html.cgp-on .ic-app-crumbs ul,
+html.cgp-on .ic-app-crumbs ol,
+html.cgp-on nav[aria-label*="crumb" i] ul,
+html.cgp-on nav[aria-label*="crumb" i] ol {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  white-space: nowrap !important;
+}
+
+html.cgp-on #breadcrumbs li,
+html.cgp-on .ic-app-crumbs li,
+html.cgp-on nav[aria-label*="crumb" i] li,
+html.cgp-on .cgp-crumb-item {
+  display: inline-flex !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+  white-space: nowrap !important;
+  float: none !important;
+  vertical-align: middle !important;
+}
+
+/* Modern Canvas InstUI breadcrumbs assign each <li> an inline style like `max-width: 25%`
+ * (calculated as 100 / numChildren %). On pages with 4+ crumbs (such as assignments, modules,
+ * pages, discussions), capping the course crumb at 25% forces severe truncation of the course
+ * title and causes the added "Switch course" button to overflow the <li>, crashing into and
+ * overlapping adjacent crumbs (e.g. "Assignments"). We release the 25% max-width cap on the
+ * course crumb item so it can naturally contain the course title and the toggle without overflowing. */
+html.cgp-on #breadcrumbs li.cgp-crumb-item,
+html.cgp-on .ic-app-crumbs li.cgp-crumb-item,
+html.cgp-on nav[aria-label*="crumb" i] li.cgp-crumb-item {
+  max-width: min(560px, 65vw) !important;
+  flex: 0 0 auto !important;
+  overflow: visible !important;
+}
+
+html.cgp-on span.cgp-crumb-item {
+  display: inline-flex !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+  white-space: nowrap !important;
+  width: auto !important;
+  max-width: 100% !important;
+  overflow: visible !important;
+}
+
+html.cgp-on .cgp-crumb-item > a,
+html.cgp-on .cgp-crumb-item a,
+html.cgp-on .cgp-crumb-link,
+html.cgp-on #breadcrumbs li a,
+html.cgp-on .ic-app-crumbs li a {
+  display: inline-flex !important;
+  align-items: center !important;
+  float: none !important;
+  white-space: nowrap !important;
+  vertical-align: middle !important;
+}
+
+/* Constrain the course link title itself so very long course titles truncate cleanly
+ * with an ellipsis instead of pushing subsequent breadcrumbs off-screen. */
+html.cgp-on .cgp-crumb-link {
+  max-width: min(280px, 35vw) !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  width: auto !important;
+  flex: 0 1 auto !important;
+}
+
+/* InstUI's TruncateText component measures the parent element and renders an inner
+ * `span` with an inline style `style="width: ...px"` equal to the full parent width.
+ * That created a huge empty gap between the truncated course title and the "Switch course"
+ * button inserted after the link. Forcing `width: auto` on the inner span eliminates the
+ * gap and allows the "Switch course" button to sit neatly beside the course title. */
+html.cgp-on .cgp-crumb-link [data-cid="TruncateText"],
+html.cgp-on .cgp-crumb-link [data-cid="TruncateText"] > span,
+html.cgp-on .cgp-crumb-link span[style*="width"] {
+  display: inline-block !important;
+  width: auto !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  vertical-align: bottom !important;
+}
+
+html.cgp-on .cgp-crumb-item > .cgp-crumb-toggle {
+  flex: 0 0 auto !important;
+  vertical-align: middle !important;
 }
 
 /* ------------------------------------------------------- course switcher */

@@ -49,7 +49,7 @@
       </nav>
 
       <div class="sidebar__foot">
-        <div class="sidebar__version">Version <span id="extensionVersion">1.9.2</span></div>
+        <div class="sidebar__version">Version <span id="extensionVersion">1.9.3</span></div>
         <div class="sidebar__actions">
           <button id="save" type="button" class="btn btn--primary">Save changes</button>
           <button id="reset" type="button" class="btn btn--quiet">Restore defaults</button>
@@ -226,10 +226,8 @@
           <div class="setting">
             <label class="setting__label" for="enableM"><kbd>M</kbd> marks the submission Missing instantly, and again removes it
               <span class="hint">Written to Canvas itself, so it shows as Missing everywhere &ndash; the Grade Detail
-                Tray, SpeedGrader and the student&rsquo;s own grades page. A pure toggle, exactly like <kbd>L</kbd>:
-                it never enters a grade and never touches one that is already there, in either direction. Entering a
-                grade never removes or changes Missing either &ndash; press <kbd>M</kbd> yourself when it should come
-                off.</span>
+                Tray, SpeedGrader and the student&rsquo;s own grades page. A toggle: press <kbd>M</kbd> again to remove it.
+                Entering a grade in the cell automatically removes Missing so the badge clears without needing a page refresh.</span>
             </label>
             <input id="enableM" type="checkbox" class="switch">
           </div>
