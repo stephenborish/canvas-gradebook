@@ -1,14 +1,14 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Lexend:wght@400;500;600;700&display=swap');
-
 /* Canvas Gradebook+ - gradebook styles.
  *
  * Every rule is scoped under a class this extension adds to <html>, so nothing
  * here can leak onto other Canvas pages. Colours and type follow Canvas's own
  * palette (brand #0374B5, ink #2D3B45, hairlines #C7CDD1); there is no
- * extension branding anywhere in the grid. */
+ * extension branding anywhere in the grid. No web fonts are fetched from
+ * here: Lexend / IBM Plex Sans are used only if already available, with a
+ * system stack behind them. */
 
 html.cgp-on {
-  --cgp-font: 'Lexend', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --cgp-font: 'Lexend', 'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --cgp-ink: #2d3b45;
   --cgp-ink-strong: #1a232b;
   --cgp-muted: #6b7780;
@@ -357,8 +357,11 @@ html.cgp-on:not(.cgp-hide-arrow) .slick-cell.active .cgp-sub { right: 22px; }
  * this extension's resubmission wedge sit. Stopping short of both leaves
  * their clicks alone. */
 html.cgp-on .cgp-unposted,
-html.cgp-on .slick-cell::before,
-html.cgp-on .slick-cell .Grid__GradeCell::before,
+/* Canvas's own ::before status marks are only suppressed where this
+ * extension draws its M/L badge instead; dropped / extended / resubmitted
+ * cells keep Canvas's indicator. */
+html.cgp-on .slick-cell.cgp-has-status-badge::before,
+html.cgp-on .slick-cell.cgp-has-status-badge .Grid__GradeCell::before,
 html.cgp-on .slick-cell [class*="unposted"],
 html.cgp-on .slick-cell.cgp-status-excused::before {
   display: none !important;
@@ -500,18 +503,17 @@ html.cgp-on .cgp-status-badge--late {
  * solid ring around our own badge does not reliably cover it (the icon can be
  * a different size/shape, or simply sit beside rather than fully underneath
  * our circle). Rather than guess at Canvas's icon markup, our badge replaces
- * it outright: all Canvas native status icons and start containers in assignment
- * cells are completely hidden, so there is exactly one indicator, never two
- * overlapping ones. */
-html.cgp-on .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__StartContainer,
-html.cgp-on .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Status,
-html.cgp-on .slick-cell[data-cgp-col="assignment"] [class*="icon-late"],
-html.cgp-on .slick-cell[data-cgp-col="assignment"] [class*="icon-missing"],
-html.cgp-on .slick-cell[data-cgp-col="assignment"] [class*="status-icon"],
-html.cgp-on .slick-cell[data-cgp-col="assignment"] [class*="late-icon"],
-html.cgp-on .slick-cell[data-cgp-col="assignment"] [class*="missing-icon"],
-html.cgp-on .slick-cell[data-cgp-col="assignment"] svg[class*="late"],
-html.cgp-on .slick-cell[data-cgp-col="assignment"] svg[class*="missing"],
+ * it outright - but ONLY in cells that actually carry our badge. Every other
+ * cell keeps Canvas's native icons (dropped, extended, resubmitted, ...),
+ * which are then the only indicator of that status. */
+html.cgp-on .slick-cell.cgp-has-status-badge .Grid__GradeCell__Status,
+html.cgp-on .slick-cell.cgp-has-status-badge [class*="icon-late"],
+html.cgp-on .slick-cell.cgp-has-status-badge [class*="icon-missing"],
+html.cgp-on .slick-cell.cgp-has-status-badge [class*="status-icon"],
+html.cgp-on .slick-cell.cgp-has-status-badge [class*="late-icon"],
+html.cgp-on .slick-cell.cgp-has-status-badge [class*="missing-icon"],
+html.cgp-on .slick-cell.cgp-has-status-badge svg[class*="late"],
+html.cgp-on .slick-cell.cgp-has-status-badge svg[class*="missing"],
 html.cgp-on .slick-cell.cgp-has-status-badge .Grid__GradeCell__StartContainer,
 html.cgp-on .slick-cell.cgp-status-missing .Grid__GradeCell__StartContainer,
 html.cgp-on .slick-cell.cgp-status-late .Grid__GradeCell__StartContainer {
@@ -813,7 +815,9 @@ html.cgp-frozen-total:not(.cgp-native-total-front) .slick-header-right:not(.slic
 html.cgp-frozen-total #gradebook_grid,
 html.cgp-frozen-total #content,
 html.cgp-frozen-total .ic-Layout-contentMain {
-  overflow-x: hidden !important;
+  /* clip, not hidden: clip never makes these a (script-scrollable) scroll
+   * container, so nothing can still scroll them sideways. */
+  overflow-x: clip !important;
 }
 
 /* .cgp-total-layer (frozen-total.js) is appended into the frozen pane's own
@@ -888,13 +892,15 @@ html.cgp-frozen-total .cgp-total-cell.cgp-row-hover {
 
 /* Canvas's own native Total column in the scrolling pane - visually hidden
  * so it never overlaps or peeks out, but preserves its layout width in SlickGrid
- * so assignment headers and cells remain strictly aligned 1:1. */
+ * so assignment headers and cells remain strictly aligned 1:1. Matched on the
+ * native Total only (id ending in total_grade, or the exact total_grade
+ * class) - never [id*="total"], which also hid Final Grade Override
+ * (total_grade_override) and any column whose id merely contains "total". */
 html.cgp-frozen-total-active .slick-header-column[data-cgp-col="total"],
-html.cgp-frozen-total-active .slick-header-column[id*="total_grade"],
-html.cgp-frozen-total-active .slick-header-column[id*="total"],
+html.cgp-frozen-total-active .slick-header-column[id$="total_grade"],
 html.cgp-frozen-total-active .slick-cell[data-cgp-col="total"],
-html.cgp-frozen-total-active .slick-cell[id*="total_grade"],
-html.cgp-frozen-total-active .slick-cell[class*="total_grade"] {
+html.cgp-frozen-total-active .slick-cell[id$="total_grade"],
+html.cgp-frozen-total-active .slick-cell[class~="total_grade"] {
   opacity: 0 !important;
   pointer-events: none !important;
   border-color: transparent !important;
@@ -1248,10 +1254,10 @@ html.cgp-center .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content
  * from Canvas's em-dash placeholder. */
 html.cgp-on .slick-cell[data-cgp-col="assignment"],
 html.cgp-on .slick-cell[data-cgp-col="total"],
-html.cgp-on .slick-cell[class*="total"],
+html.cgp-on .slick-cell[class~="total_grade"],
 html.cgp-on .slick-cell[data-cgp-col="assignment"] .Grid__GradeCell__Content,
 html.cgp-on .slick-cell[data-cgp-col="total"] .Grid__GradeCell__Content,
-html.cgp-on .slick-cell[class*="total"] .Grid__GradeCell__Content {
+html.cgp-on .slick-cell[class~="total_grade"] .Grid__GradeCell__Content {
   font-size: var(--cgp-grade-font, 16px) !important;
   font-weight: 600 !important;
   color: var(--cgp-ink-strong, #1a232b) !important;
@@ -1263,13 +1269,13 @@ html.cgp-on .slick-cell[class*="total"] .Grid__GradeCell__Content {
  * against the cell's. The markers this extension paints keep their own sizes and colors. */
 html.cgp-on .slick-cell[data-cgp-col="assignment"]:not(:has(input:not([type="hidden"]))) *:not(.cgp-marks):not(.cgp-marks *),
 html.cgp-on .slick-cell[data-cgp-col="total"]:not(:has(input:not([type="hidden"]))) *:not(.cgp-marks):not(.cgp-marks *),
-html.cgp-on .slick-cell[class*="total"]:not(:has(input:not([type="hidden"]))) *:not(.cgp-marks):not(.cgp-marks *) {
+html.cgp-on .slick-cell[class~="total_grade"]:not(:has(input:not([type="hidden"]))) *:not(.cgp-marks):not(.cgp-marks *) {
   font-size: inherit !important;
   color: var(--cgp-ink-strong, #1a232b) !important;
   font-weight: 600 !important;
 }
 html.cgp-on:not(.cgp-frozen-total-active) .slick-cell[data-cgp-col="total"],
-html.cgp-on:not(.cgp-frozen-total-active) .slick-cell[class*="total"] {
+html.cgp-on:not(.cgp-frozen-total-active) .slick-cell[class~="total_grade"] {
   font-weight: 700 !important;
   color: var(--cgp-ink-strong) !important;
   min-width: 84px !important;
@@ -1282,17 +1288,17 @@ html.cgp-on .slick-cell[data-cgp-col="total"] svg,
 html.cgp-on .slick-cell[data-cgp-col="total"] [class*="unposted"],
 html.cgp-on .slick-cell[data-cgp-col="total"] [class*="eye"],
 html.cgp-on .slick-cell[data-cgp-col="total"] [class*="icon"],
-html.cgp-on .slick-cell[class*="total"] i,
-html.cgp-on .slick-cell[class*="total"] svg,
-html.cgp-on .slick-cell[class*="total"] [class*="unposted"],
-html.cgp-on .slick-cell[class*="total"] [class*="eye"],
-html.cgp-on .slick-cell[class*="total"] [class*="icon"] {
+html.cgp-on .slick-cell[class~="total_grade"] i,
+html.cgp-on .slick-cell[class~="total_grade"] svg,
+html.cgp-on .slick-cell[class~="total_grade"] [class*="unposted"],
+html.cgp-on .slick-cell[class~="total_grade"] [class*="eye"],
+html.cgp-on .slick-cell[class~="total_grade"] [class*="icon"] {
   display: none !important;
 }
 html.cgp-on .slick-cell[data-cgp-col="total"] .Grid__GradeCell,
 html.cgp-on .slick-cell[data-cgp-col="total"] .Grid__GradeCell__Content,
-html.cgp-on .slick-cell[class*="total"] .Grid__GradeCell,
-html.cgp-on .slick-cell[class*="total"] .Grid__GradeCell__Content {
+html.cgp-on .slick-cell[class~="total_grade"] .Grid__GradeCell,
+html.cgp-on .slick-cell[class~="total_grade"] .Grid__GradeCell__Content {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -1468,13 +1474,11 @@ html.cgp-on .slick-header-column[data-cgp-col="student"] .slick-column-name {
   color: var(--cgp-ink-strong);
 }
 html.cgp-on:not(.cgp-frozen-total-active) .slick-header-column[data-cgp-col="total"],
-html.cgp-on:not(.cgp-frozen-total-active) .slick-header-column[id*="total_grade"],
-html.cgp-on:not(.cgp-frozen-total-active) .slick-header-column[id*="total"] {
+html.cgp-on:not(.cgp-frozen-total-active) .slick-header-column[id$="total_grade"] {
   min-width: 84px !important;
 }
 html.cgp-on .slick-header-column[data-cgp-col="total"] .slick-column-name,
-html.cgp-on .slick-header-column[id*="total_grade"] .slick-column-name,
-html.cgp-on .slick-header-column[id*="total"] .slick-column-name {
+html.cgp-on .slick-header-column[id$="total_grade"] .slick-column-name {
   font-size: 12px !important;
   font-weight: 700 !important;
   letter-spacing: 0.2px !important;

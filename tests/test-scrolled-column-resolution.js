@@ -240,7 +240,7 @@ suite('indicators: wantedGrade safety guard against empty/ungraded Canvas cells'
     a.eq(cell.querySelector('.cgp-val'), null, 'no synthetic cgp-val is injected into empty cell');
   });
 
-  test('injects wantedGrade when cell contains Canvas native submission icon (replacing icon with score)', () => {
+  test('does not overlay a cell showing Canvas\'s native submission icon when there is no local write', () => {
     const CGP = loadGradebookDom();
     const FakeElement = domshim.FakeElement;
 
@@ -272,10 +272,11 @@ suite('indicators: wantedGrade safety guard against empty/ungraded Canvas cells'
     };
 
     controller.paintCell(info);
-    a.ok(cell.classList.contains('cgp-override'), 'cgp-override IS added when native icon is present');
-    const val = cell.querySelector('.cgp-val');
-    a.ok(val !== null, 'synthetic cgp-val is injected');
-    a.eq(val.textContent, '10', 'wantedGrade score is displayed');
+    // Canvas's own rendering is the truth whenever this extension has not
+    // written the cell itself (it already applies late penalties, letter
+    // grading types and "EX").
+    a.ok(!cell.classList.contains('cgp-override'), 'no cgp-override without a local write');
+    a.eq(cell.querySelector('.cgp-val'), null, 'no synthetic cgp-val without a local write');
   });
 
   test('injects wantedGrade when cell has an optimistic local write in flight', () => {

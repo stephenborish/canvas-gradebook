@@ -152,7 +152,7 @@ suite('grid cell mapping', (test) => {
     a.deep(CGP.gridMap.classifyColumnId('assignment_567'), { type: 'assignment', assignmentId: '567' });
     a.deep(CGP.gridMap.classifyColumnId('assignment_group_42'), { type: 'group', groupId: '42' });
     a.eq(CGP.gridMap.classifyColumnId('total_grade').type, 'total');
-    a.eq(CGP.gridMap.classifyColumnId('total_grade_override').type, 'total');
+    a.eq(CGP.gridMap.classifyColumnId('total_grade_override').type, 'override', 'Final Grade Override is its own column type');
     a.eq(CGP.gridMap.classifyColumnId('student').type, 'student');
     a.eq(CGP.gridMap.classifyColumnId('student_name').type, 'student');
     a.eq(CGP.gridMap.classifyColumnId('custom_col_3').type, 'custom');

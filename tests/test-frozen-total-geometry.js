@@ -167,8 +167,8 @@ suite('frozen-total: pane geometry preserves the grid\'s total footprint', (test
 
     ctrl.start();
 
-    a.eq(grid.root.style.getPropertyValue('overflow-x'), 'hidden', 'the grid root itself is clipped');
-    a.eq(grid.outerWrap.style.getPropertyValue('overflow-x'), 'hidden', 'an ancestor above the grid root is clipped too');
+    a.eq(grid.root.style.getPropertyValue('overflow-x'), 'clip', 'the grid root itself is clipped (clip: no scroll container)');
+    a.eq(grid.outerWrap.style.getPropertyValue('overflow-x'), 'clip', 'an ancestor above the grid root is clipped too');
     a.eq(grid.viewportRight.style.getPropertyValue('overflow-x'), '',
       'the one pane that is SUPPOSED to keep its own horizontal scroll is left untouched');
   });

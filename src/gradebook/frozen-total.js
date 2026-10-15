@@ -77,6 +77,9 @@
 
   P.stop = function () {
     this.enabled = false;
+    this._standingDown = false;
+    this._standDowns = 0;
+    this._failStreak = 0;
     this.restorePaneGeometry();
     document.documentElement.classList.remove('cgp-frozen-total');
     document.documentElement.classList.remove('cgp-native-total-front');
@@ -141,12 +144,27 @@
     for (var i = 0; i < 12 && node && node !== document.body && node !== document.documentElement; i++) {
       if (node.id === 'application' || node.id === 'wrapper') break;
       if (node !== rightViewport && !node.style.getPropertyValue('overflow-x')) {
-        node.style.setProperty('overflow-x', 'hidden', 'important');
+        // clip, not hidden: hidden still makes the node a scroll container
+        // (scrollable by script / focus / scrollIntoView); clip never does.
+        node.style.setProperty('overflow-x', 'clip', 'important');
         out.push(node);
       }
       node = node.parentElement;
     }
     this._clampedAncestors = out;
+    this._clampedRoot = root;
+  };
+
+  /* Canvas can replace the grid root (or an ancestor) wholesale; the clamp
+   * then sits on detached nodes and protects nothing. Re-applied on paint. */
+  P.ensureAncestorClamp = function () {
+    var root = this.adapter.gridRoot();
+    if (!root) return;
+    var intact = this._clampedRoot === root && root.isConnected &&
+      this._clampedAncestors.every(function (n) { return n && n.isConnected; });
+    if (intact) return;
+    this.restoreAncestorOverflow();
+    this.clampAncestorOverflow();
   };
 
   P.restoreAncestorOverflow = function () {
@@ -154,6 +172,7 @@
       if (node && node.isConnected) node.style.removeProperty('overflow-x');
     });
     this._clampedAncestors = [];
+    this._clampedRoot = null;
   };
 
   /* Set every pane's left/width in real measured pixels rather than trusting
@@ -240,6 +259,21 @@
     if (this.layer) { this.layer.remove(); this.layer = null; }
     if (this.header) { this.header.remove(); this.header = null; }
     this.cellPool.clear();
+  };
+
+  /* A widen that cannot be confirmed must leave nothing behind: no overlay,
+   * no pinned pane geometry and no cgp-frozen-total widening CSS (which
+   * would otherwise leave an empty Total-sized gap beside the names). Then
+   * back off - 2s, 4s, ... up to 30s - before probing again from paint(). */
+  P.standDown = function () {
+    this.teardownDrawn();
+    this.restorePaneGeometry();
+    this.restoreAncestorOverflow();
+    document.documentElement.classList.remove('cgp-frozen-total');
+    document.documentElement.classList.remove('cgp-frozen-total-active');
+    this._standDowns = (this._standDowns || 0) + 1;
+    this._probeAt = Date.now() + Math.min(30000, 2000 * Math.pow(2, this._standDowns - 1));
+    this._standingDown = true;
   };
 
   /* Confirm the CSS pane-widening this whole feature depends on actually took
@@ -341,6 +375,15 @@
       this.start();
       if (!this.enabled) return;
     }
+    if (this._standingDown) {
+      // Backed off after a failed widen: leave Canvas's own geometry alone
+      // until the next probe is due, instead of re-pinning every paint.
+      if (Date.now() < this._probeAt) return;
+      this._standingDown = false;
+      document.documentElement.classList.add('cgp-frozen-total');
+      this._failStreak = 2;   // a probe gets one chance before backing off again
+    }
+    this.ensureAncestorClamp();
     this.measure();
 
     if (!this.verifyWidened()) {
@@ -350,16 +393,17 @@
       // standing down: draw nothing, and leave Canvas's own native Total
       // column alone rather than hiding it out from under a Total that turned
       // out not to actually be there.
-      if (this._failStreak >= 3 && this.working) {
-        this.teardownDrawn();
+      if (this._failStreak >= 3) {
         if (!this._notifiedBroken) {
           this._notifiedBroken = true;
           CGP.diag.warn('frozenTotal.widenNotConfirmed', { natural: this.naturalWidth, width: this.width });
         }
+        this.standDown();
       }
       return;
     }
     this._failStreak = 0;
+    this._standDowns = 0;
     this._notifiedBroken = false;
     if (!this.working) {
       this.working = true;

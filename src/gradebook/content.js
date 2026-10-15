@@ -73,6 +73,9 @@
       if (env.courseId) CGP.diag.set('envCourseId', String(env.courseId));
       if (env.currentGradingPeriodId !== undefined) model.setGradingPeriod(env.currentGradingPeriodId);
     });
+    // The bridge runs from document_start and may have posted before this
+    // listener existed; ask it for the current ENV now that we're listening.
+    try { window.postMessage({ source: 'cgp-env-request' }, location.origin); } catch (e) { /* ignore */ }
 
     var layout = new CGP.CompactLayoutController({ adapter: adapter, settings: settings });
     layout.start();
@@ -356,6 +359,9 @@
         // react to - Canvas rebuilding the header row is what leaves column
         // widths at their un-narrowed defaults again.
         if (headerChanged) {
+          // The header map is reused within a paint pass; a header mutation
+          // is exactly when it must be rebuilt.
+          if (typeof adapter.invalidateColumns === 'function') adapter.invalidateColumns();
           _reconcileAttempts = 0;
           reconcileColumns();
         }
