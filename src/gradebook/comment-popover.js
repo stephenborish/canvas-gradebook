@@ -4,7 +4,9 @@
  * existing thread, instructor comments distinguished from student replies, and
  * a reply box that writes through the Canvas API. No modal, no side panel, no
  * navigation away from the gradebook. It closes on Escape, on an outside click
- * and when the grid scrolls, so it never becomes persistent furniture.
+ * and when the grid scrolls (unless a reply is half-typed), so it never
+ * becomes persistent furniture; unsent reply text is kept per cell for the
+ * life of the page, so closing it never loses what was typed.
  *
  * Hovering the bubble (without clicking) shows a smaller preview of the most
  * recent comment instead - a fast "what did I say here" glance that never
@@ -35,6 +37,31 @@
     this._bound = false;
     this._previewInfo = null;
     this._previewHideTimer = null;
+    // Bumped by every open()/close(). A save captures it when it starts, so a
+    // slow save that resolves after the teacher has moved on to another
+    // bubble can tell, and must not re-render THAT popover with this
+    // student's thread (or wire its Save button to this student).
+    this._seq = 0;
+    // Unsent reply text, keyed "assignmentId:userId", for the life of the
+    // page. The popover closes on outside clicks, Escape, resize and opening
+    // another bubble; none of those should cost the teacher what they typed.
+    this.drafts = Object.create(null);
+    // Keys with a save currently in flight, so reopening the same bubble
+    // mid-save cannot post the same text a second time.
+    this._saving = Object.create(null);
+    this._currentInfo = null;
+  }
+
+  function draftKey(assignmentId, userId) { return String(assignmentId) + ':' + String(userId); }
+
+  /* Canvas/network failures carry a status (or the network flag) and get the
+   * shared wording; anything else is a refusal from this extension itself
+   * (an anonymous/moderated assignment) whose own message is the reason. */
+  function failureReason(err) {
+    if (err && (err.status || err.network)) {
+      return CGP.util.describeApiError(err, { fallback: 'Canvas rejected that comment' });
+    }
+    return (err && err.message) ? err.message : 'Canvas rejected that comment.';
   }
 
   var P = CommentPopoverController.prototype;
@@ -66,14 +93,39 @@
       if (e.key === 'Escape') { e.stopPropagation(); self.close(); }
     }, true);
     this.adapter.viewports().forEach(function (vp) {
-      vp.addEventListener('scroll', function () { if (self.current) self.close(); self.hidePreview(); }, { passive: true });
+      vp.addEventListener('scroll', function () {
+        // A half-typed reply keeps the popover where it is rather than
+        // vanishing under the teacher's hands on a stray wheel nudge.
+        if (self.current && !self.hasUnsavedText()) self.close();
+        self.hidePreview();
+      }, { passive: true });
     });
     window.addEventListener('resize', function () { if (self.current) self.close(); self.hidePreview(); });
   };
 
   P.close = function () {
+    this._seq++;
     this.current = null;
+    this._currentInfo = null;
     if (this.el) this.el.classList.remove('cgp-pop--on');
+  };
+
+  P.hasUnsavedText = function () {
+    var input = this.el && this.el.querySelector('.cgp-pop__input');
+    return !!(input && String(input.value || '').trim());
+  };
+
+  P.isShowing = function (assignmentId, userId) {
+    return !!(this.current && String(this.current.assignmentId) === String(assignmentId) &&
+      String(this.current.userId) === String(userId));
+  };
+
+  P.renderCurrent = function () {
+    var info = this._currentInfo;
+    if (!info || !this.el) return;
+    var rec = this.model.cell(info.assignmentId, info.studentId);
+    this.el.innerHTML = this.render(rec, info);
+    this.wire(rec, info);
   };
 
   P.open = function (info) {
@@ -81,7 +133,9 @@
     var rec = this.model.cell(info.assignmentId, info.studentId);
     if (!rec) return;
     this.hidePreview();
+    this._seq++;
     this.current = { assignmentId: info.assignmentId, userId: info.studentId };
+    this._currentInfo = info;
     var el = this.ensureEl();
     el.innerHTML = this.render(rec, info);
     el.classList.add('cgp-pop--on');
@@ -145,49 +199,92 @@
     var save = this.el.querySelector('.cgp-pop__save');
     if (!input || !save) return;
 
+    var key = draftKey(info.assignmentId, info.studentId);
+    if (self.drafts[key]) input.value = self.drafts[key];
+    function remember() {
+      if (String(input.value || '').trim()) self.drafts[key] = input.value;
+      else delete self.drafts[key];
+    }
+    input.addEventListener('input', remember);
+
+    // Focus stays in the textarea while saving, so a second Ctrl/Cmd+Enter
+    // (or a held-down key) would otherwise post the same comment twice.
+    var inFlight = false;
+    function setSaving(on) {
+      inFlight = on;
+      input.readOnly = on;
+      save.disabled = on;
+      save.textContent = on ? 'Saving\u2026' : 'Save comment';
+    }
+    // Reopened while this same bubble's save is still in flight.
+    if (self._saving[key]) setSaving(true);
+
     input.addEventListener('keydown', function (e) {
       e.stopPropagation();
       if (e.key === 'Tab' && !e.shiftKey) {
+        // Only an actual expansion keeps Tab: "/word" with no matching
+        // snippet (a URL, "and/or") must still move focus as usual.
         var snippets = (self.settings && self.settings.values && self.settings.values.snippets) || [];
         var out = CGP.snippets && CGP.snippets.expand(input.value, input.selectionStart, snippets);
         if (out) {
           e.preventDefault();
           input.value = out.text;
           input.setSelectionRange(out.caret, out.caret);
-          return;
-        }
-        var hit = CGP.snippets && CGP.snippets.findTrigger(input.value, input.selectionStart);
-        if (hit) {
-          e.preventDefault();
+          remember();
           return;
         }
       }
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); }
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        if (!e.repeat) submit();
+      }
     }, false);
     save.addEventListener('click', submit);
 
     function submit() {
+      if (inFlight || self._saving[key]) return;
       var text = String(input.value || '').trim();
       if (!text) return;
-      save.disabled = true;
-      save.textContent = 'Saving\u2026';
-      self.writer.addComment(info.assignmentId, info.studentId, text).then(function () {
-        input.value = '';
-        var fresh = self.model.cell(info.assignmentId, info.studentId);
-        self.el.innerHTML = self.render(fresh, info);
-        self.wire(fresh, info);
+      var seq = self._seq;
+      var userId = info.studentId;
+      self._saving[key] = true;
+      setSaving(true);
+      // Still the same open of the same student's popover: its DOM is ours.
+      function stillHere() { return self._seq === seq && self.isShowing(info.assignmentId, userId); }
+      function studentName() {
+        var s = self.model.student(userId);
+        return (s && s.name) || 'that student';
+      }
+      self.writer.addComment(info.assignmentId, userId, text).then(function () {
+        delete self._saving[key];
+        delete self.drafts[key];
         if (self.requestPaint) self.requestPaint();
+        if (stillHere()) {
+          input.value = '';
+          self.renderCurrent();
+          return;
+        }
+        // The popover has moved on: never render this student's thread into
+        // whatever it shows now - just say where the comment went.
+        CGP.ui.toast('Comment saved for ' + studentName());
+        // Reopened on this same student mid-save: refresh it so it shows the
+        // new comment and an editable box again.
+        if (self.isShowing(info.assignmentId, userId)) self.renderCurrent();
       }, function (err) {
-        save.disabled = false;
-        save.textContent = 'Save comment';
-        // addComment can now refuse before ever reaching Canvas (an
+        delete self._saving[key];
+        // addComment can refuse before ever reaching Canvas (an
         // anonymous/moderated assignment) as well as have Canvas itself
-        // reject it - err.message carries the real reason either way, so
-        // show it instead of always blaming Canvas for a refusal that may
-        // have been this extension's own.
-        var reason = (err && err.message) ? err.message
-          : ('Canvas rejected that comment' + (err && err.status ? ' (' + err.status + ')' : '') + '.');
-        CGP.ui.error(reason + ' Your text is still here.');
+        // reject it - see failureReason.
+        var reason = failureReason(err);
+        if (stillHere()) {
+          setSaving(false);
+          CGP.ui.error(reason + ' Your text is still here.');
+          return;
+        }
+        self.drafts[key] = text;
+        CGP.ui.error('Your comment for ' + studentName() + ' was not saved. ' + reason +
+          ' Reopen their comment bubble to try again; your text is kept there.');
+        if (self.isShowing(info.assignmentId, userId)) self.renderCurrent();
       });
     }
     setTimeout(function () { input.focus(); }, 0);
@@ -240,6 +337,15 @@
     var info = this._previewInfo;
     this.hidePreview();
     if (!info || !info.el || !info.el.isConnected) return;
+    // The grid recycles cell elements as it scrolls and re-sorts, so by the
+    // time the preview is clicked this element may hold someone else's cell.
+    // Checked BEFORE activating anything.
+    var now = this.adapter.cellInfo ? this.adapter.cellInfo(info.el) : null;
+    if (!now || String(now.assignmentId) !== String(info.assignmentId) ||
+        String(now.studentId) !== String(info.studentId)) {
+      CGP.diag.warn('preview.cellRecycled');
+      return;
+    }
     if (!this.openSidePane) { this.open(info); return; }   // no tray available: the in-place thread instead
     this.adapter.activateCell(info.el);
     this.openSidePane(info);

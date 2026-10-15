@@ -12,10 +12,15 @@
 
   function $(id) { return document.getElementById(id); }
 
-  function status(message) {
+  /* opts.error: shown in the error style and left in place until the next
+   * message - a "not saved" must not fade away before it has been read. */
+  function status(message, opts) {
     var el = $('status');
+    var isError = !!(opts && opts.error);
     el.textContent = message || '';
-    if (message) setTimeout(function () { if (el.textContent === message) el.textContent = ''; }, 2600);
+    el.classList.toggle('status--error', isError);
+    el.setAttribute('role', isError ? 'alert' : 'status');
+    if (message && !isError) setTimeout(function () { if (el.textContent === message) el.textContent = ''; }, 2600);
   }
 
   /* ------------------------------------------------------------- snippets */
@@ -289,13 +294,14 @@
     if (testInput && testFeedback) {
       testInput.addEventListener('keydown', function (e) {
         if (e.key === 'Tab' && !e.shiftKey) {
-          // ALWAYS prevent browser default tab navigation so focus stays in test playground!
-          e.preventDefault();
-          e.stopPropagation();
-
+          // Tab is only kept when something was actually expanded, exactly
+          // as in SpeedGrader and the gradebook; otherwise it moves focus
+          // as usual (keyboard users must be able to leave this box).
           var snippetsToUse = isRawMode ? textToSnippets($('snippets').value) : currentSnippets;
           var out = CGP.snippets && CGP.snippets.expand(testInput.value, testInput.selectionStart, snippetsToUse);
           if (out) {
+            e.preventDefault();
+            e.stopPropagation();
             testInput.value = out.text;
             testInput.setSelectionRange(out.caret, out.caret);
             testFeedback.className = 'snippet-test-feedback is-success';
@@ -325,6 +331,8 @@
             var word = lastWordMatch[1];
             var matchedSnip = CGP.snippets && CGP.snippets.lookup(word, snippetsToUse);
             if (matchedSnip) {
+              e.preventDefault();
+              e.stopPropagation();
               var startIdx = valBefore.length - word.length;
               testInput.value = testInput.value.slice(0, startIdx) + matchedSnip.text + testInput.value.slice(testInput.selectionStart);
               var newCaret = startIdx + matchedSnip.text.length;
@@ -356,21 +364,61 @@
     $('snippets').value = snippetsToText(snips);
   }
 
+  /** The snippets exactly as the teacher entered them, before sanitizing. */
+  function readRawSnippets() {
+    if (isRawMode) return textToSnippets($('snippets').value);
+    return currentSnippets.map(function (s) {
+      return {
+        trigger: String(s.trigger || '').replace(/^\/+/, '').trim(),
+        text: String(s.text || '').trim()
+      };
+    }).filter(function (s) { return s.trigger && s.text; });
+  }
+
   function read() {
     var patch = {};
     BOOLS.forEach(function (k) { var el = $(k); if (el) patch[k] = el.checked; });
     NUMS.forEach(function (k) { var el = $(k); if (el) patch[k] = Number(el.value); });
-    if (isRawMode) {
-      patch.snippets = textToSnippets($('snippets').value);
-    } else {
-      patch.snippets = currentSnippets.map(function (s) {
-        return {
-          trigger: String(s.trigger || '').replace(/^\/+/, '').trim(),
-          text: String(s.text || '').trim()
-        };
-      }).filter(function (s) { return s.trigger && s.text; });
-    }
+    patch.snippets = readRawSnippets();
     return CGP.sanitizeSettings(patch);
+  }
+
+  /* chrome.storage.sync allows 8192 BYTES per item (key + JSON value), and
+   * counts them in UTF-8: accented letters take 2 bytes, emoji 4. A little
+   * headroom is left below the hard limit. */
+  var SYNC_ITEM_SAFE_BYTES = 8000;
+
+  function settingsBytes(values) {
+    var s = KEY + JSON.stringify(values);
+    if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(s).length;
+    return unescape(encodeURIComponent(s)).length;
+  }
+
+  function sanitizedTrigger(t) {
+    // Mirrors sanitizeSettings' own trigger clean-up, for reporting only.
+    return String(t || '').trim().replace(/^\//, '').replace(/[^\w-]/g, '').slice(0, 32);
+  }
+
+  /* What sanitizeSettings would silently drop or cut from these snippets,
+   * spelled out by shortcut so the teacher knows exactly what to fix. */
+  function snippetLosses(raw) {
+    var notes = [];
+    var usable = (raw || []).filter(function (s) {
+      if (sanitizedTrigger(s.trigger)) return true;
+      notes.push('"' + s.trigger + '" is not a usable shortcut (letters, numbers, - and _ only).');
+      return false;
+    });
+    var label = function (s) { return '/' + sanitizedTrigger(s.trigger); };
+    if (usable.length > MAX_SNIPPETS) {
+      notes.push('Only ' + MAX_SNIPPETS + ' snippets fit, so ' + usable.slice(MAX_SNIPPETS).map(label).join(', ') +
+        ' would be dropped.');
+    }
+    var long = usable.slice(0, MAX_SNIPPETS).filter(function (s) { return String(s.text || '').length > MAX_SNIPPET_TEXT; });
+    if (long.length) {
+      notes.push(long.map(function (s) { return label(s) + ' (' + String(s.text).length + ' characters)'; }).join(', ') +
+        ' would be cut to ' + MAX_SNIPPET_TEXT + ' characters.');
+    }
+    return notes;
   }
 
   function load() {
@@ -381,21 +429,48 @@
     });
   }
 
-  function save() {
-    var values = read();
+  /* Refuses, with the reason, anything that would not round-trip intact:
+   * snippets sanitizing would drop or cut (the form keeps them so nothing is
+   * lost), or a settings blob over chrome.storage.sync's per-item quota. */
+  function checkSavable(values, raw) {
+    var losses = raw ? snippetLosses(raw) : [];
+    if (losses.length) {
+      return 'Not saved: ' + losses.join(' ') + ' Shorten or remove those snippets, then save again.';
+    }
+    var bytes = settingsBytes(values);
+    if (bytes > SYNC_ITEM_SAFE_BYTES) {
+      return 'Not saved: these settings come to ' + bytes + ' bytes, and Chrome sync stores at most about ' +
+        SYNC_ITEM_SAFE_BYTES + '. Shorten or remove some snippets (accented letters count as 2 bytes, emoji as 4), then save again.';
+    }
+    return null;
+  }
+
+  function writeSettings(values, okMessage) {
     var payload = {};
     payload[KEY] = values;
-    return chrome.storage.sync.set(payload).then(function () {
+    var done;
+    try {
+      done = Promise.resolve(chrome.storage.sync.set(payload));
+    } catch (e) {
+      done = Promise.reject(e);
+    }
+    return done.then(function () {
       fill(values); // show the clamped, sanitized result back to the teacher
-      status('Saved. Reload the gradebook tab to see the change.');
+      status(okMessage);
     }, function (err) {
-      // A rejected write (most likely the 8KB-per-item quota, from a large
-      // snippet library) previously vanished silently: nothing here ever
-      // reacted to a rejection, so nothing was saved AND nothing told the
-      // teacher that - the form just sat there looking like any other click.
-      status('Not saved: ' + (err && err.message ? err.message : 'Canvas storage rejected this.') +
-        ' Try shortening your snippets.');
+      // A rejected write (most likely the 8KB-per-item quota) used to
+      // vanish silently; nothing was saved and nothing said so.
+      status('Not saved: ' + (err && err.message ? err.message : 'Chrome storage rejected this.') +
+        ' Try shortening your snippets.', { error: true });
     });
+  }
+
+  function save() {
+    var raw = readRawSnippets();
+    var values = read();
+    var problem = checkSavable(values, raw);
+    if (problem) { status(problem, { error: true }); return Promise.resolve(); }
+    return writeSettings(values, 'Saved. Reload the gradebook tab to see the change.');
   }
 
   /* ------------------------------------------------------- export / import */
@@ -448,14 +523,12 @@
       return;
     }
     var values = CGP.sanitizeSettings(raw);
-    var payload = {};
-    payload[KEY] = values;
-    chrome.storage.sync.set(payload).then(function () {
-      fill(values);
-      status('Settings restored from file. Reload the gradebook tab to see the change.');
-    }, function (err) {
-      status('Not saved: ' + (err && err.message ? err.message : 'Canvas storage rejected this.'));
-    });
+    var rawSnippets = Array.isArray(raw.snippets) ? raw.snippets.map(function (s) {
+      return { trigger: String((s && s.trigger) || '').replace(/^\/+/, '').trim(), text: String((s && s.text) || '') };
+    }).filter(function (s) { return s.trigger && s.text; }) : null;
+    var problem = checkSavable(values, rawSnippets);
+    if (problem) { status(problem.replace(/^Not saved:/, 'Not restored:'), { error: true }); return; }
+    writeSettings(values, 'Settings restored from file. Reload the gradebook tab to see the change.');
   }
 
   function importSettingsFile(file) {
@@ -597,6 +670,8 @@
     chrome.storage.sync.set(payload).then(function () {
       load();
       status('Defaults restored.');
+    }, function (err) {
+      status('Defaults not restored: ' + (err && err.message ? err.message : 'Chrome storage rejected this.'), { error: true });
     });
   });
 

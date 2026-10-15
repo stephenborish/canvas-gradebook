@@ -14,6 +14,39 @@
 
   var CACHE_PREFIX = 'cgp.courseTabs.';
 
+  // Canvas's own, exact identifiers for the course-navigation toggle. Nothing
+  // is ever guessed from a label containing "menu" or "course": that used to
+  // hijack unrelated controls, such as a gradebook column header's
+  // "Course Reflection Options" button.
+  var TOGGLE_SELECTORS = '#courseMenuToggle, .ic-app-course-nav-toggle, button[aria-controls="left-side"]';
+  var CRUMB_CONTAINERS = '.ic-app-nav-toggle-and-crumbs, #breadcrumbs, .ic-app-crumbs';
+  // Modern InstUI renders the toggle as a plain icon button in the breadcrumb
+  // bar labelled "Show/Hide Courses Navigation Menu".
+  var CRUMB_TOGGLE_LABEL = /\bcourses?\s+navigation\b/i;
+  // Never a course-menu toggle, whatever it is called.
+  var EXCLUDED_AREAS =
+    '#header, .ic-app-header, #right_side, .comments, #discussion, #add_a_comment, .comment_area, ' +
+    '.grade-detail-tray, [data-testid*="comment" i], .cgp-pop, .cgp-comment-popover, #comment-form, ' +
+    '.slick-header, .slick-header-column, #gradebook_grid, [role="dialog"], dialog, .ui-dialog, ' +
+    '[role="menu"], [role="menuitem"]';
+  var MISS_RETRY_MS = 1000;
+
+  /* Only same-origin http(s) links from the tabs API or the session cache
+   * ever become drawer links - never javascript:, data: or another site. */
+  function safeHref(href) {
+    if (href === undefined || href === null || href === '') return null;
+    var origin = (typeof location !== 'undefined' && location.origin && location.origin !== 'null')
+      ? location.origin : 'https://cgp.invalid';
+    try {
+      var u = new URL(String(href), origin);
+      if (u.origin !== origin) return null;
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+      return u.pathname + u.search + u.hash;
+    } catch (e) {
+      return null;
+    }
+  }
+
   function escapeHtml(str) {
     return String(str || '')
       .replace(/&/g, '&amp;')
@@ -251,15 +284,18 @@
 
     for (var i = 0; i < list.length; i++) {
       var tab = list[i];
-      var href = tab.html_url || tab.full_url || ('/courses/' + this.courseId + '/' + (tab.id || ''));
-      var isGrades = tab.id === 'grades' || /gradebook|grades/i.test(tab.id || '') || /\/grades|\/gradebook/i.test(href);
-      var isActive = isGrades || (currentPath && href && currentPath === href.toLowerCase());
+      var tabId = String(tab.id || '').replace(/[^\w-]/g, '');
+      var href = safeHref(tab.html_url) || safeHref(tab.full_url) ||
+        safeHref('/courses/' + encodeURIComponent(this.courseId) + '/' + tabId);
+      if (!href) continue;
+      var isGrades = tabId === 'grades' || /gradebook|grades/i.test(tabId) || /\/grades|\/gradebook/i.test(href);
+      var isActive = isGrades || (currentPath && currentPath === href.split(/[?#]/)[0].toLowerCase());
 
       var li = document.createElement('li');
       li.className = 'section cgp-section-tab';
 
       var a = document.createElement('a');
-      a.className = (tab.id || 'tab') + (isActive ? ' active' : '');
+      a.className = (tabId || 'tab') + (isActive ? ' active' : '');
       a.href = href;
       a.setAttribute('href', href);
       if (isActive) a.setAttribute('aria-current', 'page');
@@ -311,210 +347,89 @@
     return false;
   };
 
+  /* A positively identified course-navigation toggle: one of Canvas's exact
+   * identifiers, or the InstUI icon button in the breadcrumb bar carrying
+   * Canvas's own "Courses Navigation" label - and never anything inside the
+   * grid header, a dialog, a menu, or the comment areas. */
+  P.isKnownToggle = function (btn) {
+    if (!btn || btn.nodeType !== 1 || this.isExtensionControl(btn)) return false;
+    if (btn.closest && btn.closest(EXCLUDED_AREAS)) return false;
+    if (btn.matches ? btn.matches(TOGGLE_SELECTORS) : (btn.closest && btn.closest(TOGGLE_SELECTORS) === btn)) return true;
+    var isButton = btn.tagName === 'BUTTON' || (btn.getAttribute && btn.getAttribute('role') === 'button');
+    if (!isButton || !btn.closest || !btn.closest(CRUMB_CONTAINERS)) return false;
+    var label = (btn.getAttribute('aria-label') || '') + ' ' + (btn.getAttribute('title') || '');
+    return CRUMB_TOGGLE_LABEL.test(label);
+  };
+
+  /* Cached: the toggle is looked up once and only searched for again when
+   * Canvas has removed it from the page. This runs on every gradebook paint
+   * (via attachDirectListeners), so it must not re-scan the document each
+   * time; a miss is retried at most once a second. */
   P.findHamburgerButton = function () {
-    // 1. Explicit ID or classic Canvas class
-    var primarySelectors = [
-      '#courseMenuToggle',
-      'button.ic-app-course-nav-toggle',
-      'a.ic-app-course-nav-toggle',
-      '.ic-app-course-nav-toggle',
-      'button[aria-controls="left-side"]'
-    ];
-    for (var i = 0; i < primarySelectors.length; i++) {
-      try {
-        var el = document.querySelector(primarySelectors[i]);
-        if (el && !this.isExtensionControl(el) && (!el.closest || !el.closest('#header, .ic-app-header'))) return el;
-      } catch (e) {}
-    }
+    if (this._hamburger && this._hamburger.isConnected) return this._hamburger;
+    this._hamburger = null;
+    var now = Date.now();
+    if (this._hamburgerMissAt && now - this._hamburgerMissAt < MISS_RETRY_MS) return null;
 
-    // 2. Position-based lookup in breadcrumbs header (never matches global nav)
-    var crumbContainers = document.querySelectorAll(
-      '.ic-app-nav-toggle-and-crumbs, #breadcrumbs, .ic-app-crumbs, [class*="nav-toggle-and-crumbs"], header[role="banner"]'
-    );
-    for (var c = 0; c < crumbContainers.length; c++) {
-      var container = crumbContainers[c];
-      if (container.closest && container.closest('#header, .ic-app-header')) continue;
-      var buttons = container.querySelectorAll('button, [role="button"]');
-      for (var b = 0; b < buttons.length; b++) {
-        var btn = buttons[b];
-        if (!this.isExtensionControl(btn)) {
-          return btn;
+    var found = null;
+    try {
+      var exact = document.querySelectorAll(TOGGLE_SELECTORS);
+      for (var i = 0; i < exact.length && !found; i++) {
+        if (this.isKnownToggle(exact[i])) found = exact[i];
+      }
+      if (!found) {
+        var crumbButtons = document.querySelectorAll(
+          '.ic-app-nav-toggle-and-crumbs button, #breadcrumbs button, .ic-app-crumbs button'
+        );
+        for (var j = 0; j < crumbButtons.length && !found; j++) {
+          if (this.isKnownToggle(crumbButtons[j])) found = crumbButtons[j];
         }
       }
-    }
+    } catch (e) { /* selector unsupported: treat as not found */ }
 
-    // 3. Look adjacent to the course link in breadcrumbs
-    var courseCrumb = document.querySelector(
-      '#breadcrumbs a[href*="/courses/"], .ic-app-crumbs a[href*="/courses/"], nav[aria-label*="crumb" i] a[href*="/courses/"]'
-    );
-    if (courseCrumb) {
-      var parent = (courseCrumb.closest && courseCrumb.closest('.ic-app-nav-toggle-and-crumbs, #breadcrumbs, .ic-app-crumbs, nav, header')) || courseCrumb.parentElement;
-      if (parent) {
-        var btns = parent.querySelectorAll('button, [role="button"]');
-        for (var j = 0; j < btns.length; j++) {
-          if (!this.isExtensionControl(btns[j])) {
-            return btns[j];
-          }
-        }
-      }
-      var prev = (courseCrumb.closest('li') || courseCrumb).previousElementSibling;
-      while (prev) {
-        var prevBtn = (prev.matches && prev.matches('button, [role="button"]')) ? prev : (prev.querySelector ? prev.querySelector('button, [role="button"]') : null);
-        if (prevBtn && !this.isExtensionControl(prevBtn)) {
-          return prevBtn;
-        }
-        prev = prev.previousElementSibling;
-      }
+    if (found) {
+      this._hamburger = found;
+      this._hamburgerMissAt = 0;
+    } else {
+      this._hamburgerMissAt = now;
     }
-
-    // 4. Any button in top-left region with hamburger/nav label or icon (excluding global nav #header)
-    var allButtons = document.querySelectorAll('button, [role="button"]');
-    for (var k = 0; k < allButtons.length; k++) {
-      var candidate = allButtons[k];
-      if (this.isExtensionControl(candidate)) continue;
-      if (candidate.closest && candidate.closest('#header, .ic-app-header')) continue;
-      var label = (candidate.getAttribute('aria-label') || '').toLowerCase();
-      var title = (candidate.getAttribute('title') || '').toLowerCase();
-      var combined = label + ' ' + title;
-      if (/(?:course|courses|nav|navigation|menu|hamburger)/i.test(combined)) {
-        if (candidate.getBoundingClientRect) {
-          var r = candidate.getBoundingClientRect();
-          if (r.top >= 0 && r.top < 120 && r.left >= 30 && r.left < 300) {
-            return candidate;
-          }
-        }
-      }
-    }
-
-    // 5. Fallback: Any button with icon in top-left region outside global header
-    for (var m = 0; m < allButtons.length; m++) {
-      var bEl = allButtons[m];
-      if (this.isExtensionControl(bEl)) continue;
-      if (bEl.closest && bEl.closest('#header, .ic-app-header')) continue;
-      if (bEl.querySelector && bEl.querySelector('svg, i, [class*="icon"], [class*="hamburger"]')) {
-        if (bEl.getBoundingClientRect) {
-          var rect = bEl.getBoundingClientRect();
-          if (rect.top >= 0 && rect.top < 100 && rect.left >= 30 && rect.left < 200) {
-            return bEl;
-          }
-        }
-      }
-    }
-
-    return null;
+    return found;
   };
 
   P.isCourseMenuToggle = function (target) {
     if (!target) return null;
     var el = (target.nodeType === 1) ? target : (target.parentElement || null);
-    if (!el) return null;
-
+    if (!el || typeof el.closest !== 'function') return null;
     if (this.isExtensionControl(el)) return null;
-    if (el.closest && el.closest(
-      '#header, .ic-app-header, #right_side, .comments, #discussion, #add_a_comment, .comment_area, ' +
-      '.grade-detail-tray, [data-testid*="comment" i], .cgp-pop, .cgp-comment-popover, #comment-form'
-    )) return null;
+    if (el.closest(EXCLUDED_AREAS)) return null;
 
-    var btn = null;
-    if (typeof el.closest === 'function') {
-      btn = el.closest('button, [role="button"], a, #courseMenuToggle, .ic-app-course-nav-toggle, [class*="nav-toggle"], [class*="menu-toggle"]');
-    }
-    if (!btn && (el.tagName === 'BUTTON' || el.getAttribute('role') === 'button' || el.tagName === 'A')) {
-      btn = el;
-    }
-    if (!btn && el.parentElement && typeof el.parentElement.closest === 'function') {
-      btn = el.parentElement.closest('button, [role="button"], a');
-    }
+    var btn = el.closest('button, [role="button"], a, #courseMenuToggle, .ic-app-course-nav-toggle');
     if (!btn) return null;
-
     if (this.isExtensionControl(btn)) return null;
-    if (btn.closest && btn.closest(
-      '#header, .ic-app-header, #right_side, .comments, #discussion, #add_a_comment, .comment_area, ' +
-      '.grade-detail-tray, [data-testid*="comment" i], .cgp-pop, .cgp-comment-popover, #comment-form'
-    )) return null;
 
     // Reject navigation links to pages like <a href="/courses/376">
-    if (btn.tagName === 'A' && btn.getAttribute('href') && !btn.getAttribute('href').startsWith('#') && !btn.classList.contains('ic-app-course-nav-toggle')) {
+    if (btn.tagName === 'A' && btn.getAttribute('href') && btn.getAttribute('href').charAt(0) !== '#' &&
+        !btn.classList.contains('ic-app-course-nav-toggle')) {
       return null;
     }
 
-    // 1. Direct match with findHamburgerButton()
     var known = this.findHamburgerButton();
-    if (known && (btn === known || known.contains(btn))) {
-      return known;
-    }
-
-    // 2. ID / class direct check
-    if (btn.id === 'courseMenuToggle' || (btn.classList && btn.classList.contains('ic-app-course-nav-toggle'))) {
-      return btn;
-    }
-
-    // 3. Breadcrumb container check: Any button inside breadcrumb bar
-    if (btn.closest && btn.closest('.ic-app-nav-toggle-and-crumbs, #breadcrumbs, .ic-app-crumbs, [class*="nav-toggle-and-crumbs"]')) {
-      return btn;
-    }
-
-    // 4. Attribute checks
-    var label = (btn.getAttribute('aria-label') || '').toLowerCase();
-    var title = (btn.getAttribute('title') || '').toLowerCase();
-    var className = (btn.className && typeof btn.className === 'string' ? btn.className : '').toLowerCase();
-    var controls = (btn.getAttribute('aria-controls') || '').toLowerCase();
-    var combined = label + ' ' + title + ' ' + className + ' ' + controls;
-
-    if (/(?:course|courses|nav|navigation|menu|hamburger)/i.test(combined)) {
-      return btn;
-    }
-
-    // 5. Position check: Button with icon in top-left breadcrumbs region
-    if (btn.querySelector && btn.querySelector('svg, i, [class*="icon"], [class*="hamburger"]')) {
-      if (btn.getBoundingClientRect) {
-        var r = btn.getBoundingClientRect();
-        if (r.top >= 0 && r.top < 120 && r.left >= 30 && r.left < 250) {
-          return btn;
-        }
-      }
-    }
-
-    return null;
+    if (known && (btn === known || known.contains(btn))) return known;
+    return this.isKnownToggle(btn) ? btn : null;
   };
 
+  /* The toggles whose aria-expanded mirrors the drawer - the identified
+   * hamburger plus any other exact Canvas toggle, never a guessed button. */
   P.findToggleButtons = function () {
     var list = [];
     var known = this.findHamburgerButton();
     if (known) list.push(known);
-
-    var selectors = [
-      '#courseMenuToggle',
-      'button.ic-app-course-nav-toggle',
-      'a.ic-app-course-nav-toggle',
-      'button[aria-label*="courses navigation" i]',
-      'button[aria-label*="course navigation" i]',
-      'button[aria-label*="navigation menu" i]',
-      'button[aria-label*="courses menu" i]',
-      'button[aria-label*="course menu" i]',
-      'button[aria-label*="nav" i]',
-      'button[aria-label*="menu" i]',
-      'button[title*="courses navigation" i]',
-      'button[title*="course navigation" i]',
-      'button[title*="navigation menu" i]',
-      'button[title*="nav" i]',
-      'button[title*="menu" i]',
-      'button[data-track-category*="course_navigation" i]',
-      '#breadcrumbs button:not(.cgp-crumb-toggle):not(.cgp-find-student):not(.cgp-course-menu-close)',
-      '.ic-app-crumbs button:not(.cgp-crumb-toggle):not(.cgp-find-student):not(.cgp-course-menu-close)',
-      '.ic-app-nav-toggle-and-crumbs button:not(.cgp-crumb-toggle):not(.cgp-find-student):not(.cgp-course-menu-close)',
-      '#breadcrumbs .icon-hamburger',
-      'button:has(.icon-hamburger)'
-    ];
     try {
-      var found = document.querySelectorAll(selectors.join(', '));
+      var found = document.querySelectorAll(TOGGLE_SELECTORS);
       for (var i = 0; i < found.length; i++) {
-        var b = found[i];
-        if (!this.isExtensionControl(b) && list.indexOf(b) < 0) {
-          list.push(b);
-        }
+        if (list.indexOf(found[i]) < 0 && this.isKnownToggle(found[i])) list.push(found[i]);
       }
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
     return list;
   };
 

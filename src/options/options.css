@@ -132,6 +132,7 @@ body {
 }
 .sidebar__actions { display: flex; flex-direction: column; gap: 8px; }
 .status { min-height: 15px; margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.status--error { color: #b42318; font-weight: 600; }
 
 /* ---------------------------------------------------------------- content */
 

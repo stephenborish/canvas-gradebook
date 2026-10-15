@@ -133,32 +133,9 @@
     var snippets = (CGP.settings && CGP.settings.values && CGP.settings.values.snippets) || [];
     var ok = editor.isContentEditable ? expandRichSnippet(editor, snippets)
       : expandTextareaSnippet(editor, snippets);
-    if (!ok) {
-      var textBefore = '';
-      if (editor.isContentEditable) {
-        var sel = window.getSelection && window.getSelection();
-        if (sel && sel.rangeCount && editor.contains(sel.anchorNode)) {
-          var caret = sel.getRangeAt(0);
-          if (caret.collapsed) {
-            var before = document.createRange();
-            before.selectNodeContents(editor);
-            before.setEnd(caret.endContainer, caret.endOffset);
-            textBefore = before.toString();
-          }
-        }
-      } else {
-        var pos = editor.selectionStart || 0;
-        textBefore = String(editor.value || '').slice(0, pos);
-      }
-      var hit = CGP.snippets && CGP.snippets.findTrigger(textBefore, textBefore.length);
-      if (hit) {
-        e.__cgpSnippetHandled = true;
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        return true;
-      }
-      return false;
-    }
+    // Tab is only kept when a snippet was actually expanded. A "/word" with
+    // no matching snippet (a URL, "and/or") must let Tab move focus as usual.
+    if (!ok) return false;
     e.__cgpSnippetHandled = true;
     e.preventDefault();
     e.stopImmediatePropagation();
@@ -172,10 +149,30 @@
     document.addEventListener('keydown', handleSnippetKeydown, true);
   }
 
-  // Install in every matching frame. Canvas can place a rich comment editor in
-  // a same-origin/about:blank iframe; Manifest V3 injects this content script
-  // into those frames, so /trigger + Tab still works there.
-  bindSnippetCapture();
+  function isGradingPath(path) {
+    return /\/gradebook(\/|$)|\/speed_grader/i.test(String(path || ''));
+  }
+
+  /* Only SpeedGrader, the gradebook, and frames inside them. This script is
+   * injected into every frame of every course page, and a capture-phase Tab
+   * handler that matches any "comment|feedback|message|note" field has no
+   * business on a discussion reply or an inbox message. Canvas can put the
+   * rich comment editor in a same-origin/about:blank iframe, which inherits
+   * its parent's origin, so the parent's (or top's) path is readable there;
+   * cross-origin frames throw and fall back to the referrer. */
+  function onGradingPage() {
+    if (typeof location === 'undefined') return false;
+    if (isGradingPath(location.pathname)) return true;
+    if (typeof window === 'undefined' || window.top === window.self) return false;
+    try { if (window.parent && isGradingPath(window.parent.location.pathname)) return true; } catch (e) { /* cross-origin */ }
+    try { if (window.top && isGradingPath(window.top.location.pathname)) return true; } catch (e) { /* cross-origin */ }
+    try {
+      if (document.referrer && isGradingPath(new URL(document.referrer).pathname)) return true;
+    } catch (e) { /* unparsable referrer */ }
+    return false;
+  }
+
+  if (onGradingPage()) bindSnippetCapture();
 
   function studentIdFromHash() {
     var hash = location.hash || '';
@@ -205,7 +202,7 @@
     var settings = CGP.settings.values;
     document.documentElement.classList.add('cgp-speedgrader');
 
-    var state = { key: null, textarea: null, pendingSubmit: null, confirmTimer: null, watching: false };
+    var state = { key: null, textarea: null, pendingSubmit: null, confirmTimer: null, pendingSave: null, focus: null };
     bindSnippetCapture();
 
     function draftKey() {
@@ -230,9 +227,11 @@
         'Copy your text somewhere safe before navigating away.');
     }
 
-    function saveDraft(text) {
+    // Always saved under the key the caller captured when the text was typed
+    // (or the box focused) - never whatever state.key holds by the time a
+    // debounce fires, which may already be the NEXT student's.
+    function saveDraft(text, key) {
       if (!CGP.settings.values.speedgraderDrafts) return;
-      var key = state.key;
       if (!key || typeof chrome === 'undefined' || !chrome.storage) return;
       var value = String(text || '');
       if (!value.trim()) { removeDraft(key); return; }
@@ -254,9 +253,9 @@
     }
 
     function removeDraft(key) {
-      if (typeof chrome === 'undefined' || !chrome.storage) return;
+      if (!key || typeof chrome === 'undefined' || !chrome.storage) return;
       try {
-        var result = chrome.storage.local.remove(key || state.key);
+        var result = chrome.storage.local.remove(key);
         if (result && typeof result.catch === 'function') {
           result.catch(function (e) { CGP.diag.warn('draft.removeFailed', { message: String(e && e.message) }); });
         }
@@ -298,21 +297,111 @@
       }).catch(function () { /* ignore */ });
     }
 
-    var save = CGP.util.debounce(function () {
-      if (state.textarea) saveDraft(state.textarea.value);
-    }, 400);
+    /* Debounced autosave that remembers WHICH draft the text belongs to: the
+     * key and the text are both captured at input time. Reading them when
+     * the 400ms timer fires instead meant moving to the next student quickly
+     * saved A's text under B's key (or deleted B's draft). */
+    function scheduleSave(textarea) {
+      var key = draftKey();
+      if (state.pendingSave && state.pendingSave.key !== key) flushPendingSave();
+      if (state.pendingSave) clearTimeout(state.pendingSave.timer);
+      var pending = { key: key, text: String(textarea.value || '') };
+      pending.timer = setTimeout(function () {
+        if (state.pendingSave !== pending) return;
+        state.pendingSave = null;
+        saveDraft(pending.text, pending.key);
+      }, 400);
+      state.pendingSave = pending;
+    }
+
+    function flushPendingSave() {
+      var pending = state.pendingSave;
+      if (!pending) return;
+      state.pendingSave = null;
+      clearTimeout(pending.timer);
+      saveDraft(pending.text, pending.key);
+    }
+
+    function isDraftTextarea(el) {
+      return !!(el && el.matches && (el === state.textarea || el.matches(TEXTAREA_SELECTORS)));
+    }
 
     function attach(textarea) {
-      if (!textarea || textarea.dataset.cgpBound === '1') return;
-      textarea.dataset.cgpBound = '1';
+      if (!textarea) return;
       state.textarea = textarea;
+      if (textarea.dataset.cgpBound === '1') return;
+      textarea.dataset.cgpBound = '1';
       state.key = draftKey();
-
-      textarea.addEventListener('input', save);
-      textarea.addEventListener('blur', function () { saveDraft(textarea.value); });
-      textarea.addEventListener('keydown', handleSnippetKeydown, true);
       restoreDraft(textarea);
       CGP.diag.log('speedgrader.bound', { hasKey: !!state.key });
+    }
+
+    /* Delegated, document-level listeners rather than per-textarea ones, so
+     * a comment box Canvas replaces at any point in the session (long after
+     * the startup poll below has stopped) is covered exactly once, with no
+     * duplicate listeners on boxes that were already seen. Snippet Tab is
+     * already handled by the document capture listener (bindSnippetCapture). */
+    function bindDraftListeners() {
+      document.addEventListener('input', function (e) {
+        var t = e.target;
+        if (!isDraftTextarea(t)) return;
+        attach(t);
+        scheduleSave(t);
+      }, true);
+      document.addEventListener('focusin', function (e) {
+        var t = e.target;
+        if (!isDraftTextarea(t)) return;
+        attach(t);
+        state.focus = { textarea: t, key: draftKey() };
+      }, true);
+      document.addEventListener('focusout', function (e) {
+        var f = state.focus;
+        if (!f || e.target !== f.textarea) return;
+        state.focus = null;
+        flushPendingSave();
+        // The student changed while this box had focus: its content may
+        // already be the next student's, so it is not saved under the key
+        // captured at focus. The flush above already kept what was typed.
+        if (!f.key || draftKey() !== f.key) return;
+        saveDraft(f.textarea.value, f.key);
+      }, true);
+    }
+
+    /* The outermost elements under the comments panel whose whole normalized
+     * text is exactly `target` - one per rendered comment with that text. */
+    function commentNodesWithText(host, target) {
+      var out = [];
+      if (!host || !target) return out;
+      var all = host.querySelectorAll('*');
+      for (var i = 0; i < all.length; i++) {
+        var el = all[i];
+        var raw = el.textContent || '';
+        if (raw.length < target.length || normalize(raw) !== target) continue;
+        var p = el.parentElement;
+        if (p && p !== host && normalize(p.textContent) === target) continue;
+        out.push(el);
+      }
+      return out;
+    }
+
+    /* Confirmed only by a NEW comment node (not one that existed when Save
+     * was clicked) whose text is exactly the pending text, and only while
+     * SpeedGrader is still on the student the comment was posted for. A
+     * substring match anywhere in the panel used to let an identical earlier
+     * comment "confirm" a post Canvas never made, deleting the only copy. */
+    function checkConfirmation() {
+      var p = state.pendingSubmit;
+      if (!p || draftKey() !== p.key) return false;
+      var target = normalize(p.text);
+      var nodes = commentNodesWithText(document.querySelector(COMMENTS_SELECTORS), target);
+      if (nodes.length <= p.seenCount) return false;
+      var fresh = nodes.some(function (n) { return !p.seen.has(n); });
+      if (!fresh) return false;
+      removeDraft(p.key);
+      if (state.confirmTimer) clearTimeout(state.confirmTimer);
+      state.pendingSubmit = null;
+      CGP.diag.bump('comment.confirmed');
+      return true;
     }
 
     function watchSubmit() {
@@ -321,8 +410,12 @@
         if (!btn || !state.textarea) return;
         var text = String(state.textarea.value || '');
         if (!text.trim()) return;
-        state.pendingSubmit = { text: text, key: state.key, at: Date.now() };
-        saveDraft(text);
+        var key = draftKey() || state.key;
+        var existing = commentNodesWithText(document.querySelector(COMMENTS_SELECTORS), normalize(text));
+        var seen = new WeakSet();
+        existing.forEach(function (n) { seen.add(n); });
+        state.pendingSubmit = { text: text, key: key, at: Date.now(), seen: seen, seenCount: existing.length };
+        saveDraft(text, key);
         if (state.confirmTimer) clearTimeout(state.confirmTimer);
         state.confirmTimer = setTimeout(function () {
           if (!state.pendingSubmit) return;
@@ -348,18 +441,7 @@
       if (state.confirmObserver) state.confirmObserver.disconnect();
       state.confirmContainer = container;
       state.confirmObserver = new MutationObserver(function () {
-        if (!state.pendingSubmit) return;
-        var target = normalize(state.pendingSubmit.text);
-        if (!target) return;
-        var host = document.querySelector(COMMENTS_SELECTORS);
-        var body = normalize(host ? host.textContent : '');
-        var probe = target.length > 60 ? target.slice(0, 60) : target;
-        if (body.indexOf(probe) >= 0) {
-          removeDraft(state.pendingSubmit.key);
-          if (state.confirmTimer) clearTimeout(state.confirmTimer);
-          state.pendingSubmit = null;
-          CGP.diag.bump('comment.confirmed');
-        }
+        if (state.pendingSubmit) checkConfirmation();
       });
       state.confirmObserver.observe(container, { childList: true, subtree: true, characterData: true });
     }
@@ -371,16 +453,16 @@
       // textarea node for the NEW student by then - reading its value now
       // could be the new student's content, saved under the OLD student's
       // key (still in state.key at this point), silently overwriting or
-      // deleting the old student's real draft. The blur listener attached in
-      // attach() already saves the outgoing textarea's value at the correct
-      // moment (navigating away blurs it first), and the debounced input
-      // listener keeps storage caught up while still typing - both fire
-      // before content could have changed, so nothing further is needed here.
+      // deleting the old student's real draft. The focusout listener already
+      // saves the outgoing textarea's value at the correct moment (navigating
+      // away blurs it first), and any debounced input save still pending was
+      // flushed, under its own captured key, synchronously on hashchange.
       state.key = draftKey();
       var textarea = document.querySelector(TEXTAREA_SELECTORS) || findTextareaFallback();
       if (textarea) {
-        state.textarea = textarea;
-        if (!String(textarea.value || '').trim()) restoreDraft(textarea);
+        var fresh = textarea.dataset.cgpBound !== '1';
+        attach(textarea);   // a replacement box restores inside attach()
+        if (!fresh && !String(textarea.value || '').trim()) restoreDraft(textarea);
       }
       // Also re-checked here, not just from the polling loop below: that
       // loop stops itself after 60 seconds (it exists only to catch
@@ -394,20 +476,25 @@
       watchConfirmation();
     }
 
-    window.addEventListener('hashchange', function () { setTimeout(onStudentChange, 250); });
+    window.addEventListener('hashchange', function () {
+      // Synchronously, before anything can repopulate the box for the next
+      // student: a pending debounced save goes out under the OLD key it
+      // captured, never late under the new one.
+      flushPendingSave();
+      setTimeout(onStudentChange, 250);
+    });
+
+    // Document-level and bound once, so neither needs the poll below.
+    bindDraftListeners();
+    watchSubmit();
 
     var poll = setInterval(function () {
       var textarea = document.querySelector(TEXTAREA_SELECTORS) || findTextareaFallback();
       if (textarea) {
         attach(textarea);
-        // watchSubmit binds to document itself, once, and never needs
-        // re-binding. watchConfirmation is cheap and re-checks/re-attaches
-        // to whatever the CURRENT comments container is on every tick - see
-        // its own comment for why that must not be a one-time thing.
-        if (!state.watching) {
-          state.watching = true;
-          watchSubmit();
-        }
+        // watchConfirmation is cheap and re-checks/re-attaches to whatever
+        // the CURRENT comments container is on every tick - see its own
+        // comment for why that must not be a one-time thing.
         watchConfirmation();
       } else if (!state.sampledMiss) {
         state.sampledMiss = true;
@@ -419,6 +506,8 @@
     }, 700);
     setTimeout(function () { clearInterval(poll); }, 60000);
     void settings;
+    // For tests: a handle on the live state and the confirmation check.
+    return { state: state, checkConfirmation: checkConfirmation, flushPendingSave: flushPendingSave };
   }
 
   CGP.startSpeedGrader = startSpeedGrader;
