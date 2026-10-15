@@ -239,7 +239,12 @@
           : Promise.resolve(rec);
         return verified.then(function (finalRec) {
           var shown = finalRec || rec;
-          if (shown && !opts.noOptimistic) {
+          // A status-only write (M, L, Missing cleared after grading) leaves
+          // the grade Canvas is already showing untouched, so there is no
+          // overlay to draw over it - only a write that changed the grade
+          // needs one, since Canvas's own cell never hears about our write.
+          var gradeChanged = op.display !== null && op.display !== undefined;
+          if (shown && !opts.noOptimistic && gradeChanged) {
             var display;
             if (shown.excused) display = 'EX';
             // Canvas spells "no grade" as null on some submissions and as an
