@@ -223,6 +223,28 @@ Total column is left visible and untouched — you are never left looking at a g
 used to be. A later paint that measures correctly brings the frozen Total right back with no
 reload needed either way.
 
+### The hidden Test Student stays out of your averages
+
+Canvas's Student View "Test Student" is a real enrollment, and whatever sits in its row counts
+wherever Canvas averages a column. The row is hidden by default (*Hide the Test Student row*),
+and because you can no longer see it, nothing is allowed to fill it in behind your back:
+
+- Canvas's own Enter and arrow-key navigation can no longer walk into the hidden row and take
+  the next grade you type: the cursor steps straight past it to the next real student, in the
+  direction you were moving. Any keystroke that would edit a Test Student cell (a grade, `M`,
+  `E`, `L`, a paste) is stopped, and an editor that opens there is closed without saving.
+- Shift-click ranges skip the row, and a paste that would put a value on it is refused with a
+  message saying so. The extension's own writes never target it.
+- Grades that get there anyway — Canvas's automatic missing-submission policy gives the Test
+  Student zeros as due dates pass — are found when the gradebook opens. You are told how many
+  and in which columns, with a one-click **Clear them**. Clearing empties the grade, removes any
+  excusal, and sets "no status" so the missing policy cannot put the zero straight back. Turn on
+  *Keep the hidden Test Student's grades empty* to have this done without asking.
+
+Canvas's own whole-column actions (Set Default Grade, Curve Grades) can still reach the Test
+Student; anything they put there is caught the next time the gradebook opens. With the row
+shown, none of this applies — it is your row to edit.
+
 ### Submission indicator, one click from SpeedGrader
 
 Every grade cell for an assignment Canvas accepts online shows a small badge in its top-right

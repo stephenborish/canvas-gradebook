@@ -453,7 +453,7 @@
     var self = this;
     var row = info.rowIndex, col = info.colIndex;
     if (editorEl) this.adapter.sendKey(editorEl, 'Enter', 13);
-    setTimeout(function () { self.focusCell(row + dRow, col + dCol, dCol); }, 130);
+    setTimeout(function () { self.focusCell(row + dRow, col + dCol, dCol, dRow); }, 130);
   };
 
   /* Let Canvas act first; only step in if the active cell did not move. */
@@ -463,11 +463,11 @@
     setTimeout(function () {
       var now = self.adapter.activeCellInfo();
       if (now && (now.rowIndex !== fromRow || now.colIndex !== fromCol)) return; // Canvas handled it
-      self.focusCell(fromRow + dRow, fromCol + dCol, dCol);
+      self.focusCell(fromRow + dRow, fromCol + dCol, dCol, dRow);
     }, 110);
   };
 
-  P.focusCell = function (rowIndex, colIndex, dCol) {
+  P.focusCell = function (rowIndex, colIndex, dCol, dRow) {
     var self = this;
     if (rowIndex === null || colIndex === null || rowIndex < 0 || colIndex < 0) return;
     var column = this.adapter.columnAt(colIndex);
@@ -482,6 +482,13 @@
         var c = this.adapter.columnAt(probe);
         if (c && c.type === 'assignment') { colIndex = probe; break; }
       }
+    }
+    // Never land on the hidden Test Student row: step past it in the
+    // direction of travel, the same way a hidden row in a spreadsheet is.
+    if (this.settings.values.hideTestStudent && typeof this.adapter.isTestStudentRowIndex === 'function' &&
+      this.adapter.isTestStudentRowIndex(rowIndex)) {
+      rowIndex += (dRow < 0 ? -1 : 1);
+      if (rowIndex < 0) return;
     }
     this.adapter.scrollRowIntoView(rowIndex);
     this.adapter.scrollColumnIntoView(colIndex);

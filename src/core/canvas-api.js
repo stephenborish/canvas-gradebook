@@ -415,6 +415,29 @@
     }, { maxPages: 30 });
   };
 
+  /* The course's Test Student (Student View) user ids. Canvas keeps that
+   * pseudo-student in its own enrollment type, which the roster read above
+   * deliberately leaves out. */
+  CanvasApi.prototype.testStudentIds = function (courseId) {
+    return this.getAll('/api/v1/courses/' + courseId + '/enrollments', {
+      'type[]': ['StudentViewEnrollment']
+    }, { maxPages: 2 }).then(function (list) {
+      var ids = [];
+      (list || []).forEach(function (e) {
+        var id = e && e.user && e.user.id !== undefined ? String(e.user.id) : (e && e.user_id !== undefined ? String(e.user_id) : null);
+        if (id && ids.indexOf(id) < 0) ids.push(id);
+      });
+      return ids;
+    });
+  };
+
+  /* Every submission one student has in a course (no comments). */
+  CanvasApi.prototype.submissionsForStudent = function (courseId, userId) {
+    return this.getAll('/api/v1/courses/' + courseId + '/students/submissions', {
+      'student_ids[]': [String(userId)]
+    }, { maxPages: 20 });
+  };
+
   CanvasApi.prototype.teachingCourses = function () {
     return this.getAll('/api/v1/courses', {
       enrollment_state: 'active',

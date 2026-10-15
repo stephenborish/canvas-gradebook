@@ -929,6 +929,23 @@
     return this.testRowIndices.has(Number(rowIndex));
   };
 
+  /** True when the row at this index is the Test Student - from the last
+   * live read, or from the frozen pane's name if that row is on screen. */
+  P.isTestStudentRowIndex = function (rowIndex) {
+    var i = Number(rowIndex);
+    if (!isFinite(i) || i < 0) return false;
+    if (this.testRowIndices.has(i)) return true;
+    var frozen = this.canvases()[0];
+    if (!frozen) return false;
+    var h = this.rowHeight();
+    var rows = frozen.querySelectorAll(':scope > .slick-row');
+    for (var r = 0; r < rows.length; r++) {
+      var top = this.rowTop(rows[r]);
+      if (top !== null && gridMap.rowIndexFromTop(top, h) === i) return this.isTestStudentRow(rows[r]);
+    }
+    return false;
+  };
+
   P.studentAt = function (rowIndex) {
     var v = this.rowIndexToStudent.get(Number(rowIndex));
     return v || null;

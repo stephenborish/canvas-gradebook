@@ -20,6 +20,10 @@
     centerAssignmentColumns: true,
     showAssignmentDueDate: true,
     hideTestStudent: true,
+    // Clear the hidden Test Student's grades and statuses (Canvas's missing
+    // policy or a stray keystroke can fill them in) without asking first.
+    // Off by default: the gradebook asks instead.
+    testStudentAutoClear: false,
     // Canvas's own "View Options" checkboxes (Gradebook Settings -> View
     // Options), mirrored here so a teacher sets them once in this extension's
     // options page instead of per-course in Canvas's own settings tray. Kept

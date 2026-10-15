@@ -1930,6 +1930,46 @@ html.cgp-speedgrader .cgp-toast--error { background: #9b2c1c; }
   html.cgp-on .cgp-toast { transition: opacity 120ms linear; }
 }
 
+/* -------------------------------------- hidden Test Student has grades */
+
+html.cgp-on .cgp-notice {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 100001;
+  width: 360px;
+  max-width: calc(100vw - 36px);
+  padding: 12px 14px;
+  border-radius: 8px;
+  border-left: 4px solid var(--cgp-unposted, #b3701a);
+  background: #fff;
+  color: var(--cgp-ink, #2d3b45);
+  font-family: var(--cgp-font);
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+html.cgp-on .cgp-notice__text { margin: 0 0 10px; }
+html.cgp-on .cgp-notice__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+html.cgp-on .cgp-notice__btn {
+  padding: 5px 10px;
+  border: 1px solid var(--cgp-line, #c7cdd1);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--cgp-ink, #2d3b45);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+html.cgp-on .cgp-notice__btn--primary {
+  border-color: var(--cgp-brand, #0374b5);
+  background: var(--cgp-brand, #0374b5);
+  color: #fff;
+}
+html.cgp-on .cgp-notice__btn--quiet { border-color: transparent; color: var(--cgp-muted, #6b7780); }
+html.cgp-on .cgp-notice__btn:disabled { opacity: 0.6; cursor: default; }
+html.cgp-on .cgp-notice__btn:focus-visible { outline: 2px solid var(--cgp-brand, #0374b5); outline-offset: 2px; }
+
 /* Keep marker geometry from affecting SlickGrid measurements. */
 html.cgp-on .slick-cell > .cgp-marks,
 html.cgp-on .slick-cell > .cgp-val { box-sizing: border-box !important; }

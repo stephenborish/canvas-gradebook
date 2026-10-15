@@ -135,6 +135,12 @@
         return !!(layout._resizing && layout._resizeStartedAt && (Date.now() - layout._resizeStartedAt < 2000));
       }
     });
+    // Keeps the hidden Test Student row from being typed into, and offers to
+    // clear grades that end up there anyway. Started before the keyboard
+    // controller so its capture listener runs first.
+    var testStudentGuard = new CGP.TestStudentGuard({
+      adapter: adapter, model: model, api: api, settings: settings, requestPaint: requestPaint
+    });
     var keyboard = new CGP.KeyboardGradingController({
       adapter: adapter, model: model, writer: writer, selection: selection, registry: registry,
       settings: settings, requestPaint: requestPaint, bulkComment: bulkComment
@@ -379,6 +385,7 @@
       indicators.start();
       selection.start();
       cellActions.start();
+      testStudentGuard.start();
       keyboard.start();
       paste.start();
       frozen.start();
@@ -493,6 +500,9 @@
         CGP.diag.log('model.ready', model.stats());
         if (adapter._lastUnresolvedColumns) adapter.reconcileColumnsWithModel(model);
         if (jumpTo) setTimeout(function () { CGP.revealStudent(jumpTo); }, 350);
+        // Background, after the visible columns: one roster read and one
+        // submissions read for the Test Student.
+        setTimeout(function () { testStudentGuard.scan(); }, 2500);
 
         // Do not wait for a later paint/scroll cycle to discover comments. Load
         // the assignment columns that are on screen right now immediately.
