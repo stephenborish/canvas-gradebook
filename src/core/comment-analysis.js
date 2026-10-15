@@ -51,8 +51,14 @@
       var a = authorId(c);
       var t = stamp(c);
       var byId = instructorId !== null && a === instructorId;
-      var byName = instructorNames.size > 0 && instructorNames.has(normName(commentAuthorName(c)));
-      if (byId || byName) {
+      // A name is only a fallback for a comment Canvas sent WITHOUT a usable
+      // author id. When there is an id it decides: a student (or another
+      // user) whose display name happens to equal the teacher's must never
+      // count as the teacher, and the student's own id never can.
+      var hasId = a !== null && a !== '';
+      var isStudent = studentId !== null && a === studentId;
+      var byName = !hasId && instructorNames.size > 0 && instructorNames.has(normName(commentAuthorName(c)));
+      if (!isStudent && (byId || byName)) {
         instructorCount++;
         if (lastInstructorAt === null || t > lastInstructorAt) lastInstructorAt = t;
       } else {

@@ -254,93 +254,78 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     a.eq(bulkTargets, null, 'bulkComment.open was NOT called');
   });
 
-  test('KeyboardGradingController.onFocusOut removes Missing and saves grade when grading missing cell', async () => {
-    const CGP = loadGradebookDom();
+  function focusOutHarness(CGP, refreshed, opts) {
+    opts = opts || {};
     domshim.install();
     const doc = globalThis.document;
     const FakeElement = domshim.FakeElement;
-
-    let patchedData = null;
-    let localWriteMarked = false;
-    let updateForm = null;
-
+    const calls = { updates: [], applied: [], refreshes: 0 };
     const fakeModel = {
       courseId: '42',
-      cell: (aid, uid) => ({
-        assignmentId: aid,
-        userId: uid,
-        score: 0,
-        grade: '0',
-        missing: true,
-        latePolicyStatus: 'missing'
-      }),
-      patchCell: (aid, uid, patch) => {
-        patchedData = patch;
-      },
-      markLocalWrite: () => {
-        localWriteMarked = true;
-      },
-      applySubmission: (sub) => sub,
+      cell: () => ({ assignmentId: '101', userId: '201', score: 0, grade: '0', enteredScore: 0,
+        gradedAt: 't0', missing: true, latePolicyStatus: 'missing' }),
+      patchCell: () => { calls.patched = true; },
+      markLocalWrite: () => { calls.marked = true; },
       queueTotalRefresh: () => {},
-      refreshCell: () => Promise.resolve({ grade: '3', score: 3, missing: false, latePolicyStatus: null })
+      refreshCell: () => { calls.refreshes++; return Promise.resolve(refreshed); }
     };
-
-    const fakeApi = {
-      updateSubmission: (courseId, aid, uid, form) => {
-        updateForm = form;
-        return Promise.resolve({
-          id: 1,
-          assignment_id: Number(aid),
-          user_id: Number(uid),
-          score: 3,
-          grade: '3',
-          missing: false,
-          late_policy_status: 'none'
-        });
-      }
-    };
-
     const kb = new CGP.KeyboardGradingController({
       adapter: {
         cellInfo: () => ({ columnType: 'assignment', assignmentId: '101', studentId: '201' }),
         activeCellInfo: () => null
       },
       model: fakeModel,
-      writer: { api: fakeApi },
+      writer: {
+        api: { updateSubmission: (c, aid, uid, form) => { calls.updates.push(form); return Promise.resolve({}); } },
+        apply: (targets) => { calls.applied.push(targets); return Promise.resolve({ ok: 1 }); }
+      },
       selection: { size: () => 1, targets: () => [] },
       settings: { values: {} },
       requestPaint: () => {},
       registry: { invalidate: () => {} }
     });
-
     const cellEl = new FakeElement('div');
     cellEl.classList.add('slick-cell');
-    cellEl.classList.add('cgp-status-missing');
     doc.body.appendChild(cellEl);
-
     const inputEl = new FakeElement('input');
     inputEl.setAttribute('type', 'text');
     inputEl.value = '0';
     cellEl.appendChild(inputEl);
-
-    // Focus into cell with initial grade 0
-    kb.onFocusIn({ target: inputEl });
-
-    // Teacher changes grade to 3 and unclicks (focusout)
-    inputEl.value = '3';
+    if (!opts.skipFocusIn) kb.onFocusIn({ target: inputEl });
+    inputEl.value = opts.typed === undefined ? '3' : opts.typed;
     kb.onFocusOut({ target: inputEl });
+    return calls;
+  }
 
-    a.ok(localWriteMarked, 'markLocalWrite was called');
-    a.ok(patchedData, 'cell was patched');
-    a.eq(patchedData.score, 3, 'score is 3');
-    a.eq(patchedData.grade, '3', 'grade is 3');
-    a.eq(patchedData.override, '3', 'override is 3 to prevent reversion to 0');
-    a.eq(patchedData.missing, false, 'missing flag is cleared');
-    a.eq(patchedData.latePolicyStatus, null, 'latePolicyStatus is cleared');
+  test('typing a grade never sends a second write of our own; Missing comes off once Canvas saved it', async () => {
+    const CGP = loadGradebookDom();
+    const calls = focusOutHarness(CGP, { assignmentId: '101', userId: '201', grade: '3', enteredScore: 3,
+      gradedAt: 't1', latePolicyStatus: 'missing', missing: true, excused: false });
+    a.eq(calls.updates.length, 0, 'no direct PUT from focusout');
+    a.not(calls.marked, 'no local-write mark for a write we did not make');
+    a.not(calls.patched, 'no optimistic grade patch over Canvas\u2019s own cell');
+    await new Promise((r) => setTimeout(r, 1300));
+    a.eq(calls.refreshes, 1, 'the submission was re-read after Canvas\u2019s own save');
+    a.eq(calls.applied.length, 1, 'one guarded write through GradeWriter');
+    a.eq(calls.applied[0][0].parsed.kind, CGP.gradeOps.KIND.CLEAR_MISSING);
+    a.eq(calls.applied[0][0].userId, '201');
+  });
 
-    a.ok(updateForm, 'updateSubmission was called');
-    a.eq(updateForm['submission[posted_grade]'], '3', 'posted_grade was sent');
-    a.eq(updateForm['submission[late_policy_status]'], 'none', 'late_policy_status none was sent');
+  test('an edit Canvas did not save (cancelled, refused) never clears Missing', async () => {
+    const CGP = loadGradebookDom();
+    const calls = focusOutHarness(CGP, { assignmentId: '101', userId: '201', grade: '0', enteredScore: 0,
+      gradedAt: 't0', latePolicyStatus: 'missing', missing: true });
+    await new Promise((r) => setTimeout(r, 1300));
+    a.eq(calls.applied.length, 0);
+    a.eq(calls.updates.length, 0);
+  });
+
+  test('a focusout with no recorded focusin is never treated as an edit', async () => {
+    const CGP = loadGradebookDom();
+    const calls = focusOutHarness(CGP, null, { skipFocusIn: true });
+    await new Promise((r) => setTimeout(r, 1300));
+    a.eq(calls.refreshes, 0);
+    a.eq(calls.updates.length, 0);
   });
 
   test('BulkCommentController renders close button and closes on close()', () => {
@@ -376,13 +361,13 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     a.eq(dupNumbers, null, 'no duplicate hardcoded step numbers inside strong tags');
   });
 
-  test('extension version is bumped to 1.9.3 and displayed directly above Save changes button', () => {
+  test('extension version is bumped to 1.11.0 and displayed directly above Save changes button', () => {
     const manifestPath = path.resolve(__dirname, '../manifest.json');
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    a.eq(manifest.version, '1.9.3', 'manifest.json version is 1.9.3');
+    a.eq(manifest.version, '1.11.0', 'manifest.json version is 1.11.0');
 
     const CGP = loadGradebookDom();
-    a.eq(CGP.VERSION, '1.9.3', 'CGP.VERSION is 1.9.3');
+    a.eq(CGP.VERSION, '1.11.0', 'CGP.VERSION is 1.11.0');
 
     const htmlPath = path.resolve(__dirname, '../src/options/options.html');
     const content = fs.readFileSync(htmlPath, 'utf8');
@@ -392,6 +377,6 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     const saveBtnIdx = content.indexOf('id="save"');
     a.ok(versionIdx > 0, 'sidebar__version element exists');
     a.ok(saveBtnIdx > versionIdx, 'sidebar__version appears directly above save button');
-    a.ok(content.includes('id="extensionVersion">1.9.3<'), 'displays 1.9.3 version number');
+    a.ok(content.includes('id="extensionVersion">1.11.0<'), 'displays 1.11.0 version number');
   });
 });

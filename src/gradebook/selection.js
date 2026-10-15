@@ -113,6 +113,7 @@
     this.keys.clear();
     this.anchor = null;
     this.pending = '';
+    this._extendToken = null;
     this.repaint();
     CGP.diag.set('selectionSize', 0);
     if (!(opts && opts.silent)) CGP.diag.log('selection.cleared');
@@ -120,6 +121,7 @@
 
   P.add = function (info) {
     if (!info || info.columnType !== 'assignment' || !info.assignmentId || !info.studentId) return false;
+    this._extendToken = null;   // a Shift-click range still resolving is now stale
     var key = CGP.gridMap.cellKey(info.assignmentId, info.studentId);
     this.keys.set(key, {
       assignmentId: String(info.assignmentId), userId: String(info.studentId),
@@ -133,6 +135,7 @@
 
   P.toggle = function (info) {
     if (!info || info.columnType !== 'assignment' || !info.assignmentId || !info.studentId) return;
+    this._extendToken = null;   // a Shift-click range still resolving is now stale
     var key = CGP.gridMap.cellKey(info.assignmentId, info.studentId);
     if (this.keys.has(key)) {
       this.keys.delete(key);
@@ -145,11 +148,40 @@
     this.repaint();
   };
 
+  /* Shift-click: select the rectangle from the anchor to this cell.
+   *
+   * Every row in the rectangle is confirmed live first (see
+   * adapter.ensureRowsMapped): rows the grid never rendered, or rows whose
+   * cached student is stale after a sort or filter, would otherwise be
+   * silently left out of - or, worse, wrongly put into - a selection that
+   * M/E/L or a comment is then applied to. */
   P.extendTo = function (info) {
     var self = this;
-    if (!info || info.rowIndex === null || info.colIndex === null) return;
+    if (!info || info.rowIndex === null || info.colIndex === null) return Promise.resolve(false);
     var anchor = this.anchor || { rowIndex: info.rowIndex, colIndex: info.colIndex };
-    var targets = CGP.gridMap.rangeTargets(anchor, { rowIndex: info.rowIndex, colIndex: info.colIndex }, {
+    var focus = { rowIndex: info.rowIndex, colIndex: info.colIndex };
+    var r0 = Math.min(anchor.rowIndex, focus.rowIndex);
+    var count = Math.abs(anchor.rowIndex - focus.rowIndex) + 1;
+    var mapped = typeof this.adapter.ensureRowsMapped === 'function'
+      ? this.adapter.ensureRowsMapped(r0, count)
+      : Promise.resolve(true);
+    var token = this._extendToken = {};
+    return Promise.resolve(mapped).then(function (ok) {
+      if (token !== self._extendToken) return false;   // a newer gesture won
+      if (ok === false) {
+        CGP.diag.warn('selection.rangeUnconfirmed', { rows: count });
+        CGP.ui.error('Gradebook+ couldn\u2019t confirm every student in that range, so nothing was selected. ' +
+          'Scroll so the range is on screen and try again.');
+        return false;
+      }
+      self.applyRange(anchor, focus);
+      return true;
+    });
+  };
+
+  P.applyRange = function (anchor, focus) {
+    var self = this;
+    var targets = CGP.gridMap.rangeTargets(anchor, focus, {
       studentAt: function (r) { return self.adapter.studentAt(r); },
       columnAt: function (c) { return self.adapter.columnAt(c); }
     });
@@ -204,6 +236,9 @@
       var modifierAdd = e.metaKey || e.ctrlKey;
       var modifierRange = e.shiftKey;
       var info = self.adapter.cellInfo(e.target);
+      // Any newer gesture outranks a Shift-click range still waiting on its
+      // rows to be confirmed; extendTo issues its own fresh token below.
+      self._extendToken = null;
 
       if (!info) {
         var inOurControls = e.target && e.target.closest &&

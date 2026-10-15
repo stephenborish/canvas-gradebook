@@ -17,6 +17,10 @@
     MISSING: 'missing',
     EXCUSED: 'excused',
     LATE: 'late',
+    // Internal only, never produced by parseToken: takes an explicitly
+    // applied Missing status off a submission whose grade Canvas has just
+    // committed through its own editor (see keyboard.js reconcile).
+    CLEAR_MISSING: 'clear_missing',
     INVALID: 'invalid'
   };
 
@@ -59,10 +63,14 @@
    * Returns null for SKIP / INVALID (callers must not write those).
    *
    * Missing and Late are independent, instant status flags. Entering an ordinary
-   * grade (NUMBER / PERCENT / LETTER) automatically removes Missing from the cell,
-   * setting missing to false and clearing late_policy_status (or keeping Late if the
-   * submission was late), so teachers never have to manually toggle M off or refresh.
-   * Late status is preserved when grading a late submission.
+   * grade (NUMBER / PERCENT / LETTER) on a cell someone explicitly marked
+   * Missing takes that status off (late_policy_status 'none', or 'late' if it
+   * was explicitly Late), so teachers never have to toggle M off by hand. A
+   * merely computed Missing is left to Canvas, which drops it on grading.
+   *
+   * opts.latePolicyStatus - the cell's current raw status, carried through
+   * unchanged into the optimistic patch when this write does not touch it.
+   * opts.wasExcused - CLEAR also has to un-excuse explicitly.
    *
    * Every patch that changes a status also carries latePolicyStatus, not just
    * the derived missing/late booleans: that raw field is what decides the next
@@ -81,6 +89,14 @@
    *
    * EXCUSED is an explicit status command and is left alone.
    */
+  /* The raw late_policy_status a grade write leaves behind: cleared (or
+   * kept Late) when it takes an explicit Missing off, otherwise unchanged. */
+  function keptStatus(opts) {
+    if (opts.wasExplicitMissing) return opts.wasLate ? 'late' : null;
+    if (opts.latePolicyStatus !== undefined) return opts.latePolicyStatus || null;
+    return opts.wasLate ? 'late' : null;
+  }
+
   function operationFor(parsed, opts) {
     if (!parsed) return null;
     opts = opts || {};
@@ -129,17 +145,37 @@
           patch: { late: true, missing: false, latePolicyStatus: 'late' },
           display: null // status only; the grade text is unchanged
         };
-      case KIND.CLEAR:
+      case KIND.CLEAR_MISSING:
+        return {
+          kind: parsed.kind,
+          summary: 'Missing cleared after grading',
+          form: { 'submission[late_policy_status]': 'none' },
+          patch: { missing: false, latePolicyStatus: null },
+          display: null
+        };
+      case KIND.CLEAR: {
+        var clearForm = { 'submission[posted_grade]': '', 'submission[late_policy_status]': 'none' };
+        // An empty posted_grade does not un-excuse a submission: Canvas keeps
+        // it excused unless told otherwise, while the cell would read as
+        // cleared here until the next reload.
+        if (opts.wasExcused) clearForm['submission[excuse]'] = 'false';
         return {
           kind: parsed.kind,
           summary: 'Cleared',
-          form: { 'submission[posted_grade]': '', 'submission[late_policy_status]': 'none' },
+          form: clearForm,
           patch: { score: null, enteredScore: null, grade: null, missing: false, late: false, excused: false, latePolicyStatus: null, workflowState: 'unsubmitted' },
           display: '\u2013'
         };
+      }
       case KIND.NUMBER: {
         var numberForm = { 'submission[posted_grade]': String(parsed.value) };
-        if (opts.wasExplicitMissing || opts.wasMissing) {
+        // Only an explicitly APPLIED Missing status needs taking off. A
+        // merely computed one (past due, nothing handed in) is dropped by
+        // Canvas itself once the submission is graded, and sending 'none'
+        // there would pin the submission to "no status" for good - silently
+        // switching off the course's automatic late/missing policy for it
+        // even if the student later hands the work in late.
+        if (opts.wasExplicitMissing) {
           numberForm['submission[late_policy_status]'] = opts.wasLate ? 'late' : 'none';
         }
         var numberPatch = {
@@ -148,7 +184,7 @@
           grade: String(parsed.value),
           excused: false,
           missing: false,
-          latePolicyStatus: opts.wasLate ? 'late' : null,
+          latePolicyStatus: keptStatus(opts),
           workflowState: 'graded'
         };
         return { kind: parsed.kind, summary: String(parsed.value), form: numberForm, patch: numberPatch, display: String(parsed.value) };
@@ -156,14 +192,14 @@
       case KIND.PERCENT:
       case KIND.LETTER: {
         var gradeForm = { 'submission[posted_grade]': String(parsed.value) };
-        if (opts.wasExplicitMissing || opts.wasMissing) {
+        if (opts.wasExplicitMissing) {
           gradeForm['submission[late_policy_status]'] = opts.wasLate ? 'late' : 'none';
         }
         var gradePatch = {
           grade: String(parsed.value),
           excused: false,
           missing: false,
-          latePolicyStatus: opts.wasLate ? 'late' : null,
+          latePolicyStatus: keptStatus(opts),
           workflowState: 'graded'
         };
         return { kind: parsed.kind, summary: String(parsed.value), form: gradeForm, patch: gradePatch, display: String(parsed.value) };
@@ -217,12 +253,33 @@
     return 'none';
   }
 
+  /* Does this assignment's grading type accept this parsed token?
+   *
+   * parseToken deliberately understands every shape a teacher might type;
+   * whether Canvas will take it depends on the column. A letter on a points
+   * or percent column is converted (or refused) through whatever grading
+   * scheme Canvas happens to find, and pass/complete words only mean
+   * something on a complete/incomplete column - so both are refused up front,
+   * before anything is written, rather than left to come back as a partly
+   * applied paste. Statuses, clears and numbers fit every gradable column. */
+  function acceptsToken(parsed, gradingType) {
+    if (!parsed) return false;
+    var type = String(gradingType || 'points');
+    if (type === 'not_graded') return false;
+    if (parsed.kind !== KIND.LETTER) return true;
+    var word = /^(pass|complete|fail|incomplete)$/i.test(String(parsed.value || ''));
+    if (type === 'pass_fail') return word;
+    if (LETTERISH.test(type)) return !word;
+    return false;
+  }
+
   function describe(kind) {
     switch (kind) {
       case KIND.MISSING: return 'Missing';
       case KIND.EXCUSED: return 'Excused';
       case KIND.LATE: return 'Late';
       case KIND.CLEAR: return 'cleared';
+      case KIND.CLEAR_MISSING: return 'Missing cleared';
       default: return 'grade';
     }
   }
@@ -252,6 +309,7 @@
     parseToken: parseToken,
     operationFor: operationFor,
     cellStatus: cellStatus,
+    acceptsToken: acceptsToken,
     /* The statuses this extension is willing to paint and to correct on a
      * cell. Anything else Canvas renders (dropped, extended, resubmitted) is
      * Canvas's business and is never touched. */

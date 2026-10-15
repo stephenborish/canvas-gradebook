@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Canvas Gradebook+",
-  "version": "1.9.3",
+  "version": "1.11.0",
   "author": "stephenborish",
   "description": "Upgrades Canvas instructor Gradebook: instructor-comment indicators, keyboard shortcuts, and instant post.",
   "minimum_chrome_version": "116",
@@ -41,7 +41,7 @@
   "content_scripts": [
     {
       "matches": [
-        "*://*.instructure.com/courses/*"
+        "*://*.instructure.com/courses/*/gradebook*"
       ],
       "js": [
         "src/page/env-bridge.js"
@@ -71,6 +71,7 @@
         "src/gradebook/writer.js",
         "src/gradebook/selection.js",
         "src/gradebook/cell-actions.js",
+        "src/gradebook/test-student-guard.js",
         "src/gradebook/keyboard.js",
         "src/gradebook/bulk-paste.js",
         "src/gradebook/frozen-total.js",
@@ -91,16 +92,6 @@
       "run_at": "document_idle",
       "all_frames": true,
       "match_about_blank": true
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "src/page/env-bridge.js"
-      ],
-      "matches": [
-        "*://*/*"
-      ]
     }
   ]
 }

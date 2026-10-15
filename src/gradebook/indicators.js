@@ -69,6 +69,7 @@
     this.adapter = ctx.adapter;
     this.registry = ctx.registry;
     this.settings = ctx.settings;
+    this.requestPaint = ctx.requestPaint || null;
     this.onCommentClick = ctx.onCommentClick || function () {};
     this.onCommentHover = ctx.onCommentHover || function () {};
     // Leaving the bubble is a SOFT close (the preview is itself hoverable and
@@ -78,10 +79,39 @@
     this.onCommentDismiss = ctx.onCommentDismiss || this.onCommentLeave;
     this.requested = new Set();
     this.requestedComments = new Set();
+    // assignmentId -> {count, nextAt} for consecutive failed column loads /
+    // comment verifications, so a failing column backs off instead of being
+    // re-requested on every paint (each attempt emits 'cells' -> repaint).
+    this.loadFailures = new Map();
+    this.commentFailures = new Map();
     this._hoverIcon = null;
   }
 
   var P = IndicatorController.prototype;
+
+  var MAX_FAILURES = 6;
+
+  P.mayRequest = function (failures, id, now) {
+    var f = failures.get(id);
+    if (!f) return true;
+    if (f.count >= MAX_FAILURES) return false;   // given up for this page
+    return now >= f.nextAt;
+  };
+
+  P.noteResult = function (failures, id, ok, label) {
+    if (ok) { failures.delete(id); return; }
+    var f = failures.get(id) || { count: 0, nextAt: 0 };
+    f.count++;
+    var delay = Math.min(60000, 2000 * Math.pow(2, f.count - 1));
+    f.nextAt = Date.now() + delay;
+    failures.set(id, f);
+    if (f.count === MAX_FAILURES) { CGP.diag.warn(label + '.gaveUp', { assignmentId: id }); return; }
+    // Retries are only ever attempted from a paint; on an otherwise idle
+    // gradebook nothing else would paint again, so ask for one when the
+    // backoff runs out.
+    var paint = this.requestPaint;
+    if (typeof paint === 'function') setTimeout(function () { paint(); }, delay + 50);
+  };
 
   P.signatureFor = function (info, rec) {
     // Identity comes first: SlickGrid recycles cell elements for a different
@@ -237,7 +267,7 @@
    * can decide what to draw without recomputing it a second time. */
   var PAINTED = CGP.gradeOps.PAINTED_STATUSES;
 
-  P.syncStatus = function (cell, rec) {
+  P.syncStatus = function (cell, rec, settled) {
     var status = CGP.gradeOps.cellStatus(rec);
     // Unknown (nothing loaded for this cell yet) or a status Canvas owns and
     // we do not: hands off entirely, including any class Canvas set.
@@ -264,14 +294,55 @@
       });
     });
 
-    // Strip Canvas native status icons from the cell so they never collide with our badges
-    var nativeIcons = cell.querySelectorAll('.Grid__GradeCell__StartContainer, .Grid__GradeCell__Status, [class*="icon-late"], [class*="icon-missing"], [class*="status-icon"], [class*="late-icon"], [class*="missing-icon"], svg[class*="late"], svg[class*="missing"]');
-    for (var ni = 0; ni < nativeIcons.length; ni++) {
-      nativeIcons[ni].style.setProperty('display', 'none', 'important');
-      nativeIcons[ni].style.setProperty('visibility', 'hidden', 'important');
+    // The per-cell icon sweep below is the expensive part; a cell whose paint
+    // signature is unchanged and whose marks are intact was already swept.
+    if (settled) return status;
+
+    // Canvas's native status icons collide with our M/L badge, so they are
+    // hidden - but ONLY on cells that carry that badge. Elsewhere Canvas's own
+    // dropped / extended / resubmitted icons are the only indicator there is,
+    // and anything this sweep hid earlier is put back.
+    var badge = status === 'missing' || status === 'late';
+    if (badge) {
+      var nativeIcons = cell.querySelectorAll('.Grid__GradeCell__StartContainer, .Grid__GradeCell__Status, [class*="icon-late"], [class*="icon-missing"], [class*="status-icon"], [class*="late-icon"], [class*="missing-icon"], svg[class*="late"], svg[class*="missing"]');
+      for (var ni = 0; ni < nativeIcons.length; ni++) {
+        nativeIcons[ni].style.setProperty('display', 'none', 'important');
+        nativeIcons[ni].style.setProperty('visibility', 'hidden', 'important');
+        nativeIcons[ni].setAttribute('data-cgp-hid', '1');
+      }
+    } else {
+      var hid = cell.querySelectorAll('[data-cgp-hid]');
+      for (var hi = 0; hi < hid.length; hi++) {
+        hid[hi].style.removeProperty('display');
+        hid[hi].style.removeProperty('visibility');
+        hid[hi].removeAttribute('data-cgp-hid');
+      }
     }
 
     return status;
+  };
+
+  /* Strip everything this controller ever painted from a cell - used when a
+   * (recycled) cell can no longer be tied to a submission, so it must not
+   * keep showing the previous occupant's bubble, badge or grade. */
+  var OWN_CLASSES = ['cgp-has-comment', 'cgp-has-resub', 'cgp-has-sub', 'cgp-has-unposted',
+    'cgp-has-status-badge', 'cgp-pending-write', 'cgp-override'];
+  P.clearCell = function (cell) {
+    var dirty = cell.className.indexOf('cgp-') >= 0;
+    var leftovers = cell.querySelectorAll(':scope > .cgp-marks, :scope > .cgp-val');
+    if (!dirty && !leftovers.length && !cell.querySelector('[data-cgp-hid]')) return;
+    for (var i = 0; i < leftovers.length; i++) leftovers[i].remove();
+    // Native icons a Missing/Late badge hid stay hidden for whoever SlickGrid
+    // recycles this cell to next unless they are put back here too.
+    var hid = cell.querySelectorAll('[data-cgp-hid]');
+    for (var h = 0; h < hid.length; h++) {
+      hid[h].style.removeProperty('display');
+      hid[h].style.removeProperty('visibility');
+      hid[h].removeAttribute('data-cgp-hid');
+    }
+    OWN_CLASSES.forEach(function (name) { cell.classList.remove(name); });
+    PAINTED.forEach(function (name) { cell.classList.remove('cgp-status-' + name); });
+    if (this.registry && this.registry.invalidate) this.registry.invalidate(cell);
   };
 
   P.paintCell = function (info) {
@@ -291,7 +362,12 @@
       }
       return;
     }
-    if (info.columnType !== 'assignment' || !info.assignmentId || !info.studentId) return;
+    if (info.columnType !== 'assignment' || !info.assignmentId || !info.studentId) {
+      // Identity unknown (or not a grade cell): a recycled node must not keep
+      // the previous occupant's marks.
+      this.clearCell(cell);
+      return;
+    }
 
     var rec = this.model.cell(info.assignmentId, info.studentId);
     // Ahead of the signature shortcut on purpose: Canvas can repaint its own
@@ -310,9 +386,12 @@
     // a visible flash on every single click of Post, well before anything had
     // actually posted.
     var known = this.model.everLoadedAssignments.has(String(info.assignmentId)) || !!(rec && rec.pending);
-    var status = this.syncStatus(cell, known ? rec : null);
+    var statusRec = known ? rec : null;
     var sig = this.signatureFor(info, rec);
-    if (!this.registry.needsPaint(cell, sig) && this.marksIntact(cell, rec, status)) return;
+    var settled = !this.registry.needsPaint(cell, sig) &&
+      this.marksIntact(cell, rec, CGP.gradeOps.cellStatus(statusRec));
+    var status = this.syncStatus(cell, statusRec, settled);
+    if (settled) return;
     this.registry.markPainted(cell, sig);
 
     var host = this.marksHost(cell);
@@ -377,60 +456,38 @@
     cell.classList.toggle('cgp-has-status-badge', showMissingBadge || showLateBadge);
     cell.classList.toggle('cgp-pending-write', !!(rec && rec.pending));
 
-    // Grade overlay: ensure the student's accurate grade is displayed in the cell,
-    // especially when Canvas's native view replaces a graded submission with an icon
-    // (e.g. late submissions, resubmissions, or missing assignments that are now graded).
+    // Grade overlay: ONLY for this extension's own writes, which Canvas's
+    // in-page store never hears about. Canvas's own text is otherwise the
+    // truth - it already reflects late-penalty deductions (entered_score is
+    // PRE-deduction), the column's display type (letter, GPA, percent,
+    // pass/fail) and "EX" for excused, none of which a raw score can stand in
+    // for.
     var wantedGrade = null;
-    if (rec) {
-      if (rec.override !== null && rec.override !== undefined) {
-        wantedGrade = String(rec.override);
-      } else if (rec.excused) {
-        wantedGrade = 'EX';
-      } else if (rec.enteredScore !== null && rec.enteredScore !== undefined) {
-        wantedGrade = String(rec.enteredScore);
-      } else if (rec.score !== null && rec.score !== undefined) {
-        wantedGrade = String(rec.score);
-      } else if (rec.grade !== null && rec.grade !== undefined && rec.grade !== '') {
-        wantedGrade = String(rec.grade);
-      }
+    if (rec && rec.override !== null && rec.override !== undefined) {
+      wantedGrade = String(rec.override);
+    } else if (rec && rec.pending && rec.grade !== null && rec.grade !== undefined && rec.grade !== '') {
+      wantedGrade = String(rec.grade);
     }
 
+    var showVal = false;
     if (wantedGrade !== null) {
       var canvasText = this.canvasCellText(cell);
       var textMatches = canvasText === wantedGrade;
       if (!textMatches && canvasText !== '' && !isNaN(Number(canvasText)) && !isNaN(Number(wantedGrade))) {
         textMatches = Number(canvasText) === Number(wantedGrade);
       }
-      if (textMatches) {
-        cell.classList.remove('cgp-override');
-        var stale = cell.querySelector(':scope > .cgp-val');
-        if (stale) stale.remove();
-      } else {
-        // Only overlay if:
-        // 1. There is an active local write/override in flight (rec.override !== null || rec.pending), OR
-        // 2. The cell contains Canvas's submission icon / placeholder (e.g. paper icon for late/missing submission that is now graded), OR
-        // 3. Canvas text is non-empty but differs (e.g. formatting difference).
-        // If Canvas cell is completely empty (no submission icon, no text) and there is no local override,
-        // it means Canvas considers this cell ungraded/unsubmitted - never inject a synthetic grade overlay!
-        var hasNativeIcon = !!cell.querySelector('.Grid__GradeCell__Content i, .Grid__GradeCell__Content svg, .Grid__GradeCell__Content [class*="icon"], .Grid__GradeCell__Content [class*="submission"]');
-        var isLocalWrite = !!(rec && ((rec.override !== null && rec.override !== undefined) || rec.pending));
-        var shouldOverlay = isLocalWrite || hasNativeIcon || canvasText !== '';
-
-        if (shouldOverlay) {
-          var val = cell.querySelector(':scope > .cgp-val');
-          if (!val) {
-            val = document.createElement('span');
-            val.className = 'cgp-val';
-            cell.appendChild(val);
-          }
-          val.textContent = wantedGrade;
-          cell.classList.add('cgp-override');
-        } else {
-          cell.classList.remove('cgp-override');
-          var staleVal = cell.querySelector(':scope > .cgp-val');
-          if (staleVal) staleVal.remove();
-        }
+      // Once Canvas shows the same value itself, the overlay has done its job.
+      showVal = !textMatches;
+    }
+    if (showVal) {
+      var val = cell.querySelector(':scope > .cgp-val');
+      if (!val) {
+        val = document.createElement('span');
+        val.className = 'cgp-val';
+        cell.appendChild(val);
       }
+      if (val.textContent !== wantedGrade) val.textContent = wantedGrade;
+      cell.classList.add('cgp-override');
     } else {
       cell.classList.remove('cgp-override');
       var old = cell.querySelector(':scope > .cgp-val');
@@ -516,6 +573,7 @@
     }
     var cells = this.registry.sync(this.adapter.visibleCells());
     var self = this;
+    var now = Date.now();
     var neededAssignments = [];
     var neededComments = [];
     var visibleAssignmentIds = [];
@@ -525,13 +583,14 @@
         var aid = String(info.assignmentId);
         if (visibleAssignmentIds.indexOf(aid) < 0) {
           visibleAssignmentIds.push(aid);
-          if (self.model.loadedAssignments && !self.model.loadedAssignments.has(aid) && !self.requested.has(aid)) {
+          if (self.model.loadedAssignments && !self.model.loadedAssignments.has(aid) && !self.requested.has(aid) &&
+              self.mayRequest(self.loadFailures, aid, now)) {
             self.requested.add(aid);
             neededAssignments.push(aid);
           }
           if (self.settings && self.settings.values && self.settings.values.commentIndicator &&
               self.model.commentVerifiedAssignments && !self.model.commentVerifiedAssignments.has(aid) &&
-              !self.requestedComments.has(aid)) {
+              !self.requestedComments.has(aid) && self.mayRequest(self.commentFailures, aid, now)) {
             self.requestedComments.add(aid);
             neededComments.push(aid);
           }
@@ -540,24 +599,34 @@
       self.paintCell(info);
     });
 
+    // Success is judged by the model's own sets after the call settles - the
+    // model resolves (not rejects) on most failures and simply leaves the id
+    // out - so a failing column is retried with backoff, not on every paint.
     if (neededAssignments.length && this.model.ensureAssignments) {
+      var settleLoads = function () {
+        neededAssignments.forEach(function (id) {
+          self.requested.delete(String(id));
+          var ok = !!(self.model.loadedAssignments && self.model.loadedAssignments.has(String(id)));
+          self.noteResult(self.loadFailures, String(id), ok, 'paint.columnLoad');
+        });
+      };
       this.model.ensureAssignments(neededAssignments).then(function () {
-        neededAssignments.forEach(function (id) { self.requested.delete(String(id)); });
+        settleLoads();
         var st = self.model.stats ? self.model.stats() : {};
         CGP.diag.set('cellsWithInstructorComment', st.cellsWithInstructorComment || 0);
         CGP.diag.set('submissionsLoaded', st.cells || 0);
-      }, function () {
-        // A transient Canvas/API failure must not permanently suppress retries.
-        neededAssignments.forEach(function (id) { self.requested.delete(String(id)); });
-      });
+      }, settleLoads);
     }
 
     if (neededComments.length && this.model.verifyVisibleComments) {
-      this.model.verifyVisibleComments(neededComments).then(function () {
-        neededComments.forEach(function (id) { self.requestedComments.delete(String(id)); });
-      }, function () {
-        neededComments.forEach(function (id) { self.requestedComments.delete(String(id)); });
-      });
+      var settleComments = function () {
+        neededComments.forEach(function (id) {
+          self.requestedComments.delete(String(id));
+          var ok = !!(self.model.commentVerifiedAssignments && self.model.commentVerifiedAssignments.has(String(id)));
+          self.noteResult(self.commentFailures, String(id), ok, 'paint.commentVerify');
+        });
+      };
+      this.model.verifyVisibleComments(neededComments).then(settleComments, settleComments);
     }
 
     CGP.diag.bump('paint.passes');
@@ -605,10 +674,15 @@
       self.onCommentLeave();
     }, false);
     // A bubble that scrolls out from under the pointer (or disappears on
-    // repaint) never fires mouseout - close on any scroll instead of trusting it.
-    this.adapter.viewports().forEach(function (vp) {
-      vp.addEventListener('scroll', function () { self._hoverIcon = null; self.onCommentDismiss(); }, { passive: true });
-    });
+    // repaint) never fires mouseout - close on any grid scroll instead of
+    // trusting it. One capture listener on document ('scroll' does not
+    // bubble, but is captured) also covers viewports Canvas recreates later.
+    document.addEventListener('scroll', function (e) {
+      var t = e && e.target;
+      if (!t || !t.classList || !t.classList.contains('slick-viewport')) return;
+      self._hoverIcon = null;
+      self.onCommentDismiss();
+    }, { capture: true, passive: true });
   };
 
   P.start = function () {

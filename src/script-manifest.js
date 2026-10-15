@@ -21,6 +21,7 @@ export const CONTENT_JS = [
   'src/gradebook/writer.js',
   'src/gradebook/selection.js',
   'src/gradebook/cell-actions.js',
+  'src/gradebook/test-student-guard.js',
   'src/gradebook/keyboard.js',
   'src/gradebook/bulk-paste.js',
   'src/gradebook/frozen-total.js',

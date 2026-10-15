@@ -39,6 +39,9 @@
     if ((m = /^assignment_(\d+)$/.exec(id))) return { type: 'assignment', assignmentId: m[1] };
     if ((m = /^(\d+)$/.exec(id))) return { type: 'assignment', assignmentId: m[1] };
     if ((m = /^assignment_group_(\d+)$/.exec(id))) return { type: 'group', groupId: m[1] };
+    // Final Grade Override is an editable column of its own, not the Total:
+    // treating it as Total hid it with the frozen-Total feature.
+    if (id === 'total_grade_override') return { type: 'override' };
     if (/^total/.test(id) || id === 'final_grade') return { type: 'total' };
     if (/^student/.test(id)) return { type: 'student' };
     if (/^custom_col_/.test(id)) return { type: 'custom' };
@@ -122,6 +125,12 @@
         var token = String(rows[r][c] === undefined || rows[r][c] === null ? '' : rows[r][c]).trim();
         var colIndex = anchor.colIndex + c;
         if (token === '') { skipped++; continue; }
+        if (!userId && accessors.isTestStudentRow && accessors.isTestStudentRow(rowIndex)) {
+          // A value aimed at the (hidden) Test Student row means the
+          // clipboard and the visible roster disagree by a row from here on.
+          errors.push({ code: 'test-student', rowIndex: rowIndex, colIndex: colIndex });
+          continue;
+        }
         if (!userId) { errors.push({ code: 'unresolved-student', rowIndex: rowIndex, colIndex: colIndex }); continue; }
         var col = accessors.columnAt(colIndex);
         if (!col) { errors.push({ code: 'unresolved-column', rowIndex: rowIndex, colIndex: colIndex }); continue; }

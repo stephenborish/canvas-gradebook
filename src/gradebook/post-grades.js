@@ -33,6 +33,10 @@
     this.requestPaint = ctx.requestPaint || function () {};
     this.busy = new Set();          // assignmentIds with a post in flight
     this._rechecking = new Set();   // assignmentIds with a delayed re-read pending
+    // Columns Canvas confirmed posting but whose reads have not caught up:
+    // the button stays hidden for them until the background recheck settles,
+    // so it does not flicker back between re-reads.
+    this._awaitingCatchUp = new Set();
     // The base delay recheckLater() backs off from. A constructor option
     // only so tests can shrink minutes of real backoff down to milliseconds;
     // production code never overrides it.
@@ -68,7 +72,7 @@
       : '';
     return {
       text: 'Post ' + count,
-      title: why + hidden + '. Post them to the students now.'
+      title: why + hidden + '. Post them to the students now (every section, graded submissions only).'
     };
   };
 
@@ -86,6 +90,11 @@
       return;
     }
     if (this.busy.has(id)) return;   // mid-post: the button is saying so already
+    if (this._awaitingCatchUp.has(id)) {
+      if (existing) existing.remove();
+      headerEl.classList.remove('cgp-has-post');
+      return;
+    }
 
     // Never on an anonymous/moderated assignment: writer.js refuses to POST
     // to one (the identity mapping it depends on is deliberately hidden
@@ -268,8 +277,12 @@
         }, function (err) {
           // Fall back to the older, broader "unmute the whole column" REST
           // endpoint ONLY on a signal that specifically means the mutation
-          // itself is unavailable on this Canvas build - a network failure,
-          // or an HTTP 404/501 (the endpoint/route genuinely not there).
+          // itself is unavailable on this Canvas build: an HTTP 404/501 (the
+          // endpoint/route genuinely not there) or a schema-mismatch error.
+          // Never on a network failure: that says nothing about the mutation
+          // existing, and it may well have run before the response was lost -
+          // while the fallback posts the WHOLE column, ungraded submissions
+          // included, which is exactly what gradedOnly was protecting.
           // Nothing weaker than that: err.graphql===true is set for EVERY
           // top-level GraphQL error alike, including an authorization or
           // resolver-level refusal, not just an unrecognized mutation - and
@@ -284,7 +297,7 @@
           // awareness at all.
           var schemaMismatch = err && err.graphql === true &&
             /cannot query field|unknown (field|argument|operation)|doesn.?t exist on type/i.test(String(err.message || ''));
-          var mutationUnavailable = !!(err && (err.network === true || err.status === 404 || err.status === 501 || schemaMismatch));
+          var mutationUnavailable = !!(err && (err.status === 404 || err.status === 501 || schemaMismatch));
           if (!mutationUnavailable) throw err;
           return self.postWithoutGraphql(id, err).then(function (r) { confirmed = true; return r; });
         })
@@ -308,9 +321,11 @@
           if (settled.known && left < count) {
             // Canvas posted some but not all - most often ungraded submissions,
             // which "post graded only" deliberately leaves hidden.
+            // The re-read that produced this count is the truth about the
+            // column; nothing is stamped locally on top of it. (Stamping the
+            // first N pending ids used to mark students whose grades were
+            // STILL hidden as posted, and hide the button while they were.)
             var postedCount = count - left;
-            var postedIds = pendingIds.slice(0, postedCount);
-            self.markPostedLocally(id, postedIds);
             CGP.ui.toast(postedCount + ' of ' + count + ' grades posted in ' + name);
             CGP.diag.bump('post.completed', postedCount);
             var copy = self.label(left, self.model.assignment(id));
@@ -332,6 +347,7 @@
             // failed outright. Record that against the cells we posted, so
             // the grid reflects the confirmed post immediately.
             self.markPostedLocally(id, pendingIds);
+            self._awaitingCatchUp.add(id);
             CGP.ui.toast(count + (count === 1 ? ' grade' : ' grades') + ' posted to students');
             CGP.diag.bump('post.completedUnreadableColumn', count);
             if (btn && btn.parentElement) {
@@ -339,12 +355,14 @@
               btn.parentElement.classList.remove('cgp-has-post');
             }
             if (btn && btn.isConnected) btn.remove();
+            self.recheckLater(id);
           } else if (confirmed) {
             // Canvas said the job finished, but its submissions endpoint read
             // lags its own job. Mark the grades posted locally immediately so
             // the teacher sees the post button disappear and the column update
             // right away without having to reload the page.
             self.markPostedLocally(id, pendingIds);
+            self._awaitingCatchUp.add(id);
             CGP.ui.toast(count + (count === 1 ? ' grade' : ' grades') + ' posted to students');
             CGP.diag.bump('post.completedLaggingRead', count);
             if (btn && btn.parentElement) {
@@ -366,8 +384,15 @@
           }
         }, function (err) {
           CGP.diag.error('post.failed', { assignmentId: id, status: err && err.status, message: String(err && err.message) });
-          if (CGP.util.isSessionExpiredError(err)) {
+          if (CGP.util.isSessionExpiredError(err) || CGP.util.isPermissionDeniedError(err)) {
             CGP.ui.error(CGP.util.describeApiError(err) + ' Nothing was posted.');
+          } else if (err && err.network === true) {
+            // The request may have reached Canvas before the connection
+            // dropped, so "nothing was posted" would be a guess. Re-read
+            // the column in the background and let it show the truth.
+            CGP.ui.error('Canvas could not be reached while posting ' + ((assignment && assignment.name) || 'this column') +
+              ', so it is not certain whether the grades went out. The column will re-check itself shortly.');
+            self.recheckLater(id);
           } else {
             CGP.ui.error('Canvas would not post these grades' +
               (err && err.status ? ' (Canvas ' + err.status + ')' : (err && err.message ? ': ' + err.message : '')) +
@@ -430,13 +455,18 @@
         if (!loaded || left > 0) {
           if (attempt + 1 < MAX_ATTEMPTS) {
             self.recheckLater(id, attempt + 1);
-          } else {
-            CGP.diag.warn('post.recheckExhausted', { assignmentId: id, left: loaded ? left : null });
+            return;
           }
+          CGP.diag.warn('post.recheckExhausted', { assignmentId: id, left: loaded ? left : null });
         }
+        // Caught up, or out of patience: either way the column now shows
+        // whatever Canvas last said, Post button included.
+        self._awaitingCatchUp.delete(id);
+        self.requestPaint();
       }, function () {
         self._rechecking.delete(id);
         if (attempt + 1 < MAX_ATTEMPTS) self.recheckLater(id, attempt + 1);
+        else { self._awaitingCatchUp.delete(id); self.requestPaint(); }
       });
     }, delay);
   };
@@ -444,10 +474,10 @@
   /* Stamp posted_at on the cells Canvas has just told us it posted.
    *
    * Only ever called after Canvas has affirmatively reported the posting job
-   * complete AND the re-read of the column failed to land - never over a
-   * successful read, which is the current truth about the column whatever we
-   * just did to it, and never for anything but the exact submissions counted
-   * as pending immediately before the post. The next real read of the column
+   * complete AND the re-reads either failed or still lag that job - never
+   * over a read showing partial progress, which is the current truth about
+   * the column - and only for the exact submissions counted as pending
+   * immediately before the post. The background recheck's next real read
    * replaces this with Canvas's own timestamps. */
   P.markPostedLocally = function (assignmentId, userIds) {
     var self = this;

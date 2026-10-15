@@ -37,6 +37,28 @@
     return null;
   }
 
+  /* Retry-After, in ms, when Canvas sent one (seconds or an HTTP date). */
+  function retryAfterMs(headers) {
+    var raw = headers && typeof headers.get === 'function' ? headers.get('Retry-After') : null;
+    if (!raw) return null;
+    var secs = Number(raw);
+    if (isFinite(secs)) return Math.max(0, secs * 1000);
+    var at = Date.parse(raw);
+    return isFinite(at) ? Math.max(0, at - Date.now()) : null;
+  }
+
+  // The longest Retry-After a request will wait out before retrying.
+  var MAX_RETRY_AFTER_MS = 30000;
+
+  /* Canvas throttles with 429, and on many instances with a 403 whose body
+   * reads "Rate Limit Exceeded". Any other 403 is a real refusal and must
+   * not be retried. */
+  function isThrottled(err) {
+    if (!err) return false;
+    if (err.status === 429) return true;
+    return err.status === 403 && /rate limit/i.test(String(err.snippet || '') + ' ' + String(err.canvasMessage || ''));
+  }
+
   function CanvasApi(opts) {
     opts = opts || {};
     this.origin = opts.origin || (typeof location !== 'undefined' ? location.origin : '');
@@ -113,8 +135,18 @@
         }).then(function (res) {
           return res.text().then(function (text) {
             if (!res.ok) {
+              // Canvas answers 401 both for "not logged in" (status
+              // "unauthenticated") and for "logged in, but not allowed to do
+              // that" (status "unauthorized": a closed grading period, a
+              // concluded course, a role without grading rights). Keeping
+              // what the body said lets the message tell those apart.
+              var errBody = parseBody(text) || {};
+              var firstError = Array.isArray(errBody.errors) && errBody.errors[0] ? errBody.errors[0] : null;
               throw new CanvasApiError('Canvas ' + res.status + ' on ' + method + ' ' + u.pathname, {
                 status: res.status, path: u.pathname, method: method,
+                canvasStatus: typeof errBody.status === 'string' ? errBody.status : null,
+                canvasMessage: (firstError && firstError.message) || (typeof errBody.message === 'string' ? errBody.message : null),
+                retryAfterMs: retryAfterMs(res.headers),
                 snippet: String(text || '').slice(0, 160)
               });
             }
@@ -127,11 +159,24 @@
           });
         });
       }).catch(function (err) {
-        var retriable = err.network === true || err.status === 429 || err.status === 403 ||
-          (err.status >= 500 && err.status < 600);
-        if (n < maxRetries && retriable) {
+        // A throttled request was refused before Canvas acted on it, so it is
+        // always safe to send again. A network failure or a 5xx is not: the
+        // write may already have been applied before the response was lost,
+        // which for a non-idempotent request (a new comment) means a second
+        // copy. Those are only retried for requests that are safe to repeat.
+        var throttled = isThrottled(err);
+        var transient = err.network === true || (err.status >= 500 && err.status < 600);
+        var retriable = throttled || (transient && opts.idempotent !== false);
+        // Canvas's own Retry-After is honoured in full, up to a limit a
+        // teacher can sensibly be kept waiting on. Asked to wait longer, the
+        // request is not retried early (it would only be throttled again);
+        // it fails at once, and the message says how long to wait.
+        var tooLong = throttled && err.retryAfterMs > MAX_RETRY_AFTER_MS;
+        if (n < maxRetries && retriable && !tooLong) {
           CGP.diag.bump('api.retries');
-          return util.sleep(400 * Math.pow(2, n)).then(function () { return attempt(n + 1); });
+          var backoff = 400 * Math.pow(2, n);
+          if (throttled) backoff = Math.max(backoff, err.retryAfterMs || 0, 1000 * (n + 1));
+          return util.sleep(backoff).then(function () { return attempt(n + 1); });
         }
         CGP.diag.error('api.failed', {
           method: err.method || method, path: err.path || u.pathname,
@@ -160,7 +205,12 @@
         else if (r.data) out.push(r.data);
         var next = nextLink(r.link);
         if (next && page + 1 < maxPages) return step(next, page + 1);
-        if (next) CGP.diag.warn('api.pagination.truncated', { path: String(path), pages: maxPages });
+        if (next) {
+          CGP.diag.warn('api.pagination.truncated', { path: String(path), pages: maxPages });
+          // Callers that would otherwise treat a partial list as the whole
+          // truth (a column marked loaded, a roster) can check this.
+          out.truncated = true;
+        }
         return out;
       });
     }
@@ -201,7 +251,7 @@
       'type[]': ['StudentEnrollment'],
       'state[]': ['active', 'invited'],
       grading_period_id: (gradingPeriodId === undefined || gradingPeriodId === null) ? undefined : String(gradingPeriodId)
-    }, { maxPages: 20 });
+    }, { maxPages: 100 });
   };
 
   CanvasApi.prototype.enrollmentForUser = function (courseId, userId, gradingPeriodId) {
@@ -243,7 +293,7 @@
     opts = opts || {};
     return this.getAll('/api/v1/courses/' + courseId + '/assignments/' + assignmentId + '/submissions', {
       'include[]': ['submission_comments']
-    }, { maxPages: opts.maxPages || 30 });
+    }, { maxPages: opts.maxPages || 100 });
   };
 
   CanvasApi.prototype.submission = function (courseId, assignmentId, userId) {
@@ -251,17 +301,23 @@
       { 'include[]': ['submission_comments'] });
   };
 
-  CanvasApi.prototype.updateSubmission = function (courseId, assignmentId, userId, form) {
+  /* A grade/status write is idempotent - sending the same posted_grade or
+   * late_policy_status twice leaves the same record - so a lost response is
+   * worth one retry. opts.idempotent:false (a comment) only retries a request
+   * Canvas throttled before acting on it. */
+  CanvasApi.prototype.updateSubmission = function (courseId, assignmentId, userId, form, opts) {
+    opts = opts || {};
     return this.request('/api/v1/courses/' + courseId + '/assignments/' + assignmentId + '/submissions/' + userId, {
       method: 'PUT',
       form: form,
       params: { 'include[]': ['submission_comments'] },
-      retries: 1
+      retries: 1,
+      idempotent: opts.idempotent !== false
     }).then(function (r) { return r.data; });
   };
 
   CanvasApi.prototype.addComment = function (courseId, assignmentId, userId, text) {
-    return this.updateSubmission(courseId, assignmentId, userId, { 'comment[text_comment]': text });
+    return this.updateSubmission(courseId, assignmentId, userId, { 'comment[text_comment]': text }, { idempotent: false });
   };
 
   /* ------------------------------------------------------- posting grades */
@@ -364,7 +420,30 @@
     return this.getAll('/api/v1/courses/' + courseId + '/users', {
       'enrollment_type[]': ['student'],
       'enrollment_state[]': ['active', 'invited']
-    }, { maxPages: 6 });
+    }, { maxPages: 30 });
+  };
+
+  /* The course's Test Student (Student View) user ids. Canvas keeps that
+   * pseudo-student in its own enrollment type, which the roster read above
+   * deliberately leaves out. */
+  CanvasApi.prototype.testStudentIds = function (courseId) {
+    return this.getAll('/api/v1/courses/' + courseId + '/enrollments', {
+      'type[]': ['StudentViewEnrollment']
+    }, { maxPages: 2 }).then(function (list) {
+      var ids = [];
+      (list || []).forEach(function (e) {
+        var id = e && e.user && e.user.id !== undefined ? String(e.user.id) : (e && e.user_id !== undefined ? String(e.user_id) : null);
+        if (id && ids.indexOf(id) < 0) ids.push(id);
+      });
+      return ids;
+    });
+  };
+
+  /* Every submission one student has in a course (no comments). */
+  CanvasApi.prototype.submissionsForStudent = function (courseId, userId) {
+    return this.getAll('/api/v1/courses/' + courseId + '/students/submissions', {
+      'student_ids[]': [String(userId)]
+    }, { maxPages: 20 });
   };
 
   CanvasApi.prototype.teachingCourses = function () {
@@ -383,5 +462,5 @@
 
   CGP.CanvasApi = CanvasApi;
   CGP.CanvasApiError = CanvasApiError;
-  CGP.apiInternals = { parseBody: parseBody, nextLink: nextLink };
+  CGP.apiInternals = { parseBody: parseBody, nextLink: nextLink, isThrottled: isThrottled, retryAfterMs: retryAfterMs };
 })();

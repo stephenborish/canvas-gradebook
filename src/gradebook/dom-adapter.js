@@ -28,6 +28,7 @@
     this.columnIdToIndex = new Map();
     this.rowIndexToStudent = new Map();  // row index -> userId
     this.topToStudent = new Map();       // rounded style.top -> userId
+    this.testRowIndices = new Set();     // row indices confirmed live as the Test Student
     this.studentToRowIndex = new Map();
     this.paneOffsets = [];
     this.nameOverrideByTitle = new Map(); // header title (lowercase) -> assignmentId, learned once
@@ -209,6 +210,20 @@
     return h > 8 ? h : DEFAULT_ROW_HEIGHT;
   };
 
+  /* Rows in the grid right now (Canvas sizes each .grid-canvas to rowCount *
+   * rowHeight), or null when that cannot be read. SlickGrid pads the canvas
+   * to at least the viewport height, so a short roster can over-count; it
+   * never under-counts. */
+  P.rowCount = function () {
+    var canvases = this.canvases();
+    var h = this.rowHeight();
+    for (var i = 0; i < canvases.length; i++) {
+      var px = parseFloat((canvases[i].style && canvases[i].style.height) || '');
+      if (isFinite(px) && px > 0 && h > 0) return Math.round(px / h);
+    }
+    return null;
+  };
+
   P.columnIdForHeader = function (el) {
     var idVal = el.id || (el.getAttribute && el.getAttribute('id')) || '';
     var fromId = gridMap.parseSlickColumnId(idVal);
@@ -230,9 +245,12 @@
       if (cid) return cid;
     }
 
-    var link = el.querySelector('a[href*="/assignments/"]');
-    if (link) {
-      var m = /\/assignments\/(\d+)/.exec(link.getAttribute('href') || '');
+    // Skip this extension's own title link (decorateHeaders): it would make
+    // the header resolve to whatever it was decorated as, never re-checking.
+    var links = el.querySelectorAll('a[href*="/assignments/"]');
+    for (var li = 0; li < links.length; li++) {
+      if (links[li].closest && links[li].closest('.cgp-header-label, .cgp-header-title')) continue;
+      var m = /\/assignments\/(\d+)/.exec(links[li].getAttribute('href') || '');
       if (m) return 'assignment_' + m[1];
     }
     // Some header variants only expose the assignment via a button that opens
@@ -244,10 +262,10 @@
       if (m2) return 'assignment_' + m2[1];
     }
 
-    var titleAttr = (el.getAttribute('title') || el.getAttribute('aria-label') || '').trim().toLowerCase();
-    if (/^total/.test(titleAttr) || titleAttr.indexOf('total') >= 0 || /^to(\.|$)/.test(titleAttr)) return 'total_grade';
+    // Never classify Total by header text: "Total Points", "Final Grade
+    // Override" or a custom column mentioning "total" would be hidden or
+    // treated as Canvas's Total. Total is only ever trusted structurally.
     var text = (el.textContent || '').trim().toLowerCase();
-    if (/^total/.test(text) || /^to(\.|$)/.test(text) || text.indexOf('total') >= 0) return 'total_grade';
     if (/^student/.test(text) || text.indexOf('student name') >= 0) return 'student';
     return null;
   };
@@ -297,8 +315,10 @@
 
     var fixed = 0;
     this.colIndexToColumn.forEach(function (entry, index) {
-      if (!entry || entry.type === 'assignment' || !entry.el || !entry.el.isConnected) return;
-      if (entry.type === 'student' || entry.type === 'total' || entry.type === 'group') return;
+      if (!entry || !entry.el || !entry.el.isConnected) return;
+      // Only columns nothing structural could identify; never retype a
+      // custom, group, total, override or student column by its title.
+      if (entry.type !== 'other' && entry.type !== 'unknown') return;
       var title = self.headerTitleText(entry.el);
       if (!title || self.nameOverrideByTitle.has(title.toLowerCase())) return;
       var candidates = byName.get(title.toLowerCase());
@@ -337,12 +357,60 @@
       self.columnIdToIndex.set(entry.columnId, index);
       fixed++;
     });
-    if (fixed) CGP.diag.bump('adapter.columns.reconciledByName', fixed);
+    if (fixed) {
+      this.invalidateColumns();
+      CGP.diag.bump('adapter.columns.reconciledByName', fixed);
+    }
     return fixed;
   };
 
-  /** Refresh (and remember) the absolute column index -> column identity map. */
-  P.refreshColumns = function () {
+  /** Drop the cached header map so the next refreshColumns() rebuilds it. */
+  P.invalidateColumns = function () {
+    this._colGen = (this._colGen || 0) + 1;
+    this._colCache = null;
+  };
+
+  /* Cheap "did the header row change?" check: the pane containers plus each
+   * one's child count and first/last child identity. */
+  P.headerShape = function (containers) {
+    var shape = [];
+    for (var i = 0; i < containers.length; i++) {
+      var kids = containers[i].children || [];
+      shape.push(containers[i], kids.length, kids[0] || null, kids[kids.length - 1] || null);
+    }
+    return shape;
+  };
+
+  function sameShape(a, b) {
+    if (!a || !b || a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+
+  /** Refresh (and remember) the absolute column index -> column identity map.
+   * Runs at least twice per paint (decorateHeaders, visibleCells), so the
+   * result is reused within the same task while the header shape is
+   * unchanged; `force` (or invalidateColumns()) always rebuilds. */
+  P.refreshColumns = function (force) {
+    var containers = this.headerContainers();
+    var shape = this.headerShape(containers);
+    var cache = this._colCache;
+    if (!force && cache && cache.gen === (this._colGen || 0) && sameShape(cache.shape, shape)) {
+      return cache.seen;
+    }
+    var seen = this._buildColumns(containers);
+    if (seen.length) {
+      var self = this;
+      var entry = { gen: this._colGen || 0, shape: shape, seen: seen };
+      this._colCache = entry;
+      // Valid only until the current task ends - a later paint always
+      // re-reads, so header changes that keep the same shape are still seen.
+      Promise.resolve().then(function () { if (self._colCache === entry) self._colCache = null; });
+    }
+    return seen;
+  };
+
+  P._buildColumns = function (containers) {
     var self = this;
     var index = 0;
     var seen = [];
@@ -358,7 +426,7 @@
     var totalIndex = null;
     var paneOffsets = [];
     var paneColumns = [];
-    this.headerContainers().forEach(function (container, paneIdx) {
+    containers.forEach(function (container, paneIdx) {
       paneOffsets.push(index);
       var currentPaneCols = [];
       paneColumns.push(currentPaneCols);
@@ -367,7 +435,9 @@
         var el = cols[i];
         var columnId = self.columnIdForHeader(el);
         var info = gridMap.classifyColumnId(columnId || '');
-        if (info.type !== 'assignment' && self.nameOverrideByTitle.size) {
+        // Same restriction as reconcileColumnsWithModel: only unidentified
+        // columns may be matched by title.
+        if ((info.type === 'other' || info.type === 'unknown') && self.nameOverrideByTitle.size) {
           var known = self.nameOverrideByTitle.get(self.headerTitleText(el).toLowerCase());
           if (known) {
             // An unambiguous title (only one assignment anywhere in the
@@ -469,10 +539,12 @@
     var rightHeader = headers[1];
     var firstCol = rightHeader.querySelector('.slick-header-column');
     if (!firstCol) return null;
-    var colId = this.columnIdForHeader(firstCol);
-    var info = gridMap.classifyColumnId(colId || '');
-    var text = (firstCol.textContent || '').trim().toLowerCase();
-    if (info.type === 'total' || /^total/.test(text) || text.indexOf('total') >= 0) {
+    // Structural id only (element id / data-column-id) - header text such as
+    // "Total Points" or "Final Grade Override" must never count as Total.
+    var colId = gridMap.parseSlickColumnId(firstCol.id || '') ||
+      firstCol.getAttribute('data-column-id') || '';
+    var info = gridMap.classifyColumnId(colId);
+    if (info.type === 'total') {
       var w = Math.round(firstCol.getBoundingClientRect().width) || 130;
       return { el: firstCol, width: w };
     }
@@ -523,11 +595,12 @@
    * 5. Non-virtualized row fallback (ONLY when the row contains all columns of that pane)
    * Never guesses offset + local on horizontally virtualized rows to prevent column misalignment.
    */
-  P.resolveColIndexForCell = function (cell, row) {
+  P.resolveColIndexForCell = function (cell, row, orderedCanvases) {
     if (!cell) return null;
     if (!this.paneOffsets || !this.paneOffsets.length || !this.paneColumns) this.refreshColumns();
 
-    var canvases = this.canvases();
+    // Callers resolving many cells pass the ordered canvases in once.
+    var canvases = orderedCanvases || this.canvases();
     var canvas = (row && row.closest && row.closest('.grid-canvas')) ||
                  (cell.closest && cell.closest('.grid-canvas')) ||
                  (row && row.parentElement);
@@ -724,10 +797,25 @@
   };
 
   /** Learn student identities from whichever rows are currently rendered. */
-  P.refreshRows = function () {
+  P.refreshRows = function (orderedCanvases) {
     var self = this;
     var h = this.rowHeight();
-    var canvases = this.canvases();
+    var canvases = orderedCanvases || this.canvases();
+    // A filter / section / view change can drop an OFF-screen student while
+    // every rendered row stays the same - the only sign is the row count.
+    // Every cached off-screen identity is suspect then, so start over.
+    var rowCount = this.rowCount();
+    if (rowCount !== null) {
+      if (this._lastRowCount !== undefined && this._lastRowCount !== null && rowCount !== this._lastRowCount) {
+        this.topToStudent.clear();
+        this.rowIndexToStudent.clear();
+        this.studentToRowIndex.clear();
+        this.testRowIndices.clear();
+        CGP.diag.bump('adapter.rows.rowCountChanged');
+      }
+      this._lastRowCount = rowCount;
+    }
+    var liveRows = [];  // {idx, sid} read straight from the DOM this pass
     var unresolved = 0;
     var sampled = 0;
     var reordered = false;
@@ -765,6 +853,10 @@
           self.topToStudent.delete(top);
           if (staleIdx !== null) self.rowIndexToStudent.delete(staleIdx);
           if (staleSid) self.studentToRowIndex.delete(String(staleSid));
+          // Reported as a live read of "the Test Student", not as an
+          // unknown row: a range or paste spanning it can then skip it on
+          // purpose instead of being refused as unconfirmed.
+          if (staleIdx !== null) liveRows.push({ idx: staleIdx, sid: null, test: true });
           unresolved++;
           continue;
         }
@@ -772,6 +864,7 @@
         var live = self.studentIdFromRow(row);
         var sid = live || self.topToStudent.get(top) ||
           (idx !== null ? self.rowIndexToStudent.get(idx) : null);
+        if (live && idx !== null) liveRows.push({ idx: idx, sid: String(live) });
         if (live) {
           // A live read that disagrees with whoever this exact pixel offset
           // / row index used to hold is the signature of a sort, filter, or
@@ -816,6 +909,7 @@
       this.topToStudent.clear();
       this.rowIndexToStudent.clear();
       this.studentToRowIndex.clear();
+      this.testRowIndices.clear();
       seen.forEach(function (r) {
         self.topToStudent.set(r.top, r.sid);
         if (r.idx !== null) {
@@ -827,6 +921,29 @@
     }
     CGP.diag.set('rowsMapped', this.rowIndexToStudent.size);
     CGP.diag.set('rowsUnresolved', unresolved);
+    return liveRows;
+  };
+
+  /** True when this row index was just read live as the Test Student. */
+  P.isTestStudentIndex = function (rowIndex) {
+    return this.testRowIndices.has(Number(rowIndex));
+  };
+
+  /** True when the row at this index is the Test Student - from the last
+   * live read, or from the frozen pane's name if that row is on screen. */
+  P.isTestStudentRowIndex = function (rowIndex) {
+    var i = Number(rowIndex);
+    if (!isFinite(i) || i < 0) return false;
+    if (this.testRowIndices.has(i)) return true;
+    var frozen = this.canvases()[0];
+    if (!frozen) return false;
+    var h = this.rowHeight();
+    var rows = frozen.querySelectorAll(':scope > .slick-row');
+    for (var r = 0; r < rows.length; r++) {
+      var top = this.rowTop(rows[r]);
+      if (top !== null && gridMap.rowIndexFromTop(top, h) === i) return this.isTestStudentRow(rows[r]);
+    }
+    return false;
   };
 
   P.studentAt = function (rowIndex) {
@@ -842,13 +959,14 @@
   /** All rendered cells with identity resolved where possible. */
   P.visibleCells = function () {
     this.refreshColumns();
-    this.refreshRows();
+    var canvases = this.canvases();   // ordered once per pass, not per cell
+    this.refreshRows(canvases);
     var self = this;
     var h = this.rowHeight();
     var out = [];
     var unmapped = 0;
 
-    this.canvases().forEach(function (canvas) {
+    canvases.forEach(function (canvas) {
       var rows = canvas.querySelectorAll(':scope > .slick-row');
       for (var r = 0; r < rows.length; r++) {
         var row = rows[r];
@@ -860,7 +978,7 @@
         for (var c = 0; c < kids.length; c++) {
           var cell = kids[c];
           if (!cell.classList || !cell.classList.contains('slick-cell')) continue;
-          var colIndex = self.resolveColIndexForCell(cell, row);
+          var colIndex = self.resolveColIndexForCell(cell, row, canvases);
           var column = colIndex === null ? null : self.columnAt(colIndex);
           var info = {
             el: cell,
@@ -938,7 +1056,7 @@
     }
     if (!this.colIndexToColumn.size) this.refreshColumns();
     var colIndex = this.resolveColIndexForCell(cell, row);
-    if (colIndex !== null && !this.colIndexToColumn.has(colIndex)) this.refreshColumns();
+    if (colIndex !== null && !this.colIndexToColumn.has(colIndex)) this.refreshColumns(true);
     var column = colIndex === null ? null : this.columnAt(colIndex);
     return {
       el: cell, row: row, top: top, rowIndex: rowIndex, colIndex: colIndex,
@@ -992,21 +1110,50 @@
     return true;
   };
 
+  /* Rendered cell at (rowIndex, colIndex), found by scanning rows by top and
+   * cells by Canvas's b<n> class - no full visibleCells() rebuild. */
   P.cellElementAt = function (rowIndex, colIndex) {
-    var cells = this.visibleCells();
-    for (var i = 0; i < cells.length; i++) {
-      if (cells[i].rowIndex === rowIndex && cells[i].colIndex === colIndex) return cells[i].el;
+    if (rowIndex === null || rowIndex === undefined || colIndex === null || colIndex === undefined) return null;
+    var h = this.rowHeight();
+    var canvases = this.canvases();
+    for (var p = 0; p < canvases.length; p++) {
+      var rows = canvases[p].querySelectorAll(':scope > .slick-row');
+      for (var r = 0; r < rows.length; r++) {
+        var top = this.rowTop(rows[r]);
+        if (top === null || gridMap.rowIndexFromTop(top, h) !== rowIndex) continue;
+        var kids = rows[r].children;
+        for (var c = 0; c < kids.length; c++) {
+          var cell = kids[c];
+          if (!cell.classList || !cell.classList.contains('slick-cell')) continue;
+          var idx = gridMap.canvasColumnIndexFromClassName(cell.className);
+          if (idx === null) idx = this.resolveColIndexForCell(cell, rows[r], canvases);
+          if (idx === colIndex) return cell;
+        }
+      }
     }
     return null;
   };
 
   P.cellElementFor = function (assignmentId, userId) {
-    var cells = this.visibleCells();
-    for (var i = 0; i < cells.length; i++) {
-      var c = cells[i];
-      if (String(c.assignmentId) === String(assignmentId) && String(c.studentId) === String(userId)) return c.el;
+    var key = 'assignment_' + assignmentId;
+    if (!this.columnIdToIndex.has(key)) this.refreshColumns();
+    var colIndex = this.columnIdToIndex.get(key);
+    if (colIndex === undefined || colIndex === null) return null;
+    // The student's row: a live read of the frozen pane first, the cache only
+    // when no rendered row carries a readable link for them.
+    var frozen = this.canvases()[0];
+    var rowIndex = null;
+    if (frozen) {
+      var rows = frozen.querySelectorAll(':scope > .slick-row');
+      for (var i = 0; i < rows.length; i++) {
+        if (String(this.studentIdFromRow(rows[i]) || '') !== String(userId)) continue;
+        var top = this.rowTop(rows[i]);
+        if (top !== null && !this.isTestStudentRow(rows[i])) rowIndex = gridMap.rowIndexFromTop(top, this.rowHeight());
+        break;
+      }
     }
-    return null;
+    if (rowIndex === null) rowIndex = this.rowIndexForStudent(userId);
+    return rowIndex === null ? null : this.cellElementAt(rowIndex, colIndex);
   };
 
   /* ----------------------------------------------------- synthetic gestures */
@@ -1066,8 +1213,25 @@
     return true;
   };
 
+  /* The viewport that actually scrolls vertically. In frozen SlickGrid that
+   * is the right/main pane; the left one is overflow-y:hidden and merely
+   * follows it, so writing its scrollTop moves nothing. */
+  P.verticalScrollViewport = function () {
+    var right = this.rightViewport();
+    var left = this.leftViewport();
+    var list = [right, left].concat(this.viewports());
+    for (var i = 0; i < list.length; i++) {
+      var v = list[i];
+      if (!v || !(v.scrollHeight > v.clientHeight)) continue;
+      var oy = '';
+      try { oy = getComputedStyle(v).overflowY || ''; } catch (e) { oy = ''; }
+      if (oy === 'auto' || oy === 'scroll') return v;
+    }
+    return left || right;
+  };
+
   P.scrollRowIntoView = function (rowIndex) {
-    var vp = this.leftViewport();
+    var vp = this.verticalScrollViewport();
     if (!vp) return;
     var h = this.rowHeight();
     var target = rowIndex * h;
@@ -1087,38 +1251,85 @@
     else if (colRect.right > vpRect.right - 4) vp.scrollLeft += (colRect.right - vpRect.right) + 40;
   };
 
-  /** Walk the grid vertically so ids for off-screen rows can be resolved. */
+  /** Confirm the student at every row index in [startIndex, startIndex +
+   * count) by a LIVE read during this call, walking the grid vertically for
+   * rows not rendered right now. Resolves true only when every index exists
+   * (below rowCount(), when known) and was confirmed live. Unconfirmed
+   * indices are dropped from the cache so studentAt() reports null for them
+   * rather than a stale id from before a sort or filter. */
   P.ensureRowsMapped = function (startIndex, count) {
     var self = this;
-    var vp = this.leftViewport();
-    if (!vp) return Promise.resolve(false);
+    startIndex = Number(startIndex) || 0;
+    count = Number(count) || 0;
+    if (count <= 0) return Promise.resolve(true);
+    var end = startIndex + count;
+    var confirmed = new Map();   // rowIndex -> userId read live in this call
+    var testRows = new Set();    // rowIndex read live as the Test Student
+
+    function harvest() {
+      (self.refreshRows() || []).forEach(function (r) {
+        if (r.idx < startIndex || r.idx >= end) return;
+        if (r.test) { testRows.add(r.idx); confirmed.delete(r.idx); return; }
+        confirmed.set(r.idx, r.sid);
+        testRows.delete(r.idx);
+      });
+    }
+    function finish() {
+      var total = self.rowCount();
+      var ok = total === null || end <= total;
+      for (var i = startIndex; i < end; i++) {
+        var inRange = total === null || i < total;
+        var sid = inRange ? confirmed.get(i) : undefined;
+        if (sid) {
+          self.rowIndexToStudent.set(i, sid);
+          self.studentToRowIndex.set(String(sid), i);
+          self.testRowIndices.delete(i);
+          continue;
+        }
+        if (inRange && testRows.has(i)) {
+          // Known, live: the Test Student. Never a target, never a reason
+          // to refuse the rest of the range.
+          self.testRowIndices.add(i);
+          self.rowIndexToStudent.delete(i);
+          continue;
+        }
+        ok = false;
+        var stale = self.rowIndexToStudent.get(i);
+        self.rowIndexToStudent.delete(i);
+        if (stale && self.studentToRowIndex.get(String(stale)) === i) self.studentToRowIndex.delete(String(stale));
+      }
+      if (!ok) CGP.diag.warn('adapter.rows.unresolved', { count: count - confirmed.size, rowCount: total });
+      return ok;
+    }
+
+    // Rows on screen right now need no scrolling at all.
+    harvest();
+    var total = this.rowCount();
+    var walkEnd = total === null ? end : Math.min(end, total);
+    var needed = [];
+    for (var i = startIndex; i < walkEnd; i++) if (!confirmed.has(i)) needed.push(i);
+    var vp = needed.length ? this.verticalScrollViewport() : null;
+    if (!vp) return Promise.resolve(finish());
+
     var h = this.rowHeight();
     var savedTop = vp.scrollTop;
-    var needed = [];
-    for (var i = startIndex; i < startIndex + count; i++) {
-      if (!self.rowIndexToStudent.has(i)) needed.push(i);
-    }
-    if (!needed.length) return Promise.resolve(true);
-
     var stops = [];
     var perScreen = Math.max(1, Math.floor(vp.clientHeight / h) - 1);
-    for (var s = startIndex; s < startIndex + count; s += perScreen) stops.push(s * h);
+    for (var s = needed[0]; s <= needed[needed.length - 1]; s += perScreen) stops.push(s * h);
 
     var seq = Promise.resolve();
     stops.forEach(function (top) {
       seq = seq.then(function () {
         vp.scrollTop = top;
-        return CGP.util.sleep(70).then(function () { self.refreshRows(); });
+        return CGP.util.sleep(70).then(harvest);
       });
     });
     return seq.then(function () {
       vp.scrollTop = savedTop;
       return CGP.util.sleep(70);
     }).then(function () {
-      self.refreshRows();
-      var missing = needed.filter(function (i) { return !self.rowIndexToStudent.has(i); });
-      if (missing.length) CGP.diag.warn('adapter.rows.unresolved', { count: missing.length });
-      return missing.length === 0;
+      harvest();
+      return finish();
     });
   };
 

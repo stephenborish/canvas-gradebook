@@ -11,11 +11,22 @@
  * Deliberately not a summary/merge of anything: every target gets the exact
  * same text, verbatim, as its own new comment. Failures for individual cells
  * (a submission Canvas rejects, a network blip) are reported by count rather
- * than silently dropped, and never roll back the ones that did save. */
+ * than silently dropped, and never roll back the ones that did save; the
+ * dialog then stays open aimed at only the cells that failed, so a retry
+ * never posts the comment twice to a cell that already has it. */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.BulkCommentController) return;
+
+  /* Canvas/network failures get the shared wording; anything else is a
+   * refusal from this extension itself, whose own message is the reason. */
+  function failureReason(err) {
+    if (err && (err.status || err.network)) {
+      return CGP.util.describeApiError(err, { fallback: 'Canvas rejected that comment' });
+    }
+    return (err && err.message) ? err.message : '';
+  }
 
   function BulkCommentController(ctx) {
     this.model = ctx.model;
@@ -59,13 +70,27 @@
 
   P.isOpen = function () { return !!(this.el && this.el.classList.contains('cgp-pop--on')); };
 
+  /* Refused while a batch is saving: the batch still owns this dialog (its
+   * targets, its text, its Save button), and closing it mid-flight used to
+   * leave the next open() fighting a stale batch that later closed or
+   * cleared the NEW dialog. The Save button already reads "Saving..." for
+   * exactly that stretch, so the dialog just stays put until it finishes. */
   P.close = function () {
+    if (this.busy) {
+      CGP.diag.bump('bulkComment.closeWhileSaving');
+      return false;
+    }
     if (this.el) this.el.classList.remove('cgp-pop--on');
     this.targets = [];
+    return true;
   };
 
   /** targets: [{assignmentId, userId}], from selection.targets(). */
   P.open = function (targets) {
+    if (this.busy) {
+      CGP.ui.toast('Still saving the last comment…');
+      return;
+    }
     targets = (targets || []).filter(function (t) { return t && t.assignmentId && t.userId; });
     if (!targets.length) {
       CGP.ui.error('Select one or more grade cells first (Cmd/Ctrl-click or Shift-click), then press C.');
@@ -121,6 +146,8 @@
     input.addEventListener('keydown', function (e) {
       e.stopPropagation();
       if (e.key === 'Tab' && !e.shiftKey) {
+        // Only an actual expansion keeps Tab: "/word" with no matching
+        // snippet (a URL, "and/or") must still move focus as usual.
         var snippets = (self.settings && self.settings.values && self.settings.values.snippets) || [];
         var out = CGP.snippets && CGP.snippets.expand(input.value, input.selectionStart, snippets);
         if (out) {
@@ -129,15 +156,15 @@
           input.setSelectionRange(out.caret, out.caret);
           return;
         }
-        var hit = CGP.snippets && CGP.snippets.findTrigger(input.value, input.selectionStart);
-        if (hit) {
-          e.preventDefault();
-          return;
-        }
       }
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); }
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        if (!e.repeat) submit();
+      }
     }, false);
     save.addEventListener('click', submit);
+
+    function cellsLabel(n) { return n + (n === 1 ? ' cell' : ' cells'); }
 
     function submit() {
       // Focus stays in the textarea while saving, so Ctrl/Cmd+Enter pressed
@@ -155,40 +182,60 @@
       }
 
       self.busy = true;
+      input.readOnly = true;
       save.disabled = true;
       save.textContent = 'Saving…';
       var gate = CGP.util.pool(3);
-      var ok = 0, failed = 0;
+      var ok = 0;
+      var failedTargets = [];
+      var firstErr = null;
+      // Once Canvas says the session is gone, every remaining write would
+      // fail the same way - stop sending rather than burn through them.
+      var sessionGone = false;
       Promise.all(targets.map(function (t) {
         return gate(function () {
+          if (sessionGone) { failedTargets.push(t); return null; }
           return self.writer.addComment(t.assignmentId, t.userId, text).then(function () {
             ok++;
           }, function (err) {
-            failed++;
+            failedTargets.push(t);
+            if (!firstErr) firstErr = err;
+            if (CGP.util.isSessionExpiredError(err)) { sessionGone = true; firstErr = err; }
             CGP.diag.error('bulkComment.cellFailed', {
               assignmentId: t.assignmentId, status: err && err.status
             });
           });
         });
       })).then(function () {
-        if (failed) {
-          CGP.ui.error(failed + ' of ' + targets.length + ' comments could not be saved' +
-            (ok ? ' (' + ok + ' saved).' : '.'));
-        } else {
-          CGP.ui.toast('Comment added to ' + ok + (ok === 1 ? ' cell' : ' cells'));
-        }
+        var failed = failedTargets.length;
         CGP.diag.bump('bulkComment.ok', ok);
         CGP.diag.bump('bulkComment.failed', failed);
         self.busy = false;
+        input.readOnly = false;
         if (self.requestPaint) self.requestPaint();
-        self.close();
+        if (!failed) {
+          CGP.ui.toast('Comment added to ' + cellsLabel(ok));
+          self.close();
+          return;
+        }
+        // Partial (or total) failure: the dialog stays open with the text,
+        // now aimed ONLY at the cells that did not get the comment, so
+        // pressing Save again can never duplicate it on the ones that did.
+        self.targets = failedTargets.slice();
+        save.disabled = false;
+        save.textContent = 'Retry ' + failed + ' failed';
+        var who = self.el && self.el.querySelector('.cgp-pop__who');
+        if (who) who.textContent = 'Comment on ' + cellsLabel(failed) + ' (not yet saved)';
+        CGP.ui.error(failed + ' of ' + targets.length + ' comments could not be saved' +
+          (ok ? ' (' + ok + ' saved). ' : '. ') + failureReason(firstErr));
       }, function (err) {
         // Every per-target write above already catches its own failure, so
         // this should not fire - but if it ever does, the dialog must not be
         // left permanently unusable because busy never got reset.
         self.busy = false;
+        input.readOnly = false;
         save.disabled = false;
-        save.textContent = 'Add to ' + targets.length + (targets.length === 1 ? ' cell' : ' cells');
+        save.textContent = 'Add to ' + cellsLabel(targets.length);
         CGP.diag.error('bulkComment.rejected', { message: String(err && err.message) });
         CGP.ui.error('Something went wrong saving that comment. Nothing more was changed.');
       });

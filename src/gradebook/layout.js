@@ -470,6 +470,8 @@
     this._lastHidePass = now;
 
     var self = this;
+    // Canvas re-renders its toolbar; don't keep detached nodes forever.
+    this.hidden = this.hidden.filter(function (el) { return el && el.isConnected; });
     var targets = this.candidates();
     targets.forEach(function (el) {
       if (el.classList.contains('cgp-hidden')) return;
@@ -524,20 +526,25 @@
   /* Walk up from each hidden control and collapse wrappers that now hold nothing. */
   P.collapseEmptyWrappers = function (targets) {
     var self = this;
+    // All reads first (one layout), then all writes - interleaving
+    // getBoundingClientRect with class changes forced a reflow per wrapper.
+    // A wrapper planned for collapse holds nothing visible, so treating it as
+    // already collapsed while walking further up changes no decision.
+    var planned = [];
     targets.forEach(function (el) {
       var node = el.parentElement;
       for (var depth = 0; depth < 5 && node; depth++) {
         if (self.isProtected(node)) break;
-        if (node.classList.contains('cgp-collapsed')) { node = node.parentElement; continue; }
+        if (node.classList.contains('cgp-collapsed') || planned.indexOf(node) >= 0) { node = node.parentElement; continue; }
         if (self.hasVisibleSubstance(node)) break;
-        var rect = node.getBoundingClientRect();
-        if (rect.height >= 4) {
-          node.classList.add('cgp-collapsed');
-          self.hidden.push(node);
-          CGP.diag.bump('layout.wrappersCollapsed');
-        }
+        if (node.getBoundingClientRect().height >= 4) planned.push(node);
         node = node.parentElement;
       }
+    });
+    planned.forEach(function (node) {
+      node.classList.add('cgp-collapsed');
+      self.hidden.push(node);
+      CGP.diag.bump('layout.wrappersCollapsed');
     });
   };
 
@@ -556,6 +563,7 @@
   P.recheckCollapsedWrappers = function () {
     var self = this;
     var recovered = 0;
+    this.hidden = this.hidden.filter(function (el) { return el && el.isConnected; });
     this.hidden.forEach(function (el) {
       if (!el || !el.isConnected || !el.classList.contains('cgp-collapsed')) return;
       if (self.hasVisibleSubstance(el)) {
@@ -625,7 +633,7 @@
 
   /* Ask the page-context bridge to transact against Canvas's SlickGrid. The
    * grid object itself cannot cross Chrome's isolated-world boundary. */
-  P.requestColumnSizing = function (studentWidth, assignmentWidth, hideTotal) {
+  P.requestColumnSizing = function (studentWidth, assignmentWidth, hideTotal, narrow) {
     return new Promise(function (resolve) {
       var id = 'cgp-grid-' + Date.now() + '-' + Math.random().toString(36).slice(2);
       var timer;
@@ -644,7 +652,9 @@
       window.postMessage({
         source: 'cgp-grid-request', id: id,
         studentWidth: studentWidth, assignmentWidth: assignmentWidth,
-        hideTotal: !!hideTotal
+        hideTotal: !!hideTotal,
+        // false: leave student/assignment widths alone (frozenTotal only).
+        narrow: !!narrow
       }, window.location.origin);
     });
   };
@@ -697,7 +707,15 @@
   P.resizeColumns = function () {
     var s = this.settings.values;
     var needSizing = s.narrowColumns || s.frozenTotal;
-    if (!needSizing || this._resizing) return Promise.resolve();
+    if (this._resizing) return Promise.resolve();
+    if (!needSizing) {
+      // Both turned off after sizing ran this page: one last request with
+      // nothing wanted lets the bridge restore Canvas's own widths.
+      if (!this._sizedOnce) return Promise.resolve();
+      this._sizedOnce = false;
+      return this.requestColumnSizing(null, null, false, false).then(function () { return true; }, function () { return false; });
+    }
+    this._sizedOnce = true;
     if (this.isUserBusy()) return Promise.resolve(false);
     if (this._resizeBackoffUntil && Date.now() < this._resizeBackoffUntil) return Promise.resolve(false);
     var self = this;
@@ -706,7 +724,9 @@
     var studentW = s.studentColumnWidth || 190;
     var assignmentW = s.assignmentColumnWidth || 124;
     var hideTotal = !!s.frozenTotal;
-    return this.requestColumnSizing(studentW, assignmentW, hideTotal).then(function (result) {
+    // narrowColumns off + frozenTotal on: only the Total column is handled.
+    var narrow = !!s.narrowColumns;
+    return this.requestColumnSizing(studentW, assignmentW, hideTotal, narrow).then(function (result) {
       if (result && result.ok) {
         document.documentElement.classList.remove('cgp-column-sizing-presentation-only');
         self._resizeAttempts = 0;
@@ -767,7 +787,9 @@
           var pointsText = (a.pointsPossible === null || a.pointsPossible === undefined) ? '' : (a.pointsPossible + ' pts');
           var dueText = showDue ? CGP.util.fmtDueDate(a.dueAt, a.hasMultipleDueDates) : '';
           var tooltip = a.name + (pointsText ? ' — ' + pointsText : '') + (dueText ? ' — ' + dueText : '');
-          h.el.setAttribute('title', tooltip);
+          // Runs every paint: only write what actually differs, so an
+          // unchanged header costs no DOM mutations (and no observer churn).
+          if (h.el.getAttribute('title') !== tooltip) h.el.setAttribute('title', tooltip);
           if (!oldLabel) {
             oldLabel = document.createElement('div');
             oldLabel.className = 'cgp-header-label';
@@ -784,17 +806,19 @@
             h.el.appendChild(oldLabel);
           }
           var titleLink = oldLabel.querySelector('.cgp-header-title');
-          titleLink.textContent = a.name;
+          if (titleLink.textContent !== a.name) titleLink.textContent = a.name;
           // Straight to Canvas's own assignment page - to re-read or edit it -
           // opened in a new tab so the teacher's place in the gradebook is
           // never lost just to go look at the assignment.
-          titleLink.href = '/courses/' + encodeURIComponent(String(model.courseId)) +
+          var href = '/courses/' + encodeURIComponent(String(model.courseId)) +
             '/assignments/' + encodeURIComponent(String(h.assignmentId));
-          oldLabel.querySelector('.cgp-header-points').textContent = pointsText;
+          if (titleLink.getAttribute('href') !== href) titleLink.setAttribute('href', href);
+          var pointsEl = oldLabel.querySelector('.cgp-header-points');
+          if (pointsEl.textContent !== pointsText) pointsEl.textContent = pointsText;
           var dueEl = oldLabel.querySelector('.cgp-header-due');
           if (dueEl) {
-            dueEl.textContent = dueText;
-            dueEl.hidden = !dueText;
+            if (dueEl.textContent !== dueText) dueEl.textContent = dueText;
+            if (dueEl.hidden !== !dueText) dueEl.hidden = !dueText;
           }
         }
       } else if (oldLabel) {

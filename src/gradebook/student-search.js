@@ -193,11 +193,18 @@
 
       var rows = [];
       var next = 0;
+      var failed = 0;
+      var truncated = 0;
 
       function worker() {
         if (next >= list.length) return Promise.resolve();
         var course = list[next++];
         return self.api.courseStudents(course.id).then(function (users) {
+          // getAll flags a list it had to stop paging before the end.
+          if (users && users.truncated) {
+            truncated++;
+            CGP.diag.warn('studentSearch.rosterTruncated', { courseId: String(course.id), count: users.length });
+          }
           (users || []).forEach(function (u) {
             if (!u || u.id === undefined) return;
             var name = u.name || u.short_name || '';
@@ -213,7 +220,9 @@
           });
         }, function (err) {
           // One course a teacher cannot list students for (concluded, a
-          // permission quirk) must not sink the whole search.
+          // permission quirk) must not sink the whole search - but it is
+          // counted and said, so a missing student is not a silent mystery.
+          failed++;
           CGP.diag.warn('studentSearch.rosterFailed', { status: err && err.status });
         }).then(function () {
           self.progress.done++;
@@ -228,17 +237,37 @@
         self.index = rows;
         self.loading = false;
         self.progress = null;
+        self.failedCourses = failed;
+        self.truncatedCourses = truncated;
         CGP.diag.set('studentSearchIndex', rows.length);
+        CGP.diag.set('studentSearchRosterFailures', failed);
+        CGP.diag.set('studentSearchRostersTruncated', truncated);
         self.paintList();
         return rows;
       });
     }, function (err) {
+      // Not cached by teachingCourseList on failure, so reopening the
+      // search (which calls loadIndex again) is a real retry.
       self.loading = false;
-      self.error = 'Could not read your course list from Canvas.';
+      self.error = 'Couldn’t read your course list. ' +
+        CGP.util.describeApiError(err, { fallback: 'Canvas did not return your course list' }) +
+        ' Close and reopen Find student to retry.';
       CGP.diag.error('studentSearch.coursesFailed', { status: err && err.status });
       self.paintList();
       return null;
     });
+  };
+
+  /** Said under the results whenever the index is known to be incomplete. */
+  P.coverageNote = function () {
+    var parts = [];
+    var f = this.failedCourses || 0;
+    var t = this.truncatedCourses || 0;
+    if (f) parts.push(f + (f === 1 ? ' course' : ' courses') + ' couldn’t be read, so ' +
+      (f === 1 ? 'its' : 'their') + ' students are not searched.');
+    if (t) parts.push(t + (t === 1 ? ' course is' : ' courses are') +
+      ' too large to search completely; only part of ' + (t === 1 ? 'its' : 'their') + ' roster is searched.');
+    return parts.join(' ');
   };
 
   /* ------------------------------------------------------------- searching */
@@ -287,13 +316,15 @@
       return;
     }
     if (!this.index) { box.innerHTML = '<div class="cgp-course-menu__empty">Reading your courses\u2026</div>'; return; }
+    var note = this.coverageNote();
+    var noteHtml = note ? '<div class="cgp-course-menu__empty cgp-student-menu__note" role="note">' + esc(note) + '</div>' : '';
     if (!String(this.query || '').trim()) {
       box.innerHTML = '<div class="cgp-course-menu__empty">' +
-        esc('Type a name to search ' + this.index.length + ' students across your courses.') + '</div>';
+        esc('Type a name to search ' + this.index.length + ' students across your courses.') + '</div>' + noteHtml;
       return;
     }
     var items = this.matches();
-    if (!items.length) { box.innerHTML = '<div class="cgp-course-menu__empty">No student matches that.</div>'; return; }
+    if (!items.length) { box.innerHTML = '<div class="cgp-course-menu__empty">No student matches that.</div>' + noteHtml; return; }
 
     var self = this;
     box.innerHTML = items.map(function (row, i) {
@@ -305,7 +336,7 @@
         (row.term ? ' \u00b7 ' + esc(row.term) : '') +
         (here ? ' \u00b7 this gradebook' : '') + '</span>' +
         '</div>';
-    }).join('');
+    }).join('') + noteHtml;
     var active = box.querySelector('.is-active');
     if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
   };
