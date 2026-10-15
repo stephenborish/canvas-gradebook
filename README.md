@@ -198,6 +198,13 @@ Shift-clicking the other always builds the same rectangle, in either direction. 
 `E`, `L`, or type a number and press `Enter` to apply it to everything selected. `Escape` clears
 the selection. No toolbar appears; the selection is just an outline on the cells.
 
+Grades entered this way are saved straight to Canvas, but Canvas's own grid keeps showing its old
+values until the page reloads, so the extension draws the saved grade over each cell — including
+the cell you Shift-clicked, which Canvas treats as its active cell. Open one of those cells to
+change it and the editor starts from the grade Canvas actually has. Whatever you type replaces it:
+if Canvas would skip it as "unchanged" (typing back the value the cell had before the bulk entry),
+the extension saves it instead.
+
 Press `C` with one or more cells selected to add the same comment to every one of them at once —
 one small dialog, one Save, written as your own comment on each selected submission individually
 (so each student's thread reads exactly as if you'd typed it there yourself). `/snippet` + `Tab`

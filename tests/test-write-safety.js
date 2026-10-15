@@ -459,3 +459,136 @@ suite('write safety: selection gestures', (test) => {
     a.eq(sel.size(), 1, 'the newer Cmd-click selection stands');
   });
 });
+
+suite('write safety: editing after a bulk entry', (test) => {
+  const { loadGradebookDom, domshim } = require('./domharness');
+
+  function setup(rec) {
+    const G = loadGradebookDom();
+    domshim.install();
+    stubUi();
+    const F = domshim.FakeElement;
+    const cell = new F('div'); cell.classList.add('slick-cell');
+    globalThis.document.body.appendChild(cell);
+    const input = new F('input'); input.setAttribute('type', 'text');
+    input.select = () => {};
+    cell.appendChild(input);
+    const applied = [];
+    const patches = [];
+    const info = { columnType: 'assignment', assignmentId: '50', studentId: '10', el: cell, rowIndex: 0, colIndex: 1 };
+    const kb = new G.KeyboardGradingController({
+      adapter: {
+        cellInfo: () => info,
+        activeCellInfo: () => info,
+        activeCellEl: () => cell,
+        editorInput: () => input,
+        setEditorValue: (el, v) => { el.value = v; },
+        sendKey: () => {},
+        isEditableGradeCell: () => true
+      },
+      model: {
+        ready: true,
+        cell: () => rec,
+        assignment: () => ({ gradingType: 'points' }),
+        patchCell: (a2, u, p) => { patches.push(p); Object.assign(rec, p); },
+        queueTotalRefresh: () => {},
+        refreshCell: () => Promise.resolve(null)
+      },
+      writer: {
+        targetsFromTokens: (list) => ({ targets: list.map((t) => Object.assign({ parsed: CGP.gradeOps.parseToken(t.token) }, t)), invalid: [] }),
+        apply: (t) => { applied.push(t); return Promise.resolve({ ok: t.length }); }
+      },
+      selection: { size: () => 0, targets: () => [], pending: '', setPending() {} },
+      settings: { values: { bulkConfirmThreshold: 25 } },
+      requestPaint: () => {}
+    });
+    return { kb, input, applied, patches, rec };
+  }
+
+  test('the editor opens with the grade Canvas really has, not its stale grid value', () => {
+    const h = setup({ grade: '8', override: '8' });
+    h.input.value = '9';                    // Canvas's grid still holds the pre-bulk 9
+    h.kb.onFocusIn({ target: h.input });
+    a.eq(h.input.value, '8', 'shows the bulk-entered 8');
+  });
+
+  test('changing a bulk 8 back to the old 9 is saved (Canvas would skip it as "unchanged")', async () => {
+    const h = setup({ grade: '8', override: '8' });
+    h.input.value = '9';
+    h.kb.onFocusIn({ target: h.input });
+    h.input.value = '9';
+    h.kb.onFocusOut({ target: h.input });
+    a.eq(h.applied.length, 1, 'written through GradeWriter');
+    a.eq(h.applied[0][0].parsed.value, 9);
+  });
+
+  test('a new value Canvas itself will save is left to Canvas, and shown at once', () => {
+    const h = setup({ grade: '8', override: '8' });
+    h.input.value = '';
+    h.kb.onFocusIn({ target: h.input });
+    h.input.value = '7';
+    h.kb.onFocusOut({ target: h.input });
+    a.eq(h.applied.length, 0, 'no second write of the same grade');
+    a.eq(h.rec.override, '7', 'the cell shows the new grade immediately');
+  });
+
+  test('Escape abandons the edit: nothing is written or shown', () => {
+    const h = setup({ grade: '8', override: '8' });
+    h.input.value = '9';
+    h.kb.onFocusIn({ target: h.input });
+    h.input.value = '9';
+    h.kb.onKeyDown({ key: 'Escape', target: h.input, isTrusted: true, defaultPrevented: false });
+    h.kb.onFocusOut({ target: h.input });
+    a.eq(h.applied.length, 0);
+    a.eq(h.rec.override, '8');
+  });
+
+  test('bulk Enter closes Canvas’s editor on the Shift-clicked end cell and applies once', () => {
+    const G = loadGradebookDom();
+    const sent = [];
+    const applied = [];
+    let pending = '85';
+    const cell = { id: 'last' };
+    const input = { value: '', blur() {} };
+    const info = { columnType: 'assignment', assignmentId: '50', studentId: '12', el: cell };
+    const kb = new G.KeyboardGradingController({
+      adapter: {
+        cellInfo: () => info,
+        activeCellInfo: () => info,
+        activeCellEl: () => cell,
+        editorInput: (el) => (el === cell ? input : null),
+        setEditorValue: (el, v) => { el.value = v; },
+        sendKey: (el, k) => { sent.push(k); kb.onKeyDown({ key: k, target: el, isTrusted: false }); }
+      },
+      model: { assignment: () => ({ gradingType: 'points' }) },
+      writer: {
+        targetsFromTokens: (list) => ({ targets: list.map((t) => Object.assign({ parsed: CGP.gradeOps.parseToken(t.token) }, t)), invalid: [] }),
+        apply: (t) => { applied.push(t); return Promise.resolve({}); }
+      },
+      selection: {
+        size: () => 3,
+        targets: () => [{ assignmentId: '50', userId: '10' }, { assignmentId: '50', userId: '11' }, { assignmentId: '50', userId: '12' }],
+        get pending() { return pending; },
+        setPending(v) { pending = v; },
+        changedAt: 0
+      },
+      settings: { values: { bulkConfirmThreshold: 25 } },
+      requestPaint: () => {}
+    });
+    const enter = {
+      key: 'Enter', target: input, isTrusted: true, defaultPrevented: false,
+      metaKey: false, ctrlKey: false, altKey: false, shiftKey: false,
+      preventDefault() {}, stopImmediatePropagation() {}, closest: () => null
+    };
+    input.closest = (sel) => (sel === '.slick-cell' ? cell : null);
+    kb.onKeyDown(enter);
+    a.deep(sent, ['Enter'], 'Canvas’s editor in the end cell was closed without writing');
+    a.eq(applied.length, 1, 'applied exactly once (the synthetic Enter is not a second bulk entry)');
+    a.eq(applied[0].length, 3, 'all three cells, the last one included');
+  });
+
+  test('the saved grade stays visible on Canvas’s active (selected, not editing) cell', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'styles', 'gradebook.css'), 'utf8');
+    a.ok(!/\.slick-cell\.active\s*>\s*\.cgp-val/.test(css), 'no rule hides the overlay just because the cell is active');
+  });
+});

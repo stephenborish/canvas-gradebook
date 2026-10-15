@@ -80,12 +80,40 @@
     if (!cell) return;
     var info = this.adapter.cellInfo(cell);
     if (!info || info.columnType !== 'assignment') return;
+    var storeValue = String(el.value === undefined ? '' : el.value);
+    var shown = storeValue;
+    // A cell this extension wrote to (a bulk entry, a paste, E, a clear)
+    // still holds the OLD value in Canvas's own grid, and Canvas opens its
+    // editor with that. Show the grade Canvas actually has instead, so the
+    // teacher edits what they see - and remember both, because what Canvas
+    // itself will (or won't) save is decided against its own stale value.
+    var rec = this.model && typeof this.model.cell === 'function' ? this.model.cell(info.assignmentId, info.studentId) : null;
+    if (rec && rec.override !== null && rec.override !== undefined && this.adapter.setEditorValue) {
+      var truth = rec.override === '\u2013' ? '' : String(rec.override);
+      if (truth !== storeValue) {
+        this.adapter.setEditorValue(el, truth);
+        try { if (typeof el.select === 'function') el.select(); } catch (_) { /* ignore */ }
+        shown = truth;
+      }
+    }
     this._editorWatch.set(el, {
-      value: String(el.value === undefined ? '' : el.value),
+      value: storeValue,      // what Canvas's grid holds (decides whether Canvas saves)
+      shown: shown,           // what the teacher saw when the editor opened
+      cancelled: false,
       assignmentId: info.assignmentId,
       userId: info.studentId
     });
   };
+
+  /* Same grade, typed two ways ("8" / "8.0", "a-" / "A-")? */
+  function sameGrade(a, b) {
+    var x = String(a === null || a === undefined ? '' : a).trim().toLowerCase();
+    var y = String(b === null || b === undefined ? '' : b).trim().toLowerCase();
+    if (x === y) return true;
+    if (x === '' || y === '') return false;
+    var nx = Number(x), ny = Number(y);
+    return isFinite(nx) && isFinite(ny) && nx === ny;
+  }
 
   P.onFocusOut = function (e) {
     var el = e.target;
@@ -101,7 +129,8 @@
     if (watch && watch.assignmentId && watch.userId &&
       !this._nativeMPending.has(watch.assignmentId + ':' + watch.userId)) {
       var now = String(el.value === undefined ? '' : el.value);
-      if (now !== watch.value) {
+      var baseline = watch.shown === undefined ? watch.value : watch.shown;
+      if (!watch.cancelled && now !== baseline) {
         // Canvas commits what was typed through its own editor; nothing is
         // written from here. Writing it ourselves as well (as this used to)
         // put a second, unguarded write in flight for every edit - one that
@@ -111,6 +140,9 @@
         // With no record of the cell before the edit there is nothing to
         // compare against: re-read it, but never act on the comparison.
         var before = this.model.cell(watch.assignmentId, watch.userId);
+        if (before && before.override !== null && before.override !== undefined) {
+          this.commitOverStaleCell(watch, now, before);
+        }
         this.scheduleReconcile(watch.assignmentId, watch.userId, before ? {
           grade: before.grade,
           enteredScore: before.enteredScore,
@@ -121,6 +153,44 @@
       }
     }
     if (this.requestPaint) this.requestPaint();
+  };
+
+  /* The teacher edited a cell whose grade this extension wrote, so Canvas's
+   * own grid still holds the value from BEFORE that write. Canvas saves an
+   * edit only when it differs from that stale value - so retyping the old
+   * grade (changing a bulk-entered 8 back to the 9 the cell had before) was
+   * silently never saved, and the bulk value stayed on the submission. In
+   * exactly that case the edit is written here instead, through GradeWriter
+   * (guarded, validated, serialized with any other write to the cell). When
+   * Canvas WILL save it, it is left to Canvas, so the grade is not written
+   * twice. Either way the cell shows the new value straight away. */
+  P.commitOverStaleCell = function (watch, typed, before) {
+    var self = this;
+    var token = String(typed).trim() === '' ? '-' : String(typed).trim();
+    var canvasWillSave = !sameGrade(typed, watch.value);
+    var display = token === '-' ? '\u2013' : token;
+    var previous = before.override;
+    if (canvasWillSave) {
+      this.model.patchCell(watch.assignmentId, watch.userId, { override: display });
+      return;
+    }
+    if (!this.writer || typeof this.writer.targetsFromTokens !== 'function') return;
+    var built = this.writer.targetsFromTokens([{ assignmentId: watch.assignmentId, userId: watch.userId, token: token }]);
+    if (!built.targets.length) {
+      if (built.invalid.length) CGP.ui.error('"' + typed + '" is not a grade Canvas will accept here. The cell was left as it was.');
+      return;
+    }
+    // Marked as ours so the reconcile that follows (and any focusout from
+    // closing the editor) stands down until this write settles.
+    var key = watch.assignmentId + ':' + watch.userId;
+    this._nativeMPending.add(key);
+    this.writer.apply(built.targets).then(function (res) {
+      self._nativeMPending.delete(key);
+      if (res && (res.failed || res.skipped || res.unloaded || res.notReady)) {
+        self.model.patchCell(watch.assignmentId, watch.userId, { override: previous });
+      }
+      if (self.requestPaint) self.requestPaint();
+    });
   };
 
   /* Canvas committed a grade its own way: re-read the submission so the
@@ -173,6 +243,15 @@
   /* ------------------------------------------------------------- keystrokes */
 
   P.onKeyDown = function (e) {
+    // Escape abandons whatever an open editor holds: remember that, so its
+    // focusout is never mistaken for a committed edit.
+    if (e.key === 'Escape') {
+      var escWatch = this._editorWatch.get(e.target);
+      if (escWatch) escWatch.cancelled = true;
+    }
+    // Keys this extension dispatches itself (closing Canvas's editor) are
+    // for Canvas, never shortcuts or bulk entry of ours.
+    if (e.isTrusted === false) return;
     if (e.defaultPrevented) return;
     var key = e.key;
     if (!key) return;
@@ -317,8 +396,9 @@
       }
       if (key === 'Enter' && this.selection.pending) {
         e.preventDefault(); e.stopImmediatePropagation();
-        this.applyToken(this.selection.pending, this.selection.targets(), null);
+        var typedValue = this.selection.pending;
         this.selection.setPending('');
+        this.applyToken(typedValue, this.selection.targets(), null);
         return;
       }
     }
@@ -392,6 +472,7 @@
     // write a grade nobody asked for. The focusin watcher already recorded the
     // opening value for exactly this kind of question.
     var watch = this._editorWatch.get(input);
+    if (watch) watch.cancelled = true;   // a deliberate no-write close, not an edit
     var original = watch ? watch.value : String(input.value === undefined ? '' : input.value);
     this.adapter.setEditorValue(input, original);   // value unchanged: SlickGrid saves nothing
     this.adapter.sendKey(input, 'Enter', 13);
@@ -400,10 +481,20 @@
 
   P.applyToken = function (token, scope, info) {
     var self = this;
-    var nativeEditor = info ? this.adapter.editorInput(info.el) : null;
-    var singleCell = scope && scope.length === 1;
-    var pendingKey = (nativeEditor && singleCell) ? (scope[0].assignmentId + ':' + scope[0].userId) : null;
-    if (nativeEditor && singleCell) {
+    // Canvas's editor can be open in any one of the target cells - with a
+    // range, it is the Shift-clicked end, which Canvas activates on click.
+    // Left open, it keeps showing (and could later commit) Canvas's own
+    // stale value over the grade just written, which is how the last cell
+    // of a bulk entry looked like it never received the grade.
+    var editorCell = (info && info.el && this.adapter.editorInput(info.el)) ? info.el
+      : (typeof this.adapter.activeCellEl === 'function' ? this.adapter.activeCellEl() : null);
+    var nativeEditor = editorCell ? this.adapter.editorInput(editorCell) : null;
+    var editorInfo = nativeEditor ? ((info && info.el === editorCell) ? info : this.adapter.cellInfo(editorCell)) : null;
+    var inScope = !!(editorInfo && (scope || []).some(function (t) {
+      return String(t.assignmentId) === String(editorInfo.assignmentId) && String(t.userId) === String(editorInfo.studentId);
+    }));
+    var pendingKey = (nativeEditor && inScope) ? (editorInfo.assignmentId + ':' + editorInfo.studentId) : null;
+    if (nativeEditor && inScope) {
       // Closing the editor fires a focusout that the reconcile-from-Canvas path
       // in onFocusOut would otherwise act on - and seeing a graded submission
       // flagged Missing, it would "helpfully" resolve that status, which is

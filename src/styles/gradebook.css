@@ -644,13 +644,16 @@ html.cgp-on .slick-cell:has(input:not([type="hidden"])) .Grid__GradeCell__Conten
   flex: 0 0 auto !important;
   margin-left: 2px !important;
 }
-/* When cell is actively being edited, hide synthetic score overlay so editor has full cell width */
-html.cgp-on .slick-cell.active > .cgp-val,
+/* While a cell is being EDITED, hide the synthetic score overlay so the
+ * editor has the full cell. Only while editing: a cell that is merely
+ * active (selected, or the Shift-clicked end of a range) must keep showing
+ * the grade this extension saved, because underneath it Canvas's own grid
+ * still shows the value from before that write. Hiding it on .active is
+ * what made the last cell of a bulk entry look like it got nothing. */
 html.cgp-on .slick-cell:has(input:not([type="hidden"])) > .cgp-val {
   display: none !important;
   pointer-events: none !important;
 }
-html.cgp-on .slick-cell.active .Grid__GradeCell__Content,
 html.cgp-on .slick-cell:has(input:not([type="hidden"])) .Grid__GradeCell__Content {
   visibility: visible !important;
 }
