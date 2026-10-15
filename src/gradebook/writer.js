@@ -53,21 +53,33 @@
       var id = String(t.assignmentId);
       if (columns.indexOf(id) < 0) columns.push(id);
     });
-    var loaded = typeof this.model.ensureAssignments === 'function'
-      ? this.model.ensureAssignments(columns).catch(function () { return null; })
-      : Promise.resolve(null);
+    var model = this.model;
+    function ensure() {
+      return typeof model.ensureAssignments === 'function'
+        ? model.ensureAssignments(columns).catch(function () { return null; })
+        : Promise.resolve(null);
+    }
+    // A re-read started meanwhile (a Post's own re-check, say) leaves the
+    // column briefly unloaded; wait for that one too rather than refusing.
+    var loaded = ensure().then(function () {
+      var pending = model.pendingAssignments;
+      var again = pending && typeof pending.has === 'function' && columns.some(function (id) { return pending.has(id); });
+      return again ? ensure() : null;
+    });
 
     return loaded.then(function () {
       // A column that still has not loaded (its read failed) gives this
       // write nothing to decide from - an M could re-apply instead of
       // removing, a typed grade could leave an explicit Missing behind - so
       // its cells are left alone and the teacher is told, not guessed at.
+      // Only a CURRENT read counts: a column that was loaded once but whose
+      // latest re-read failed still holds an older record, and deciding an M
+      // or L toggle from it can do the opposite of what the teacher meant.
       var known = self.model.loadedAssignments;
-      var ever = self.model.everLoadedAssignments;
       if (known && typeof known.has === 'function') {
         ops = ops.filter(function (t) {
           var id = String(t.assignmentId);
-          if (known.has(id) || (ever && ever.has(id))) return true;
+          if (known.has(id)) return true;
           result.unloaded = (result.unloaded || 0) + 1;
           return false;
         });
@@ -87,7 +99,8 @@
       var messages = [];
       if (result.failed) {
         var first = result.errors[0] || {};
-        if (CGP.util.isSessionExpiredError(first) || CGP.util.isPermissionDeniedError(first)) {
+        if (CGP.util.isSessionExpiredError(first) || CGP.util.isPermissionDeniedError(first) ||
+          first.status === 429 || first.network === true) {
           // The one failure reason worth calling out on its own: every other
           // status differs cell to cell in ways a teacher can't act on
           // uniformly, but a session timing out mid-grading explains ALL of
@@ -295,7 +308,7 @@
         result.errors.push({
           assignmentId: assignmentId, status: err && err.status,
           canvasStatus: err && err.canvasStatus, canvasMessage: err && err.canvasMessage,
-          snippet: err && err.snippet, network: err && err.network
+          snippet: err && err.snippet, network: err && err.network, retryAfterMs: err && err.retryAfterMs
         });
         CGP.diag.error('write.rejected', {
           assignmentId: assignmentId, status: err && err.status, kind: target.parsed && target.parsed.kind

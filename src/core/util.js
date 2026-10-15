@@ -201,8 +201,12 @@
     if (err && err.network === true) {
       return 'Canvas could not be reached (a network problem). Check your connection and try again.';
     }
-    if (err && err.status === 429) {
-      return 'Canvas asked us to slow down (rate limited). Wait a moment and try again.';
+    var throttled403 = err && err.status === 403 &&
+      /rate limit/i.test(String(err.snippet || '') + ' ' + String(err.canvasMessage || ''));
+    if (err && (err.status === 429 || throttled403)) {
+      var secs = err.retryAfterMs ? Math.ceil(err.retryAfterMs / 1000) : 0;
+      return 'Canvas asked us to slow down (rate limited). ' +
+        (secs > 1 ? 'Wait about ' + secs + ' seconds and try again.' : 'Wait a moment and try again.');
     }
     var base = opts.fallback || 'Canvas rejected this request';
     if (err && err.status) return base + ' (Canvas ' + err.status + ').';

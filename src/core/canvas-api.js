@@ -47,6 +47,9 @@
     return isFinite(at) ? Math.max(0, at - Date.now()) : null;
   }
 
+  // The longest Retry-After a request will wait out before retrying.
+  var MAX_RETRY_AFTER_MS = 30000;
+
   /* Canvas throttles with 429, and on many instances with a 403 whose body
    * reads "Rate Limit Exceeded". Any other 403 is a real refusal and must
    * not be retried. */
@@ -164,10 +167,15 @@
         var throttled = isThrottled(err);
         var transient = err.network === true || (err.status >= 500 && err.status < 600);
         var retriable = throttled || (transient && opts.idempotent !== false);
-        if (n < maxRetries && retriable) {
+        // Canvas's own Retry-After is honoured in full, up to a limit a
+        // teacher can sensibly be kept waiting on. Asked to wait longer, the
+        // request is not retried early (it would only be throttled again);
+        // it fails at once, and the message says how long to wait.
+        var tooLong = throttled && err.retryAfterMs > MAX_RETRY_AFTER_MS;
+        if (n < maxRetries && retriable && !tooLong) {
           CGP.diag.bump('api.retries');
           var backoff = 400 * Math.pow(2, n);
-          if (throttled) backoff = Math.max(backoff, Math.min(err.retryAfterMs || 0, 10000), 1000 * (n + 1));
+          if (throttled) backoff = Math.max(backoff, err.retryAfterMs || 0, 1000 * (n + 1));
           return util.sleep(backoff).then(function () { return attempt(n + 1); });
         }
         CGP.diag.error('api.failed', {

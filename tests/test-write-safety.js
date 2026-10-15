@@ -592,3 +592,59 @@ suite('write safety: editing after a bulk entry', (test) => {
     a.ok(!/\.slick-cell\.active\s*>\s*\.cgp-val/.test(css), 'no rule hides the overlay just because the cell is active');
   });
 });
+
+suite('write safety: PR review round 2', (test) => {
+  test('a column whose latest re-read failed is not written from its older record', async () => {
+    stubUi();
+    let sent = 0;
+    const m = model({ api: { submissionsForAssignments: () => Promise.reject(Object.assign(new Error('x'), { status: 500 })) } });
+    m.everLoadedAssignments.add('50');           // loaded once, earlier
+    m.patchCell('50', '10', { latePolicyStatus: 'missing', missing: true }, { silent: true });
+    const w = new CGP.GradeWriter({ api: { updateSubmission: () => { sent++; return Promise.resolve({}); } }, model: m, settings: { values: {} } });
+    const res = await w.apply([{ assignmentId: '50', userId: '10', parsed: CGP.gradeOps.parseToken('M') }]);
+    a.eq(sent, 0, 'no toggle decided from the stale record');
+    a.eq(res.unloaded, 1);
+  });
+
+  function throttledApi(retryAfterSecs, sleeps) {
+    const calls = [];
+    const api = new CGP.CanvasApi({
+      origin: 'https://x.instructure.com',
+      fetch: () => {
+        calls.push(1);
+        const first = calls.length === 1;
+        return Promise.resolve({
+          ok: !first, status: first ? 429 : 200,
+          text: () => Promise.resolve(first ? '' : '{}'),
+          headers: { get: (h) => (first && h === 'Retry-After' ? String(retryAfterSecs) : null) }
+        });
+      }
+    });
+    return { api, calls };
+  }
+
+  test('Retry-After longer than 10s is honoured in full, not cut short', async () => {
+    const sleeps = [];
+    const real = CGP.util.sleep;
+    CGP.util.sleep = (ms) => { sleeps.push(ms); return Promise.resolve(); };
+    try {
+      const { api, calls } = throttledApi(20, sleeps);
+      await api.updateSubmission('7', '50', '10', {});
+      a.eq(calls.length, 2);
+      a.eq(sleeps[0], 20000, 'waited the full 20 seconds Canvas asked for');
+    } finally { CGP.util.sleep = real; }
+  });
+
+  test('a Retry-After too long to wait out fails at once and says how long to wait', async () => {
+    const sleeps = [];
+    const real = CGP.util.sleep;
+    CGP.util.sleep = (ms) => { sleeps.push(ms); return Promise.resolve(); };
+    try {
+      const { api, calls } = throttledApi(90, sleeps);
+      const err = await api.updateSubmission('7', '50', '10', {}).catch((e) => e);
+      a.eq(calls.length, 1, 'no early retry that would only be throttled again');
+      a.eq(sleeps.length, 0);
+      a.ok(/about 90 seconds/.test(CGP.util.describeApiError(err)), CGP.util.describeApiError(err));
+    } finally { CGP.util.sleep = real; }
+  });
+});
