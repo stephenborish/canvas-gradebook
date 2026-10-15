@@ -190,10 +190,12 @@
       self.setRowHover(part);
     }, true);
     // Scrolling moves rows out from under the pointer without a mouseout, and
-    // a re-render can replace the very element we lit.
-    this.adapter.viewports().forEach(function (vp) {
-      vp.addEventListener('scroll', function () { self.clearRowHover(); }, { passive: true });
-    });
+    // a re-render can replace the very element we lit. Captured on document
+    // so viewports Canvas recreates after start() are covered too.
+    document.addEventListener('scroll', function (e) {
+      var t = e && e.target;
+      if (t && t.classList && t.classList.contains('slick-viewport')) self.clearRowHover();
+    }, { capture: true, passive: true });
     // Leaving the document entirely (relatedTarget null) never produces a
     // mouseover on something else, so clear explicitly.
     document.addEventListener('mouseout', function (e) {

@@ -26,6 +26,7 @@ require('./test-canvas-cell-classes');
 require('./test-course-menu');
 require('./test-selection');
 require('./test-course-switcher');
+require('./test-grid-reliability');
 
 // run() awaits each case, so the process must not exit before it settles.
 harness.run().then((okAll) => {

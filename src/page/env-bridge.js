@@ -1,13 +1,63 @@
-/* Canvas Gradebook+ - page-context ENV bridge.
+/* Canvas Gradebook+ - page-world bridge for the gradebook.
  *
- * Content scripts run in an isolated world and cannot read Canvas's window.ENV
- * directly. This tiny script runs in the page, posts back a short allowlist of
- * identifiers (never student data, never grades, never comments) and removes
- * itself. It is used only to cross-check the course and user ids the extension
- * already resolved from the URL and the Canvas API. */
+ * Registered (manifest.json / background.js) as a MAIN-world document_start
+ * script on gradebook URLs only. Content scripts run in an isolated world and
+ * can reach neither Canvas's window.ENV nor its SlickGrid object, so this
+ * script does two small jobs on their behalf:
+ *
+ *  1. ENV: posts a short allowlist of identifiers ({source:'cgp-env'}) - never
+ *     student data, grades or comments - and re-posts the grading period
+ *     whenever it changes in-page (URL ?grading_period_id or the gradebook
+ *     options object), so the content script's Total stays scoped correctly.
+ *  2. Columns: on a {source:'cgp-grid-request'} from layout.js, applies the
+ *     teacher's column widths through SlickGrid's own setColumns in one
+ *     transaction and answers with {source:'cgp-grid-response'}. Until such a
+ *     request arrives nothing about the grid is changed. Only Canvas's own
+ *     gradebook grid (inside #gradebook_grid) is ever patched, only the
+ *     student, total and assignment_<id> columns are ever resized, and
+ *     maxWidth is never pinned, so teachers can still drag-resize. */
 (function () {
   'use strict';
-  try {
+  if (window.__cgpBridgeLoaded) return;
+  window.__cgpBridgeLoaded = true;
+
+  var GRADEBOOK_PATH = /\/courses\/\d+\/gradebook\/?$/;
+  var TOTAL_WIDTH = 84;          // the frozen-Total feature's slot (frozen-total.js)
+  var MIN_WIDTH_FLOOR = 24;      // minWidth is only ever lowered to this
+  var SEARCH_EVERY_MS = 1500;
+  var SEARCH_BUDGET_MS = 60000;
+  var POLL_EVERY_MS = 2000;
+  var ENV_REPEAT_TICKS = 30;     // keep re-posting the full ENV for ~60s
+
+  function onGradebookPage() {
+    try { return GRADEBOOK_PATH.test(String(window.location.pathname || '')); } catch (e) { return false; }
+  }
+
+  function post(message) {
+    try { window.postMessage(message, window.location.origin); } catch (e) { /* never break the page */ }
+  }
+
+  /* ------------------------------------------------------------------ ENV */
+
+  function gradebookOptions() {
+    var ENV = window.ENV || {};
+    return ENV.GRADEBOOK_OPTIONS || {};
+  }
+
+  /* Which grading period Canvas's OWN Total column is scoped to right now.
+   * An explicit ?grading_period_id= wins (Canvas honours it); otherwise the
+   * gradebook options object. null = whole course; "0" = "All Grading
+   * Periods", which the model also treats as the whole course. */
+  function currentGradingPeriodId() {
+    try {
+      var m = /[?&]grading_period_id=([^&#]*)/.exec(String(window.location.search || ''));
+      if (m && m[1] !== '') return decodeURIComponent(m[1]);
+    } catch (e) { /* fall through */ }
+    var id = gradebookOptions().current_grading_period_id;
+    return (id === undefined || id === null) ? null : String(id);
+  }
+
+  function envPayload() {
     var ENV = window.ENV || {};
     var opts = ENV.GRADEBOOK_OPTIONS || {};
     var payload = {
@@ -15,89 +65,41 @@
       courseId: (ENV.COURSE_ID || ENV.course_id || opts.context_id || null),
       gradebookEditable: opts.gradebook_is_editable === undefined ? null : !!opts.gradebook_is_editable,
       gradingPeriodsEnabled: !!(opts.grading_period_set || opts.multiple_grading_periods_enabled),
-      // Which grading period Canvas's OWN Total column is scoped to right
-      // now. Canvas decides this server-side (a URL ?grading_period_id=, or
-      // its own "current" default when the URL says nothing) and this is the
-      // only place that choice is ever exposed - never reliably inferable
-      // from the URL alone. null means the whole course (no filter, or the
-      // teacher explicitly chose "All Grading Periods").
-      currentGradingPeriodId: (opts.current_grading_period_id === undefined || opts.current_grading_period_id === null)
-        ? null : String(opts.current_grading_period_id),
+      currentGradingPeriodId: currentGradingPeriodId(),
       postPolicies: !!opts.post_policies_enabled
     };
     if (payload.courseId !== null) payload.courseId = String(payload.courseId);
-    window.postMessage({ source: 'cgp-env', env: payload }, window.location.origin);
-  } catch (e) {
-    /* Canvas layout differences must never break the page */
+    return payload;
   }
 
-  // Intercept SlickGrid constructor whenever Canvas creates it
-  var _slick = window.Slick;
-  function wrapGridConstructor(Orig) {
-    if (typeof Orig !== 'function' || Orig.__cgpWrapped) return Orig;
-    var Wrapped = function (container, data, columns, options) {
-      if (options && options.forceFitColumns) options.forceFitColumns = false;
-      var inst = new Orig(container, data, columns, options);
-      window.__cgpLiveGrid = inst;
-      try { patchGrid(inst); } catch (e) {}
-      return inst;
-    };
-    Wrapped.prototype = Orig.prototype;
-    for (var k in Orig) {
-      if (Object.prototype.hasOwnProperty.call(Orig, k)) Wrapped[k] = Orig[k];
-    }
-    Wrapped.__cgpWrapped = true;
-    return Wrapped;
-  }
+  var lastPeriod;   // undefined until the first post
 
-  function hookSlick(s) {
-    if (!s || typeof s !== 'object') return;
-    if (s.Grid) {
-      s.Grid = wrapGridConstructor(s.Grid);
-    }
-    var _innerGrid = s.Grid;
+  /* At document_start ENV usually does not exist yet, and the content
+   * script's listener may attach later still - so the full payload is
+   * posted once ENV exists and repeated for a while (setGradingPeriod
+   * ignores an unchanged period); after that only a change is posted. */
+  var envTicks = 0;
+  function pollEnv() {
     try {
-      Object.defineProperty(s, 'Grid', {
-        configurable: true,
-        enumerable: true,
-        get: function () { return _innerGrid; },
-        set: function (val) {
-          _innerGrid = wrapGridConstructor(val);
-        }
-      });
-    } catch (e) {}
-  }
-  if (_slick) hookSlick(_slick);
-  try {
-    Object.defineProperty(window, 'Slick', {
-      configurable: true,
-      enumerable: true,
-      get: function () { return _slick; },
-      set: function (val) {
-        _slick = val;
-        hookSlick(val);
+      if (!window.ENV) return;
+      envTicks++;
+      if (lastPeriod === undefined || envTicks <= ENV_REPEAT_TICKS) {
+        var payload = envPayload();
+        lastPeriod = payload.currentGradingPeriodId;
+        post({ source: 'cgp-env', env: payload });
+        return;
       }
-    });
-  } catch (e) {}
-
-  var _jq = window.jQuery || window.$;
-  function hookJq(jq) {
-    if (!jq || !jq.fn || jq.fn.__cgpDataHooked) return;
-    var origData = jq.fn.data;
-    if (typeof origData === 'function') {
-      jq.fn.data = function (key, value) {
-        if (arguments.length >= 2 && (key === 'slickgrid' || key === 'slickGrid' || key === 'grid')) {
-          if (validGrid(value)) {
-            window.__cgpLiveGrid = value;
-            patchGrid(value);
-          }
-        }
-        return origData.apply(this, arguments);
-      };
-      jq.fn.__cgpDataHooked = true;
-    }
+      var period = currentGradingPeriodId();
+      if (period !== lastPeriod) {
+        lastPeriod = period;
+        post({ source: 'cgp-env', env: { currentGradingPeriodId: period } });
+      }
+    } catch (e) { /* Canvas layout differences must never break the page */ }
   }
-  if (_jq) hookJq(_jq);
+
+  /* ------------------------------------------------------------- the grid */
+
+  var cgpState = window.__cgpState = { active: false, narrow: false, hideTotal: false, studentWidth: null, assignmentWidth: null };
 
   function isWindow(obj) {
     if (!obj) return false;
@@ -111,345 +113,347 @@
     return false;
   }
 
-  /* SlickGrid is also owned by Canvas's page world. Function-bearing grid
-   * objects cannot be passed to the isolated content script, so perform the
-   * complete, atomic column transaction here and return only its outcome. */
   function validGrid(grid) {
     if (!grid || typeof grid !== 'object' || isWindow(grid)) return false;
     try {
-      if (typeof grid.getColumns !== 'function' || typeof grid.setColumns !== 'function') return false;
-      return true;
+      return typeof grid.getColumns === 'function' && typeof grid.setColumns === 'function';
     } catch (e) {
       return false;
     }
   }
 
-  function findGrid() {
-    if (window.__cgpLiveGrid && validGrid(window.__cgpLiveGrid)) return window.__cgpLiveGrid;
-
-    // 1. Check window globals and properties
-    var knownGlobals = [
-      window.gradebook, window.Gradebook, window.grid, window.slickGrid,
-      window.slickgrid, window._grid, window.gradebookGrid, window.canvasGradebook,
-      window.INST, window.INST && window.INST.gradebook, window.INST && window.INST.Gradebook,
-      window.INST && window.INST.grid, window.ENV && window.ENV.gradebook,
-      window.ENV && window.ENV.grid, window.Slick
-    ];
-    for (var gi = 0; gi < knownGlobals.length; gi++) {
-      var g = knownGlobals[gi];
-      try {
-        if (g && typeof g === 'object' && !isWindow(g)) {
-          if (validGrid(g)) { window.__cgpLiveGrid = g; return g; }
-          if (validGrid(g.grid)) { window.__cgpLiveGrid = g.grid; return g.grid; }
-          if (validGrid(g.slickGrid)) { window.__cgpLiveGrid = g.slickGrid; return g.slickGrid; }
-          if (validGrid(g.slickgrid)) { window.__cgpLiveGrid = g.slickgrid; return g.slickgrid; }
-          if (validGrid(g._grid)) { window.__cgpLiveGrid = g._grid; return g._grid; }
-          if (validGrid(g.current)) { window.__cgpLiveGrid = g.current; return g.current; }
-          if (validGrid(g.table)) { window.__cgpLiveGrid = g.table; return g.table; }
-        }
-      } catch (e) {}
+  function gradebookRoot() {
+    try {
+      if (typeof document === 'undefined' || typeof document.querySelector !== 'function') return null;
+      return document.querySelector('#gradebook_grid') ||
+        document.querySelector('[data-component="GradebookGrid"]') ||
+        document.querySelector('.gradebook-grid');
+    } catch (e) {
+      return null;
     }
+  }
 
-    // 2. Candidate DOM elements across all known Canvas selectors
-    var domRoots = [];
-    try {
-      if (typeof document.querySelector === 'function') {
-        var q1 = document.querySelector('#gradebook_grid');
-        if (q1) domRoots.push(q1);
-      }
-      if (typeof document.querySelectorAll === 'function') {
-        var queried = document.querySelectorAll(
-          '#gradebook_grid, .gradebook-grid, [data-component="GradebookGrid"], .slickgrid-container, .slick-pane, .slick-pane-left, .slick-pane-right, .slick-viewport, .slick-viewport-left, .slick-viewport-right, .slick-header, .slick-header-left, .slick-header-right, .slick-header-columns, .grid-canvas, #content, .ic-Layout-contentMain, #application, [class*="gradebook"]'
-        );
-        domRoots = domRoots.concat(Array.prototype.slice.call(queried));
-      }
-    } catch (e) {}
+  function within(node, root) {
+    if (!node || !root) return false;
+    if (node === root) return true;
+    try { return typeof root.contains === 'function' && root.contains(node); } catch (e) { return false; }
+  }
 
-    // Climb up from .slick-header-columns or .grid-canvas to find the grid container element
+  function resolveContainer(c) {
     try {
-      if (typeof document.querySelectorAll === 'function') {
-        var samples = document.querySelectorAll('.slick-header-columns, .slick-header-column, .grid-canvas, .slick-row, .slick-cell');
-        for (var sIdx = 0; sIdx < Math.min(samples.length, 10); sIdx++) {
-          var curr = samples[sIdx];
-          for (var depth = 0; depth < 15 && curr && curr !== document.body; depth++) {
-            if (domRoots.indexOf(curr) < 0) domRoots.push(curr);
-            curr = curr.parentElement;
-          }
-        }
+      if (!c) return null;
+      if (c.nodeType === 1) return c;
+      if (typeof c === 'string' && typeof document !== 'undefined') return document.querySelector(c);
+      if (c.jquery && c[0]) return c[0];
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+
+  function containerOf(grid) {
+    try {
+      if (typeof grid.getContainerNode === 'function') {
+        var node = grid.getContainerNode();
+        if (node) return node;
       }
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
+    return grid.__cgpContainer || null;
+  }
+
+  /* Canvas's gradebook grid, not some other SlickGrid on the page (a modal,
+   * a tray): its container must sit inside the gradebook root. A grid with
+   * no reachable container counts only if it was found ON that root. */
+  function inGradebook(grid, foundOn, knownRoot) {
+    var root = knownRoot || gradebookRoot();
+    if (!root) return false;
+    var container = containerOf(grid);
+    if (container) return within(container, root);
+    return within(foundOn, root);
+  }
+
+  function gridConnected(grid) {
+    var container = containerOf(grid);
+    return !container || container.isConnected !== false;
+  }
+
+  var GRID_KEYS = ['slickGrid', 'slickgrid', 'grid', '_grid', '__slickGrid', 'gridInstance', 'table', 'current'];
+
+  /* obj itself, or a grid held under one of the usual property names. */
+  function gridFrom(obj) {
+    if (!obj || typeof obj !== 'object' || isWindow(obj)) return null;
+    try {
+      if (validGrid(obj)) return obj;
+      for (var i = 0; i < GRID_KEYS.length; i++) {
+        var v = obj[GRID_KEYS[i]];
+        if (validGrid(v)) return v;
+      }
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+
+  /* gridFrom on obj and (shallowly) on each of its own values. */
+  function scanObject(obj) {
+    var g = gridFrom(obj);
+    if (g || !obj || typeof obj !== 'object' || isWindow(obj)) return g;
+    var n = 0;
+    try {
+      for (var k in obj) {
+        if (++n > 60) break;
+        g = gridFrom(obj[k]);
+        if (g) return g;
+      }
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+
+  function accept(grid, foundOn, root) {
+    if (!grid || !inGradebook(grid, foundOn, root)) return null;
+    try {
+      if (!containerOf(grid) && foundOn && foundOn.nodeType === 1) grid.__cgpContainer = foundOn;
+    } catch (e) { /* ignore */ }
+    window.__cgpLiveGrid = grid;
+    return grid;
+  }
+
+  /* Look for Canvas's grid object on and around the gradebook root only:
+   * element properties, jQuery data, then a bounded walk of the React fibers
+   * attached to those elements. */
+  function findGrid() {
+    var live = window.__cgpLiveGrid;
+    if (live && validGrid(live) && gridConnected(live)) return live;
+    var root = gradebookRoot();
+    if (!root) return null;
+
+    var els = [root];
+    try {
+      if (typeof root.querySelectorAll === 'function') {
+        var inner = root.querySelectorAll('.slickgrid-container, .slick-pane, .slick-viewport, .slick-header, .grid-canvas');
+        els = els.concat(Array.prototype.slice.call(inner, 0, 20));
+      }
+      var up = root.parentElement;
+      for (var u = 0; u < 3 && up; u++) { els.push(up); up = up.parentElement; }
+    } catch (e) { /* ignore */ }
 
     var jq = window.jQuery || window.$;
-
-    for (var d = 0; d < domRoots.length; d++) {
-      var el = domRoots[d];
+    var found;
+    for (var d = 0; d < els.length; d++) {
+      var el = els[d];
       if (!el) continue;
-
-      // Direct properties
-      try {
-        var elCandidates = [
-          el.slickGrid, el.slickgrid, el.grid, el.__slickGrid, el._grid,
-          el.gridInstance, el.slick, el._slick, el.table, el.gradebookGrid
-        ];
-        for (var ec = 0; ec < elCandidates.length; ec++) {
-          if (validGrid(elCandidates[ec])) {
-            window.__cgpLiveGrid = elCandidates[ec];
-            return elCandidates[ec];
-          }
-        }
-      } catch (e) {}
-
-      // jQuery expando / data
+      found = accept(gridFrom(el), el, root);
+      if (found) return found;
       try {
         for (var ek in el) {
-          if (ek.indexOf('jQuery') === 0) {
-            var jData = el[ek];
-            if (jData && typeof jData === 'object') {
-              if (validGrid(jData.slickGrid)) { window.__cgpLiveGrid = jData.slickGrid; return jData.slickGrid; }
-              if (validGrid(jData.slickgrid)) { window.__cgpLiveGrid = jData.slickgrid; return jData.slickgrid; }
-              if (validGrid(jData.grid)) { window.__cgpLiveGrid = jData.grid; return jData.grid; }
-              if (validGrid(jData._grid)) { window.__cgpLiveGrid = jData._grid; return jData._grid; }
-              if (jData.data && typeof jData.data === 'object') {
-                if (validGrid(jData.data.slickGrid)) { window.__cgpLiveGrid = jData.data.slickGrid; return jData.data.slickGrid; }
-                if (validGrid(jData.data.slickgrid)) { window.__cgpLiveGrid = jData.data.slickgrid; return jData.data.slickgrid; }
-                if (validGrid(jData.data.grid)) { window.__cgpLiveGrid = jData.data.grid; return jData.data.grid; }
-              }
-            }
-          }
+          if (ek.indexOf('jQuery') !== 0) continue;
+          var jData = el[ek];
+          found = accept(gridFrom(jData) || (jData && gridFrom(jData.data)), el, root);
+          if (found) return found;
         }
-      } catch (e) {}
-
+      } catch (e) { /* ignore */ }
       if (typeof jq === 'function') {
         try {
-          var data = jq(el).data();
-          if (data) {
-            if (validGrid(data.slickGrid)) { window.__cgpLiveGrid = data.slickGrid; return data.slickGrid; }
-            if (validGrid(data.slickgrid)) { window.__cgpLiveGrid = data.slickgrid; return data.slickgrid; }
-            if (validGrid(data.grid)) { window.__cgpLiveGrid = data.grid; return data.grid; }
-            if (validGrid(data._grid)) { window.__cgpLiveGrid = data._grid; return data._grid; }
-            for (var dk in data) {
-              if (data[dk] && typeof data[dk] === 'object') {
-                if (validGrid(data[dk])) { window.__cgpLiveGrid = data[dk]; return data[dk]; }
-                if (validGrid(data[dk].grid)) { window.__cgpLiveGrid = data[dk].grid; return data[dk].grid; }
-                if (validGrid(data[dk].slickGrid)) { window.__cgpLiveGrid = data[dk].slickGrid; return data[dk].slickGrid; }
-              }
-            }
-          }
-        } catch (e) {}
+          found = accept(scanObject(jq(el).data()), el, root);
+          if (found) return found;
+        } catch (e) { /* ignore */ }
       }
     }
 
-    // 3. React Fiber Breadth-First-Search traversal
+    // React fibers hanging off those same elements (bounded BFS).
     try {
-      var fiberRoots = [];
-      for (var fIdx = 0; fIdx < domRoots.length; fIdx++) {
-        var fel = domRoots[fIdx];
-        if (!fel) continue;
+      var queue = [];
+      for (var f = 0; f < els.length; f++) {
+        var fel = els[f];
+        if (!fel || typeof fel !== 'object') continue;
         for (var p in fel) {
           if (p.indexOf('__reactContainer') === 0) {
             var cr = fel[p];
-            if (cr && cr.current) fiberRoots.push(cr.current);
-            else if (cr) fiberRoots.push(cr);
+            if (cr) queue.push(cr.current || cr);
           } else if (p.indexOf('__reactFiber') === 0 || p.indexOf('__reactInternalInstance') === 0) {
-            if (fel[p]) fiberRoots.push(fel[p]);
+            if (fel[p]) queue.push(fel[p]);
           }
         }
       }
-
-      var visitedFibers = (typeof Set === 'function') ? new Set() : [];
-      function isVisited(fib) {
-        if (visitedFibers.has) return visitedFibers.has(fib);
-        return visitedFibers.indexOf(fib) >= 0;
-      }
-      function markVisited(fib) {
-        if (visitedFibers.add) visitedFibers.add(fib);
-        else if (visitedFibers.length < 5000) visitedFibers.push(fib);
-      }
-
-      for (var rIdx = 0; rIdx < fiberRoots.length; rIdx++) {
-        var startFiber = fiberRoots[rIdx];
-        if (!startFiber || isVisited(startFiber)) continue;
-        var queue = [startFiber];
-        var count = 0;
-
-        while (queue.length > 0 && count < 8000) {
-          var f = queue.shift();
-          count++;
-          if (!f || isVisited(f)) continue;
-          markVisited(f);
-
-          // Check stateNode
-          try {
-            var sn = f.stateNode;
-            if (sn && typeof sn === 'object' && !isWindow(sn) && !(sn instanceof Node)) {
-              if (validGrid(sn)) { window.__cgpLiveGrid = sn; return sn; }
-              if (validGrid(sn.grid)) { window.__cgpLiveGrid = sn.grid; return sn.grid; }
-              if (validGrid(sn.slickGrid)) { window.__cgpLiveGrid = sn.slickGrid; return sn.slickGrid; }
-              if (validGrid(sn.slickgrid)) { window.__cgpLiveGrid = sn.slickgrid; return sn.slickgrid; }
-              if (validGrid(sn._grid)) { window.__cgpLiveGrid = sn._grid; return sn._grid; }
-              if (validGrid(sn.gridInstance)) { window.__cgpLiveGrid = sn.gridInstance; return sn.gridInstance; }
-              if (validGrid(sn.table)) { window.__cgpLiveGrid = sn.table; return sn.table; }
-              for (var sk in sn) {
-                var sv = sn[sk];
-                if (validGrid(sv)) { window.__cgpLiveGrid = sv; return sv; }
-                if (sv && typeof sv === 'object' && !isWindow(sv)) {
-                  if (validGrid(sv.current)) { window.__cgpLiveGrid = sv.current; return sv.current; }
-                  if (validGrid(sv.grid)) { window.__cgpLiveGrid = sv.grid; return sv.grid; }
-                }
-              }
-            }
-          } catch (e) {}
-
-          // Check memoizedState (hooks chain for functional components)
-          try {
-            var hook = f.memoizedState;
-            var hDepth = 0;
-            while (hook && hDepth < 100) {
-              hDepth++;
-              var hs = hook.memoizedState;
-              if (hs && typeof hs === 'object' && !isWindow(hs)) {
-                if (validGrid(hs)) { window.__cgpLiveGrid = hs; return hs; }
-                if (validGrid(hs.current)) { window.__cgpLiveGrid = hs.current; return hs.current; }
-                if (validGrid(hs.grid)) { window.__cgpLiveGrid = hs.grid; return hs.grid; }
-                if (validGrid(hs.slickGrid)) { window.__cgpLiveGrid = hs.slickGrid; return hs.slickGrid; }
-                if (validGrid(hs.slickgrid)) { window.__cgpLiveGrid = hs.slickgrid; return hs.slickgrid; }
-                if (validGrid(hs._grid)) { window.__cgpLiveGrid = hs._grid; return hs._grid; }
-                if (validGrid(hs.table)) { window.__cgpLiveGrid = hs.table; return hs.table; }
-                for (var hk in hs) {
-                  var hv = hs[hk];
-                  if (validGrid(hv)) { window.__cgpLiveGrid = hv; return hv; }
-                  if (hv && typeof hv === 'object' && !isWindow(hv)) {
-                    if (validGrid(hv.current)) { window.__cgpLiveGrid = hv.current; return hv.current; }
-                    if (validGrid(hv.grid)) { window.__cgpLiveGrid = hv.grid; return hv.grid; }
-                  }
-                }
-                if (Array.isArray(hs)) {
-                  for (var ai = 0; ai < hs.length; ai++) {
-                    var aItem = hs[ai];
-                    if (validGrid(aItem)) { window.__cgpLiveGrid = aItem; return aItem; }
-                    if (aItem && typeof aItem === 'object' && !isWindow(aItem)) {
-                      if (validGrid(aItem.current)) { window.__cgpLiveGrid = aItem.current; return aItem.current; }
-                      if (validGrid(aItem.grid)) { window.__cgpLiveGrid = aItem.grid; return aItem.grid; }
-                    }
-                  }
-                }
-              }
-              hook = hook.next;
-            }
-          } catch (e) {}
-
-          // Check memoizedProps
-          try {
-            var mp = f.memoizedProps;
-            if (mp && typeof mp === 'object' && !isWindow(mp)) {
-              if (validGrid(mp.grid)) { window.__cgpLiveGrid = mp.grid; return mp.grid; }
-              if (validGrid(mp.slickGrid)) { window.__cgpLiveGrid = mp.slickGrid; return mp.slickGrid; }
-              if (validGrid(mp.slickgrid)) { window.__cgpLiveGrid = mp.slickgrid; return mp.slickgrid; }
-              for (var pk in mp) {
-                var pv = mp[pk];
-                if (validGrid(pv)) { window.__cgpLiveGrid = pv; return pv; }
-                if (pv && typeof pv === 'object' && !isWindow(pv) && validGrid(pv.current)) {
-                  window.__cgpLiveGrid = pv.current;
-                  return pv.current;
-                }
-              }
-            }
-          } catch (e) {}
-
-          if (f.child) queue.push(f.child);
-          if (f.sibling) queue.push(f.sibling);
-          if (f.return && !isVisited(f.return)) queue.push(f.return);
+      var visited = new Set();
+      var NodeCtor = typeof Node === 'function' ? Node : null;
+      var count = 0;
+      while (queue.length && count < 4000) {
+        var fiber = queue.shift();
+        if (!fiber || visited.has(fiber)) continue;
+        visited.add(fiber);
+        count++;
+        var sn = fiber.stateNode;
+        if (sn && typeof sn === 'object' && !(NodeCtor && sn instanceof NodeCtor)) {
+          found = accept(scanObject(sn), root, root);
+          if (found) return found;
         }
-      }
-    } catch (e) {}
-
-    // 4. Webpack chunk module probe
-    try {
-      for (var wk in window) {
-        if (/^webpackChunk/i.test(wk) || wk === 'webpackJsonp') {
-          var chunkArr = window[wk];
-          if (chunkArr && typeof chunkArr.push === 'function') {
-            var req = null;
-            try {
-              chunkArr.push([
-                [Symbol('cgp-grid-probe')],
-                {},
-                function (r) { req = r; }
-              ]);
-            } catch (e) {}
-            if (req && req.c) {
-              for (var modId in req.c) {
-                try {
-                  var mod = req.c[modId];
-                  if (!mod || !mod.exports) continue;
-                  var exp = mod.exports;
-                  if (validGrid(exp)) { window.__cgpLiveGrid = exp; return exp; }
-                  if (exp.default && validGrid(exp.default)) { window.__cgpLiveGrid = exp.default; return exp.default; }
-                  if (exp.grid && validGrid(exp.grid)) { window.__cgpLiveGrid = exp.grid; return exp.grid; }
-                  if (exp.slickGrid && validGrid(exp.slickGrid)) { window.__cgpLiveGrid = exp.slickGrid; return exp.slickGrid; }
-                  if (typeof exp === 'object' && !isWindow(exp)) {
-                    for (var modK in exp) {
-                      try {
-                        if (validGrid(exp[modK])) { window.__cgpLiveGrid = exp[modK]; return exp[modK]; }
-                        if (exp[modK] && typeof exp[modK] === 'object' && validGrid(exp[modK].grid)) {
-                          window.__cgpLiveGrid = exp[modK].grid;
-                          return exp[modK].grid;
-                        }
-                      } catch (e) {}
-                    }
-                  }
-                } catch (e) {}
-              }
-            }
-          }
+        var hook = fiber.memoizedState;
+        for (var h = 0; hook && typeof hook === 'object' && h < 100; h++) {
+          found = accept(scanObject(hook.memoizedState), root, root);
+          if (found) return found;
+          hook = hook.next;
         }
+        if (fiber.memoizedProps && typeof fiber.memoizedProps === 'object') {
+          found = accept(scanObject(fiber.memoizedProps), root, root);
+          if (found) return found;
+        }
+        if (fiber.child) queue.push(fiber.child);
+        if (fiber.sibling) queue.push(fiber.sibling);
+        if (fiber.return && !visited.has(fiber.return)) queue.push(fiber.return);
       }
-    } catch (e) {}
-
-    // 5. Top-level scan across window properties safely
-    try {
-      var winProps = Object.getOwnPropertyNames(window);
-      for (var k = 0; k < winProps.length; k++) {
-        var key = winProps[k];
-        if (/^\d+$/.test(key)) continue;
-        try {
-          var val = window[key];
-          if (val && typeof val === 'object' && !isWindow(val)) {
-            if (validGrid(val)) { window.__cgpLiveGrid = val; return val; }
-            if (val.grid && !isWindow(val.grid) && validGrid(val.grid)) { window.__cgpLiveGrid = val.grid; return val.grid; }
-            if (val.slickGrid && !isWindow(val.slickGrid) && validGrid(val.slickGrid)) { window.__cgpLiveGrid = val.slickGrid; return val.slickGrid; }
-            if (val.slickgrid && !isWindow(val.slickgrid) && validGrid(val.slickgrid)) { window.__cgpLiveGrid = val.slickgrid; return val.slickgrid; }
-            if (val._grid && !isWindow(val._grid) && validGrid(val._grid)) { window.__cgpLiveGrid = val._grid; return val._grid; }
-            if (val.table && !isWindow(val.table) && validGrid(val.table)) { window.__cgpLiveGrid = val.table; return val.table; }
-            if (val.current && !isWindow(val.current) && validGrid(val.current)) { window.__cgpLiveGrid = val.current; return val.current; }
-          }
-        } catch (e) {}
-      }
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
 
     return null;
   }
 
+  // Grids Canvas constructs after this script ran (document_start).
+  function wrapGridConstructor(Orig) {
+    if (typeof Orig !== 'function' || Orig.__cgpWrapped) return Orig;
+    var Wrapped = function (container, data, columns, options) {
+      var inst = new Orig(container, data, columns, options);
+      try {
+        if (!containerOf(inst)) {
+          var node = resolveContainer(container);
+          if (node) inst.__cgpContainer = node;
+        }
+        if (accept(inst, null)) patchGrid(inst);
+      } catch (e) { /* ignore */ }
+      return inst;
+    };
+    Wrapped.prototype = Orig.prototype;
+    for (var k in Orig) {
+      if (Object.prototype.hasOwnProperty.call(Orig, k)) Wrapped[k] = Orig[k];
+    }
+    Wrapped.__cgpWrapped = true;
+    return Wrapped;
+  }
+
+  function hookSlick(s) {
+    if (!s || typeof s !== 'object') return;
+    if (s.Grid) s.Grid = wrapGridConstructor(s.Grid);
+    var innerGrid = s.Grid;
+    try {
+      Object.defineProperty(s, 'Grid', {
+        configurable: true,
+        enumerable: true,
+        get: function () { return innerGrid; },
+        set: function (val) { innerGrid = wrapGridConstructor(val); }
+      });
+    } catch (e) { /* ignore */ }
+  }
+  var slick = window.Slick;
+  if (slick) hookSlick(slick);
+  try {
+    Object.defineProperty(window, 'Slick', {
+      configurable: true,
+      enumerable: true,
+      get: function () { return slick; },
+      set: function (val) { slick = val; hookSlick(val); }
+    });
+  } catch (e) { /* ignore */ }
+
+  var jqAtStart = window.jQuery || window.$;
+  if (jqAtStart && jqAtStart.fn && !jqAtStart.fn.__cgpDataHooked && typeof jqAtStart.fn.data === 'function') {
+    var origData = jqAtStart.fn.data;
+    jqAtStart.fn.data = function (key, value) {
+      if (arguments.length >= 2 && (key === 'slickgrid' || key === 'slickGrid' || key === 'grid') && validGrid(value)) {
+        try { if (accept(value, this && this[0])) patchGrid(value); } catch (e) { /* ignore */ }
+      }
+      return origData.apply(this, arguments);
+    };
+    jqAtStart.fn.__cgpDataHooked = true;
+  }
+
+  /* Only the column kinds this extension sizes; everything else - custom
+   * columns, assignment groups, Final Grade Override, split-name or any
+   * unknown column - is 'other' and is never touched. */
   function columnKind(column) {
     if (!column) return null;
-    var rawId = String(column.id || '').toLowerCase();
-    var field = String(column.field || '').toLowerCase();
-    var rawName = String(column.name || column.title || '');
-    var textName = rawName.replace(/<[^>]*>/g, '').trim().toLowerCase();
-    var cleanId = rawId.replace(/^slickgrid_\d+_?/, '');
+    var id = String(column.id || column.field || '').toLowerCase().replace(/^slickgrid_\d+_?/, '');
+    if (id === 'student') return 'student';
+    if (id === 'total_grade') return 'total';
+    if (/^assignment_\d+$/.test(id)) return 'assignment';
+    return 'other';
+  }
 
-    if (cleanId === 'student' || cleanId === 'student_name' || cleanId === 'name' || textName === 'student name' || field === 'student') return 'student';
-    if (/^total/.test(cleanId) || /(?:^|_)total(?:_|$)/.test(rawId) || field === 'total_grade' || field === 'total' ||
-        column.is_total || /^total/.test(textName) || /^to(\.|$)/.test(textName) || textName === 'total' ||
-        cleanId === 'final_grade' || field === 'final_grade' ||
-        cleanId === 'total_grade_override' || field === 'total_grade_override' ||
-        cleanId.indexOf('total_grade') >= 0 || field.indexOf('total_grade') >= 0) {
-      return 'total';
+  /* The width this extension wants for a column right now, or null for
+   * "leave it alone" (inactive, narrowing off, or not a sized kind). */
+  function wantedWidth(kind) {
+    if (!cgpState.active) return null;
+    if (kind === 'total') return cgpState.hideTotal ? TOTAL_WIDTH : null;
+    if (!cgpState.narrow) return null;
+    if (kind === 'student') return cgpState.studentWidth;
+    if (kind === 'assignment') return cgpState.assignmentWidth;
+    return null;
+  }
+
+  /* Width only. minWidth is lowered just enough to allow the width; maxWidth
+   * is never set, so the teacher's own drag-resize keeps working. */
+  function applyWidth(col) {
+    var want = wantedWidth(columnKind(col));
+    if (want === null || want === undefined) return false;
+    var changed = Math.round(Number(col.width)) !== want;
+    col.width = want;
+    if (typeof col.minWidth === 'number' && col.minWidth > want) col.minWidth = Math.min(MIN_WIDTH_FLOOR, want);
+    return changed;
+  }
+
+  function redraw(grid) {
+    if (typeof grid.invalidate === 'function') grid.invalidate();
+    if (typeof grid.render === 'function') grid.render();
+    if (typeof grid.invalidateAllRows === 'function') grid.invalidateAllRows();
+    if (typeof grid.resizeCanvas === 'function') grid.resizeCanvas();
+  }
+
+  function enforceColumnWidths(grid) {
+    if (!cgpState.active || !grid || typeof grid.getColumns !== 'function') return false;
+    var columns;
+    try { columns = grid.getColumns(); } catch (e) { return false; }
+    if (!Array.isArray(columns) || !columns.length) return false;
+    var changed = false;
+    columns.forEach(function (col) { if (col && applyWidth(col)) changed = true; });
+    if (changed) {
+      try {
+        (grid.__cgpOrigSetColumns || grid.setColumns).call(grid, columns);
+        redraw(grid);
+      } catch (e) { /* ignore */ }
     }
-    if (/^assignment_group_/.test(cleanId) || column.group_id != null || field.indexOf('assignment_group') >= 0) return 'group';
-    if (/^custom_col_/.test(cleanId) || cleanId === 'notes' || field.indexOf('custom_col') >= 0) return 'custom';
-    if (/^assignment[_-]/.test(cleanId) || column.assignment_id != null || /^\d+$/.test(cleanId) || column.points_possible != null || field.indexOf('assignment') >= 0) return 'assignment';
-    return 'assignment';
+    return changed;
+  }
+
+  /* Keep Canvas's own later setColumns/autosize calls from undoing the
+   * requested widths. Every hook is a pass-through until a request has
+   * activated sizing. */
+  function patchGrid(grid) {
+    if (!grid || grid.__cgpPatchedSetColumns) return;
+    window.__cgpLiveGrid = grid;
+
+    var origSetOptions = grid.setOptions;
+    if (typeof origSetOptions === 'function') {
+      grid.setOptions = function (options) {
+        if (cgpState.active && cgpState.narrow && options && options.forceFitColumns) options.forceFitColumns = false;
+        return origSetOptions.apply(this, arguments);
+      };
+    }
+
+    var origAutosize = grid.autosizeColumns;
+    if (typeof origAutosize === 'function') {
+      grid.autosizeColumns = function () {
+        if (!cgpState.active) return origAutosize.apply(this, arguments);
+        if (!cgpState.narrow) origAutosize.apply(this, arguments);
+        enforceColumnWidths(this);
+      };
+    }
+
+    var origSetColumns = grid.setColumns;
+    if (typeof origSetColumns === 'function') {
+      grid.__cgpOrigSetColumns = origSetColumns;
+      grid.setColumns = function (columns) {
+        if (cgpState.active && Array.isArray(columns)) {
+          columns.forEach(function (col) { if (col) applyWidth(col); });
+        }
+        return origSetColumns.apply(this, arguments);
+      };
+    }
+
+    grid.__cgpPatchedSetColumns = true;
   }
 
   function signature(columns) {
@@ -499,186 +503,87 @@
           clearInterval(timer);
           resolve(null);
         }
-      }, 50);
+      }, 100);
     });
   }
 
-  var cgpState = window.__cgpState = window.__cgpState || { hideTotal: false, studentWidth: 190, assignmentWidth: 124 };
-
-  function enforceColumnWidths(grid) {
-    if (!grid || typeof grid.getColumns !== 'function') return false;
-    var columns;
-    try { columns = grid.getColumns(); } catch (e) { return false; }
-    if (!Array.isArray(columns) || !columns.length) return false;
-    var changed = false;
-    columns.forEach(function(col) {
-      if (!col) return;
-      var kind = columnKind(col);
-      if (kind === 'student') {
-        var sWant = cgpState.studentWidth || 190;
-        if (Math.round(Number(col.width)) !== sWant || col.minWidth !== sWant || col.maxWidth !== sWant) {
-          col.width = sWant; col.minWidth = sWant; col.maxWidth = sWant; changed = true;
-        }
-      } else if (kind === 'total') {
-        if (cgpState.hideTotal) {
-          if (Math.round(Number(col.width)) !== 84 || col.minWidth !== 84 || col.maxWidth !== 84) {
-            col.width = 84; col.minWidth = 84; col.maxWidth = 84; changed = true;
-          }
-        }
-      } else {
-        var aWant = cgpState.assignmentWidth || 124;
-        if (Math.round(Number(col.width)) !== aWant || col.minWidth !== aWant || col.maxWidth !== aWant) {
-          col.width = aWant; col.minWidth = aWant; col.maxWidth = aWant; changed = true;
-        }
-      }
-    });
-    if (changed && typeof grid.setColumns === 'function') {
-      try {
-        var origSet = grid.__cgpOrigSetColumns || grid.setColumns;
-        origSet.call(grid, columns);
-        if (typeof grid.invalidate === 'function') grid.invalidate();
-        if (typeof grid.render === 'function') grid.render();
-        if (typeof grid.invalidateAllRows === 'function') grid.invalidateAllRows();
-        if (typeof grid.resizeCanvas === 'function') grid.resizeCanvas();
-      } catch (e) {}
-    }
-    return changed;
-  }
-
-  function patchGrid(grid) {
-    if (!grid || grid.__cgpPatchedSetColumns) return;
-    window.__cgpLiveGrid = grid;
-
-    if (typeof grid.setOptions === 'function') {
-      try { grid.setOptions({ forceFitColumns: false }); } catch (e) {}
-      var origSetOptions = grid.setOptions;
-      grid.setOptions = function (options) {
-        if (options && options.forceFitColumns) {
-          options.forceFitColumns = false;
-        }
-        return origSetOptions.call(this, options);
-      };
-    }
-
-    grid.autosizeColumns = function () {
-      enforceColumnWidths(this);
-    };
-
-    var orig = grid.setColumns;
-    if (typeof orig === 'function') {
-      grid.__cgpOrigSetColumns = orig;
-      grid.setColumns = function (columns) {
-        if (Array.isArray(columns)) {
-          columns.forEach(function (col) {
-            if (!col) return;
-            var kind = columnKind(col);
-            if (kind === 'student') {
-              var sWant = cgpState.studentWidth || 190;
-              col.width = sWant;
-              col.minWidth = sWant;
-              col.maxWidth = sWant;
-            } else if (kind === 'total') {
-              if (cgpState.hideTotal) {
-                col.width = 84;
-                col.minWidth = 84;
-                col.maxWidth = 84;
-              }
-            } else {
-              var aWant = cgpState.assignmentWidth || 124;
-              col.width = aWant;
-              col.minWidth = aWant;
-              col.maxWidth = aWant;
-            }
-          });
-        }
-        return orig.call(this, columns);
-      };
-    }
-
-    grid.__cgpPatchedSetColumns = true;
-  }
-
-  function doResize(grid, studentWidth, assignmentWidth, hideTotal) {
+  function doResize(grid, studentWidth, assignmentWidth, hideTotal, narrow) {
+    cgpState.active = true;
+    cgpState.narrow = !!narrow;
     cgpState.hideTotal = !!hideTotal;
     cgpState.studentWidth = studentWidth;
     cgpState.assignmentWidth = assignmentWidth;
     patchGrid(grid);
+    if (narrow) {
+      // forceFit would squeeze the narrowed columns back to the viewport.
+      try {
+        if (typeof grid.getOptions === 'function' && typeof grid.setOptions === 'function' &&
+            (grid.getOptions() || {}).forceFitColumns) {
+          grid.setOptions({ forceFitColumns: false });
+        }
+      } catch (e) { /* ignore */ }
+    }
     return stableColumns(grid).then(function (columns) {
       if (!columns) return { ok: false, reason: 'unstable' };
       var changed = 0;
       var next = columns.map(function (col) {
         var copy = Object.assign({}, col);
-        var kind = columnKind(copy);
-        if (kind === 'student') {
-          if (studentWidth !== null && studentWidth !== undefined) {
-            if (Math.round(Number(copy.width)) !== studentWidth) {
-              copy.width = studentWidth;
-              changed++;
-            }
-            copy.minWidth = studentWidth;
-            copy.maxWidth = studentWidth;
-          }
-        } else if (kind === 'total') {
-          if (hideTotal) {
-            if (Math.round(Number(copy.width)) !== 84) {
-              copy.width = 84;
-              changed++;
-            }
-            copy.minWidth = 84;
-            copy.maxWidth = 84;
-          }
-        } else {
-          if (assignmentWidth !== null && assignmentWidth !== undefined) {
-            if (Math.round(Number(copy.width)) !== assignmentWidth) {
-              copy.width = assignmentWidth;
-              changed++;
-            }
-            copy.minWidth = assignmentWidth;
-            copy.maxWidth = assignmentWidth;
-          }
-        }
+        if (applyWidth(copy)) changed++;
         return copy;
       });
-
-      if (!changed && next.length === columns.length) return { ok: true, changed: 0 };
+      if (!changed) return { ok: true, changed: 0 };
       try {
         grid.setColumns(next);
-        if (typeof grid.invalidate === 'function') grid.invalidate();
-        if (typeof grid.render === 'function') grid.render();
-        if (typeof grid.invalidateAllRows === 'function') grid.invalidateAllRows();
-        if (typeof grid.resizeCanvas === 'function') grid.resizeCanvas();
+        redraw(grid);
         return { ok: true, changed: changed };
       } catch (e) {
         try {
-          grid.setColumns(columns);
-          if (typeof grid.invalidate === 'function') grid.invalidate();
-          if (typeof grid.render === 'function') grid.render();
-          if (typeof grid.invalidateAllRows === 'function') grid.invalidateAllRows();
-          if (typeof grid.resizeCanvas === 'function') grid.resizeCanvas();
+          (grid.__cgpOrigSetColumns || grid.setColumns).call(grid, columns);
+          redraw(grid);
         } catch (ignored) { /* stand down */ }
         return { ok: false, reason: 'failed' };
       }
     });
   }
 
-  function resizeColumns(studentWidth, assignmentWidth, hideTotal) {
+  function resizeColumns(studentWidth, assignmentWidth, hideTotal, narrow) {
     var grid = findGrid();
-    if (grid) return doResize(grid, studentWidth, assignmentWidth, hideTotal);
+    if (grid) return doResize(grid, studentWidth, assignmentWidth, hideTotal, narrow);
     return waitForGrid(4500).then(function (g) {
       if (!g) return { ok: false, reason: 'unavailable' };
-      return doResize(g, studentWidth, assignmentWidth, hideTotal);
+      return doResize(g, studentWidth, assignmentWidth, hideTotal, narrow);
     });
   }
 
-  // Periodic safety pass: keep uniform widths locked even after client-side course navigation
-  if (typeof setInterval === 'function') {
-    setInterval(function () {
-      var g = window.__cgpLiveGrid || findGrid();
-      if (g) {
-        if (!g.__cgpPatchedSetColumns) patchGrid(g);
-        enforceColumnWidths(g);
-      }
-    }, 1500);
+  /* Background search for the grid, so Canvas's own later setColumns calls
+   * are caught: gradebook page only, stopped as soon as the grid is found
+   * and patched, and given up after SEARCH_BUDGET_MS. */
+  var searchTimer = null;
+  var searchStartedAt = 0;
+  function stopSearch() {
+    if (searchTimer) { clearInterval(searchTimer); searchTimer = null; }
+  }
+  function searchTick() {
+    var g = findGrid();
+    if (g) {
+      patchGrid(g);
+      enforceColumnWidths(g);
+      stopSearch();
+      return;
+    }
+    if (Date.now() - searchStartedAt > SEARCH_BUDGET_MS) stopSearch();
+  }
+  function startSearch() {
+    if (searchTimer || typeof setInterval !== 'function' || !onGradebookPage()) return;
+    searchStartedAt = Date.now();
+    searchTimer = setInterval(searchTick, SEARCH_EVERY_MS);
+  }
+  // Cheap liveness check: resume searching only if a found grid was lost.
+  function watchGrid() {
+    var g = window.__cgpLiveGrid;
+    if (!g || gridConnected(g)) return;
+    window.__cgpLiveGrid = null;
+    startSearch();
   }
 
   window.addEventListener('message', function (event) {
@@ -687,9 +592,24 @@
     var studentWidth = Number(message.studentWidth);
     var assignmentWidth = Number(message.assignmentWidth);
     var hideTotal = !!message.hideTotal;
-    if (!isFinite(studentWidth) || !isFinite(assignmentWidth) || studentWidth < 1 || assignmentWidth < 1) return;
-    resizeColumns(Math.round(studentWidth), Math.round(assignmentWidth), hideTotal).then(function (result) {
-      window.postMessage({ source: 'cgp-grid-response', id: message.id, result: result }, window.location.origin);
+    // Senders that predate the flag only ever asked in order to narrow.
+    var narrow = message.narrow === undefined ? true : !!message.narrow;
+    if (narrow && (!isFinite(studentWidth) || !isFinite(assignmentWidth) || studentWidth < 1 || assignmentWidth < 1)) return;
+    resizeColumns(Math.round(studentWidth) || null, Math.round(assignmentWidth) || null, hideTotal, narrow).then(function (result) {
+      post({ source: 'cgp-grid-response', id: message.id, result: result });
     });
   });
+
+  pollEnv();
+  if (onGradebookPage()) {
+    try {
+      if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+        document.addEventListener('DOMContentLoaded', pollEnv);
+      }
+    } catch (e) { /* ignore */ }
+    startSearch();
+    if (typeof setInterval === 'function') {
+      setInterval(function () { pollEnv(); watchGrid(); }, POLL_EVERY_MS);
+    }
+  }
 })();
