@@ -92,6 +92,27 @@ suite('what the teacher is told after posting a column', (test) => {
     a.eq(last().text, '1 of 2 grades posted in Lab 4');
   });
 
+  test('a partial post never stamps students whose grades are still hidden as posted', async () => {
+    said.length = 0;
+    const model = fakeModel([[true, true], [false, true]]);
+    await controller(model, okApi()).post('99', null);
+    a.eq(model.cells.get('99:2').postedAt, null, 'student 2 is still hidden per Canvas');
+    a.eq(model.cells.get('99:1').postedAt, null, 'nothing stamped over a successful read either');
+  });
+
+  test('a network failure on the post mutation never falls back to posting the whole column', async () => {
+    said.length = 0;
+    const model = fakeModel([[true, true]]);
+    let fallbackUsed = false;
+    const api = {
+      postAssignmentGrades: () => Promise.reject(Object.assign(new Error('Network error'), { network: true })),
+      request: () => { fallbackUsed = true; return Promise.resolve({}); }
+    };
+    await controller(model, api).post('99', null);
+    a.eq(fallbackUsed, false, 'the broader unmute endpoint was not used');
+    a.eq(last().level, 'error');
+  });
+
   test('a lagging re-read is retried rather than reported as a failed post', async () => {
     said.length = 0;
     // The column still looks untouched on the first re-read, and has caught

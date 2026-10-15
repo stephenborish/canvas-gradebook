@@ -2,17 +2,18 @@
  *
  * M = Missing, written to Canvas instantly; pressed again it is removed. L =
  * Late, same shape; pressed again it is removed. E = Excused. Missing and
- * Late are independent flags: neither one ever touches the grade, and
- * entering a grade never touches either of them - the teacher's own M/L
- * press is the only thing that changes a status. Typing 0 is still an
+ * Late are independent flags: neither one ever touches the grade. Typing a
+ * grade into a cell explicitly marked Missing takes Missing off once Canvas
+ * has saved that grade (see scheduleReconcile). Typing 0 is still an
  * ordinary zero.
  * Shortcuts only fire when a real editable grade cell is active (or cells are
  * multi-selected); typing anywhere else on Canvas is never intercepted.
  *
  * Navigation deliberately assists rather than replaces Canvas: Enter/Tab are
  * left to Canvas first, and only if the active cell did not move do we move it.
- * Ordinary numeric grading also stays on Canvas's own commit path, and we just
- * re-read the submission afterwards to keep indicators and Total in sync. */
+ * Ordinary typed grading stays entirely on Canvas's own commit path - nothing
+ * here writes a typed grade - and we just re-read the submission afterwards
+ * to keep indicators and Total in sync. */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
@@ -89,108 +90,72 @@
   P.onFocusOut = function (e) {
     var el = e.target;
     var cell = el && el.closest ? el.closest('.slick-cell') : null;
-    if (cell && this.registry) {
-      this.registry.invalidate(cell);
-    }
-    if (this.requestPaint) {
-      this.requestPaint();
-    }
+    if (cell && this.registry) this.registry.invalidate(cell);
 
+    // Only an editor we saw open is followed up on. With no record of what
+    // it held when it opened there is no telling whether anything changed,
+    // and guessing "it was empty" is how an untouched grade used to get
+    // written straight back to Canvas.
     var watch = this._editorWatch.get(el);
-    if (!watch && cell) {
-      var fallbackInfo = this.adapter.cellInfo(cell);
-      if (fallbackInfo && fallbackInfo.columnType === 'assignment' && fallbackInfo.assignmentId && fallbackInfo.studentId) {
-        watch = {
-          value: '',
-          assignmentId: fallbackInfo.assignmentId,
-          userId: fallbackInfo.studentId
-        };
-      }
-    }
-    if (!watch) return;
-    this._editorWatch.delete(el);
-    var now = String(el.value === undefined ? '' : el.value);
-    if (now === watch.value) return;
-    if (!watch.assignmentId || !watch.userId) return;
-    if (this._nativeMPending.has(watch.assignmentId + ':' + watch.userId)) return;
-
-    var numVal = parseFloat(now);
-    var isNum = !isNaN(numVal);
-    var hasGrade = now.trim() !== '' && now.trim() !== '-' && now.trim() !== '\u2013';
-    var prevRec = this.model.cell(watch.assignmentId, watch.userId);
-    var wasMissing = (prevRec && (prevRec.missing || prevRec.latePolicyStatus === 'missing')) ||
-                     (cell && (cell.classList.contains('cgp-status-missing') || cell.classList.contains('missing') || !!cell.querySelector('.cgp-status-badge--missing')));
-    var wasLate = (prevRec && (prevRec.late || prevRec.latePolicyStatus === 'late')) ||
-                  (cell && (cell.classList.contains('cgp-status-late') || cell.classList.contains('late') || !!cell.querySelector('.cgp-status-badge--late')));
-
-    var patch = {
-      grade: hasGrade ? now : null,
-      score: isNum ? numVal : null,
-      enteredScore: isNum ? numVal : null,
-      override: hasGrade ? now : (now.trim() === '-' || now.trim() === '\u2013' ? '\u2013' : null)
-    };
-    if (wasMissing) {
-      patch.missing = false;
-      patch.latePolicyStatus = wasLate ? 'late' : null;
-    }
-    this.model.patchCell(watch.assignmentId, watch.userId, patch, { silent: false });
-    this.model.markLocalWrite(watch.assignmentId, watch.userId);
-
-    var api = (this.writer && this.writer.api) || (this.model && this.model.api);
-    if (api && this.model && this.model.courseId) {
-      var aid = watch.assignmentId;
-      var uid = watch.userId;
-      var self = this;
-      var form = {};
-      if (hasGrade) {
-        form['submission[posted_grade]'] = now;
-        if (wasMissing) {
-          form['submission[late_policy_status]'] = wasLate ? 'late' : 'none';
-        }
-      } else if (now.trim() === '-' || now.trim() === '' || now.trim() === '\u2013') {
-        form['submission[posted_grade]'] = '';
-        if (wasMissing) {
-          form['submission[late_policy_status]'] = 'none';
-        }
-      }
-      if (Object.keys(form).length > 0) {
-        api.updateSubmission(this.model.courseId, aid, uid, form).then(function (sub) {
-          if (sub) {
-            var applied = self.model.applySubmission(sub);
-            if (applied && applied.grade !== null && applied.grade !== undefined && String(applied.grade) !== '') {
-              self.model.patchCell(aid, uid, { override: String(applied.grade) }, { silent: true });
-            }
-            self.model.queueTotalRefresh(uid);
-            if (self.requestPaint) self.requestPaint();
-          }
-        }).catch(function (err) {
-          CGP.diag.error('keyboard.gradeWriteFailed', { error: err && err.message });
+    if (watch) this._editorWatch.delete(el);
+    if (watch && watch.assignmentId && watch.userId &&
+      !this._nativeMPending.has(watch.assignmentId + ':' + watch.userId)) {
+      var now = String(el.value === undefined ? '' : el.value);
+      if (now !== watch.value) {
+        // Canvas commits what was typed through its own editor; nothing is
+        // written from here. Writing it ourselves as well (as this used to)
+        // put a second, unguarded write in flight for every edit - one that
+        // skipped the anonymous/moderated refusal, failed silently, and could
+        // even save an edit the teacher had cancelled with Escape. All that
+        // is left to do is follow up once Canvas's own save has landed.
+        var before = this.model.cell(watch.assignmentId, watch.userId);
+        this.scheduleReconcile(watch.assignmentId, watch.userId, {
+          grade: before ? before.grade : null,
+          enteredScore: before ? before.enteredScore : null,
+          gradedAt: before ? before.gradedAt : null
         });
       }
-    }
-
-    this.scheduleReconcile(watch.assignmentId, watch.userId);
-    if (cell && this.registry) {
-      this.registry.invalidate(cell);
     }
     if (this.requestPaint) this.requestPaint();
   };
 
-  /** Canvas committed a grade its own way: re-read it so we stay truthful. */
-  P.scheduleReconcile = function (assignmentId, userId) {
+  /* Canvas committed a grade its own way: re-read the submission so the
+   * indicators and Total stay truthful, and - once the read shows Canvas
+   * really did save a NEW grade - take off an explicitly applied Missing
+   * status, which Canvas itself keeps on a graded submission. A typed grade
+   * is the teacher saying the work is in.
+   *
+   * Re-read a few times on a backoff: Canvas's own request can take longer
+   * than the first look. A read showing nothing new (Canvas refused the
+   * value, or the edit was cancelled) changes nothing. */
+  var RECONCILE_DELAYS = [1200, 3000, 8000];
+
+  P.scheduleReconcile = function (assignmentId, userId, before, attempt) {
     var self = this;
     var key = assignmentId + ':' + userId;
+    attempt = attempt || 0;
     if (this._refreshTimers.has(key)) clearTimeout(this._refreshTimers.get(key));
     this._refreshTimers.set(key, setTimeout(function () {
       self._refreshTimers.delete(key);
-      self.model.refreshCell(assignmentId, userId).then(function (sub) {
-        if (sub && sub.grade !== null && sub.grade !== undefined && String(sub.grade) !== '') {
-          self.model.patchCell(assignmentId, userId, { override: String(sub.grade) }, { silent: true });
-        }
+      self.model.refreshCell(assignmentId, userId).then(function (rec) {
         self.model.queueTotalRefresh(userId);
         if (self.requestPaint) self.requestPaint();
+        if (!rec || !before) return;
+        var hasGrade = rec.grade !== null && rec.grade !== undefined && String(rec.grade) !== '';
+        var changed = rec.grade !== before.grade || rec.enteredScore !== before.enteredScore ||
+          (rec.gradedAt && rec.gradedAt !== before.gradedAt);
+        if (!changed || !hasGrade) {
+          if (attempt + 1 < RECONCILE_DELAYS.length) self.scheduleReconcile(assignmentId, userId, before, attempt + 1);
+          return;
+        }
+        if (rec.latePolicyStatus === 'missing' && !rec.excused && self.writer) {
+          self.writer.apply([{
+            assignmentId: assignmentId, userId: userId,
+            parsed: { kind: CGP.gradeOps.KIND.CLEAR_MISSING, raw: '' }
+          }]).then(function () { if (self.requestPaint) self.requestPaint(); });
+        }
       });
-    }, 1200));
+    }, RECONCILE_DELAYS[attempt]));
   };
 
   /* ------------------------------------------------------------- keystrokes */
@@ -222,6 +187,13 @@
     // through is what used to show Canvas's own "invalid grade" toast.
     if (plain && key.length === 1) {
       var token = CGP.gradeOps.shortcutToken(key, this.settings.values);
+      if (token && e.repeat && (inCell || selectionSize > 0)) {
+        // A held key auto-repeats: M or L would toggle on, off, on... and a
+        // selection would raise one confirmation per repeat. Swallow it.
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
       if (token) {
         // Only a real assignment cell (or an unresolved one - better to try
         // and fail loudly than to silently hand the keystroke to Canvas) is a
@@ -295,6 +267,11 @@
     // comparison.
     var isC = key && key.length === 1 && key.toLowerCase() === 'c';
     var cMods = plain || (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey);
+    if (this.bulkComment && cMods && isC && selectionSize > 0 && e.repeat) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return;
+    }
     if (this.bulkComment && cMods && isC && selectionSize > 0) {
       // If multiple cells are selected, pressing C is always intended as bulk comment,
       // even if the last clicked cell in the range selection has an active input.
@@ -315,6 +292,7 @@
 
     // ---- multi-cell numeric entry ---------------------------------------
     if (selectionSize > 1 && plain) {
+      if (key === 'Enter' && e.repeat) { e.preventDefault(); e.stopImmediatePropagation(); return; }
       if (/^[0-9]$/.test(key) || key === '.' || key === '-' || key === '%') {
         e.preventDefault(); e.stopImmediatePropagation();
         this.selection.setPending(this.selection.pending + key);
@@ -453,7 +431,7 @@
     var self = this;
     var row = info.rowIndex, col = info.colIndex;
     if (editorEl) this.adapter.sendKey(editorEl, 'Enter', 13);
-    setTimeout(function () { self.focusCell(row + dRow, col + dCol); }, 130);
+    setTimeout(function () { self.focusCell(row + dRow, col + dCol, dCol); }, 130);
   };
 
   /* Let Canvas act first; only step in if the active cell did not move. */
@@ -463,20 +441,22 @@
     setTimeout(function () {
       var now = self.adapter.activeCellInfo();
       if (now && (now.rowIndex !== fromRow || now.colIndex !== fromCol)) return; // Canvas handled it
-      self.focusCell(fromRow + dRow, fromCol + dCol);
+      self.focusCell(fromRow + dRow, fromCol + dCol, dCol);
     }, 110);
   };
 
-  P.focusCell = function (rowIndex, colIndex) {
+  P.focusCell = function (rowIndex, colIndex, dCol) {
     var self = this;
-    if (rowIndex === null || colIndex === null || rowIndex < 0) return;
+    if (rowIndex === null || colIndex === null || rowIndex < 0 || colIndex < 0) return;
     var column = this.adapter.columnAt(colIndex);
-    // Step over non-assignment columns when moving sideways.
+    // Step over non-assignment columns in the direction of travel: moving
+    // left must keep going left, not bounce back to where it started.
     if (column && column.type !== 'assignment') {
-      var dir = colIndex > (this.adapter.columnIdToIndex.get('student') || 0) ? 1 : 1;
+      var dir = dCol < 0 ? -1 : 1;
       var probe = colIndex;
       for (var i = 0; i < 8; i++) {
         probe += dir;
+        if (probe < 0) break;
         var c = this.adapter.columnAt(probe);
         if (c && c.type === 'assignment') { colIndex = probe; break; }
       }

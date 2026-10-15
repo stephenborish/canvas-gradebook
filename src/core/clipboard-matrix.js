@@ -32,8 +32,11 @@
       .replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
     var lines = raw.split('\n');
+    // Only TRAILING blank lines are noise (spreadsheets end a copied range
+    // with a newline). A LEADING blank line is a real, empty first cell -
+    // copying B2:B30 when B2 is empty - and dropping it shifted every value
+    // up one student, writing each grade onto the wrong person.
     while (lines.length && lines[lines.length - 1].trim() === '') lines.pop();
-    while (lines.length && lines[0].trim() === '' && lines.length > 1) lines.shift();
 
     if (!lines.length || (lines.length === 1 && lines[0].trim() === '')) {
       return { rows: [], rowCount: 0, colCount: 0, cellCount: 0, source: 'empty' };

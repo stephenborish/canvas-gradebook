@@ -113,6 +113,7 @@
     this.keys.clear();
     this.anchor = null;
     this.pending = '';
+    this._extendToken = null;
     this.repaint();
     CGP.diag.set('selectionSize', 0);
     if (!(opts && opts.silent)) CGP.diag.log('selection.cleared');
@@ -145,11 +146,40 @@
     this.repaint();
   };
 
+  /* Shift-click: select the rectangle from the anchor to this cell.
+   *
+   * Every row in the rectangle is confirmed live first (see
+   * adapter.ensureRowsMapped): rows the grid never rendered, or rows whose
+   * cached student is stale after a sort or filter, would otherwise be
+   * silently left out of - or, worse, wrongly put into - a selection that
+   * M/E/L or a comment is then applied to. */
   P.extendTo = function (info) {
     var self = this;
-    if (!info || info.rowIndex === null || info.colIndex === null) return;
+    if (!info || info.rowIndex === null || info.colIndex === null) return Promise.resolve(false);
     var anchor = this.anchor || { rowIndex: info.rowIndex, colIndex: info.colIndex };
-    var targets = CGP.gridMap.rangeTargets(anchor, { rowIndex: info.rowIndex, colIndex: info.colIndex }, {
+    var focus = { rowIndex: info.rowIndex, colIndex: info.colIndex };
+    var r0 = Math.min(anchor.rowIndex, focus.rowIndex);
+    var count = Math.abs(anchor.rowIndex - focus.rowIndex) + 1;
+    var mapped = typeof this.adapter.ensureRowsMapped === 'function'
+      ? this.adapter.ensureRowsMapped(r0, count)
+      : Promise.resolve(true);
+    var token = this._extendToken = {};
+    return Promise.resolve(mapped).then(function (ok) {
+      if (token !== self._extendToken) return false;   // a newer gesture won
+      if (ok === false) {
+        CGP.diag.warn('selection.rangeUnconfirmed', { rows: count });
+        CGP.ui.error('Gradebook+ couldn\u2019t confirm every student in that range, so nothing was selected. ' +
+          'Scroll so the range is on screen and try again.');
+        return false;
+      }
+      self.applyRange(anchor, focus);
+      return true;
+    });
+  };
+
+  P.applyRange = function (anchor, focus) {
+    var self = this;
+    var targets = CGP.gridMap.rangeTargets(anchor, focus, {
       studentAt: function (r) { return self.adapter.studentAt(r); },
       columnAt: function (c) { return self.adapter.columnAt(c); }
     });

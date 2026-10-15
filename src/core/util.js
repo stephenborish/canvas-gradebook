@@ -187,6 +187,10 @@
    * folded into the specific messages below where it reads naturally. */
   util.describeApiError = function (err, opts) {
     opts = opts || {};
+    if (util.isPermissionDeniedError(err)) {
+      return 'Canvas says you don\u2019t have permission to change this' +
+        ' (the grading period may be closed, the course concluded, or your role may not allow it).';
+    }
     if (err && err.status === 401) {
       return 'Your Canvas session has expired. Reload the page and log back in, then try again.';
     }
@@ -206,7 +210,21 @@
    * name - kept separate so a call site that only needs the yes/no (to skip
    * a retry, say, rather than to build a message) does not have to repeat the
    * status check inline. */
-  util.isSessionExpiredError = function (err) { return !!(err && err.status === 401); };
+  util.isSessionExpiredError = function (err) {
+    return !!(err && err.status === 401 && !util.isPermissionDeniedError(err));
+  };
+
+  /* Canvas uses 401 for "not allowed" as well as "not logged in"; its body
+   * says which ("unauthorized" vs "unauthenticated"). A plain 403 that is
+   * not throttling is a refusal too. */
+  util.isPermissionDeniedError = function (err) {
+    if (!err) return false;
+    if (err.status === 401) {
+      return err.canvasStatus === 'unauthorized' || /not authorized/i.test(String(err.canvasMessage || ''));
+    }
+    if (err.status === 403) return !/rate limit/i.test(String(err.snippet || '') + ' ' + String(err.canvasMessage || ''));
+    return false;
+  };
 
   /* ---------------------------------------------------------------- settings */
 
@@ -215,6 +233,15 @@
   // (the whole cgp.settings blob, not just this array) at 8192 bytes.
   var MAX_SNIPPETS = 15;
   var MAX_SNIPPET_TEXT = 280;
+  // Leaves ~2KB of the 8192-byte item for every other setting.
+  var MAX_SNIPPET_BYTES = 6000;
+
+  /** UTF-8 byte length - what chrome.storage.sync's quotas actually count. */
+  util.byteLength = function (str) {
+    var s = String(str == null ? '' : str);
+    if (typeof TextEncoder === 'function') return new TextEncoder().encode(s).length;
+    return unescape(encodeURIComponent(s)).length;
+  };
 
   function sanitizeSettings(raw) {
     var out = {};
@@ -247,12 +274,18 @@
         // several times over. Saving past that quota fails the ENTIRE write
         // atomically, silently discarding every other pending setting change
         // in the same save, not just the snippets.
-        out[k] = v.map(function (s) {
+        var list = v.map(function (s) {
           return {
             trigger: String((s && s.trigger) || '').trim().replace(/^\//, '').replace(/[^\w-]/g, '').slice(0, 32),
             text: String((s && s.text) || '').slice(0, MAX_SNIPPET_TEXT)
           };
         }).filter(function (s) { return s.trigger && s.text; }).slice(0, MAX_SNIPPETS);
+        // The quota is in UTF-8 BYTES, not characters: 15 x 280 characters
+        // of accented, CJK or quote-heavy text can be two to three times
+        // the budget on its own. Snippets past the byte budget are dropped
+        // from the end rather than letting the whole save be refused.
+        while (list.length && util.byteLength(JSON.stringify(list)) > MAX_SNIPPET_BYTES) list.pop();
+        out[k] = list;
         return;
       }
       out[k] = v;
@@ -260,6 +293,7 @@
     return out;
   }
   CGP.sanitizeSettings = sanitizeSettings;
+  CGP.SETTINGS_LIMITS = { MAX_SNIPPETS: MAX_SNIPPETS, MAX_SNIPPET_TEXT: MAX_SNIPPET_TEXT, MAX_SNIPPET_BYTES: MAX_SNIPPET_BYTES };
 
   CGP.settings = {
     values: sanitizeSettings({}),

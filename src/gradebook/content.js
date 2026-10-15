@@ -40,40 +40,17 @@
     });
   }
 
-  // manifest.json exposes env-bridge.js as web-accessible to "*://*/*", not
-  // just *.instructure.com: this content script itself only ever runs on an
-  // instructure.com domain or a self-hosted one the teacher explicitly
-  // granted through the options page (optional_host_permissions is already
-  // "*://*/*" for exactly that reason), so a self-hosted domain would
-  // otherwise have this <script src> silently blocked by Chrome and never
-  // learn the active grading period at all. The bridge script itself reads
-  // nothing but window.ENV and posts back an allowlisted, already-public
-  // payload, so being loadable on a wider set of origins than it actually
-  // ever runs on is not a new exposure.
-  function injectEnvBridge() {
-    try {
-      if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.getURL) return;
-      var s = document.createElement('script');
-      s.src = chrome.runtime.getURL('src/page/env-bridge.js');
-      s.async = false;
-      (document.head || document.documentElement).appendChild(s);
-      s.remove();
-    } catch (e) { CGP.diag.warn('env.injectFailed'); }
-  }
-
-  function injectFonts() {
-    try {
-      if (document.getElementById('cgp-fonts')) return;
-      var link = document.createElement('link');
-      link.id = 'cgp-fonts';
-      link.rel = 'stylesheet';
-      link.href = 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Lexend:wght@400;500;600;700&display=swap';
-      (document.head || document.documentElement).appendChild(link);
-    } catch (e) { /* ignore */ }
-  }
+  // The page-context bridge (src/page/env-bridge.js) is a MAIN-world
+  // content script of its own - declared in manifest.json for
+  // *.instructure.com and registered by background.js for self-hosted
+  // domains - so it is never injected from here. Injecting a second copy
+  // used to run every grid-sizing request twice, and required exposing the
+  // file to every website as a web-accessible resource.
+  //
+  // No web fonts are loaded either: the stylesheets fall back to system
+  // fonts, so nothing on a gradebook page is fetched from a third party.
 
   function startGradebook(courseId) {
-    injectFonts();
     var settings = CGP.settings;
     var api = new CGP.CanvasApi();
     var model = new CGP.GradebookModel(api, courseId);
@@ -96,7 +73,6 @@
       if (env.courseId) CGP.diag.set('envCourseId', String(env.courseId));
       if (env.currentGradingPeriodId !== undefined) model.setGradingPeriod(env.currentGradingPeriodId);
     });
-    injectEnvBridge();
 
     var layout = new CGP.CompactLayoutController({ adapter: adapter, settings: settings });
     layout.start();
@@ -360,9 +336,14 @@
       return false;
     }
 
+    var gridObserver = null;
+    var gridObserverRoot = null;
     function observeGrid() {
       var root = adapter.gridRoot() || document.querySelector('#content') || document.body;
-      var observer = new MutationObserver(function (records) {
+      if (gridObserver && gridObserverRoot === root && root.isConnected) return gridObserver;
+      if (gridObserver) gridObserver.disconnect();
+      gridObserverRoot = root;
+      var observer = gridObserver = new MutationObserver(function (records) {
         var relevant = false;
         var headerChanged = false;
         for (var i = 0; i < records.length; i++) {
@@ -411,6 +392,13 @@
       // retries the name-based column fallback while anything is unresolved.
       function safetyTick() {
         bindScroll();
+        // Canvas can replace the grid container wholesale; an observer on the
+        // old one would then see nothing, and mutation-driven repaints stop.
+        var liveRoot = adapter.gridRoot() || document.querySelector('#content') || document.body;
+        if (!gridObserverRoot || !gridObserverRoot.isConnected || gridObserverRoot !== liveRoot) {
+          observeGrid();
+          paint();
+        }
         if (model.ready && adapter._lastUnresolvedColumns) {
           adapter.reconcileColumnsWithModel(model);
         }
@@ -481,7 +469,21 @@
 
       var jumpTo = consumeStudentHash();
 
-      return model.init().then(function () {
+      // One failed read of the course (a network blip, a throttled request,
+      // a deploy restarting Canvas) used to leave the whole page without a
+      // model - and every shortcut afterwards refused with a misleading
+      // reason. Retried on a backoff; only a session or permission problem,
+      // which retrying cannot fix, gives up straight away.
+      function initWithRetry(attempt) {
+        return model.init().catch(function (err) {
+          var fatal = CGP.util.isSessionExpiredError(err) || CGP.util.isPermissionDeniedError(err);
+          if (fatal || attempt >= 3) throw err;
+          CGP.diag.warn('boot.modelRetry', { attempt: attempt + 1, status: err && err.status });
+          return CGP.util.sleep(2000 * Math.pow(2, attempt)).then(function () { return initWithRetry(attempt + 1); });
+        });
+      }
+
+      return initWithRetry(0).then(function () {
         CGP.diag.log('model.ready', model.stats());
         if (adapter._lastUnresolvedColumns) adapter.reconcileColumnsWithModel(model);
         if (jumpTo) setTimeout(function () { CGP.revealStudent(jumpTo); }, 350);
@@ -572,7 +574,9 @@
     // document viewer frames) are injected solely so snippets/capture works in
     // speedgrader/content.js; they must never run page boot or mount drawers.
     if (typeof window !== 'undefined' && window.self !== window.top) {
-      return Promise.resolve(null);
+      // Settings still load, though: speedgrader/content.js expands the
+      // teacher's own snippets in these frames, not the built-in defaults.
+      return CGP.settings.load().then(function () { return null; }, function () { return null; });
     }
 
     return CGP.settings.load().then(function () {

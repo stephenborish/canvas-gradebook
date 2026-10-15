@@ -80,28 +80,73 @@ suite('grading-period-scoped Total', (test) => {
   });
 
   test('a period learned before ready is not lost when init() already had its own read in flight', () => {
-    // The race the previous test does not cover: init()'s own whole-roster
-    // read started (scoped to the default period, null) BEFORE env-bridge's
-    // message set the real period, and has not resolved yet when it does.
-    // That in-flight read still lands with the wrong scope; the corrective
-    // reload must happen once the model goes ready, not be silently dropped.
+    // init()'s own whole-roster read starts scoped to the default period
+    // (null), then env-bridge's message sets the real period before that
+    // read lands. The roster it brings is fine; its scores are for the wrong
+    // period, so a corrective totals read must follow once ready.
     const api = fakeApi();
+    let releaseFirst;
+    const firstRead = new Promise((r) => { releaseFirst = r; });
+    let first = true;
+    api.studentEnrollments = function (courseId, gradingPeriodId) {
+      this.calls.push({ courseId, gradingPeriodId });
+      if (first) { first = false; return firstRead; }
+      return Promise.resolve([enrollment('10', gradingPeriodId ? 50 : 90)]);
+    };
+    api.currentUser = () => Promise.resolve({ id: '1', name: 'T' });
+    api.assignments = () => Promise.resolve([]);
     const model = new CGP.GradebookModel(api, '999');
-    model.ready = false;
-    model.students.set('10', { id: '10', currentScore: 90, currentGrade: null });
+    const done = model.init();
     model.setGradingPeriod('7');
-    a.eq(api.calls.length, 0, 'queued, not fetched yet - the model is not ready');
-    // init()'s own in-flight read (scoped to null, the period this model held
-    // before setGradingPeriod ran) lands and flips the model ready.
-    model.gradingPeriodId = '7'; // already set by setGradingPeriod above
-    model._applyEnrollment(enrollment('10', 90));
-    model.ready = true;
-    model.emit('ready', null);
-    return new Promise((resolve) => setTimeout(resolve, 0)).then(() => {
-      a.eq(api.calls.length, 1, 'the corrective reload actually ran once ready fired');
-      a.eq(api.calls[0].gradingPeriodId, '7');
+    releaseFirst([enrollment('10', 90)]);
+    return done.then(() => new Promise((resolve) => setTimeout(resolve, 0))).then(() => {
+      a.eq(api.calls.length, 2, 'the corrective reload ran once ready');
+      a.eq(api.calls[0].gradingPeriodId, null, 'init read with the period it knew at the time');
+      a.eq(api.calls[1].gradingPeriodId, '7');
       a.eq(model.students.get('10').currentScore, 50, 'the period-scoped score wins, not the whole-course one');
     });
+  });
+
+  test('"All Grading Periods" (0) means the whole course, not a period id', () => {
+    const api = fakeApi();
+    const model = new CGP.GradebookModel(api, '999');
+    model.ready = true;
+    model.gradingPeriodId = '7';
+    model.students.set('10', { id: '10', currentScore: 50, currentGrade: null });
+    return model.setGradingPeriod('0').then(() => {
+      a.eq(model.gradingPeriodId, null);
+      a.eq(api.calls[0].gradingPeriodId, null);
+    });
+  });
+
+  test('an older totals read that lands last never overwrites a newer one', () => {
+    const api = fakeApi();
+    const releases = [];
+    api.studentEnrollments = function (courseId, gradingPeriodId) {
+      this.calls.push({ courseId, gradingPeriodId });
+      return new Promise((r) => releases.push(() => r([enrollment('10', gradingPeriodId === '7' ? 70 : 80)])));
+    };
+    const model = new CGP.GradebookModel(api, '999');
+    model.ready = true;
+    model.students.set('10', { id: '10', currentScore: null, currentGrade: null });
+    const p1 = model.setGradingPeriod('7');
+    const p2 = model.setGradingPeriod('8');
+    releases[1]();
+    releases[0]();
+    return Promise.all([p1, p2]).then(() => {
+      a.eq(model.students.get('10').currentScore, 80, 'period 8 (the newest) wins');
+    });
+  });
+
+  test('the Total prefers the teacher-facing unposted score when Canvas sends it', () => {
+    const model = new CGP.GradebookModel(fakeApi(), '999');
+    model._applyEnrollment(enrollment('10', 60, {
+      grades: { current_score: 60, current_grade: 'D', unposted_current_score: 88, unposted_current_grade: 'B+' }
+    }));
+    a.eq(model.students.get('10').currentScore, 88);
+    a.eq(model.students.get('10').currentGrade, 'B+');
+    model._applyEnrollment(enrollment('11', 75));
+    a.eq(model.students.get('11').currentScore, 75, 'falls back to current_score');
   });
 
   test('a single grade write refreshes one student scoped to the same period', () => {

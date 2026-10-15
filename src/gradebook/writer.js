@@ -36,11 +36,34 @@
 
     var result = { ok: 0, failed: 0, skipped: 0, errors: [] };
 
-    return Promise.all(ops.map(function (target) {
-      return self.serialize(target.assignmentId, target.userId, function () {
-        return self.gate(function () { return self.writeOne(target, result, opts); });
-      });
-    })).then(function () {
+    // Nothing can be checked (anonymous/moderated, a known student, the
+    // cell's current status) until the course itself has loaded, and a write
+    // made blind is exactly how a toggle goes the wrong way.
+    if (!this.model.ready) {
+      CGP.ui.error('Gradebook+ is still loading this course from Canvas. Nothing was changed \u2014 try again in a moment.');
+      return Promise.resolve({ ok: 0, failed: 0, skipped: ops.length, errors: [], notReady: true });
+    }
+
+    // M and L toggle off only what is already on, and a grade typed over an
+    // explicit Missing has to take it off - all decided from the record this
+    // model holds. A column that has not loaded yet has no record, so load it
+    // first rather than deciding from nothing.
+    var columns = [];
+    ops.forEach(function (t) {
+      var id = String(t.assignmentId);
+      if (columns.indexOf(id) < 0) columns.push(id);
+    });
+    var loaded = typeof this.model.ensureAssignments === 'function'
+      ? this.model.ensureAssignments(columns).catch(function () { return null; })
+      : Promise.resolve(null);
+
+    return loaded.then(function () {
+      return Promise.all(ops.map(function (target) {
+        return self.serialize(target.assignmentId, target.userId, function () {
+          return self.gate(function () { return self.writeOne(target, result, opts); });
+        });
+      }));
+    }).then(function () {
       // Both are reported, not just whichever happened first: a paste that
       // spans one ordinary column and one anonymous/moderated one silently
       // wrote the ordinary cells and dropped the rest before this - the
@@ -50,7 +73,7 @@
       var messages = [];
       if (result.failed) {
         var first = result.errors[0] || {};
-        if (CGP.util.isSessionExpiredError(first)) {
+        if (CGP.util.isSessionExpiredError(first) || CGP.util.isPermissionDeniedError(first)) {
           // The one failure reason worth calling out on its own: every other
           // status differs cell to cell in ways a teacher can't act on
           // uniformly, but a session timing out mid-grading explains ALL of
@@ -151,6 +174,14 @@
     var priorWriteMark = this.model.markLocalWrite(assignmentId, userId);
 
     var currentRec = this.model.cell(assignmentId, userId);
+    var KIND = CGP.gradeOps.KIND;
+    // Only meaningful while the explicit status is still there; if Canvas
+    // or another write already took it off, there is nothing to do.
+    if (target.parsed && target.parsed.kind === KIND.CLEAR_MISSING &&
+      !(currentRec && currentRec.latePolicyStatus === 'missing')) {
+      this.model.clearLocalWrite(assignmentId, userId, priorWriteMark);
+      return Promise.resolve();
+    }
     var op = CGP.gradeOps.operationFor(target.parsed, {
       // Only an explicitly applied Late status is a thing the L shortcut can
       // toggle off. Canvas also reports late: true for anything simply handed
@@ -161,9 +192,15 @@
       // merely past due and unsubmitted, and a first M on such a cell must
       // still APPLY the status rather than flip it off.
       wasExplicitMissing: !!(currentRec && currentRec.latePolicyStatus === 'missing'),
-      wasMissing: !!(currentRec && (currentRec.missing || currentRec.latePolicyStatus === 'missing'))
+      wasMissing: !!(currentRec && (currentRec.missing || currentRec.latePolicyStatus === 'missing')),
+      wasExcused: !!(currentRec && currentRec.excused),
+      latePolicyStatus: currentRec ? (currentRec.latePolicyStatus || null) : undefined
     });
-    if (!op) { result.skipped++; return Promise.resolve(); }
+    if (!op) {
+      this.model.clearLocalWrite(assignmentId, userId, priorWriteMark);
+      result.skipped++;
+      return Promise.resolve();
+    }
 
     // The op, not just the token, is what identifies this write: pressing L
     // twice on one cell is two DIFFERENT writes (apply Late, then remove it)
@@ -174,6 +211,7 @@
     // not leaving it alone; what the cell should read afterwards differs.
     var clearsGrade = op.form['submission[posted_grade]'] === '';
     if (this.inflight.has(dupKey)) {
+      this.model.clearLocalWrite(assignmentId, userId, priorWriteMark);
       CGP.diag.bump('write.inflightSuppressed');
       return Promise.resolve();
     }
@@ -188,6 +226,7 @@
 
     return this.api.updateSubmission(this.model.courseId, assignmentId, userId, op.form)
       .then(function (submission) {
+        self.model.finishLocalWrite(assignmentId, userId);
         var rec = self.model.applySubmission(submission);
         // Awaited, not fired and forgotten: the write is not finished until
         // the status it promised is actually on the record. Letting it run
@@ -226,7 +265,11 @@
         // the marker outright. See model.clearLocalWrite.
         self.model.clearLocalWrite(assignmentId, userId, priorWriteMark);
         result.failed++;
-        result.errors.push({ assignmentId: assignmentId, status: err && err.status });
+        result.errors.push({
+          assignmentId: assignmentId, status: err && err.status,
+          canvasStatus: err && err.canvasStatus, canvasMessage: err && err.canvasMessage,
+          snippet: err && err.snippet, network: err && err.network
+        });
         CGP.diag.error('write.rejected', {
           assignmentId: assignmentId, status: err && err.status, kind: target.parsed && target.parsed.kind
         });
@@ -283,11 +326,13 @@
     var invalid = [];
     (list || []).forEach(function (item) {
       var assignment = self.model.assignment(item.assignmentId);
-      var parsed = CGP.gradeOps.parseToken(item.token, {
-        gradingType: assignment ? assignment.gradingType : 'points'
-      });
-      if (parsed.kind === CGP.gradeOps.KIND.INVALID) { invalid.push(item); return; }
+      var gradingType = assignment ? assignment.gradingType : 'points';
+      var parsed = CGP.gradeOps.parseToken(item.token, { gradingType: gradingType });
       if (parsed.kind === CGP.gradeOps.KIND.SKIP) return;
+      if (parsed.kind === CGP.gradeOps.KIND.INVALID || !CGP.gradeOps.acceptsToken(parsed, gradingType)) {
+        invalid.push(item);
+        return;
+      }
       out.push({ assignmentId: item.assignmentId, userId: item.userId, parsed: parsed, token: item.token });
     });
     return { targets: out, invalid: invalid };
@@ -316,11 +361,15 @@
       return Promise.reject(new Error(
         'Comments cannot be added here on an anonymous or moderated assignment - use SpeedGrader instead.'));
     }
-    this.model.markLocalWrite(assignmentId, userId);
+    var priorMark = this.model.markLocalWrite(assignmentId, userId);
     return this.api.addComment(this.model.courseId, assignmentId, userId, text).then(function (submission) {
+      self.model.finishLocalWrite(assignmentId, userId);
       self.model.applyCommentWrite(assignmentId, userId, submission);
       CGP.diag.bump('comment.saved');
       return submission;
+    }, function (err) {
+      self.model.clearLocalWrite(assignmentId, userId, priorMark);
+      throw err;
     });
   };
 

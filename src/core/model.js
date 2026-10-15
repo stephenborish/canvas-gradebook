@@ -49,11 +49,30 @@
     // shortcut, bulk paste, or an added comment) most recently started on
     // that cell. See markLocalWrite / applySubmission below.
     this._writeStartedAt = new Map();
+    // "assignmentId:userId" -> how many local writes on that cell are still
+    // waiting for Canvas's answer. While any is, a column read cannot be
+    // trusted for that cell (it may have been served before the write
+    // committed); the write's own response is what settles it.
+    this._writesInFlight = new Map();
+    // assignmentId -> generation, bumped by reloadAssignment(). A column read
+    // only applies if its generation is still current, so an older read that
+    // happens to land after a newer one can never roll the column back.
+    this._fetchGen = new Map();
+    this._initPromise = null;
+    this._totalsGen = 0;
     this.ready = false;
     this._listeners = Object.create(null);
     this._totalQueue = new Set();
     this._totalRecheckPending = new Set();
     this._flushTotals = util.debounce(this._doFlushTotals.bind(this), 900);
+  }
+
+  /** First value that is neither undefined nor null, else null. */
+  function pick() {
+    for (var i = 0; i < arguments.length; i++) {
+      if (arguments[i] !== undefined && arguments[i] !== null) return arguments[i];
+    }
+    return null;
   }
 
   GradebookModel.prototype.on = function (event, cb) {
@@ -72,6 +91,10 @@
 
   GradebookModel.prototype.init = function () {
     var self = this;
+    if (this.ready) return Promise.resolve(this);
+    // One init at a time: a retry after a failure (see content.js) must not
+    // race a still-running first attempt.
+    if (this._initPromise) return this._initPromise;
     // currentUser() (who is grading, for the instructor-authored-comment
     // check in comment-analysis.js) does not feed into - and used to sit
     // needlessly in front of - the assignments/enrollments fetch below. That
@@ -88,11 +111,12 @@
     // at once; instructorId/instructorNames are only ever read once this
     // whole Promise.all has settled, same as before.
     var userPromise = this.api.currentUser();
+    var totalsGen = ++this._totalsGen;
     var dataPromise = Promise.all([
       self.api.assignments(self.courseId),
       self.api.studentEnrollments(self.courseId, self.gradingPeriodId)
     ]);
-    return Promise.all([userPromise, dataPromise]).then(function (results) {
+    this._initPromise = Promise.all([userPromise, dataPromise]).then(function (results) {
       var user = results[0];
       var data = results[1];
       self.instructorId = user ? user.id : null;
@@ -132,36 +156,51 @@
       });
       self.assignmentOrder = Array.from(self.assignments.keys());
 
-      enrollments.forEach(function (e) { self._applyEnrollment(e); });
+      enrollments.forEach(function (e) { self._applyEnrollment(e, { scoresToo: totalsGen === self._totalsGen }); });
+      // The grading period changed while this read was out: its roster is
+      // fine, its scores are for the wrong period. Re-read just the totals.
+      var totalsStale = totalsGen !== self._totalsGen;
 
       self.ready = true;
+      self._initPromise = null;
       CGP.diag.set('courseId', self.courseId);
       CGP.diag.set('assignments', self.assignments.size);
       CGP.diag.set('students', self.students.size);
       self.emit('ready', null);
       self.emit('totals', null);
+      if (totalsStale) self.reloadTotals();
       return self;
+    }, function (err) {
+      self._initPromise = null;
+      throw err;
     });
+    return this._initPromise;
   };
 
   /* One enrollment record -> the student's own entry. Shared by init() (the
    * first, whole-roster read) and reloadTotals() (a later one scoped to a
    * grading period learned after boot), so the two can never drift apart in
    * which fields they read off an enrollment. */
-  GradebookModel.prototype._applyEnrollment = function (e) {
+  GradebookModel.prototype._applyEnrollment = function (e, opts) {
     if (!e || !e.user || e.user.id === undefined) return;
     var uid = String(e.user.id);
     var grades = e.grades || {};
-    var score = grades.current_score;
-    if (score === undefined || score === null) score = e.computed_current_score;
     var prev = this.students.get(uid);
+    // For a teacher, Canvas's own gradebook Total counts every grade entered,
+    // including ones still hidden from the student; current_score counts
+    // only POSTED grades. Canvas reports the teacher's figure separately as
+    // unposted_current_score - prefer it whenever it is there, or the Total
+    // here sits still while grades are entered on a manually-posted column.
+    var score = pick(grades.unposted_current_score, grades.current_score, e.computed_current_score);
+    var letter = pick(grades.unposted_current_grade, grades.current_grade);
+    var scoresToo = !(opts && opts.scoresToo === false);
     var rec = {
       id: uid,
       name: e.user.short_name || e.user.name || '',
       fullName: e.user.name || '',
       sortableName: e.user.sortable_name || '',
-      currentScore: score === undefined ? null : score,
-      currentGrade: grades.current_grade === undefined ? null : grades.current_grade,
+      currentScore: scoresToo ? score : (prev ? prev.currentScore : null),
+      currentGrade: scoresToo ? letter : (prev ? prev.currentGrade : null),
       enrollmentId: e.id === undefined ? null : String(e.id)
     };
     if (!prev) this.studentOrder.push(uid);
@@ -182,22 +221,16 @@
    * so this reuses exactly the same request and parsing path init() already
    * uses and cannot drift from it. */
   GradebookModel.prototype.setGradingPeriod = function (id) {
-    var next = (id === null || id === undefined) ? null : String(id);
+    // Canvas spells "All Grading Periods" as 0, which is not a period the
+    // enrollments API will scope to - it means "the whole course".
+    var next = (id === null || id === undefined || String(id) === '' || String(id) === '0') ? null : String(id);
     if (next === this.gradingPeriodId) return Promise.resolve(null);
     this.gradingPeriodId = next;
     CGP.diag.set('gradingPeriodId', next);
     if (!this.ready) {
-      // init()'s own whole-roster enrollment read (see init()) may already be
-      // in flight, scoped to whatever period this.gradingPeriodId held before
-      // this call - reloadTotals() itself is a no-op until ready, and would
-      // otherwise silently drop this correction the moment that in-flight
-      // read lands and applies the wrong scope. env-bridge.js posts exactly
-      // once and removes itself, so no second ENV message will ever arrive to
-      // try again - queue the corrective reload for the instant the model
-      // actually becomes ready instead. 'ready' fires exactly once (see
-      // init()), so this can never run stale.
-      var self = this;
-      this.on('ready', function () { self.reloadTotals(); });
+      // init() notices the change itself (its totals generation moved on)
+      // and re-reads the totals once it lands; nothing to queue here.
+      this._totalsGen++;
       return Promise.resolve(null);
     }
     return this.reloadTotals();
@@ -211,7 +244,11 @@
   GradebookModel.prototype.reloadTotals = function () {
     var self = this;
     if (!this.ready) return Promise.resolve(null);
+    // Two reloads can overlap (the period changed twice quickly); only the
+    // newest may write scores, or an older period's totals could land last.
+    var gen = ++this._totalsGen;
     return this.api.studentEnrollments(this.courseId, this.gradingPeriodId).then(function (enrollments) {
+      if (gen !== self._totalsGen) return null;
       (enrollments || []).forEach(function (e) { self._applyEnrollment(e); });
       CGP.diag.bump('totals.reloadedForGradingPeriod');
       self.emit('totals', null);
@@ -225,53 +262,89 @@
   /* Load submissions (with comments, unless opts.includeComments is false -
    * see CanvasApi.submissionsForAssignments) for assignment columns we do not
    * have yet. */
+  /* How many assignment columns one students/submissions request carries.
+   * Every column multiplies by the whole roster, so a fixed 8 that is fine
+   * for a 30-student class runs a 900-student lecture past any sane page
+   * budget. Aim for ~40 pages of 100 per request. */
+  GradebookModel.prototype._batchSize = function () {
+    var students = Math.max(1, this.students.size);
+    return Math.max(1, Math.min(8, Math.floor(4000 / students)));
+  };
+
+  GradebookModel.prototype._gen = function (id) {
+    return this._fetchGen.get(String(id)) || 0;
+  };
+
   GradebookModel.prototype.ensureAssignments = function (ids, opts) {
     var self = this;
-    var wanted = (ids || []).map(String).filter(function (id) {
+    var requested = (ids || []).map(String);
+    var wanted = requested.filter(function (id) {
       return id && self.assignments.has(id) && !self.loadedAssignments.has(id) && !self.pendingAssignments.has(id);
     });
+    // Columns another call is already fetching are waited on too, so a
+    // caller asking for [a, b] while b is in flight gets both, not just a.
+    var waits = requested.map(function (id) { return self.pendingAssignments.get(id); }).filter(Boolean);
     if (!wanted.length) {
-      var waits = (ids || []).map(String).map(function (id) { return self.pendingAssignments.get(id); }).filter(Boolean);
-      return waits.length ? Promise.all(waits) : Promise.resolve(null);
+      return waits.length ? Promise.all(waits.map(function (p) { return p.catch(function () { return null; }); })) : Promise.resolve(null);
     }
 
-    var batches = util.chunk(wanted, 8);
+    var batchSize = this._batchSize();
+    var maxPages = Math.ceil((batchSize * Math.max(1, this.students.size)) / 100) + 10;
+    var batches = util.chunk(wanted, batchSize);
     var jobs = batches.map(function (batch) {
       // Stamped before the request goes out: whatever this fetch returns
       // describes the column no earlier than this moment, so a local write
       // that starts at or after it must win (see applySubmission).
       var fetchStartedAt = Date.now();
-      var job = self.api.submissionsForAssignments(self.courseId, batch, opts).then(function (subs) {
+      var gens = {};
+      batch.forEach(function (id) { gens[id] = self._gen(id); });
+      var fetchOpts = Object.assign({}, opts || {}, { maxPages: maxPages });
+      var job = self.api.submissionsForAssignments(self.courseId, batch, fetchOpts).then(function (subs) {
+        // A truncated read is not "the column": cells it never reached would
+        // read as status-free and ungraded. Treat it as a failed load.
+        if (subs && subs.truncated) {
+          var truncated = new Error('Submissions list was truncated');
+          truncated.truncated = true;
+          throw truncated;
+        }
         var payloadsWithComments = 0;
         var rawCommentCount = 0;
         (subs || []).forEach(function (s) {
-          if (Array.isArray(s && s.submission_comments)) {
+          if (!s || gens[String(s.assignment_id)] !== self._gen(s.assignment_id)) return;
+          if (Array.isArray(s.submission_comments)) {
             payloadsWithComments++;
             rawCommentCount += s.submission_comments.length;
           }
           self.applySubmission(s, { silent: true, staleIfWrittenAfter: fetchStartedAt });
         });
-        batch.forEach(function (id) {
+        var current = batch.filter(function (id) { return gens[id] === self._gen(id); });
+        current.forEach(function (id) {
           self.loadedAssignments.add(id);
           self.everLoadedAssignments.add(id);
-          self.pendingAssignments.delete(id);
+        });
+        batch.forEach(function (id) {
+          if (self.pendingAssignments.get(id) === job) self.pendingAssignments.delete(id);
         });
         CGP.diag.set('submissionsLoaded', self.cells.size);
         CGP.diag.set('assignmentsLoaded', self.loadedAssignments.size);
         CGP.diag.set('commentPayloads', payloadsWithComments);
         CGP.diag.set('rawSubmissionComments', rawCommentCount);
         CGP.diag.set('cellsWithInstructorComment', self.stats().cellsWithInstructorComment);
-        self.emit('cells', { assignmentIds: batch });
+        if (current.length) self.emit('cells', { assignmentIds: current });
         return batch;
       }, function (err) {
-        batch.forEach(function (id) { self.pendingAssignments.delete(id); });
-        CGP.diag.error('model.submissions.failed', { assignments: batch.length, status: err && err.status });
+        batch.forEach(function (id) {
+          if (self.pendingAssignments.get(id) === job) self.pendingAssignments.delete(id);
+        });
+        CGP.diag.error('model.submissions.failed', {
+          assignments: batch.length, status: err && err.status, truncated: !!(err && err.truncated)
+        });
         throw err;
       });
       batch.forEach(function (id) { self.pendingAssignments.set(id, job); });
       return job;
     });
-    return Promise.all(jobs.map(function (p) { return p.catch(function () { return null; }); }));
+    return Promise.all(jobs.concat(waits).map(function (p) { return p.catch(function () { return null; }); }));
   };
 
   /* Verify comments for the assignment columns that are actually visible.
@@ -286,10 +359,16 @@
       return self.assignments.has(id) && !self.commentVerifiedAssignments.has(id);
     });
     if (!wanted.length) return Promise.resolve(null);
+    var verified = [];
     return Promise.all(wanted.map(function (id) {
       self.commentVerifiedAssignments.add(id);
       var fetchStartedAt = Date.now();
+      var gen = self._gen(id);
       return self.api.submissionsForAssignment(self.courseId, id).then(function (subs) {
+        if (subs && subs.truncated) throw new Error('Submissions list was truncated');
+        // A column reload started after this read: its data wins.
+        if (gen !== self._gen(id)) { self.commentVerifiedAssignments.delete(id); return null; }
+        verified.push(id);
         var raw = 0;
         (subs || []).forEach(function (sub) {
           if (Array.isArray(sub && sub.submission_comments)) raw += sub.submission_comments.length;
@@ -307,7 +386,9 @@
       });
     })).then(function () {
       CGP.diag.set('cellsWithInstructorComment', self.stats().cellsWithInstructorComment);
-      self.emit('cells', { assignmentIds: wanted, commentsVerified: true });
+      // Nothing landed, nothing to repaint - emitting anyway is what turned
+      // a failing read into a paint -> re-request -> fail loop.
+      if (verified.length) self.emit('cells', { assignmentIds: verified, commentsVerified: true });
     });
   };
 
@@ -346,7 +427,7 @@
     // live page doesn't have to either.
     if (opts.staleIfWrittenAfter !== undefined) {
       var writtenAt = this._writeStartedAt.get(k);
-      if (writtenAt && writtenAt >= opts.staleIfWrittenAfter) {
+      if ((this._writesInFlight.get(k) || 0) > 0 || (writtenAt && writtenAt >= opts.staleIfWrittenAfter)) {
         CGP.diag.bump('model.staleFetchSkipped');
         return this.cells.get(k) || null;
       }
@@ -469,6 +550,9 @@
   GradebookModel.prototype.reloadAssignment = function (assignmentId, opts) {
     var id = String(assignmentId);
     if (!this.assignments.has(id)) return Promise.resolve(null);
+    // Any read of this column already in flight is now older than the one
+    // about to start; bumping the generation makes it land harmlessly.
+    this._fetchGen.set(id, this._gen(id) + 1);
     this.loadedAssignments.delete(id);
     this.pendingAssignments.delete(id);
     this.commentVerifiedAssignments.delete(id);
@@ -491,7 +575,22 @@
     var key = this.key(assignmentId, userId);
     var previous = this._writeStartedAt.get(key);
     this._writeStartedAt.set(key, Date.now());
+    this._writesInFlight.set(key, (this._writesInFlight.get(key) || 0) + 1);
     return previous;
+  };
+
+  /* A local write got Canvas's answer. Re-stamped at completion: a column
+   * read dispatched while the write was still out may have been served
+   * before it committed, so only reads started from now on are fresh. */
+  GradebookModel.prototype.finishLocalWrite = function (assignmentId, userId) {
+    var key = this.key(assignmentId, userId);
+    this._decInFlight(key);
+    this._writeStartedAt.set(key, Date.now());
+  };
+
+  GradebookModel.prototype._decInFlight = function (key) {
+    var n = (this._writesInFlight.get(key) || 0) - 1;
+    if (n > 0) this._writesInFlight.set(key, n); else this._writesInFlight.delete(key);
   };
 
   /* Undo markLocalWrite once a write is known to have NOT taken (the API
@@ -508,6 +607,7 @@
    * a cell that had no earlier write to protect. */
   GradebookModel.prototype.clearLocalWrite = function (assignmentId, userId, restoreTo) {
     var key = this.key(assignmentId, userId);
+    this._decInFlight(key);
     if (restoreTo === undefined) this._writeStartedAt.delete(key);
     else this._writeStartedAt.set(key, restoreTo);
   };
@@ -603,9 +703,16 @@
     var ids = Array.from(this._totalQueue);
     this._totalQueue.clear();
     if (!ids.length) return;
+    // A bulk paste or a column-wide M queues hundreds of students; one
+    // whole-roster read is far cheaper than hundreds of single ones.
+    if (ids.length > 20) { this.reloadTotals(); return; }
     var gate = util.pool(3);
+    var gen = this._totalsGen;
+    var period = this.gradingPeriodId;
     Promise.all(ids.map(function (uid) {
-      return gate(function () { return self.api.enrollmentForUser(self.courseId, uid, self.gradingPeriodId); }).then(function (e) {
+      return gate(function () { return self.api.enrollmentForUser(self.courseId, uid, period); }).then(function (e) {
+        // Scoped to a period the gradebook is no longer showing.
+        if (gen !== self._totalsGen || period !== self.gradingPeriodId) return;
         if (!e || !self.students.has(uid)) return;
         self._applyEnrollment(e);
       }, function () { return null; });

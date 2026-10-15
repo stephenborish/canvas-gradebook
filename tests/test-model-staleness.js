@@ -45,7 +45,8 @@ suite('stale column-fetch protection', (test) => {
     const model = makeModel();
     model.markLocalWrite('50', '10');
     model.patchCell('50', '10', { missing: true, grade: '0' });
-    const fetchStartedAt = Date.now() + 5; // definitely after the write above
+    model.finishLocalWrite('50', '10');
+    const fetchStartedAt = Date.now() + 5; // definitely after the write finished
 
     model.applySubmission(submission({ missing: true, grade: '0', late_policy_status: 'missing' }),
       { silent: true, staleIfWrittenAfter: fetchStartedAt });
@@ -53,6 +54,50 @@ suite('stale column-fetch protection', (test) => {
     const rec = model.cell('50', '10');
     a.eq(rec.missing, true);
     a.eq(rec.workflowState, 'unsubmitted', 'a fresher fetch still replaces the record as normal');
+  });
+
+  test('a fetch that started while a write was still in flight is dropped', () => {
+    // The GET may have been served before the PUT committed, even though it
+    // was dispatched after the write began.
+    const model = makeModel();
+    model.markLocalWrite('50', '10');
+    model.patchCell('50', '10', { missing: true, latePolicyStatus: 'missing' });
+    const fetchStartedAt = Date.now() + 5;
+    model.applySubmission(submission(), { silent: true, staleIfWrittenAfter: fetchStartedAt });
+    a.eq(model.cell('50', '10').missing, true, 'kept until the write itself answers');
+  });
+
+  test('an older column read that lands after a reload never rolls the column back', () => {
+    const model = makeModel();
+    const releases = [];
+    model.api = {
+      submissionsForAssignments: () => new Promise((r) => releases.push(r))
+    };
+    const first = model.ensureAssignments(['50']);       // e.g. background prefetch
+    const second = model.reloadAssignment('50');          // e.g. re-read after Post
+    releases[1]([submission({ grade: '5', score: 5, workflow_state: 'graded', posted_at: '2026-01-01T00:00:00Z' })]);
+    return second.then(() => {
+      releases[0]([submission({ grade: '5', score: 5, workflow_state: 'graded', posted_at: null })]);
+      return first;
+    }).then(() => {
+      a.eq(model.cell('50', '10').postedAt, '2026-01-01T00:00:00Z', 'the stale read was ignored');
+      a.eq(model.loadedAssignments.has('50'), true);
+      a.eq(model.pendingAssignments.has('50'), false);
+    });
+  });
+
+  test('a truncated submissions read does not mark the column loaded', () => {
+    const model = makeModel();
+    model.api = {
+      submissionsForAssignments: () => {
+        const list = [submission({ grade: '5', score: 5 })];
+        list.truncated = true;
+        return Promise.resolve(list);
+      }
+    };
+    return model.ensureAssignments(['50']).then(() => {
+      a.eq(model.loadedAssignments.has('50'), false);
+    });
   });
 
   test('a cell with no local write is never treated as stale', () => {

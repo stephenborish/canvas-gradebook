@@ -41,7 +41,7 @@
   "content_scripts": [
     {
       "matches": [
-        "*://*.instructure.com/courses/*"
+        "*://*.instructure.com/courses/*/gradebook*"
       ],
       "js": [
         "src/page/env-bridge.js"
@@ -91,16 +91,6 @@
       "run_at": "document_idle",
       "all_frames": true,
       "match_about_blank": true
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "src/page/env-bridge.js"
-      ],
-      "matches": [
-        "*://*/*"
-      ]
     }
   ]
 }
