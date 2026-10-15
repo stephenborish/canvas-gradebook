@@ -69,11 +69,18 @@ Missing and Late are independent, instant flags. Each is a toggle, in exactly th
 pressing the key applies that status, pressing it again on a cell that already carries it takes
 the status back off. Neither one ever touches the grade, in either direction, and neither one
 ever touches the other — marking a submission Missing does not change a grade already sitting
-there, and typing a grade never removes or changes Missing or Late. Only your own `M` or `L`
-press changes that status. This is deliberate: Canvas quietly flipping a manually-applied
-Missing status to Late the moment a grade showed up used to be a surprise, not a convenience,
-so nothing here does that automatically any more — mark it, or unmark it, yourself, and it
-happens instantly either way.
+there.
+
+There is one deliberate exception: typing a real grade into a cell you explicitly marked
+Missing means the work is in, so once Canvas has saved that grade the extension takes the
+Missing status off (keeping Late if you marked it Late). It waits for Canvas's own save to
+land first, so a value Canvas refuses — or an edit you cancel with `Escape` — never clears
+anything. A Missing that Canvas merely *computed* (past due, nothing handed in) is left to
+Canvas, which drops it by itself once the submission is graded; the extension never pins such
+a submission to "no status", which would switch off the course's automatic late policy for it.
+
+Typed grades are saved by Canvas's own editor and nothing else — the extension never sends a
+second copy of a grade you typed.
 
 Only a status *somebody applied* can be toggled off — Canvas reports `missing` (or `late`) for
 anything merely past its due date and not handed in, and a first `M` (or `L`) on such a cell
@@ -165,14 +172,22 @@ never hijacked.
 Copy a range from Excel or Google Sheets, click the top-left destination cell, and paste.
 
 - newline = next student, tab = next assignment
-- `M`, `E`, `L`, numbers, percents, letters and blanks are all understood; blanks are skipped
-  rather than clearing an existing grade
+- `M`, `E`, `L`, numbers, percents and blanks are understood everywhere; letter grades only
+  on letter-grade and GPA columns, and `complete`/`incomplete`/`pass`/`fail` only on
+  complete/incomplete columns. Blanks are skipped rather than clearing an existing grade — a
+  blank *first* cell included, so every value still lands on its own student
 - a single space-separated line (`5 5 M 4 E`) is read as a column, which is what you mean when
   you type it by hand
 - the mapping is validated **before** anything is written: if any cell would land on the Total
-  column, past the end of the roster, or on a value that isn't a valid grade, the whole paste
-  is refused and nothing changes
-- one confirmation dialog for large operations (default: more than 25 cells)
+  column, past the end of the roster, or on a value that isn't a valid grade for its column, the
+  whole paste is refused and nothing changes
+- every target row is read live from the grid just before writing, so a re-sort or a filter
+  change can never send a pasted grade to whoever *used* to sit on that row; if a row can't be
+  confirmed, the paste is refused
+- one confirmation dialog for large operations (default: more than 25 cells), and for any
+  multi-cell paste that would replace a grade already there
+- pasting only counts when you're working in the grid; a paste while focused elsewhere on the
+  page is left alone
 
 ### Multi-cell selection
 
@@ -195,7 +210,10 @@ visible no matter how far right you scroll — it does not scroll away with the 
 columns, and Canvas's own Total column at the far right is hidden so there is never a second,
 possibly-different-looking Total competing with it. The values come from Canvas's enrollment
 scores — weighting, drop rules and grading schemes are Canvas's own arithmetic, never
-recomputed here.
+recomputed here. Like Canvas's own teacher view, the Total counts grades that are still hidden
+from students (Canvas's `unposted_current_score`), so it moves as soon as you enter a grade on
+a manually-posted assignment. It follows the grading-period filter, including changes you make
+after the page has loaded.
 
 Both of those only happen once the frozen pane has actually been widened to make room: the
 widen is measured on every paint, not assumed, because Canvas's exact pane markup cannot be
@@ -359,8 +377,8 @@ Student names, grades and comment text are never written to the log — only cou
 - All requests go to your own Canvas host, using your existing session cookie and Canvas's own
   CSRF token, exactly as the Canvas web app does.
 - No API token, no login, no account.
-- No analytics, no telemetry, no external servers of any kind. The only network permission is
-  your Canvas domain.
+- No analytics, no telemetry, no external servers of any kind — not even web fonts; the
+  extension uses your system fonts. The only network permission is your Canvas domain.
 - Settings sync through your Chrome profile (`chrome.storage.sync`); SpeedGrader drafts and the
   diagnostics snapshot stay on the device (`chrome.storage.local`).
 - Student data is never persisted. The cross-course student search holds its rosters in memory
@@ -509,6 +527,9 @@ Two things that no longer happen, as of this fix:
 - **Posting grades uses Canvas's GraphQL endpoint** (`postAssignmentGrades`), which is what
   Canvas's own Gradebook uses. On a Canvas build without that mutation the extension falls back
   to the older "unmute this assignment" REST parameter, which posts the whole column rather
-  than only its graded submissions; it says so in the toast when it does. If both are refused,
-  nothing is changed and the column's own menu still works.
+  than only its graded submissions; it says so in the toast when it does. That fallback is
+  only used when Canvas positively reports the mutation missing (HTTP 404/501 or a schema
+  error), never after a network failure — the post may already have gone through, and the
+  column is re-checked instead. If both are refused, nothing is changed and the column's own
+  menu still works. The Post button posts every section's graded submissions.
 - Chrome / Edge (Chromium 116+). Not tested in Firefox, which needs a different manifest.
