@@ -788,3 +788,44 @@ suite('grid reliability D: settings turned off restore Canvas widths', (test) =>
     a.eq(b.model()[2].minWidth, 90, 'minWidth restored too');
   });
 });
+
+suite('grid reliability: PR review follow-ups', (test) => {
+  test('clearing a recycled cell also restores native icons a badge had hidden', () => {
+    const CGP = loadGradebookDom();
+    const cell = new domshim.FakeElement('div');
+    cell.classList.add('slick-cell', 'cgp-status-missing');
+    const icon = new domshim.FakeElement('span');
+    icon.setAttribute('data-cgp-hid', '1');
+    icon.style.setProperty('display', 'none', 'important');
+    cell.appendChild(icon);
+    const c = new CGP.IndicatorController({
+      model: { cell: () => null, everLoadedAssignments: new Set(), submissionState: () => null },
+      adapter: {},
+      registry: { needsPaint: () => true, markPainted: () => {}, invalidate: () => {} },
+      settings: { values: {} }
+    });
+    c.clearCell(cell);
+    a.eq(icon.getAttribute('data-cgp-hid'), null, 'tag removed');
+    a.ok(!icon.style.getPropertyValue || !icon.style.getPropertyValue('display'), 'inline hiding removed');
+  });
+
+  test('a failed column load asks for a repaint once its backoff runs out', async () => {
+    const CGP = loadGradebookDom();
+    let painted = 0;
+    const c = new CGP.IndicatorController({
+      model: {}, adapter: {}, registry: {}, settings: { values: {} },
+      requestPaint: () => { painted++; }
+    });
+    const realSetTimeout = global.setTimeout;
+    const scheduled = [];
+    global.setTimeout = (fn, ms) => { scheduled.push(ms); return realSetTimeout(fn, 0); };
+    try {
+      c.noteResult(c.loadFailures, '7', false, 'test');
+    } finally {
+      global.setTimeout = realSetTimeout;
+    }
+    await new Promise((r) => realSetTimeout(r, 5));
+    a.eq(scheduled[0], 2050, 'scheduled just after the 2s backoff');
+    a.eq(painted, 1);
+  });
+});

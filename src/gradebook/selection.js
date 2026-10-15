@@ -121,6 +121,7 @@
 
   P.add = function (info) {
     if (!info || info.columnType !== 'assignment' || !info.assignmentId || !info.studentId) return false;
+    this._extendToken = null;   // a Shift-click range still resolving is now stale
     var key = CGP.gridMap.cellKey(info.assignmentId, info.studentId);
     this.keys.set(key, {
       assignmentId: String(info.assignmentId), userId: String(info.studentId),
@@ -134,6 +135,7 @@
 
   P.toggle = function (info) {
     if (!info || info.columnType !== 'assignment' || !info.assignmentId || !info.studentId) return;
+    this._extendToken = null;   // a Shift-click range still resolving is now stale
     var key = CGP.gridMap.cellKey(info.assignmentId, info.studentId);
     if (this.keys.has(key)) {
       this.keys.delete(key);
@@ -234,6 +236,9 @@
       var modifierAdd = e.metaKey || e.ctrlKey;
       var modifierRange = e.shiftKey;
       var info = self.adapter.cellInfo(e.target);
+      // Any newer gesture outranks a Shift-click range still waiting on its
+      // rows to be confirmed; extendTo issues its own fresh token below.
+      self._extendToken = null;
 
       if (!info) {
         var inOurControls = e.target && e.target.closest &&

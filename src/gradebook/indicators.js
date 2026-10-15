@@ -69,6 +69,7 @@
     this.adapter = ctx.adapter;
     this.registry = ctx.registry;
     this.settings = ctx.settings;
+    this.requestPaint = ctx.requestPaint || null;
     this.onCommentClick = ctx.onCommentClick || function () {};
     this.onCommentHover = ctx.onCommentHover || function () {};
     // Leaving the bubble is a SOFT close (the preview is itself hoverable and
@@ -101,9 +102,15 @@
     if (ok) { failures.delete(id); return; }
     var f = failures.get(id) || { count: 0, nextAt: 0 };
     f.count++;
-    f.nextAt = Date.now() + Math.min(60000, 2000 * Math.pow(2, f.count - 1));
+    var delay = Math.min(60000, 2000 * Math.pow(2, f.count - 1));
+    f.nextAt = Date.now() + delay;
     failures.set(id, f);
-    if (f.count === MAX_FAILURES) CGP.diag.warn(label + '.gaveUp', { assignmentId: id });
+    if (f.count === MAX_FAILURES) { CGP.diag.warn(label + '.gaveUp', { assignmentId: id }); return; }
+    // Retries are only ever attempted from a paint; on an otherwise idle
+    // gradebook nothing else would paint again, so ask for one when the
+    // backoff runs out.
+    var paint = this.requestPaint;
+    if (typeof paint === 'function') setTimeout(function () { paint(); }, delay + 50);
   };
 
   P.signatureFor = function (info, rec) {
@@ -323,8 +330,16 @@
   P.clearCell = function (cell) {
     var dirty = cell.className.indexOf('cgp-') >= 0;
     var leftovers = cell.querySelectorAll(':scope > .cgp-marks, :scope > .cgp-val');
-    if (!dirty && !leftovers.length) return;
+    if (!dirty && !leftovers.length && !cell.querySelector('[data-cgp-hid]')) return;
     for (var i = 0; i < leftovers.length; i++) leftovers[i].remove();
+    // Native icons a Missing/Late badge hid stay hidden for whoever SlickGrid
+    // recycles this cell to next unless they are put back here too.
+    var hid = cell.querySelectorAll('[data-cgp-hid]');
+    for (var h = 0; h < hid.length; h++) {
+      hid[h].style.removeProperty('display');
+      hid[h].style.removeProperty('visibility');
+      hid[h].removeAttribute('data-cgp-hid');
+    }
     OWN_CLASSES.forEach(function (name) { cell.classList.remove(name); });
     PAINTED.forEach(function (name) { cell.classList.remove('cgp-status-' + name); });
     if (this.registry && this.registry.invalidate) this.registry.invalidate(cell);

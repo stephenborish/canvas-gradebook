@@ -113,7 +113,7 @@
     });
 
     var indicators = new CGP.IndicatorController({
-      model: model, adapter: adapter, registry: registry, settings: settings,
+      model: model, adapter: adapter, registry: registry, settings: settings, requestPaint: requestPaint,
       onCommentClick: function (info) { popover.open(info); },
       onCommentHover: function (info) { popover.showPreview(info); },
       onCommentLeave: function () { popover.hidePreviewSoon(); },

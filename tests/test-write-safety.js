@@ -436,3 +436,26 @@ suite('write safety: typed-grade follow-up never undoes a newer decision', (test
     a.eq(applied.length, 0);
   });
 });
+
+suite('write safety: selection gestures', (test) => {
+  const { loadGradebookDom } = require('./domharness');
+  test('a newer click discards a Shift-click range still waiting on its rows', async () => {
+    const G = loadGradebookDom();
+    let release;
+    const sel = new G.SelectionController({
+      adapter: {
+        ensureRowsMapped: () => new Promise((r) => { release = r; }),
+        studentAt: (r) => 's' + r,
+        columnAt: () => ({ type: 'assignment', assignmentId: '50' })
+      },
+      model: {}, settings: { values: { multiCellSelection: true } }, requestPaint: () => {}
+    });
+    sel.anchor = { rowIndex: 0, colIndex: 1 };
+    const pending = sel.extendTo({ rowIndex: 40, colIndex: 1 });
+    sel.toggle({ columnType: 'assignment', assignmentId: '50', studentId: 's3', rowIndex: 3, colIndex: 1 });
+    release(true);
+    const applied = await pending;
+    a.eq(applied, false, 'the stale range was dropped');
+    a.eq(sel.size(), 1, 'the newer Cmd-click selection stands');
+  });
+});
