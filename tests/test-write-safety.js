@@ -317,3 +317,122 @@ suite('write safety: keyboard', (test) => {
     a.eq(activated && activated.c, 3, 'stepped over the group column to the left');
   });
 });
+
+suite('write safety: integration review fixes', (test) => {
+  test('a column re-read keeps the overlay on a cell this extension wrote to', () => {
+    const m = model();
+    m.patchCell('50', '10', { grade: '85', override: '85' }, { silent: true });
+    m.applySubmission({ id: '1', assignment_id: '50', user_id: '10', grade: '85', score: 85, late_policy_status: 'late' });
+    a.eq(m.cell('50', '10').override, '85', 'Canvas’s grid never saw our write, so the overlay stays');
+    m.applySubmission({ id: '1', assignment_id: '50', user_id: '10', excused: true, grade: null });
+    a.eq(m.cell('50', '10').override, 'EX', 're-derived from fresh data, not frozen');
+    const fresh = model();
+    fresh.applySubmission({ id: '2', assignment_id: '50', user_id: '10', grade: '70', score: 70 });
+    a.eq(fresh.cell('50', '10').override, null, 'cells we never wrote get no overlay');
+  });
+
+  test('a truncated read releases the column so it can be read again', async () => {
+    let calls = 0;
+    const m = model({
+      api: {
+        submissionsForAssignments: () => {
+          calls++;
+          const list = [];
+          if (calls === 1) list.truncated = true;
+          return Promise.resolve(list);
+        },
+        submissionsForAssignment: () => { const l = []; l.truncated = true; return Promise.resolve(l); }
+      }
+    });
+    await m.ensureAssignments(['50']);
+    a.eq(m.pendingAssignments.has('50'), false, 'not stuck pending');
+    await m.ensureAssignments(['50']);
+    a.eq(calls, 2, 'a second read actually went out');
+    a.eq(m.loadedAssignments.has('50'), true);
+    await m.verifyVisibleComments(['50']);
+    a.eq(m.commentVerifiedAssignments.has('50'), false, 'a truncated verification is not "verified"');
+  });
+
+  test('a write to a column that could not be loaded is refused, not guessed', async () => {
+    stubUi();
+    let sent = 0;
+    const m = model({ api: { submissionsForAssignments: () => Promise.reject(Object.assign(new Error('x'), { status: 500 })) } });
+    const w = new CGP.GradeWriter({ api: { updateSubmission: () => { sent++; return Promise.resolve({}); } }, model: m, settings: { values: {} } });
+    const res = await w.apply([{ assignmentId: '50', userId: '10', parsed: CGP.gradeOps.parseToken('M') }]);
+    a.eq(sent, 0);
+    a.eq(res.unloaded, 1);
+    a.ok(/did not send that column/i.test(said[said.length - 1].text));
+  });
+
+  test('a test-student row inside a paste is named, not reported as unresolved', () => {
+    const mapped = CGP.gridMap.mapMatrixToTargets(CGP.clipboardMatrix.parse('5\n6\n7'), { rowIndex: 0, colIndex: 1 }, {
+      studentAt: (r) => (r === 1 ? null : 's' + r),
+      columnAt: () => ({ type: 'assignment', assignmentId: '50' }),
+      isTestStudentRow: (r) => r === 1
+    });
+    a.eq(mapped.errors.length, 1);
+    a.eq(mapped.errors[0].code, 'test-student');
+    const range = CGP.gridMap.rangeTargets({ rowIndex: 0, colIndex: 1 }, { rowIndex: 2, colIndex: 1 }, {
+      studentAt: (r) => (r === 1 ? null : 's' + r),
+      columnAt: () => ({ type: 'assignment', assignmentId: '50' })
+    });
+    a.deep(range.map((t) => t.userId), ['s0', 's2'], 'a range simply skips it');
+  });
+});
+
+suite('write safety: typed-grade follow-up never undoes a newer decision', (test) => {
+  const { loadGradebookDom, domshim } = require('./domharness');
+
+  function harness(beforeRec, refreshed, opts) {
+    const G = loadGradebookDom();
+    domshim.install();
+    const applied = [];
+    const marks = new Map();
+    const fakeModel = {
+      ready: true,
+      key: (a2, u) => a2 + ':' + u,
+      _writeStartedAt: marks,
+      cell: () => beforeRec,
+      queueTotalRefresh: () => {},
+      refreshCell: () => Promise.resolve(refreshed)
+    };
+    const ctrl = new G.KeyboardGradingController({
+      adapter: { cellInfo: () => ({ columnType: 'assignment', assignmentId: '50', studentId: '10' }), activeCellInfo: () => null },
+      model: fakeModel,
+      writer: { apply: (t) => { applied.push(t); return Promise.resolve({}); } },
+      selection: { size: () => 0, targets: () => [] },
+      settings: { values: {} },
+      requestPaint: () => {}
+    });
+    const F = domshim.FakeElement;
+    const cell = new F('div'); cell.classList.add('slick-cell');
+    globalThis.document.body.appendChild(cell);
+    const input = new F('input'); input.setAttribute('type', 'text'); input.value = '';
+    cell.appendChild(input);
+    ctrl.onFocusIn({ target: input });
+    input.value = '9';
+    ctrl.onFocusOut({ target: input });
+    if (opts && opts.thenMarkedAt) marks.set('50:10', Date.now() + 10);
+    return applied;
+  }
+
+  test('an M pressed after the edit is not undone by the follow-up', async () => {
+    const applied = harness({ grade: null, enteredScore: null, gradedAt: null, latePolicyStatus: null },
+      { grade: '9', enteredScore: 9, gradedAt: 't1', latePolicyStatus: 'missing' }, { thenMarkedAt: true });
+    await new Promise((r) => setTimeout(r, 1300));
+    a.eq(applied.length, 0);
+  });
+
+  test('Missing that was not on the cell when the grade was typed is left alone', async () => {
+    const applied = harness({ grade: null, enteredScore: null, gradedAt: null, latePolicyStatus: null },
+      { grade: '9', enteredScore: 9, gradedAt: 't1', latePolicyStatus: 'missing' });
+    await new Promise((r) => setTimeout(r, 1300));
+    a.eq(applied.length, 0);
+  });
+
+  test('a column with no record before the edit is re-read but never acted on', async () => {
+    const applied = harness(null, { grade: '9', enteredScore: 9, gradedAt: 't1', latePolicyStatus: 'missing' });
+    await new Promise((r) => setTimeout(r, 1300));
+    a.eq(applied.length, 0);
+  });
+});

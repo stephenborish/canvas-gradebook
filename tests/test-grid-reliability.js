@@ -776,3 +776,15 @@ suite('grid reliability G/H: frozen Total failure path and overflow clamp', (tes
     a.eq(next.style.getPropertyValue('overflow-x'), 'clip', 'new root clamped on the next paint');
   });
 });
+
+suite('grid reliability D: settings turned off restore Canvas widths', (test) => {
+  test('turning narrowing and the frozen Total off puts Canvas\'s own widths back', async () => {
+    const b = loadBridge({ columns: COLS });
+    await b.request({ studentWidth: 180, assignmentWidth: 72, hideTotal: true, narrow: true });
+    a.deep(b.model().map((c) => c.width), [180, 100, 72, 90, 84, 110, 120]);
+    const res = await b.request({ studentWidth: null, assignmentWidth: null, hideTotal: false, narrow: false });
+    a.eq(res.result.ok, true);
+    a.deep(b.model().map((c) => c.width), COLS.map((c) => c.width), 'every resized column restored');
+    a.eq(b.model()[2].minWidth, 90, 'minWidth restored too');
+  });
+});

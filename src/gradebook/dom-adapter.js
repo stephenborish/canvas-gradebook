@@ -28,6 +28,7 @@
     this.columnIdToIndex = new Map();
     this.rowIndexToStudent = new Map();  // row index -> userId
     this.topToStudent = new Map();       // rounded style.top -> userId
+    this.testRowIndices = new Set();     // row indices confirmed live as the Test Student
     this.studentToRowIndex = new Map();
     this.paneOffsets = [];
     this.nameOverrideByTitle = new Map(); // header title (lowercase) -> assignmentId, learned once
@@ -809,6 +810,7 @@
         this.topToStudent.clear();
         this.rowIndexToStudent.clear();
         this.studentToRowIndex.clear();
+        this.testRowIndices.clear();
         CGP.diag.bump('adapter.rows.rowCountChanged');
       }
       this._lastRowCount = rowCount;
@@ -851,6 +853,10 @@
           self.topToStudent.delete(top);
           if (staleIdx !== null) self.rowIndexToStudent.delete(staleIdx);
           if (staleSid) self.studentToRowIndex.delete(String(staleSid));
+          // Reported as a live read of "the Test Student", not as an
+          // unknown row: a range or paste spanning it can then skip it on
+          // purpose instead of being refused as unconfirmed.
+          if (staleIdx !== null) liveRows.push({ idx: staleIdx, sid: null, test: true });
           unresolved++;
           continue;
         }
@@ -903,6 +909,7 @@
       this.topToStudent.clear();
       this.rowIndexToStudent.clear();
       this.studentToRowIndex.clear();
+      this.testRowIndices.clear();
       seen.forEach(function (r) {
         self.topToStudent.set(r.top, r.sid);
         if (r.idx !== null) {
@@ -915,6 +922,11 @@
     CGP.diag.set('rowsMapped', this.rowIndexToStudent.size);
     CGP.diag.set('rowsUnresolved', unresolved);
     return liveRows;
+  };
+
+  /** True when this row index was just read live as the Test Student. */
+  P.isTestStudentIndex = function (rowIndex) {
+    return this.testRowIndices.has(Number(rowIndex));
   };
 
   P.studentAt = function (rowIndex) {
@@ -1235,20 +1247,33 @@
     if (count <= 0) return Promise.resolve(true);
     var end = startIndex + count;
     var confirmed = new Map();   // rowIndex -> userId read live in this call
+    var testRows = new Set();    // rowIndex read live as the Test Student
 
     function harvest() {
       (self.refreshRows() || []).forEach(function (r) {
-        if (r.idx >= startIndex && r.idx < end) confirmed.set(r.idx, r.sid);
+        if (r.idx < startIndex || r.idx >= end) return;
+        if (r.test) { testRows.add(r.idx); confirmed.delete(r.idx); return; }
+        confirmed.set(r.idx, r.sid);
+        testRows.delete(r.idx);
       });
     }
     function finish() {
       var total = self.rowCount();
       var ok = total === null || end <= total;
       for (var i = startIndex; i < end; i++) {
-        var sid = (total === null || i < total) ? confirmed.get(i) : undefined;
+        var inRange = total === null || i < total;
+        var sid = inRange ? confirmed.get(i) : undefined;
         if (sid) {
           self.rowIndexToStudent.set(i, sid);
           self.studentToRowIndex.set(String(sid), i);
+          self.testRowIndices.delete(i);
+          continue;
+        }
+        if (inRange && testRows.has(i)) {
+          // Known, live: the Test Student. Never a target, never a reason
+          // to refuse the rest of the range.
+          self.testRowIndices.add(i);
+          self.rowIndexToStudent.delete(i);
           continue;
         }
         ok = false;

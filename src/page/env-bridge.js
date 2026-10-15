@@ -386,9 +386,26 @@
 
   /* Width only. minWidth is lowered just enough to allow the width; maxWidth
    * is never set, so the teacher's own drag-resize keeps working. */
+  // Canvas's own width for every column this bridge has resized, so a
+  // setting turned off later (narrow columns, frozen Total) puts the column
+  // back the way Canvas had it instead of leaving it at our width.
+  var origWidths = {};
+
   function applyWidth(col) {
+    var key = String(col.id || col.field || '');
     var want = wantedWidth(columnKind(col));
-    if (want === null || want === undefined) return false;
+    if (want === null || want === undefined) {
+      var orig = key ? origWidths[key] : null;
+      if (!orig) return false;
+      delete origWidths[key];
+      var restored = Math.round(Number(col.width)) !== orig.width;
+      col.width = orig.width;
+      if (orig.minWidth !== undefined) col.minWidth = orig.minWidth;
+      return restored;
+    }
+    if (key && !origWidths[key] && isFinite(Number(col.width)) && Math.round(Number(col.width)) !== want) {
+      origWidths[key] = { width: Math.round(Number(col.width)), minWidth: col.minWidth };
+    }
     var changed = Math.round(Number(col.width)) !== want;
     col.width = want;
     if (typeof col.minWidth === 'number' && col.minWidth > want) col.minWidth = Math.min(MIN_WIDTH_FLOOR, want);

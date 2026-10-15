@@ -707,7 +707,15 @@
   P.resizeColumns = function () {
     var s = this.settings.values;
     var needSizing = s.narrowColumns || s.frozenTotal;
-    if (!needSizing || this._resizing) return Promise.resolve();
+    if (this._resizing) return Promise.resolve();
+    if (!needSizing) {
+      // Both turned off after sizing ran this page: one last request with
+      // nothing wanted lets the bridge restore Canvas's own widths.
+      if (!this._sizedOnce) return Promise.resolve();
+      this._sizedOnce = false;
+      return this.requestColumnSizing(null, null, false, false).then(function () { return true; }, function () { return false; });
+    }
+    this._sizedOnce = true;
     if (this.isUserBusy()) return Promise.resolve(false);
     if (this._resizeBackoffUntil && Date.now() < this._resizeBackoffUntil) return Promise.resolve(false);
     var self = this;

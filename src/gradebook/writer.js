@@ -58,6 +58,20 @@
       : Promise.resolve(null);
 
     return loaded.then(function () {
+      // A column that still has not loaded (its read failed) gives this
+      // write nothing to decide from - an M could re-apply instead of
+      // removing, a typed grade could leave an explicit Missing behind - so
+      // its cells are left alone and the teacher is told, not guessed at.
+      var known = self.model.loadedAssignments;
+      var ever = self.model.everLoadedAssignments;
+      if (known && typeof known.has === 'function') {
+        ops = ops.filter(function (t) {
+          var id = String(t.assignmentId);
+          if (known.has(id) || (ever && ever.has(id))) return true;
+          result.unloaded = (result.unloaded || 0) + 1;
+          return false;
+        });
+      }
       return Promise.all(ops.map(function (target) {
         return self.serialize(target.assignmentId, target.userId, function () {
           return self.gate(function () { return self.writeOne(target, result, opts); });
@@ -85,6 +99,10 @@
             ' could not be saved' + (first.status ? ' (Canvas ' + first.status + ')' : '') +
             '. Those cells were left unchanged.');
         }
+      }
+      if (result.unloaded) {
+        messages.push(result.unloaded + (result.unloaded === 1 ? ' cell was' : ' cells were') +
+          ' left unchanged because Canvas did not send that column\u2019s current grades. Try again in a moment.');
       }
       if (result.skipped) {
         messages.push(result.skipped + (result.skipped === 1 ? ' cell was' : ' cells were') +
@@ -243,7 +261,11 @@
           // the grade Canvas is already showing untouched, so there is no
           // overlay to draw over it - only a write that changed the grade
           // needs one, since Canvas's own cell never hears about our write.
-          var gradeChanged = op.display !== null && op.display !== undefined;
+          var gradeChanged = (op.display !== null && op.display !== undefined) ||
+            // A status write can still move the grade (a course late or
+            // missing policy deducting points), which Canvas's own cell
+            // will not show either.
+            String((snapshot && snapshot.grade) || '') !== String((shown && shown.grade) || '');
           if (shown && !opts.noOptimistic && gradeChanged) {
             var display;
             if (shown.excused) display = 'EX';

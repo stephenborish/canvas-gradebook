@@ -124,13 +124,20 @@
       }
       var mapped = CGP.gridMap.mapMatrixToTargets(matrix, anchor, {
         studentAt: function (r) { return adapter.studentAt(r); },
-        columnAt: function (c) { return adapter.columnAt(c); }
+        columnAt: function (c) { return adapter.columnAt(c); },
+        isTestStudentRow: function (r) { return !!(adapter.isTestStudentIndex && adapter.isTestStudentIndex(r)); }
       });
 
       if (mapped.errors.length) {
         var codes = {};
         mapped.errors.forEach(function (er) { codes[er.code] = (codes[er.code] || 0) + 1; });
         CGP.diag.error('paste.unresolved', codes);
+        if (codes['test-student']) {
+          CGP.ui.error('Paste stopped: a pasted value would land on the hidden Test Student row, so the ' +
+            'clipboard does not line up with the students shown. Leave that row blank in your copy, or paste ' +
+            'in two parts. Nothing was changed.');
+          return null;
+        }
         CGP.ui.error('Paste stopped: ' + mapped.errors.length +
           ' of those cells could not be matched to a student and assignment. Nothing was changed.');
         return null;

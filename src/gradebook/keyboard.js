@@ -108,12 +108,16 @@
         // skipped the anonymous/moderated refusal, failed silently, and could
         // even save an edit the teacher had cancelled with Escape. All that
         // is left to do is follow up once Canvas's own save has landed.
+        // With no record of the cell before the edit there is nothing to
+        // compare against: re-read it, but never act on the comparison.
         var before = this.model.cell(watch.assignmentId, watch.userId);
-        this.scheduleReconcile(watch.assignmentId, watch.userId, {
-          grade: before ? before.grade : null,
-          enteredScore: before ? before.enteredScore : null,
-          gradedAt: before ? before.gradedAt : null
-        });
+        this.scheduleReconcile(watch.assignmentId, watch.userId, before ? {
+          grade: before.grade,
+          enteredScore: before.enteredScore,
+          gradedAt: before.gradedAt,
+          latePolicyStatus: before.latePolicyStatus || null,
+          at: Date.now()
+        } : null);
       }
     }
     if (this.requestPaint) this.requestPaint();
@@ -148,7 +152,15 @@
           if (attempt + 1 < RECONCILE_DELAYS.length) self.scheduleReconcile(assignmentId, userId, before, attempt + 1);
           return;
         }
-        if (rec.latePolicyStatus === 'missing' && !rec.excused && self.writer) {
+        // Only a Missing that was ALREADY on the cell when the grade was
+        // typed is taken off - never one applied since (an M pressed after
+        // the edit, while this follow-up was still waiting), which is the
+        // teacher's newer decision. Nor while the course is still loading.
+        var markedSince = self.model._writeStartedAt && self.model._writeStartedAt.get &&
+          self.model._writeStartedAt.get(self.model.key ? self.model.key(assignmentId, userId) : assignmentId + ':' + userId);
+        if (markedSince && before.at && markedSince > before.at) return;
+        if (before.latePolicyStatus === 'missing' && rec.latePolicyStatus === 'missing' && !rec.excused &&
+          self.writer && self.model.ready !== false) {
           self.writer.apply([{
             assignmentId: assignmentId, userId: userId,
             parsed: { kind: CGP.gradeOps.KIND.CLEAR_MISSING, raw: '' }
@@ -402,6 +414,12 @@
       this.closeEditorWithoutWriting(nativeEditor);
       CGP.diag.bump('keyboard.editorClosedForShortcut');
     }
+    // A pending follow-up from an earlier typed edit on these cells must
+    // not act after this newer command (see scheduleReconcile).
+    scope.forEach(function (t) {
+      var k = t.assignmentId + ':' + t.userId;
+      if (self._refreshTimers.has(k)) { clearTimeout(self._refreshTimers.get(k)); self._refreshTimers.delete(k); }
+    });
     var built = this.writer.targetsFromTokens(scope.map(function (t) {
       return { assignmentId: t.assignmentId, userId: t.userId, token: token };
     }));
@@ -409,6 +427,10 @@
       if (pendingKey) this._nativeMPending.delete(pendingKey);
       CGP.ui.error('"' + token + '" is not a grade Canvas will accept.');
       return;
+    }
+    if (built.invalid.length) {
+      CGP.ui.error('"' + token + '" doesn\u2019t fit ' + built.invalid.length + ' of the selected cells' +
+        ' (their columns grade differently); those were left unchanged.');
     }
     var count = built.targets.length;
     var threshold = this.settings.values.bulkConfirmThreshold;

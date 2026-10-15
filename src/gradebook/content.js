@@ -542,6 +542,10 @@
         // own pane geometry immediately, instead of leaving both in place
         // until the next full page load.
         if (!CGP.settings.values.frozenTotal && frozen.enabled) frozen.stop();
+        // Column widths follow the settings too: narrowing (or the frozen
+        // Total's squeezed native column) is applied, or undone, right away.
+        _reconcileAttempts = 0;
+        reconcileColumns();
         paint();
       });
       CGP.gradebook = {

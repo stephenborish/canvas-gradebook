@@ -289,7 +289,9 @@
     }
 
     var batchSize = this._batchSize();
-    var maxPages = Math.ceil((batchSize * Math.max(1, this.students.size)) / 100) + 10;
+    // Generous on purpose: student_ids[]=all can also return students this
+    // roster does not count (concluded or inactive enrollments).
+    var maxPages = Math.ceil((batchSize * Math.max(1, this.students.size) * 2) / 100) + 10;
     var batches = util.chunk(wanted, batchSize);
     var jobs = batches.map(function (batch) {
       // Stamped before the request goes out: whatever this fetch returns
@@ -299,10 +301,19 @@
       var gens = {};
       batch.forEach(function (id) { gens[id] = self._gen(id); });
       var fetchOpts = Object.assign({}, opts || {}, { maxPages: maxPages });
+      function release() {
+        batch.forEach(function (id) {
+          if (self.pendingAssignments.get(id) === job) self.pendingAssignments.delete(id);
+        });
+      }
       var job = self.api.submissionsForAssignments(self.courseId, batch, fetchOpts).then(function (subs) {
         // A truncated read is not "the column": cells it never reached would
-        // read as status-free and ungraded. Treat it as a failed load.
+        // read as status-free and ungraded. Treat it as a failed load - and
+        // release the columns here, since a throw from this handler never
+        // reaches the error handler beside it.
         if (subs && subs.truncated) {
+          release();
+          CGP.diag.error('model.submissions.failed', { assignments: batch.length, truncated: true });
           var truncated = new Error('Submissions list was truncated');
           truncated.truncated = true;
           throw truncated;
@@ -322,9 +333,7 @@
           self.loadedAssignments.add(id);
           self.everLoadedAssignments.add(id);
         });
-        batch.forEach(function (id) {
-          if (self.pendingAssignments.get(id) === job) self.pendingAssignments.delete(id);
-        });
+        release();
         CGP.diag.set('submissionsLoaded', self.cells.size);
         CGP.diag.set('assignmentsLoaded', self.loadedAssignments.size);
         CGP.diag.set('commentPayloads', payloadsWithComments);
@@ -333,12 +342,8 @@
         if (current.length) self.emit('cells', { assignmentIds: current });
         return batch;
       }, function (err) {
-        batch.forEach(function (id) {
-          if (self.pendingAssignments.get(id) === job) self.pendingAssignments.delete(id);
-        });
-        CGP.diag.error('model.submissions.failed', {
-          assignments: batch.length, status: err && err.status, truncated: !!(err && err.truncated)
-        });
+        release();
+        CGP.diag.error('model.submissions.failed', { assignments: batch.length, status: err && err.status });
         throw err;
       });
       batch.forEach(function (id) { self.pendingAssignments.set(id, job); });
@@ -365,7 +370,13 @@
       var fetchStartedAt = Date.now();
       var gen = self._gen(id);
       return self.api.submissionsForAssignment(self.courseId, id).then(function (subs) {
-        if (subs && subs.truncated) throw new Error('Submissions list was truncated');
+        if (subs && subs.truncated) {
+          // Handled here: a throw from this handler would skip the error
+          // handler beside it and leave the column marked verified.
+          self.commentVerifiedAssignments.delete(id);
+          CGP.diag.warn('comments.verifyFailed', { assignmentId: id, truncated: true });
+          return null;
+        }
         // A column reload started after this read: its data wins.
         if (gen !== self._gen(id)) { self.commentVerifiedAssignments.delete(id); return null; }
         verified.push(id);
@@ -452,6 +463,19 @@
 
     var postedKnown = Object.prototype.hasOwnProperty.call(sub, 'posted_at');
 
+    // A cell this extension has written to carries an overlay, because
+    // Canvas's own grid never hears about our API write and keeps showing
+    // the old value until the page reloads. Fresh data must not drop that
+    // overlay (or every pasted grade in a column would snap back to Canvas's
+    // stale text the moment the column is re-read) - it re-derives it from
+    // the submission instead, so it always shows Canvas's current grade.
+    var override = null;
+    if (prev.override !== null && prev.override !== undefined) {
+      if (sub.excused) override = 'EX';
+      else if (sub.grade !== null && sub.grade !== undefined && String(sub.grade) !== '') override = String(sub.grade);
+      else override = '\u2013';
+    }
+
     var rec = {
       assignmentId: assignmentId,
       userId: userId,
@@ -481,7 +505,7 @@
       comments: analysis,
       commentList: comments ? comments.filter(function (c) { return c && c.draft !== true; }) : (prev.commentList || null),
       pending: false,
-      override: null
+      override: override
     };
     this.cells.set(k, rec);
     if (!opts.silent) this.emit('cell', { assignmentId: assignmentId, userId: userId, record: rec });
