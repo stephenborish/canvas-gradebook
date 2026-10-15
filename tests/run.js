@@ -27,6 +27,7 @@ require('./test-course-menu');
 require('./test-selection');
 require('./test-course-switcher');
 require('./test-write-safety');
+require('./test-comments-ui');
 
 // run() awaits each case, so the process must not exit before it settles.
 harness.run().then((okAll) => {

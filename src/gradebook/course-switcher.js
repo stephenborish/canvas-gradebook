@@ -30,6 +30,7 @@
     this.courses = null;
     this.filter = '';
     this.activeIndex = 0;
+    this.loadError = null;
   }
 
   var P = CourseSwitcher.prototype;
@@ -125,13 +126,25 @@
     // which course a teacher was actually on - a plain a-to-z first course
     // has no other reason to be highlighted.
     this.activeIndex = 0;
-    this.loadCourses().then(function (courses) {
+    this.load();
+    var input = this.menu.querySelector('.cgp-course-menu__filter');
+    if (input) { input.value = ''; setTimeout(function () { input.focus(); }, 0); }
+  };
+
+  /* Loads (or retries loading) the course list into the open menu. A failure
+   * is shown as a retry row rather than an empty "No matching courses." */
+  P.load = function () {
+    var self = this;
+    this.loadError = null;
+    if (this.menu) this.paintList();
+    return this.loadCourses().then(function (courses) {
       self.courses = courses;
       self.activeIndex = self.currentCourseIndex();
       self.paintList();
+    }, function (err) {
+      self.loadError = CGP.util.describeApiError(err, { fallback: 'Canvas did not return your course list' });
+      if (self.menu) self.paintList();
     });
-    var input = this.menu.querySelector('.cgp-course-menu__filter');
-    if (input) { input.value = ''; setTimeout(function () { input.focus(); }, 0); }
   };
 
   /* Index, within the currently visible (filtered) course list, of the
@@ -174,11 +187,16 @@
       var items = self.visibleCourses();
       if (e.key === 'ArrowDown') { e.preventDefault(); self.activeIndex = Math.min(items.length - 1, self.activeIndex + 1); self.paintList(); }
       else if (e.key === 'ArrowUp') { e.preventDefault(); self.activeIndex = Math.max(0, self.activeIndex - 1); self.paintList(); }
-      else if (e.key === 'Enter') { e.preventDefault(); var pick = items[self.activeIndex]; if (pick) self.go(pick); }
+      else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (self.loadError) { self.load(); }
+        else { var pick = items[self.activeIndex]; if (pick) self.go(pick); }
+      }
       else if (e.key === 'Escape') { e.preventDefault(); self.close(); }
       e.stopPropagation();
     }, false);
     el.querySelector('.cgp-course-menu__list').addEventListener('click', function (e) {
+      if (e.target.closest && e.target.closest('.cgp-course-menu__retry')) { self.load(); return; }
       var row = e.target.closest ? e.target.closest('[data-course-id]') : null;
       if (!row) return;
       var id = row.getAttribute('data-course-id');
@@ -209,6 +227,11 @@
 
   P.paintList = function () {
     var box = this.menu.querySelector('.cgp-course-menu__list');
+    if (this.loadError && !this.courses) {
+      box.innerHTML = '<div class="cgp-course-menu__empty cgp-course-menu__retry" role="button" tabindex="0">' +
+        'Couldn’t load your courses — click to retry. ' + CGP.util.escapeHtml(this.loadError) + '</div>';
+      return;
+    }
     if (!this.courses) { box.innerHTML = '<div class="cgp-course-menu__empty">Loading courses\u2026</div>'; return; }
     var items = this.visibleCourses();
     if (!items.length) { box.innerHTML = '<div class="cgp-course-menu__empty">No matching courses.</div>'; return; }
@@ -276,40 +299,61 @@
    * is still a single fetch. */
   var inFlight = null;
   var memo = null;
+  var userIdPromise = null;
+
+  /* Who is logged in, asked once per page. The 30 minute disk cache is keyed
+   * by user as well as origin, so a shared computer never shows one
+   * teacher's course list to the next person who signs in to the same Canvas. */
+  function cacheUserId(api) {
+    if (!userIdPromise) {
+      userIdPromise = (api && typeof api.currentUser === 'function')
+        ? api.currentUser().then(function (u) { return u && u.id ? String(u.id) : null; }, function () { return null; })
+        : Promise.resolve(null);
+    }
+    return userIdPromise;
+  }
 
   CGP.teachingCourseList = function (api) {
     if (memo) return Promise.resolve(memo);
     if (inFlight) return inFlight;
 
-    var fromCache = function () {
-      if (typeof chrome === 'undefined' || !chrome.storage) return Promise.resolve(null);
+    var hasStorage = typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
+    var uidReady = hasStorage ? cacheUserId(api) : Promise.resolve(null);
+
+    var fromCache = function (uid) {
+      if (!hasStorage || !uid) return Promise.resolve(null);
       return chrome.storage.local.get(CACHE_KEY).then(function (got) {
         var box = got && got[CACHE_KEY];
-        if (!box || box.origin !== location.origin) return null;
+        if (!box || box.origin !== location.origin || box.uid !== uid) return null;
         if (Date.now() - box.at > CACHE_MS) return null;
         return box.courses || null;
       }).catch(function () { return null; });
     };
 
-    inFlight = fromCache().then(function (cached) {
-      if (cached && cached.length) return cached;
-      return api.teachingCourses().then(function (courses) {
-        var slim = (courses || []).map(function (c) {
-          return {
-            id: String(c.id), name: c.name || '', course_code: c.course_code || '',
-            term: c.term ? { name: c.term.name || '' } : null
-          };
-        }).sort(function (a, b) { return a.name.localeCompare(b.name); });
-        if (typeof chrome !== 'undefined' && chrome.storage) {
-          var payload = {};
-          payload[CACHE_KEY] = { at: Date.now(), origin: location.origin, courses: slim };
-          try { chrome.storage.local.set(payload); } catch (e) { /* ignore */ }
-        }
-        CGP.diag.set('switcherCourses', slim.length);
-        return slim;
-      }, function (err) {
-        CGP.diag.error('switcher.loadFailed', { status: err && err.status });
-        return [];
+    inFlight = uidReady.then(function (uid) {
+      return fromCache(uid).then(function (cached) {
+        if (cached && cached.length) return cached;
+        return api.teachingCourses().then(function (courses) {
+          var slim = (courses || []).map(function (c) {
+            return {
+              id: String(c.id), name: c.name || '', course_code: c.course_code || '',
+              term: c.term ? { name: c.term.name || '' } : null
+            };
+          }).sort(function (a, b) { return a.name.localeCompare(b.name); });
+          if (hasStorage && uid) {
+            var payload = {};
+            payload[CACHE_KEY] = { at: Date.now(), origin: location.origin, uid: uid, courses: slim };
+            try { chrome.storage.local.set(payload); } catch (e) { /* ignore */ }
+          }
+          CGP.diag.set('switcherCourses', slim.length);
+          return slim;
+        }, function (err) {
+          // Not cached and not memoized: a blip must not leave the switcher
+          // and the student search empty for the rest of the page's life.
+          // Rethrown so each caller can say so and offer a retry.
+          CGP.diag.error('switcher.loadFailed', { status: err && err.status });
+          throw err;
+        });
       });
     }).then(function (list) {
       memo = list;
