@@ -158,8 +158,15 @@
       rec.enteredScore != null ? rec.enteredScore : (rec.score != null ? rec.score : (rec.grade || '')),
       rec.excused ? 1 : 0,
       CGP.postOps.needsPost(rec, this.model.assignment ? this.model.assignment(info.assignmentId) : null) ? 1 : 0,
+      this.postStateKnown(rec) ? 1 : 0,
       status
     ].join('|');
+  };
+
+  /* Has Canvas told us (or has a confirmed post told us) whether this
+   * submission is posted? Without that, "nothing to post" is a guess. */
+  P.postStateKnown = function (rec) {
+    return !!(rec && !rec.pending && (rec.postedAtKnown || rec.hasPostableKnown));
   };
 
   P.marksHost = function (cellEl) {
@@ -326,7 +333,7 @@
    * (recycled) cell can no longer be tied to a submission, so it must not
    * keep showing the previous occupant's bubble, badge or grade. */
   var OWN_CLASSES = ['cgp-has-comment', 'cgp-has-resub', 'cgp-has-sub', 'cgp-has-unposted',
-    'cgp-has-status-badge', 'cgp-pending-write', 'cgp-override'];
+    'cgp-has-status-badge', 'cgp-post-clear', 'cgp-pending-write', 'cgp-override'];
   P.clearCell = function (cell) {
     var dirty = cell.className.indexOf('cgp-') >= 0;
     var leftovers = cell.querySelectorAll(':scope > .cgp-marks, :scope > .cgp-val');
@@ -453,6 +460,14 @@
     cell.classList.toggle('cgp-has-resub', !!showResub);
     cell.classList.toggle('cgp-has-sub', !!showSub);
     cell.classList.toggle('cgp-has-unposted', false);
+    // Canvas draws its own "hidden grade / unposted comment" dot from its own
+    // store, which a post made through the API never updates - so the dot
+    // used to linger until a page reload. Our model is refreshed by the post,
+    // so a cell it knows has nothing left to post is flagged and CSS hides
+    // Canvas's dot there (see gradebook.css).
+    var assignmentMeta = this.model.assignment ? this.model.assignment(info.assignmentId) : null;
+    cell.classList.toggle('cgp-post-clear',
+      known && this.postStateKnown(rec) && !CGP.postOps.needsPost(rec, assignmentMeta));
     cell.classList.toggle('cgp-has-status-badge', showMissingBadge || showLateBadge);
     cell.classList.toggle('cgp-pending-write', !!(rec && rec.pending));
 

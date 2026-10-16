@@ -839,3 +839,30 @@ suite('grid reliability: PR review follow-ups', (test) => {
     a.eq(painted, 1);
   });
 });
+
+/* ------------------------------------------------------------- post-clear */
+
+suite('grid reliability: Canvas\'s unposted dot follows our post state', (test) => {
+  const base = { assignmentId: '101', userId: '501', override: null, workflowState: 'graded', score: 3, grade: '3' };
+  test('a cell still waiting to be posted is not flagged', () => {
+    const CGP = loadGradebookDom();
+    const cell = gradeCell('3');
+    overlayController(CGP, Object.assign({}, base, { postedAt: null, postedAtKnown: true }))
+      .paintCell(INFO(cell));
+    a.ok(!cell.classList.contains('cgp-post-clear'));
+  });
+  test('once posted, the cell is flagged so Canvas\'s stale dot is hidden', () => {
+    const CGP = loadGradebookDom();
+    const cell = gradeCell('3');
+    overlayController(CGP, Object.assign({}, base, { postedAt: '2026-10-16T12:00:00Z', postedAtKnown: true }))
+      .paintCell(INFO(cell));
+    a.ok(cell.classList.contains('cgp-post-clear'));
+  });
+  test('when posted state is unknown nothing is guessed', () => {
+    const CGP = loadGradebookDom();
+    const cell = gradeCell('3');
+    overlayController(CGP, Object.assign({}, base, { postedAt: null, postedAtKnown: false }))
+      .paintCell(INFO(cell));
+    a.ok(!cell.classList.contains('cgp-post-clear'));
+  });
+});
