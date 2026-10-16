@@ -320,6 +320,19 @@
     return this.updateSubmission(courseId, assignmentId, userId, { 'comment[text_comment]': text }, { idempotent: false });
   };
 
+  /* Delete one submission comment. Canvas only lets a comment's own author
+   * remove it, and a 404 means it is already gone (the caller treats that as
+   * done). Not retried on a lost connection: the first attempt may have
+   * succeeded, and the second would then report a misleading 404. */
+  CanvasApi.prototype.deleteComment = function (courseId, assignmentId, userId, commentId) {
+    return this.request('/api/v1/courses/' + courseId + '/assignments/' + assignmentId +
+      '/submissions/' + userId + '/comments/' + encodeURIComponent(String(commentId)), {
+      method: 'DELETE',
+      retries: 1,
+      idempotent: false
+    }).then(function (r) { return r.data; });
+  };
+
   /* ------------------------------------------------------- posting grades */
 
   /* Canvas's GraphQL endpoint, same session and same CSRF token as the REST

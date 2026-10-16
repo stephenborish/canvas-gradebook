@@ -1549,6 +1549,58 @@ html.cgp-on .cgp-pop__meta { display: flex; justify-content: space-between; gap:
 html.cgp-on .cgp-pop__author { font-weight: 700; }
 html.cgp-on .cgp-pop__date { color: var(--cgp-muted); }
 html.cgp-on .cgp-pop__text { white-space: pre-wrap; margin-top: 2px; }
+html.cgp-on .cgp-pop__meta { align-items: center; }
+html.cgp-on .cgp-pop__date { margin-left: auto; }
+html.cgp-on .cgp-pop__del {
+  position: relative;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--cgp-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transition: color 120ms ease, background 120ms ease;
+}
+html.cgp-on .cgp-pop__del svg { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+html.cgp-on .cgp-pop__del:hover { color: #9b2c1c; background: #fbeceb; }
+html.cgp-on .cgp-pop__del:focus-visible { outline: none; box-shadow: var(--cgp-focus-ring); }
+/* Armed: red, gently pulsing, with a bar that drains as the window to confirm
+ * runs out - the same length as ARM_MS in comment-popover.js. */
+html.cgp-on .cgp-pop__del--armed {
+  color: #fff;
+  background: #c0392b;
+  animation: cgp-del-pulse 0.9s ease-in-out infinite;
+}
+html.cgp-on .cgp-pop__del--armed:hover { color: #fff; background: #a93226; }
+html.cgp-on .cgp-pop__del--armed::after {
+  content: "";
+  position: absolute;
+  left: 0; bottom: 0;
+  height: 2px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.9);
+  transform-origin: left center;
+  animation: cgp-del-drain 3.2s linear forwards;
+}
+html.cgp-on .cgp-pop__del--busy { opacity: 0.5; cursor: default; animation: none; }
+@keyframes cgp-del-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.14); }
+}
+@keyframes cgp-del-drain {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html.cgp-on .cgp-pop__del--armed { animation: none; }
+}
 html.cgp-on .cgp-pop__empty { color: var(--cgp-muted); padding: 2px 0 6px; }
 html.cgp-on .cgp-pop__reply { margin-top: 10px; }
 html.cgp-on .cgp-pop__input {

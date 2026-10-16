@@ -791,3 +791,56 @@ suite('write safety: an invalid grade stays put for the teacher to fix', (test) 
     a.eq(holds(null), false);
   });
 });
+
+suite('write safety: deleting a comment', (test) => {
+  const mk2 = () => {
+    const m = model();
+    m.loadedAssignments.add('50');
+    m.instructorId = '1';
+    m.patchCell('50', '10', {
+      commentList: [{ id: '5', author_id: '1', comment: 'x' }, { id: '6', author_id: '10', comment: 'reply' }],
+      comments: CGP.commentAnalysis.analyze([{ id: '5', author_id: '1', comment: 'x' }], { instructorId: '1', studentId: '10' })
+    }, { silent: true });
+    return m;
+  };
+
+  test('removes only that comment and re-derives the bubble', async () => {
+    stubUi();
+    const m = mk2();
+    const calls = [];
+    const w = new CGP.GradeWriter({ api: { deleteComment: (...a2) => { calls.push(a2); return Promise.resolve({}); } }, model: m, settings: { values: {} } });
+    await w.deleteComment('50', '10', '5');
+    a.deep(calls[0], ['7', '50', '10', '5']);
+    const rec = m.cell('50', '10');
+    a.deep(rec.commentList.map((c) => c.id), ['6']);
+    a.eq(rec.comments.hasInstructorComment, false, 'no instructor comment left, so no bubble');
+    a.eq(m._writesInFlight.size, 0);
+  });
+
+  test('a 404 means it is already gone and counts as deleted; other errors leave the thread alone', async () => {
+    stubUi();
+    const m = mk2();
+    const w404 = new CGP.GradeWriter({ api: { deleteComment: () => Promise.reject({ status: 404 }) }, model: m, settings: { values: {} } });
+    await w404.deleteComment('50', '10', '5');
+    a.deep(m.cell('50', '10').commentList.map((c) => c.id), ['6']);
+    const m2 = mk2();
+    const w500 = new CGP.GradeWriter({ api: { deleteComment: () => Promise.reject({ status: 500 }) }, model: m2, settings: { values: {} } });
+    let failed = false;
+    await w500.deleteComment('50', '10', '5').catch(() => { failed = true; });
+    a.eq(failed, true);
+    a.deep(m2.cell('50', '10').commentList.map((c) => c.id), ['5', '6']);
+    a.eq(m2._writesInFlight.size, 0, 'no write left marked in flight');
+  });
+
+  test('refused on an anonymous assignment, like adding one', async () => {
+    stubUi();
+    const m = mk2();
+    m.assignments.set('50', { id: '50', name: 'HW', anonymous: true });
+    let sent = 0;
+    const w = new CGP.GradeWriter({ api: { deleteComment: () => { sent++; return Promise.resolve({}); } }, model: m, settings: { values: {} } });
+    let msg = '';
+    await w.deleteComment('50', '10', '5').catch((e) => { msg = e.message; });
+    a.eq(sent, 0);
+    a.ok(/anonymous/i.test(msg));
+  });
+});

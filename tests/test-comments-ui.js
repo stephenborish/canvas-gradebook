@@ -258,6 +258,56 @@ suite('comment popover: slow saves, double submit, drafts, Tab', (test) => {
     } finally { env.undo(); }
   });
 
+  test('trash button: first press only arms, second press deletes, only on the teacher\'s own comments', async () => {
+    const CGP = loadPopover();
+    const env = setupDom(CGP);
+    try {
+      const f = popoverFixture(CGP);
+      let list = [
+        { id: '11', author_id: '900', comment: 'mine', created_at: '2026-10-13T20:36:00Z' },
+        { id: '12', author_id: 'A', author_name: 'Alice Able', comment: 'theirs', created_at: '2026-10-13T21:00:00Z' }
+      ];
+      const deleted = [];
+      f.ctrl.model.cell = () => ({ commentList: list });
+      f.ctrl.writer.deleteComment = (aid, uid, cid) => { deleted.push({ aid, uid, cid }); list = list.filter((c) => c.id !== cid); return Promise.resolve(); };
+      f.ctrl.open(f.cell('A'));
+      const buttons = f.ctrl.el.querySelectorAll('.cgp-pop__del');
+      a.eq(buttons.length, 1, 'only the teacher\'s own comment has one');
+      const btn = buttons[0];
+      fire(btn, 'click');
+      a.eq(deleted.length, 0, 'one press never deletes');
+      a.ok(btn.classList.contains('cgp-pop__del--armed'), 'armed after the first press');
+      fire(btn, 'click');
+      a.eq(deleted.length, 0, 'the second half of a double-click is ignored');
+      await new Promise((r) => setTimeout(r, 320));
+      fire(btn, 'click');
+      a.eq(deleted.length, 1);
+      a.deep(deleted[0], { aid: 'a1', uid: 'A', cid: '11' });
+      await flush();
+      a.eq(f.ctrl.el.querySelectorAll('.cgp-pop__del').length, 0, 'thread re-rendered without it');
+      a.ok(f.paints.length >= 1, 'grid repaint requested');
+    } finally { env.undo(); }
+  });
+
+  test('a failed delete re-enables the button and says so', async () => {
+    const CGP = loadPopover();
+    const env = setupDom(CGP);
+    try {
+      const f = popoverFixture(CGP);
+      f.ctrl.model.cell = () => ({ commentList: [{ id: '11', author_id: '900', comment: 'mine', created_at: '2026-10-13T20:36:00Z' }] });
+      f.ctrl.writer.deleteComment = () => Promise.reject({ status: 500 });
+      f.ctrl.open(f.cell('A'));
+      const btn = f.ctrl.el.querySelector('.cgp-pop__del');
+      fire(btn, 'click');
+      await new Promise((r) => setTimeout(r, 320));
+      fire(btn, 'click');
+      await flush();
+      a.eq(btn.disabled, false);
+      a.eq(btn.classList.contains('cgp-pop__del--armed'), false, 'disarmed after the failure');
+      a.ok(env.said.some((x) => x.level === 'error'), 'error shown');
+    } finally { env.undo(); }
+  });
+
   test('Tab is only swallowed when a snippet actually expands', () => {
     const CGP = loadPopover();
     const env = setupDom(CGP);

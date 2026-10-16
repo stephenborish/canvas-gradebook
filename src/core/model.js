@@ -700,6 +700,20 @@
     return this.patchCell(assignmentId, userId, next);
   };
 
+  /* A comment this teacher just deleted: drop it from the cell's thread and
+   * re-derive the indicators (the bubble goes away with the last instructor
+   * comment). */
+  GradebookModel.prototype.applyCommentDeleted = function (assignmentId, userId, commentId) {
+    var rec = this.cells.get(this.key(assignmentId, userId));
+    if (!rec) return null;
+    var opts = { instructorId: this.instructorId, instructorNames: this.instructorNames, studentId: String(userId) };
+    var list = (rec.commentList || []).filter(function (c) { return !c || String(c.id) !== String(commentId); });
+    return this.patchCell(assignmentId, userId, {
+      comments: CGP.commentAnalysis.analyze(list, opts),
+      commentList: list
+    });
+  };
+
   GradebookModel.prototype.queueTotalRefresh = function (userId) {
     if (!userId) return;
     this._totalQueue.add(String(userId));

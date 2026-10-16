@@ -47,6 +47,9 @@ comment does not light up your cell.
 - The bubble sits in the cell's bottom-right corner, so a column's bubbles line up in one
   vertical channel down the right-hand edge and a screenful can be read in a single pass.
 - Click the bubble to read the whole thread in place, and reply without leaving the gradebook.
+- Each of your own comments in that thread has a small trash can. Press it once and it turns red
+  and pulses while a bar drains (about three seconds); press it again to delete the comment from
+  Canvas. Letting the bar run out cancels. Other people's comments have no trash can.
   A reply posted here updates the indicator immediately — no page reload.
 - Hovering the bubble previews the latest comment, and that preview is itself a target: the
   pointer can travel into it, and clicking it opens Canvas's own Grade Detail Tray — the side
