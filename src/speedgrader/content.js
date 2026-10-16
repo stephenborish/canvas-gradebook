@@ -572,6 +572,9 @@
     bindDraftListeners();
     watchSubmit();
     watchSubmitButton();
+    // The options page can flip this while a SpeedGrader tab sits idle: apply (or
+    // lift) the pin straight away instead of waiting for Canvas to mutate the page.
+    if (CGP.settings && typeof CGP.settings.onChange === 'function') CGP.settings.onChange(pinSubmitButton);
 
     var poll = setInterval(function () {
       var textarea = document.querySelector(TEXTAREA_SELECTORS) || findTextareaFallback();

@@ -289,6 +289,29 @@ suite('comment popover: slow saves, double submit, drafts, Tab', (test) => {
     } finally { env.undo(); }
   });
 
+  test('closing and reopening the popover during a slow delete still refreshes the thread', async () => {
+    const CGP = loadPopover();
+    const env = setupDom(CGP);
+    try {
+      const f = popoverFixture(CGP);
+      let list = [{ id: '11', author_id: '900', comment: 'mine', created_at: '2026-10-13T20:36:00Z' }];
+      const slow = deferred();
+      f.ctrl.model.cell = () => ({ commentList: list });
+      f.ctrl.writer.deleteComment = () => slow.promise.then(() => { list = []; });
+      f.ctrl.open(f.cell('A'));
+      const btn = f.ctrl.el.querySelector('.cgp-pop__del');
+      fire(btn, 'click');
+      await new Promise((r) => setTimeout(r, 320));
+      fire(btn, 'click');
+      f.ctrl.close();
+      f.ctrl.open(f.cell('A'));
+      a.eq(f.ctrl.el.querySelectorAll('.cgp-pop__del').length, 1, 'reopened mid-delete: still listed');
+      slow.resolve();
+      await flush();
+      a.eq(f.ctrl.el.querySelectorAll('.cgp-pop__del').length, 0, 'refreshed once the delete finished');
+    } finally { env.undo(); }
+  });
+
   test('a failed delete re-enables the button and says so', async () => {
     const CGP = loadPopover();
     const env = setupDom(CGP);

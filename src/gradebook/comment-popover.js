@@ -339,11 +339,13 @@
         busy = true;
         btn.disabled = true;
         btn.classList.add('cgp-pop__del--busy');
-        var seq = self._seq;
         var userId = info.studentId;
         self.writer.deleteComment(info.assignmentId, userId, commentId).then(function () {
           if (self.requestPaint) self.requestPaint();
-          if (self._seq === seq && self.isShowing(info.assignmentId, userId)) self.renderCurrent();
+          // Whenever this same submission's thread is on screen - including a
+          // popover closed and reopened while the delete was in flight, which
+          // bumps _seq - it must stop offering the comment that is now gone.
+          if (self.isShowing(info.assignmentId, userId)) self.renderCurrent();
           else CGP.ui.toast('Comment deleted');
         }, function (err) {
           busy = false;
