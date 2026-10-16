@@ -53,7 +53,17 @@
     if (!el || !el.matches) return false;
     if (el.matches(TEXTAREA_SELECTORS)) return true;
     var tag = el.tagName ? el.tagName.toLowerCase() : '';
-    if (tag === 'textarea' || el.matches('[contenteditable="true"]') || el.matches('input[type="text"]')) {
+    // Free-text surfaces (a textarea or a rich-text editor) are always fair
+    // game on a grading page: an expansion needs a real "/trigger" right
+    // before the caret AND a matching snippet, so a stray one costs nothing.
+    // They used to have to prove they were "a comment box" by sitting inside
+    // one of the containers below or by carrying the word "comment" in an
+    // attribute - which SpeedGrader's right-hand panel happens to satisfy, but
+    // the Gradebook's Grade Detail Tray (opened by double-clicking a cell) did
+    // not, so snippets silently did nothing there. Single-line inputs keep the
+    // stricter test, since a grade or search box has no business expanding.
+    if (tag === 'textarea' || el.matches('[contenteditable="true"]')) return true;
+    if (el.matches('input[type="text"]')) {
       if (el.closest(
         '#speedgrader_comment_textarea_mount_point, #add_a_comment, #discussion, .comment_area, ' +
         '#right_side, .rubric_container, #rubric_assessments, .grade-detail-tray, [data-testid*="comment" i], ' +

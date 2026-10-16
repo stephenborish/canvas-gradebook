@@ -578,6 +578,28 @@ suite('SpeedGrader drafts and confirmation', (test) => {
     a.eq(sg.textarea.value, 'Nice Good job');
   });
 
+  test('Gradebook side tray: an unlabelled comment textarea still expands snippets', () => {
+    // The Grade Detail Tray's comment box carries no "comment" id, name or
+    // aria-label and sits in no container the old rules knew about.
+    const env = speedGraderEnv({ pathname: '/courses/5/gradebook', snippets: [{ trigger: 'gj', text: 'Good job' }] });
+    const tray = mk('div', { role: 'dialog' });
+    const box = mk('textarea', { id: 'TextArea_7' });
+    tray.appendChild(box);
+    env.doc.body.appendChild(tray);
+    box.value = 'Nice /gj'; box.selectionStart = 8;
+    a.eq(env.docFire('keydown', box, { key: 'Tab' }).defaultPrevented, true, 'snippet: Tab kept');
+    a.eq(box.value, 'Nice Good job');
+  });
+
+  test('a single-line input outside a comment area is still left alone', () => {
+    const env = speedGraderEnv({ pathname: '/courses/5/gradebook', snippets: [{ trigger: 'gj', text: 'Good job' }] });
+    const box = mk('input', { type: 'text', id: 'grade-search' });
+    env.doc.body.appendChild(box);
+    box.value = '/gj'; box.selectionStart = 3;
+    a.eq(env.docFire('keydown', box, { key: 'Tab' }).defaultPrevented, false);
+    a.eq(box.value, '/gj');
+  });
+
   test('the global snippet Tab handler is not installed on other course pages', () => {
     const env = speedGraderEnv({ pathname: '/courses/5/discussion_topics/7' });
     a.eq((env.docListeners.keydown || []).length, 0, 'no keydown capture on a discussion page');
