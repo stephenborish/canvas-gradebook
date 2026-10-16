@@ -7,7 +7,7 @@
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.util) return;
 
-  CGP.VERSION = '1.11.0';
+  CGP.VERSION = '1.13.0';
 
   CGP.DEFAULTS = {
     // layout
@@ -63,6 +63,7 @@
     courseSwitcher: true,
     studentSearch: true,
     speedgraderDrafts: true,
+    speedgraderStickySubmit: true,
     snippets: [
       { trigger: 'evidence', text: 'Good claim - now tie it back to the evidence in your data so the reasoning is complete.' },
       { trigger: 'units', text: 'Check your units and significant figures; the value is right but the label is missing.' },

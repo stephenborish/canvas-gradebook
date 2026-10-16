@@ -16,8 +16,9 @@
  * Three things this deliberately does NOT do:
  *   - it never appears on a column with nothing to post, so the button is
  *     always a statement of fact about that column, not decoration
- *   - it posts graded submissions only, exactly like Canvas's own default, so
- *     students who have not been graded yet are not handed an empty grade
+ *   - it posts graded submissions and ones holding a hidden instructor comment,
+ *     exactly like Canvas's own default, so students who have neither are not
+ *     handed an empty grade
  *   - it never guesses. A column whose submissions have not loaded, or whose
  *     Canvas build does not tell us whether grades are posted, shows nothing. */
 (function () {
@@ -72,7 +73,7 @@
       : '';
     return {
       text: 'Post ' + count,
-      title: why + hidden + '. Post them to the students now (every section, graded submissions only).'
+      title: why + hidden + '. Post them to the students now (every section; submissions with a grade or a comment from you).'
     };
   };
 
@@ -487,8 +488,8 @@
       // which answers null for a column not currently marked loaded - which
       // is exactly the case when the re-read after the post failed.
       var rec = self.model.cells.get(self.model.key(assignmentId, uid));
-      if (!rec || rec.postedAt) return;
-      self.model.patchCell(assignmentId, uid, { postedAt: when, postedAtKnown: true }, { silent: true });
+      if (!rec || (rec.postedAt && rec.hasPostableComments !== true)) return;
+      self.model.patchCell(assignmentId, uid, { postedAt: rec.postedAt || when, postedAtKnown: true, hasPostableComments: false }, { silent: true });
     });
     if (self.model && typeof self.model.emit === 'function') {
       self.model.emit('cells', { assignmentIds: [String(assignmentId)] });

@@ -225,6 +225,9 @@
       wasExplicitMissing: !!(currentRec && currentRec.latePolicyStatus === 'missing'),
       wasMissing: !!(currentRec && (currentRec.missing || currentRec.latePolicyStatus === 'missing')),
       wasExcused: !!(currentRec && currentRec.excused),
+      // Lifting an explicit Missing must not also erase that the work came in
+      // late - see gradeOps.lateAfterMissing.
+      handedInLate: CGP.gradeOps.handedInLate(currentRec, assignment),
       latePolicyStatus: currentRec ? (currentRec.latePolicyStatus || null) : undefined
     });
     if (!op) {
@@ -408,6 +411,35 @@
       CGP.diag.bump('comment.saved');
       return submission;
     }, function (err) {
+      self.model.clearLocalWrite(assignmentId, userId, priorMark);
+      throw err;
+    });
+  };
+
+  /* Delete one of the teacher's own comments. Same refusals as addComment (an
+   * anonymous/moderated assignment's student identity is deliberately not
+   * trusted here). A 404 means Canvas no longer has it, which is the outcome
+   * wanted, so it is not an error. */
+  P.deleteComment = function (assignmentId, userId, commentId) {
+    var self = this;
+    if (!assignmentId || !userId || !commentId) {
+      return Promise.reject(new Error('Comment could not be matched to a student and assignment.'));
+    }
+    var assignment = this.model.assignment(assignmentId);
+    if (!assignment) return Promise.reject(new Error('Unknown assignment.'));
+    if (!this.model.student(userId)) return Promise.reject(new Error('Unknown student.'));
+    if (assignment.anonymous || assignment.moderated) {
+      return Promise.reject(new Error(
+        'Comments cannot be deleted here on an anonymous or moderated assignment - use SpeedGrader instead.'));
+    }
+    var priorMark = this.model.markLocalWrite(assignmentId, userId);
+    function done() {
+      self.model.finishLocalWrite(assignmentId, userId);
+      self.model.applyCommentDeleted(assignmentId, userId, commentId);
+      CGP.diag.bump('comment.deleted');
+    }
+    return this.api.deleteComment(this.model.courseId, assignmentId, userId, commentId).then(done, function (err) {
+      if (err && err.status === 404) { done(); return; }
       self.model.clearLocalWrite(assignmentId, userId, priorMark);
       throw err;
     });

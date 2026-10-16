@@ -28,6 +28,12 @@ function toGradebookPattern(origin) {
   return origin.replace(/\/\*$/, '/courses/*/gradebook*');
 }
 
+function toSpeedGraderPattern(origin) {
+  // The gradebook pattern above also matches SpeedGrader's URL, which has no
+  // grid for the page-world bridge to work on.
+  return origin.replace(/\/\*$/, '/courses/*/gradebook/speed_grader*');
+}
+
 /* Registers with an optional key first and falls back without it: an
  * unknown key (an older Chrome) makes registerContentScripts reject the
  * whole call, which would leave the self-hosted domain with nothing. */
@@ -57,6 +63,7 @@ async function syncDynamicScripts() {
     await registerWithFallback({
       id: DYNAMIC_BRIDGE_ID,
       matches: origins.map(toGradebookPattern),
+      excludeMatches: origins.map(toSpeedGraderPattern),
       js: ['src/page/env-bridge.js'],
       world: 'MAIN',
       runAt: 'document_start',

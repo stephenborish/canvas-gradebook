@@ -258,6 +258,79 @@ suite('comment popover: slow saves, double submit, drafts, Tab', (test) => {
     } finally { env.undo(); }
   });
 
+  test('trash button: first press only arms, second press deletes, only on the teacher\'s own comments', async () => {
+    const CGP = loadPopover();
+    const env = setupDom(CGP);
+    try {
+      const f = popoverFixture(CGP);
+      let list = [
+        { id: '11', author_id: '900', comment: 'mine', created_at: '2026-10-13T20:36:00Z' },
+        { id: '12', author_id: 'A', author_name: 'Alice Able', comment: 'theirs', created_at: '2026-10-13T21:00:00Z' }
+      ];
+      const deleted = [];
+      f.ctrl.model.cell = () => ({ commentList: list });
+      f.ctrl.writer.deleteComment = (aid, uid, cid) => { deleted.push({ aid, uid, cid }); list = list.filter((c) => c.id !== cid); return Promise.resolve(); };
+      f.ctrl.open(f.cell('A'));
+      const buttons = f.ctrl.el.querySelectorAll('.cgp-pop__del');
+      a.eq(buttons.length, 1, 'only the teacher\'s own comment has one');
+      const btn = buttons[0];
+      fire(btn, 'click');
+      a.eq(deleted.length, 0, 'one press never deletes');
+      a.ok(btn.classList.contains('cgp-pop__del--armed'), 'armed after the first press');
+      fire(btn, 'click');
+      a.eq(deleted.length, 0, 'the second half of a double-click is ignored');
+      await new Promise((r) => setTimeout(r, 320));
+      fire(btn, 'click');
+      a.eq(deleted.length, 1);
+      a.deep(deleted[0], { aid: 'a1', uid: 'A', cid: '11' });
+      await flush();
+      a.eq(f.ctrl.el.querySelectorAll('.cgp-pop__del').length, 0, 'thread re-rendered without it');
+      a.ok(f.paints.length >= 1, 'grid repaint requested');
+    } finally { env.undo(); }
+  });
+
+  test('closing and reopening the popover during a slow delete still refreshes the thread', async () => {
+    const CGP = loadPopover();
+    const env = setupDom(CGP);
+    try {
+      const f = popoverFixture(CGP);
+      let list = [{ id: '11', author_id: '900', comment: 'mine', created_at: '2026-10-13T20:36:00Z' }];
+      const slow = deferred();
+      f.ctrl.model.cell = () => ({ commentList: list });
+      f.ctrl.writer.deleteComment = () => slow.promise.then(() => { list = []; });
+      f.ctrl.open(f.cell('A'));
+      const btn = f.ctrl.el.querySelector('.cgp-pop__del');
+      fire(btn, 'click');
+      await new Promise((r) => setTimeout(r, 320));
+      fire(btn, 'click');
+      f.ctrl.close();
+      f.ctrl.open(f.cell('A'));
+      a.eq(f.ctrl.el.querySelectorAll('.cgp-pop__del').length, 1, 'reopened mid-delete: still listed');
+      slow.resolve();
+      await flush();
+      a.eq(f.ctrl.el.querySelectorAll('.cgp-pop__del').length, 0, 'refreshed once the delete finished');
+    } finally { env.undo(); }
+  });
+
+  test('a failed delete re-enables the button and says so', async () => {
+    const CGP = loadPopover();
+    const env = setupDom(CGP);
+    try {
+      const f = popoverFixture(CGP);
+      f.ctrl.model.cell = () => ({ commentList: [{ id: '11', author_id: '900', comment: 'mine', created_at: '2026-10-13T20:36:00Z' }] });
+      f.ctrl.writer.deleteComment = () => Promise.reject({ status: 500 });
+      f.ctrl.open(f.cell('A'));
+      const btn = f.ctrl.el.querySelector('.cgp-pop__del');
+      fire(btn, 'click');
+      await new Promise((r) => setTimeout(r, 320));
+      fire(btn, 'click');
+      await flush();
+      a.eq(btn.disabled, false);
+      a.eq(btn.classList.contains('cgp-pop__del--armed'), false, 'disarmed after the failure');
+      a.ok(env.said.some((x) => x.level === 'error'), 'error shown');
+    } finally { env.undo(); }
+  });
+
   test('Tab is only swallowed when a snippet actually expands', () => {
     const CGP = loadPopover();
     const env = setupDom(CGP);
@@ -578,6 +651,28 @@ suite('SpeedGrader drafts and confirmation', (test) => {
     a.eq(sg.textarea.value, 'Nice Good job');
   });
 
+  test('Gradebook side tray: an unlabelled comment textarea still expands snippets', () => {
+    // The Grade Detail Tray's comment box carries no "comment" id, name or
+    // aria-label and sits in no container the old rules knew about.
+    const env = speedGraderEnv({ pathname: '/courses/5/gradebook', snippets: [{ trigger: 'gj', text: 'Good job' }] });
+    const tray = mk('div', { role: 'dialog' });
+    const box = mk('textarea', { id: 'TextArea_7' });
+    tray.appendChild(box);
+    env.doc.body.appendChild(tray);
+    box.value = 'Nice /gj'; box.selectionStart = 8;
+    a.eq(env.docFire('keydown', box, { key: 'Tab' }).defaultPrevented, true, 'snippet: Tab kept');
+    a.eq(box.value, 'Nice Good job');
+  });
+
+  test('a single-line input outside a comment area is still left alone', () => {
+    const env = speedGraderEnv({ pathname: '/courses/5/gradebook', snippets: [{ trigger: 'gj', text: 'Good job' }] });
+    const box = mk('input', { type: 'text', id: 'grade-search' });
+    env.doc.body.appendChild(box);
+    box.value = '/gj'; box.selectionStart = 3;
+    a.eq(env.docFire('keydown', box, { key: 'Tab' }).defaultPrevented, false);
+    a.eq(box.value, '/gj');
+  });
+
   test('the global snippet Tab handler is not installed on other course pages', () => {
     const env = speedGraderEnv({ pathname: '/courses/5/discussion_topics/7' });
     a.eq((env.docListeners.keydown || []).length, 0, 'no keydown capture on a discussion page');
@@ -725,5 +820,33 @@ suite('course list: failures are not cached', (test) => {
     const list = await CGP.teachingCourseList(api);
     a.eq(list.length, 1, 'second load retried');
     a.eq(n, 2);
+  });
+});
+
+suite('SpeedGrader: Submit Comment stays reachable', (test) => {
+  const target = (button, editor) => speedGraderEnv().CGP.speedgraderUi.stickyTarget(button, editor);
+
+  test('pins the button\'s own row: the child of the block that also holds the editor', () => {
+    const block = mk('div');
+    const editorWrap = mk('div'); const editor = mk('div');
+    const row = mk('div'); const button = mk('button');
+    block.appendChild(editorWrap); editorWrap.appendChild(editor);
+    block.appendChild(row); row.appendChild(button);
+    a.eq(target(button, editor), row);
+  });
+
+  test('a button that is itself a sibling of the editor box is pinned directly', () => {
+    const block = mk('div'); const editor = mk('div'); const button = mk('button');
+    block.appendChild(editor); block.appendChild(button);
+    a.eq(target(button, editor), button);
+  });
+
+  test('never pins a row that contains the editor, and tolerates missing pieces', () => {
+    const row = mk('div'); const editor = mk('div'); const button = mk('button');
+    row.appendChild(editor); row.appendChild(button);
+    a.eq(target(button, editor), button, 'siblings inside one row still pin just the button');
+    a.eq(target(null, editor), null);
+    a.eq(target(button, null), null);
+    a.eq(target(button, button), null);
   });
 });

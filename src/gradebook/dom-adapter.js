@@ -1085,6 +1085,33 @@
     return cellEl.querySelector('input:not([type=hidden]), textarea, select') || null;
   };
 
+  /* Did Canvas refuse the grade typed into this cell?
+   *
+   * Canvas answers an invalid grade by raising its red "You have entered an
+   * invalid grade..." alert and leaving the editor open on the cell so the
+   * teacher can correct it. Anything that then moves the active cell away -
+   * the spreadsheet-style "step in if Canvas did not move" assist in
+   * keyboard.js - strands that error and the bad value with no way back to
+   * them, and re-triggers the alert on every attempt.
+   *
+   * Two signals, either one enough: the cell itself carries an invalid/error
+   * marker, or its editor is still open while Canvas's invalid-grade alert is
+   * on screen. Builds differ in class names, so markers are matched loosely,
+   * and "no editor, no marker" always answers false - a cell that simply is
+   * not editing is never treated as refused. */
+  P.holdsInvalidGrade = function (cellEl) {
+    if (!cellEl) return false;
+    try {
+      if (cellEl.querySelector && cellEl.querySelector('[aria-invalid="true"], [class*="invalid" i], [class*="Invalid"]')) return true;
+      if (!this.editorInput(cellEl)) return false;
+      var alerts = document.querySelectorAll('[role="alert"], #flash_message_holder, .flash-message-container, .ic-flash-error');
+      for (var i = 0; i < alerts.length; i++) {
+        if (/invalid grade/i.test(String(alerts[i].textContent || ''))) return true;
+      }
+    } catch (e) { /* a probe must never break grading */ }
+    return false;
+  };
+
   /* Whether a grade cell is currently open for editing - SlickGrid mounts an
    * <input>/<textarea> inside the active cell only while its editor is live.
    * Used to hold off any layout change (column widths, frozen-pane geometry)

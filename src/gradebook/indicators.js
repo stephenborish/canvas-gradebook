@@ -157,7 +157,7 @@
       this.settings.values.hiddenGradeIndicator ? 1 : 0,
       rec.enteredScore != null ? rec.enteredScore : (rec.score != null ? rec.score : (rec.grade || '')),
       rec.excused ? 1 : 0,
-      CGP.postOps.needsPost(rec) ? 1 : 0,
+      CGP.postOps.needsPost(rec, this.model.assignment ? this.model.assignment(info.assignmentId) : null) ? 1 : 0,
       status
     ].join('|');
   };

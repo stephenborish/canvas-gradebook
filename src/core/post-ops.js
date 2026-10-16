@@ -43,30 +43,52 @@
    * A cell with one of our own optimistic writes still in flight is skipped
    * for the same reason: its posted_at is whatever the record held before the
    * write, which says nothing about the grade being written right now. */
-  function needsPost(rec) {
-    if (!rec || !rec.postedAtKnown) return false;
-    if (rec.pending) return false;
+  function needsPost(rec, assignment) {
+    if (!rec || rec.pending) return false;
+    // Canvas's own answer to "does this submission hold a comment the student
+    // cannot see yet" (has_postable_comments) wins whenever it was given: it
+    // is exactly the state Canvas's own post action acts on, so counting it
+    // can never offer a button that then posts nothing.
+    if (rec.hasPostableKnown && rec.hasPostableComments === true) return true;
+    if (!rec.postedAtKnown) return false;
     if (rec.postedAt) return false;
-    return hasGrade(rec);
+    return hasGrade(rec) || hasHiddenComment(rec, assignment);
   }
 
-  /** The student ids in one column whose grades are hidden, in the order given. */
-  function pendingFor(records) {
+  /* A comment the instructor wrote that the student cannot read yet.
+   *
+   * When Canvas reported has_postable_comments for this submission, that is
+   * the whole answer (and needsPost has already used it), so this says no.
+   * Only on a Canvas that does not report it is the state inferred: under a
+   * manual posting policy Canvas hides every comment on an unposted
+   * submission, graded or not, so an instructor comment on one is taken to be
+   * hidden. That is a guess - it cannot tell a comment written before the
+   * assignment was switched to manual posting, which stays visible - which is
+   * why Canvas's own flag is preferred. Drafts never reach rec.comments. */
+  function hasHiddenComment(rec, assignment) {
+    if (rec && rec.hasPostableKnown) return false;
+    if (!assignment || assignment.postManually !== true) return false;
+    return !!(rec && rec.comments && rec.comments.hasInstructorComment);
+  }
+
+  /** The student ids in one column with something hidden, in the order given. */
+  function pendingFor(records, assignment) {
     var out = [];
     (records || []).forEach(function (rec) {
-      if (needsPost(rec) && rec && rec.userId) out.push(String(rec.userId));
+      if (needsPost(rec, assignment) && rec && rec.userId) out.push(String(rec.userId));
     });
     return out;
   }
 
-  /** Button label / tooltip for a column with `count` grades still hidden. */
+  /** Button label / tooltip for a column with `count` submissions still hidden. */
   function summary(count) {
     var n = Number(count) || 0;
-    return n + (n === 1 ? ' grade is hidden from its student' : ' grades are hidden from their students');
+    return n + (n === 1 ? ' grade or comment is hidden from its student' : ' grades or comments are hidden from their students');
   }
 
   CGP.postOps = {
     hasGrade: hasGrade,
+    hasHiddenComment: hasHiddenComment,
     needsPost: needsPost,
     pendingFor: pendingFor,
     summary: summary

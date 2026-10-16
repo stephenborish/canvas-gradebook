@@ -648,3 +648,199 @@ suite('write safety: PR review round 2', (test) => {
     } finally { CGP.util.sleep = real; }
   });
 });
+
+suite('write safety: lifting an explicit Missing keeps work that came in late', (test) => {
+  const ops = () => CGP.gradeOps;
+  const due = '2026-10-08T12:55:00Z';
+  const lateRec = (over) => Object.assign({ submittedAt: '2026-10-13T20:39:00Z', latePolicyStatus: 'missing', missing: true, late: false }, over || {});
+
+  test('handedInLate judges from submission time, not from the Missing-overridden flags', () => {
+    a.eq(ops().handedInLate(lateRec(), { dueAt: due }), true, 'submitted five days after the due date');
+    a.eq(ops().handedInLate(lateRec({ submittedAt: '2026-10-08T08:00:00Z' }), { dueAt: due }), false, 'on time');
+    a.eq(ops().handedInLate(lateRec({ submittedAt: null }), { dueAt: due }), false, 'nothing handed in is never late');
+    a.eq(ops().handedInLate(lateRec(), { dueAt: null }), false, 'no due date, nothing to be late against');
+    a.eq(ops().handedInLate(null, { dueAt: due }), false);
+  });
+
+  test('with per-student due dates only the submission\'s own due date counts', () => {
+    const multi = { dueAt: due, hasMultipleDueDates: true };
+    a.eq(ops().handedInLate(lateRec(), multi), false, 'the assignment-level date proves nothing here');
+    a.eq(ops().handedInLate(lateRec({ cachedDueDate: '2026-10-20T00:00:00Z' }), multi), false, 'on time for their own date');
+    a.eq(ops().handedInLate(lateRec({ cachedDueDate: due }), multi), true, 'late for their own date');
+    a.eq(ops().handedInLate(lateRec({ secondsLate: 3600 }), multi), true, 'Canvas says so directly');
+  });
+
+  test('grading a Missing cell that was handed in late keeps Late; otherwise still clears to none', () => {
+    const late = ops().operationFor(ops().parseToken('7'), { wasExplicitMissing: true, handedInLate: true });
+    a.eq(late.form['submission[late_policy_status]'], 'late');
+    a.eq(late.patch.latePolicyStatus, 'late');
+    const notLate = ops().operationFor(ops().parseToken('7'), { wasExplicitMissing: true, handedInLate: false });
+    a.eq(notLate.form['submission[late_policy_status]'], 'none');
+    const pct = ops().operationFor(ops().parseToken('80%'), { wasExplicitMissing: true, handedInLate: true });
+    a.eq(pct.form['submission[late_policy_status]'], 'late');
+  });
+
+  test('CLEAR_MISSING after Canvas saves a grade restores Late for late work, and only then', () => {
+    const KIND = ops().KIND;
+    const late = ops().operationFor({ kind: KIND.CLEAR_MISSING }, { handedInLate: true });
+    a.eq(late.form['submission[late_policy_status]'], 'late');
+    a.eq(late.patch.late, true);
+    a.eq(late.patch.missing, false);
+    const plain = ops().operationFor({ kind: KIND.CLEAR_MISSING }, {});
+    a.eq(plain.form['submission[late_policy_status]'], 'none');
+    a.eq(plain.patch.latePolicyStatus, null);
+  });
+
+  test('end to end: the writer sends Late for a late submission whose Missing is lifted after grading', async () => {
+    stubUi();
+    const forms = [];
+    const m = model();
+    m.assignments.set('50', { id: '50', name: 'HW', gradingType: 'points', dueAt: due });
+    m.loadedAssignments.add('50');
+    m.patchCell('50', '10', { latePolicyStatus: 'missing', missing: true, submittedAt: '2026-10-13T20:39:00Z', score: 3, grade: '3' }, { silent: true });
+    const w = new CGP.GradeWriter({
+      api: { updateSubmission: (c, aid, uid, form) => { forms.push(form); return Promise.resolve({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: 'late', submitted_at: '2026-10-13T20:39:00Z', score: 3, grade: '3' }); } },
+      model: m, settings: { values: {} }
+    });
+    await w.apply([{ assignmentId: '50', userId: '10', parsed: { kind: CGP.gradeOps.KIND.CLEAR_MISSING } }]);
+    a.eq(forms.length, 1);
+    a.eq(forms[0]['submission[late_policy_status]'], 'late');
+  });
+
+  test('end to end: typing a grade through the writer on that cell also keeps Late', async () => {
+    stubUi();
+    const forms = [];
+    const m = model();
+    m.assignments.set('50', { id: '50', name: 'HW', gradingType: 'points', dueAt: due });
+    m.loadedAssignments.add('50');
+    m.patchCell('50', '10', { latePolicyStatus: 'missing', missing: true, submittedAt: '2026-10-13T20:39:00Z' }, { silent: true });
+    const w = new CGP.GradeWriter({
+      api: { updateSubmission: (c, aid, uid, form) => { forms.push(form); return Promise.resolve({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: 'late', submitted_at: '2026-10-13T20:39:00Z', score: 3, grade: '3' }); } },
+      model: m, settings: { values: {} }
+    });
+    await w.apply([{ assignmentId: '50', userId: '10', parsed: CGP.gradeOps.parseToken('3') }]);
+    a.eq(forms[0]['submission[late_policy_status]'], 'late');
+    a.eq(forms[0]['submission[posted_grade]'], '3');
+  });
+});
+
+suite('write safety: an invalid grade stays put for the teacher to fix', (test) => {
+  const { loadGradebookDom, domshim } = require('./domharness');
+  const mkKb = (adapter) => {
+    loadGradebookDom();
+    return new CGP.KeyboardGradingController({
+      adapter: Object.assign({ scrollRowIntoView() {}, scrollColumnIntoView() {}, columnAt: () => ({ type: 'assignment' }) }, adapter),
+      model: {}, writer: {}, selection: { size: () => 0 }, settings: { values: {} }
+    });
+  };
+  const info = { rowIndex: 3, colIndex: 5, el: { id: 'origin' } };
+
+  test('Enter/Tab/arrow assist does not move off a cell Canvas refused', async () => {
+    let activated = 0;
+    const kb = mkKb({
+      activeCellInfo: () => info,                      // Canvas did not move
+      cellElementAt: (r, c) => ({ r, c }),
+      holdsInvalidGrade: () => true,
+      activateCell: () => { activated++; }
+    });
+    kb.assistMove(info, 1, 0);
+    await new Promise((r) => setTimeout(r, 250));
+    a.eq(activated, 0, 'the invalid cell keeps its editor');
+  });
+
+  test('...and still steps in when Canvas simply did not move on a valid grade', async () => {
+    let activated = null;
+    const kb = mkKb({
+      activeCellInfo: () => info,
+      cellElementAt: (r, c) => ({ r, c }),
+      holdsInvalidGrade: () => false,
+      activateCell: (el) => { activated = el; }
+    });
+    kb.assistMove(info, 1, 0);
+    await new Promise((r) => setTimeout(r, 250));
+    a.eq(activated && activated.r, 4);
+  });
+
+  test('Shift+Enter commit-and-move also stays on a refused grade', async () => {
+    let activated = 0, keys = 0;
+    const kb = mkKb({
+      sendKey: () => { keys++; },
+      cellElementAt: (r, c) => ({ r, c }),
+      holdsInvalidGrade: () => true,
+      activateCell: () => { activated++; }
+    });
+    kb.commitAndMove(info, { tag: 'input' }, -1, 0);
+    await new Promise((r) => setTimeout(r, 300));
+    a.eq(keys, 1, 'Enter was still sent to Canvas');
+    a.eq(activated, 0);
+  });
+
+  test('holdsInvalidGrade: an invalid marker, or an open editor with Canvas\'s alert up', () => {
+    loadGradebookDom();
+    const holds = (cell, alerts) => {
+      const saved = globalThis.document;
+      globalThis.document = { querySelectorAll: () => alerts || [] };
+      try { return CGP.GradebookDomAdapter.prototype.holdsInvalidGrade.call({ editorInput: (c) => c.editor || null }, cell); }
+      finally { globalThis.document = saved; }
+    };
+    const alertEl = { textContent: 'You have entered an invalid grade for this student. Check the value and try again.' };
+    a.eq(holds({ querySelector: () => ({}) }), true, 'marker inside the cell');
+    a.eq(holds({ querySelector: () => null, editor: {} }, [alertEl]), true, 'editor still open and Canvas is complaining');
+    a.eq(holds({ querySelector: () => null }, [alertEl]), false, 'a lingering alert alone never pins a cell that is not editing');
+    a.eq(holds({ querySelector: () => null, editor: {} }, [{ textContent: 'Saved' }]), false, 'open editor, no complaint');
+    a.eq(holds(null), false);
+  });
+});
+
+suite('write safety: deleting a comment', (test) => {
+  const mk2 = () => {
+    const m = model();
+    m.loadedAssignments.add('50');
+    m.instructorId = '1';
+    m.patchCell('50', '10', {
+      commentList: [{ id: '5', author_id: '1', comment: 'x' }, { id: '6', author_id: '10', comment: 'reply' }],
+      comments: CGP.commentAnalysis.analyze([{ id: '5', author_id: '1', comment: 'x' }], { instructorId: '1', studentId: '10' })
+    }, { silent: true });
+    return m;
+  };
+
+  test('removes only that comment and re-derives the bubble', async () => {
+    stubUi();
+    const m = mk2();
+    const calls = [];
+    const w = new CGP.GradeWriter({ api: { deleteComment: (...a2) => { calls.push(a2); return Promise.resolve({}); } }, model: m, settings: { values: {} } });
+    await w.deleteComment('50', '10', '5');
+    a.deep(calls[0], ['7', '50', '10', '5']);
+    const rec = m.cell('50', '10');
+    a.deep(rec.commentList.map((c) => c.id), ['6']);
+    a.eq(rec.comments.hasInstructorComment, false, 'no instructor comment left, so no bubble');
+    a.eq(m._writesInFlight.size, 0);
+  });
+
+  test('a 404 means it is already gone and counts as deleted; other errors leave the thread alone', async () => {
+    stubUi();
+    const m = mk2();
+    const w404 = new CGP.GradeWriter({ api: { deleteComment: () => Promise.reject({ status: 404 }) }, model: m, settings: { values: {} } });
+    await w404.deleteComment('50', '10', '5');
+    a.deep(m.cell('50', '10').commentList.map((c) => c.id), ['6']);
+    const m2 = mk2();
+    const w500 = new CGP.GradeWriter({ api: { deleteComment: () => Promise.reject({ status: 500 }) }, model: m2, settings: { values: {} } });
+    let failed = false;
+    await w500.deleteComment('50', '10', '5').catch(() => { failed = true; });
+    a.eq(failed, true);
+    a.deep(m2.cell('50', '10').commentList.map((c) => c.id), ['5', '6']);
+    a.eq(m2._writesInFlight.size, 0, 'no write left marked in flight');
+  });
+
+  test('refused on an anonymous assignment, like adding one', async () => {
+    stubUi();
+    const m = mk2();
+    m.assignments.set('50', { id: '50', name: 'HW', anonymous: true });
+    let sent = 0;
+    const w = new CGP.GradeWriter({ api: { deleteComment: () => { sent++; return Promise.resolve({}); } }, model: m, settings: { values: {} } });
+    let msg = '';
+    await w.deleteComment('50', '10', '5').catch((e) => { msg = e.message; });
+    a.eq(sent, 0);
+    a.ok(/anonymous/i.test(msg));
+  });
+});

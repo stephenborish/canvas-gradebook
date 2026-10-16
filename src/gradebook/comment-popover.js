@@ -66,6 +66,19 @@
 
   var P = CommentPopoverController.prototype;
 
+  var TRASH = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">' +
+    '<path d="M3 4.5h10M6.2 4.5V3h3.6v1.5M4.4 4.5l.5 8.2c0 .5.4.8.8.8h4.6c.4 0 .8-.3.8-.8l.5-8.2M6.6 7v4M9.4 7v4"/></svg>';
+
+  /* Only the teacher's own comments get one (Canvas lets an author remove
+   * their own). Deleting takes two presses - see wireDelete. */
+  function deleteButton(commentId) {
+    return '<button type="button" class="cgp-pop__del" data-comment-id="' + CGP.util.escapeHtml(String(commentId)) +
+      '" title="Delete this comment" aria-label="Delete this comment">' + TRASH + '</button>';
+  }
+
+  var ARM_MS = 3200;       // how long the first press stays armed
+  var CONFIRM_GRACE_MS = 280;   // a double-click's second half must not count as the confirmation
+
   P.ensureEl = function () {
     if (this.el && this.el.isConnected) return this.el;
     var el = document.createElement('div');
@@ -168,7 +181,8 @@
         var name = mine ? 'You' : ((c.author_name || (c.author && c.author.display_name)) || 'Student');
         return '<li class="cgp-pop__item' + (mine ? ' cgp-pop__item--mine' : '') + '">' +
           '<div class="cgp-pop__meta"><span class="cgp-pop__author">' + CGP.util.escapeHtml(name) + '</span>' +
-          '<span class="cgp-pop__date">' + CGP.util.escapeHtml(CGP.util.fmtDateTime(c.created_at)) + '</span></div>' +
+          '<span class="cgp-pop__date">' + CGP.util.escapeHtml(CGP.util.fmtDateTime(c.created_at)) + '</span>' +
+          (mine && c.id !== undefined && c.id !== null ? deleteButton(c.id) : '') + '</div>' +
           '<div class="cgp-pop__text">' + CGP.util.escapeHtml(c.comment || '') + '</div></li>';
       }).join('') + '</ul>';
     }
@@ -195,6 +209,7 @@
         self.close();
       });
     }
+    this.wireDelete(info);
     var input = this.el.querySelector('.cgp-pop__input');
     var save = this.el.querySelector('.cgp-pop__save');
     if (!input || !save) return;
@@ -288,6 +303,59 @@
       });
     }
     setTimeout(function () { input.focus(); }, 0);
+  };
+
+  /* Trash button: press once to arm (the icon turns red and a bar drains
+   * over a few seconds), press again to delete. Letting it run out, moving
+   * to another comment or closing the popover disarms it. The second press
+   * only counts after a short grace so a double-click cannot do both at once. */
+  P.wireDelete = function (info) {
+    var self = this;
+    var buttons = this.el.querySelectorAll('.cgp-pop__del');
+    Array.prototype.forEach.call(buttons, function (btn) {
+      var commentId = btn.getAttribute('data-comment-id');
+      var armedAt = 0, timer = null, busy = false;
+      function disarm() {
+        if (timer) { clearTimeout(timer); timer = null; }
+        armedAt = 0;
+        btn.classList.remove('cgp-pop__del--armed');
+        btn.setAttribute('title', 'Delete this comment');
+        btn.setAttribute('aria-label', 'Delete this comment');
+      }
+      btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (busy) return;
+        if (!armedAt) {
+          armedAt = Date.now();
+          btn.classList.add('cgp-pop__del--armed');
+          btn.setAttribute('title', 'Click again to delete');
+          btn.setAttribute('aria-label', 'Click again to confirm deleting this comment');
+          timer = setTimeout(disarm, ARM_MS);
+          return;
+        }
+        if (Date.now() - armedAt < CONFIRM_GRACE_MS) return;
+        if (timer) { clearTimeout(timer); timer = null; }
+        busy = true;
+        btn.disabled = true;
+        btn.classList.add('cgp-pop__del--busy');
+        var userId = info.studentId;
+        self.writer.deleteComment(info.assignmentId, userId, commentId).then(function () {
+          if (self.requestPaint) self.requestPaint();
+          // Whenever this same submission's thread is on screen - including a
+          // popover closed and reopened while the delete was in flight, which
+          // bumps _seq - it must stop offering the comment that is now gone.
+          if (self.isShowing(info.assignmentId, userId)) self.renderCurrent();
+          else CGP.ui.toast('Comment deleted');
+        }, function (err) {
+          busy = false;
+          btn.disabled = false;
+          btn.classList.remove('cgp-pop__del--busy');
+          disarm();
+          CGP.ui.error(failureReason(err).replace(/rejected that comment/, 'would not delete that comment'));
+        });
+      });
+    });
   };
 
   P.position = function (cellEl) {

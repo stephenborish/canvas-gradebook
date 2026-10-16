@@ -48,6 +48,9 @@ comment does not light up your cell.
   vertical channel down the right-hand edge and a screenful can be read in a single pass.
 - Click the bubble to read the whole thread in place, and reply without leaving the gradebook.
   A reply posted here updates the indicator immediately — no page reload.
+- Each of your own comments in that thread has a small trash can. Press it once and it turns red
+  and pulses while a bar drains (about three seconds); press it again to delete the comment from
+  Canvas. Letting the bar run out cancels. Other people's comments have no trash can.
 - Hovering the bubble previews the latest comment, and that preview is itself a target: the
   pointer can travel into it, and clicking it opens Canvas's own Grade Detail Tray — the side
   pane — for that submission.
@@ -152,8 +155,10 @@ Three things it deliberately does not do:
 
 - it never appears on a column with nothing to post, so the button is a statement of fact about
   that column rather than decoration;
-- it posts graded submissions only, exactly like Canvas's own default, so students who have not
-  been graded yet are not handed an empty grade;
+- it posts graded submissions, plus ungraded ones that hold a comment from you, exactly like
+  Canvas's own default (under a manual posting policy Canvas hides comments until the submission
+  is posted, so a note on an ungraded cell also counts toward the button). Students with neither
+  a grade nor a comment are not handed an empty grade;
 - it never guesses: a column whose submissions have not loaded, or a Canvas build that does not
   report whether a grade is posted, shows no button at all.
 
