@@ -102,6 +102,15 @@
             <label class="setting__label" for="frozenTotal">Keep Total frozen beside the student name</label>
             <input id="frozenTotal" type="checkbox" class="switch">
           </div>
+          <div class="setting setting--field">
+            <label class="setting__label" for="gradingScale">Letter-grade scale for the Total hover
+              <span class="hint">One per line as "Letter: minimum %", highest first. The percentage is rounded to the nearest 0.1 first; the last line is the floor (0).</span>
+            </label>
+            <div class="setting__control">
+              <textarea id="gradingScale" rows="11" spellcheck="false"></textarea>
+              <button id="resetGradingScale" type="button" class="btn">Restore default scale</button>
+            </div>
+          </div>
           <div class="setting">
             <label class="setting__label" for="showAssignmentDueDate">Show each assignment's due date under its points in the header</label>
             <input id="showAssignmentDueDate" type="checkbox" class="switch">
@@ -432,6 +441,7 @@
     </main>
   </div>
   <script src="../core/util.js"></script>
+  <script src="../core/totals.js"></script>
   <script src="../core/snippets.js"></script>
   <script src="options.js"></script>
 </body>

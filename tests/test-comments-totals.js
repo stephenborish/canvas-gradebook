@@ -251,3 +251,24 @@ suite('comment snippets', (test) => {
     a.eq(out.text, multiline);
   });
 });
+
+suite('Total letter grades', (test) => {
+  const CGP = globalThis.CGP;
+  test('default scale uses half-up rounding to 0.1 and the highest matching threshold', () => {
+    const L = (n) => CGP.totals.letterFor(n);
+    a.eq(L(96.5), 'A+'); a.eq(L(96.45), 'A+'); a.eq(L(96.44), 'A');
+    a.eq(L(92.5), 'A'); a.eq(L(89.5), 'A-'); a.eq(L(89.44), 'B+');
+    a.eq(L(64.5), 'D'); a.eq(L(64.4), 'F'); a.eq(L(0), 'F'); a.eq(L(100), 'A+');
+    a.eq(L(null), null);
+  });
+  test('custom scale is honored, sanitized and round-trips through text', () => {
+    const s = CGP.sanitizeSettings({ gradingScale: [{ letter: 'P', min: 60 }, { letter: 'NP', min: 5 }] });
+    a.eq(CGP.totals.letterFor(70, s.gradingScale), 'P');
+    a.eq(CGP.totals.letterFor(2, s.gradingScale), 'NP');
+    a.deep(CGP.sanitizeSettings({ gradingScale: 'bad' }).gradingScale, CGP.DEFAULT_GRADING_SCALE);
+    a.deep(CGP.totals.textToScale(CGP.totals.scaleToText(CGP.DEFAULT_GRADING_SCALE)), CGP.DEFAULT_GRADING_SCALE);
+  });
+  test('Total title shows the scale letter', () => {
+    a.ok(CGP.totals.formatTotal({ currentScore: 91.2, currentGrade: 'x' }).title.indexOf('(A-)') > 0);
+  });
+});

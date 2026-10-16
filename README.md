@@ -218,6 +218,8 @@ works in it too.
 ### Student name + Total, frozen together
 
 The Total percentage is drawn beside the student name in Canvas's own frozen pane, so it stays
+
+The first time the feature runs, Canvas's own Total column (still at the far right by default) is moved in the grid to sit immediately after the frozen student column, so it lands beside the names without any manual step; turning the setting off puts it back. Hovering a Total shows its letter grade, using a scale you can edit under Options → Appearance (the score is rounded half-up to 0.1, then the highest matching minimum applies; defaults A+ 96.5, A 92.5, A- 89.5, B+ 86.5, B 82.5, B- 79.5, C+ 76.5, C 72.5, C- 69.5, D 64.5, F below).
 visible no matter how far right you scroll — it does not scroll away with the assignment
 columns, and Canvas's own Total column at the far right is hidden so there is never a second,
 possibly-different-looking Total competing with it. The values come from Canvas's enrollment

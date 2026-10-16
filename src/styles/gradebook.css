@@ -888,6 +888,13 @@ html.cgp-frozen-total .cgp-total-cell {
 html.cgp-frozen-total .cgp-total-cell.odd {
   background: #f2f4f4;
 }
+/* Hovering a Total swaps the percentage for its letter grade (the tooltip
+ * keeps both). */
+html.cgp-frozen-total .cgp-total-cell[data-letter]:hover { font-size: 0; }
+html.cgp-frozen-total .cgp-total-cell[data-letter]:hover::after {
+  content: attr(data-letter);
+  font-size: 14px;
+}
 html.cgp-frozen-total .cgp-total-cell--empty { color: var(--cgp-muted); font-weight: 500; }
 html.cgp-frozen-total .cgp-total-cell.cgp-row-hover {
   background-image: linear-gradient(var(--cgp-row-hover), var(--cgp-row-hover));

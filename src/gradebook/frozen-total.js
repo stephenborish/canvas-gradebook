@@ -416,7 +416,7 @@
     if (!layer) return;
 
     var geometry = this.adapter.frozenRowGeometry();
-    var rows = CGP.totals.buildTotalRows(geometry, this.model.students);
+    var rows = CGP.totals.buildTotalRows(geometry, this.model.students, this.settings.values.gradingScale);
     var seen = new Set();
     var self = this;
 
@@ -436,6 +436,9 @@
       if (el.style.height !== height) el.style.height = height;
       if (el.textContent !== row.text) el.textContent = row.text;
       if (el.title !== row.title) el.title = row.title;
+      // Shown on hover by gradebook.css (.cgp-total-cell:hover::after).
+      if (row.letter) { if (el.getAttribute('data-letter') !== row.letter) el.setAttribute('data-letter', row.letter); }
+      else if (el.hasAttribute('data-letter')) el.removeAttribute('data-letter');
       el.classList.toggle('cgp-total-cell--empty', !row.resolved);
       el.classList.toggle('odd', row.rowIndex % 2 === 1);
     });
