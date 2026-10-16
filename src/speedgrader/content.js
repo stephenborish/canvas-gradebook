@@ -194,6 +194,27 @@
     return m ? m[1] : null;
   }
 
+  /* The element to pin: the child of the lowest block holding BOTH the editor
+   * and the button that contains the button. Pinning anything higher (the whole
+   * form) leaves sticky with no room to move; anything lower (the button
+   * itself) is bounded by its own thin row. Null when the two are not siblings
+   * under a common block, or the button's row also holds the editor - pinning
+   * a row that contains the editor would stick the editor, not the button. */
+  CGP.speedgraderUi = {
+    stickyTarget: function (button, editor) {
+      if (!button || !editor || button === editor) return null;
+      var node = button;
+      while (node && node.parentElement) {
+        var parent = node.parentElement;
+        if (parent.contains(editor)) {
+          return node.contains(editor) ? null : node;
+        }
+        node = parent;
+      }
+      return null;
+    }
+  };
+
   function normalize(text) {
     return String(text || '').replace(/\s+/g, ' ').trim();
   }
@@ -484,9 +505,63 @@
       setTimeout(onStudentChange, 250);
     });
 
+    /* Keep "Submit Comment" in reach.
+     *
+     * SpeedGrader's comment editor is a tall box, and the Submit Comment
+     * button sits below it, so every comment meant scrolling the panel down
+     * to find it. The button's row is pinned to the bottom edge of whatever
+     * scrolls (position: sticky; see speedgrader.css) - it stays where Canvas
+     * put it when the panel is long enough to show it, and rides along at the
+     * bottom of the visible area when it is not.
+     *
+     * Sticky is bounded by the element's PARENT, so the row that gets the
+     * class has to be a direct child of a block that also holds the editor;
+     * stickyTarget finds exactly that. Canvas re-renders this panel on every
+     * student change, hence the observer instead of a one-off lookup. */
+    function findSubmitButton() {
+      var btn = document.querySelector(SUBMIT_SELECTORS);
+      if (btn) return btn;
+      var buttons = document.querySelectorAll('button');
+      for (var i = 0; i < buttons.length; i++) {
+        if (/^\s*submit comment\s*$/i.test(buttons[i].textContent || '')) return buttons[i];
+      }
+      return null;
+    }
+
+    function pinSubmitButton() {
+      var btn = findSubmitButton();
+      var current = document.querySelector('.cgp-sticky-submit');
+      if (!CGP.settings.values.speedgraderStickySubmit) {
+        if (current) current.classList.remove('cgp-sticky-submit');
+        return;
+      }
+      if (!btn) return;
+      var editor = document.querySelector(TEXTAREA_SELECTORS) ||
+        document.querySelector('iframe[id*="comment" i], .tox-tinymce, [class*="rce" i]') ||
+        findTextareaFallback();
+      var target = CGP.speedgraderUi.stickyTarget(btn, editor);
+      if (!target) return;
+      if (current && current !== target) current.classList.remove('cgp-sticky-submit');
+      if (!target.classList.contains('cgp-sticky-submit')) {
+        target.classList.add('cgp-sticky-submit');
+        CGP.diag.bump('speedgrader.submitPinned');
+      }
+    }
+
+    function watchSubmitButton() {
+      var timer = null;
+      var observer = new MutationObserver(function () {
+        if (timer) return;
+        timer = setTimeout(function () { timer = null; pinSubmitButton(); }, 300);
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+      pinSubmitButton();
+    }
+
     // Document-level and bound once, so neither needs the poll below.
     bindDraftListeners();
     watchSubmit();
+    watchSubmitButton();
 
     var poll = setInterval(function () {
       var textarea = document.querySelector(TEXTAREA_SELECTORS) || findTextareaFallback();

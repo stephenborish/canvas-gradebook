@@ -727,3 +727,31 @@ suite('course list: failures are not cached', (test) => {
     a.eq(n, 2);
   });
 });
+
+suite('SpeedGrader: Submit Comment stays reachable', (test) => {
+  const target = (button, editor) => speedGraderEnv().CGP.speedgraderUi.stickyTarget(button, editor);
+
+  test('pins the button\'s own row: the child of the block that also holds the editor', () => {
+    const block = mk('div');
+    const editorWrap = mk('div'); const editor = mk('div');
+    const row = mk('div'); const button = mk('button');
+    block.appendChild(editorWrap); editorWrap.appendChild(editor);
+    block.appendChild(row); row.appendChild(button);
+    a.eq(target(button, editor), row);
+  });
+
+  test('a button that is itself a sibling of the editor box is pinned directly', () => {
+    const block = mk('div'); const editor = mk('div'); const button = mk('button');
+    block.appendChild(editor); block.appendChild(button);
+    a.eq(target(button, editor), button);
+  });
+
+  test('never pins a row that contains the editor, and tolerates missing pieces', () => {
+    const row = mk('div'); const editor = mk('div'); const button = mk('button');
+    row.appendChild(editor); row.appendChild(button);
+    a.eq(target(button, editor), button, 'siblings inside one row still pin just the button');
+    a.eq(target(null, editor), null);
+    a.eq(target(button, null), null);
+    a.eq(target(button, button), null);
+  });
+});

@@ -9,6 +9,18 @@ html.cgp-speedgrader .cgp-draft-note {
   color: #6b7780;
 }
 html.cgp-speedgrader .cgp-draft-note--on { display: block; }
+
+/* The row holding Submit Comment, pinned to the bottom of the scrolling panel
+ * so a long comment box never pushes the button out of reach. */
+html.cgp-speedgrader .cgp-sticky-submit {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  background: #fff;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  box-shadow: 0 -8px 8px -8px rgba(0, 0, 0, 0.25);
+}
 html.cgp-speedgrader .cgp-draft-note--warn {
   color: #9b2c1c;
   font-weight: 700;
