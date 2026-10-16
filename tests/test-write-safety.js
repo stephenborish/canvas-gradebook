@@ -852,7 +852,20 @@ suite('write safety: deleting a comment', (test) => {
     await new Promise((r) => setTimeout(r, 0));
     reject({ status: 500 });
     await p.catch(() => {});
-    a.deep(m.cell('50', '10').commentList.map((c) => c.id), ['5', '6'], 'restored after a refusal');
+    a.deep(m.cell('50', '10').commentList.map((c) => c.id).sort(), ['5', '6'], 'restored after a refusal');
+  });
+
+  test('a refused delete does not wipe a comment saved while it was pending', async () => {
+    stubUi();
+    const m = mk2();
+    let reject;
+    const w = new CGP.GradeWriter({ api: { deleteComment: () => new Promise((_, rj) => { reject = rj; }) }, model: m, settings: { values: {} } });
+    const p = w.deleteComment('50', '10', '5');
+    m.patchCell('50', '10', { commentList: m.cell('50', '10').commentList.concat([{ id: '9', author_id: '1', comment: 'new' }]) }, { silent: true });
+    await new Promise((r) => setTimeout(r, 0));
+    reject({ status: 500 });
+    await p.catch(() => {});
+    a.deep(m.cell('50', '10').commentList.map((c) => c.id).sort(), ['5', '6', '9']);
   });
 
   test('refused on an anonymous assignment, like adding one', async () => {

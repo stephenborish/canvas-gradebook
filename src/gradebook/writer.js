@@ -436,12 +436,9 @@
     // updated now and rolled back only if Canvas refuses. The API call itself
     // queues behind any other write to this cell, like grade writes do.
     var before = this.model.cell(assignmentId, userId);
-    var snapshot = before ? {
-      comments: before.comments,
-      commentList: before.commentList,
-      hasPostableComments: before.hasPostableComments,
-      hasPostableKnown: before.hasPostableKnown
-    } : null;
+    var removed = before && (before.commentList || []).filter(function (c) { return c && String(c.id) === String(commentId); })[0];
+    var index = before ? (before.commentList || []).indexOf(removed) : -1;
+    var prior = before ? { hasPostableComments: before.hasPostableComments, hasPostableKnown: before.hasPostableKnown } : null;
     var priorMark = this.model.markLocalWrite(assignmentId, userId);
     this.model.applyCommentDeleted(assignmentId, userId, commentId);
     function done() {
@@ -453,7 +450,8 @@
       return self.api.deleteComment(self.model.courseId, assignmentId, userId, commentId).then(done, function (err) {
         if (err && err.status === 404) { done(); return; }
         self.model.clearLocalWrite(assignmentId, userId, priorMark);
-        if (snapshot) self.model.patchCell(assignmentId, userId, snapshot);
+        // Only this comment goes back; the thread may have changed meanwhile.
+        if (removed) self.model.restoreComment(assignmentId, userId, removed, prior, index);
         throw err;
       });
     });
