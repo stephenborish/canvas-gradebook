@@ -594,6 +594,10 @@
     // setting on in the options page takes effect without a reload, the same
     // way the full gradebook page already behaves on a settings change.
     CGP.settings.onChange(function () { switcher.start(); });
+    // Period shortcuts in Canvas's Assign To "Time" boxes. Always listening;
+    // the timeShortcutsEnabled setting is read on every keystroke, so the
+    // options page can flip it without a reload.
+    if (CGP.CanvasTimeShortcuts) new CGP.CanvasTimeShortcuts({ settings: CGP.settings }).start();
   }
 
   function boot() {

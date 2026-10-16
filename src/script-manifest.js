@@ -13,6 +13,7 @@ export const CONTENT_JS = [
   'src/core/grid-map.js',
   'src/core/totals.js',
   'src/core/snippets.js',
+  'src/core/time-shortcuts.js',
   'src/core/ui.js',
   'src/core/model.js',
   'src/gradebook/dom-adapter.js',
@@ -32,6 +33,7 @@ export const CONTENT_JS = [
   'src/gradebook/course-switcher.js',
   'src/gradebook/student-search.js',
   'src/gradebook/course-menu.js',
+  'src/assignments/time-shortcuts.js',
   'src/speedgrader/content.js',
   'src/gradebook/content.js'
 ];

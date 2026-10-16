@@ -661,3 +661,46 @@ input.switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2p
   .sidebar__actions { flex-direction: row; }
   .content__inner { padding: 24px 20px 60px; }
 }
+
+
+/* ----------------------------------------------------------- time shortcuts */
+
+.time-shortcuts-list { display: grid; gap: 8px; }
+.time-shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 16px;
+}
+.time-shortcut-row:focus-within { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
+.time-shortcut-row__key {
+  width: 110px;
+  padding: 5px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #f1f5f9;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+}
+.time-shortcut-row__time {
+  padding: 5px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font: inherit;
+}
+.time-shortcut-row__preview { flex: 1 1 auto; color: var(--muted); font-size: 13px; }
+.time-shortcut-row__delete {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.time-shortcut-row__delete:hover { color: #b91c1c; background: var(--bg); }
