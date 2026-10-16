@@ -43,30 +43,49 @@
    * A cell with one of our own optimistic writes still in flight is skipped
    * for the same reason: its posted_at is whatever the record held before the
    * write, which says nothing about the grade being written right now. */
-  function needsPost(rec) {
+  function needsPost(rec, assignment) {
     if (!rec || !rec.postedAtKnown) return false;
     if (rec.pending) return false;
     if (rec.postedAt) return false;
-    return hasGrade(rec);
+    return hasGrade(rec) || hasHiddenComment(rec, assignment);
   }
 
-  /** The student ids in one column whose grades are hidden, in the order given. */
-  function pendingFor(records) {
+  /* A comment the instructor wrote that the student cannot read yet.
+   *
+   * Under a manual posting policy Canvas hides every comment on a submission
+   * until that submission is posted - graded or not. So an instructor comment
+   * on an unposted submission is hidden from the student even when the cell
+   * has no grade at all (e.g. a note on an optional assignment saying it was
+   * not completed). Canvas's postAssignmentGrades(gradedOnly: true) posts a
+   * submission that is graded OR has such hidden comments, so these cells need
+   * no different call - they only need to be counted.
+   *
+   * Only for a manual-policy assignment: under an automatic policy a comment
+   * is visible the moment it is written, and an ungraded submission's null
+   * posted_at says nothing about it. Drafts never reach rec.comments. */
+  function hasHiddenComment(rec, assignment) {
+    if (!assignment || assignment.postManually !== true) return false;
+    return !!(rec && rec.comments && rec.comments.hasInstructorComment);
+  }
+
+  /** The student ids in one column with something hidden, in the order given. */
+  function pendingFor(records, assignment) {
     var out = [];
     (records || []).forEach(function (rec) {
-      if (needsPost(rec) && rec && rec.userId) out.push(String(rec.userId));
+      if (needsPost(rec, assignment) && rec && rec.userId) out.push(String(rec.userId));
     });
     return out;
   }
 
-  /** Button label / tooltip for a column with `count` grades still hidden. */
+  /** Button label / tooltip for a column with `count` submissions still hidden. */
   function summary(count) {
     var n = Number(count) || 0;
-    return n + (n === 1 ? ' grade is hidden from its student' : ' grades are hidden from their students');
+    return n + (n === 1 ? ' grade or comment is hidden from its student' : ' grades or comments are hidden from their students');
   }
 
   CGP.postOps = {
     hasGrade: hasGrade,
+    hasHiddenComment: hasHiddenComment,
     needsPost: needsPost,
     pendingFor: pendingFor,
     summary: summary

@@ -152,8 +152,10 @@ Three things it deliberately does not do:
 
 - it never appears on a column with nothing to post, so the button is a statement of fact about
   that column rather than decoration;
-- it posts graded submissions only, exactly like Canvas's own default, so students who have not
-  been graded yet are not handed an empty grade;
+- it posts graded submissions, plus ungraded ones that hold a comment from you, exactly like
+  Canvas's own default (under a manual posting policy Canvas hides comments until the submission
+  is posted, so a note on an ungraded cell also counts toward the button). Students with neither
+  a grade nor a comment are not handed an empty grade;
 - it never guesses: a column whose submissions have not loaded, or a Canvas build that does not
   report whether a grade is posted, shows no button at all.
 

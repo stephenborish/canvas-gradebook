@@ -116,8 +116,38 @@ suite('grades waiting to be posted', (test) => {
     a.deep(ids, ['10', '13']);
   });
 
+  const ungraded = { score: null, grade: null, gradedAt: null, workflowState: 'unsubmitted' };
+  const withComment = { comments: { hasInstructorComment: true } };
+  const manual = { postManually: true };
+
+  test('an instructor comment on an ungraded, unposted submission is waiting (manual policy)', () => {
+    a.eq(ops().needsPost(rec(Object.assign({}, ungraded, withComment)), manual), true);
+  });
+
+  test('a comment-only cell is not waiting under an automatic policy', () => {
+    a.eq(ops().needsPost(rec(Object.assign({}, ungraded, withComment)), { postManually: false }), false);
+    a.eq(ops().needsPost(rec(Object.assign({}, ungraded, withComment))), false);
+  });
+
+  test('an already posted comment-only cell is not waiting', () => {
+    a.eq(ops().needsPost(rec(Object.assign({ postedAt: '2026-02-03T00:00:00Z' }, ungraded, withComment)), manual), false);
+  });
+
+  test('no instructor comment and no grade is still nothing to post', () => {
+    a.eq(ops().needsPost(rec(Object.assign({ comments: { hasInstructorComment: false } }, ungraded)), manual), false);
+  });
+
+  test('pendingFor counts comment-only cells when given the assignment', () => {
+    const ids = ops().pendingFor([
+      rec({ userId: '20' }),
+      rec(Object.assign({ userId: '21' }, ungraded, withComment)),
+      rec(Object.assign({ userId: '22' }, ungraded))
+    ], manual);
+    a.deep(ids, ['20', '21']);
+  });
+
   test('summary counts in plain words', () => {
-    a.eq(ops().summary(1), '1 grade is hidden from its student');
-    a.eq(ops().summary(4), '4 grades are hidden from their students');
+    a.eq(ops().summary(1), '1 grade or comment is hidden from its student');
+    a.eq(ops().summary(4), '4 grades or comments are hidden from their students');
   });
 });

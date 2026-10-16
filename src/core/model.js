@@ -565,7 +565,7 @@
   GradebookModel.prototype.pendingPosts = function (assignmentId) {
     var id = String(assignmentId);
     if (!this.loadedAssignments.has(id)) return [];
-    return CGP.postOps.pendingFor(this.recordsForAssignment(id));
+    return CGP.postOps.pendingFor(this.recordsForAssignment(id), this.assignment(id));
   };
 
   /* Re-read one assignment column from Canvas, replacing what we hold.
