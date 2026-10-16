@@ -159,14 +159,16 @@
       rec.excused ? 1 : 0,
       CGP.postOps.needsPost(rec, this.model.assignment ? this.model.assignment(info.assignmentId) : null) ? 1 : 0,
       this.postStateKnown(rec) ? 1 : 0,
+      (this.model.isPostConfirmed && this.model.isPostConfirmed(info.assignmentId, info.studentId)) ? 1 : 0,
       status
     ].join('|');
   };
 
   /* Has Canvas told us (or has a confirmed post told us) whether this
-   * submission is posted? Without that, "nothing to post" is a guess. */
+   * submission is posted? Without posted_at, "nothing to post" is a guess -
+   * has_postable_comments alone says nothing about the grade. */
   P.postStateKnown = function (rec) {
-    return !!(rec && !rec.pending && (rec.postedAtKnown || rec.hasPostableKnown));
+    return !!(rec && !rec.pending && rec.postedAtKnown);
   };
 
   P.marksHost = function (cellEl) {
@@ -463,11 +465,13 @@
     // Canvas draws its own "hidden grade / unposted comment" dot from its own
     // store, which a post made through the API never updates - so the dot
     // used to linger until a page reload. Our model is refreshed by the post,
-    // so a cell it knows has nothing left to post is flagged and CSS hides
+    // so a cell whose post this extension confirmed (and that still has nothing
+    // left to post) is flagged and CSS hides
     // Canvas's dot there (see gradebook.css).
     var assignmentMeta = this.model.assignment ? this.model.assignment(info.assignmentId) : null;
     cell.classList.toggle('cgp-post-clear',
-      known && this.postStateKnown(rec) && !CGP.postOps.needsPost(rec, assignmentMeta));
+      known && this.postStateKnown(rec) && !CGP.postOps.needsPost(rec, assignmentMeta) &&
+      !!(this.model.isPostConfirmed && this.model.isPostConfirmed(info.assignmentId, info.studentId)));
     cell.classList.toggle('cgp-has-status-badge', showMissingBadge || showLateBadge);
     cell.classList.toggle('cgp-pending-write', !!(rec && rec.pending));
 

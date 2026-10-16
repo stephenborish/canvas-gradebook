@@ -482,6 +482,7 @@
    * replaces this with Canvas's own timestamps. */
   P.markPostedLocally = function (assignmentId, userIds) {
     var self = this;
+    self.model.markPostConfirmed(assignmentId, userIds);
     var when = new Date().toISOString();
     (userIds || []).forEach(function (uid) {
       // Read straight out of the cell map rather than through model.cell(),

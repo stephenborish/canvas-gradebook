@@ -43,6 +43,9 @@
     // and hidden-grade bar in a column for the moment its Post button was
     // merely re-checking it, before anything had actually posted.
     this.everLoadedAssignments = new Set();
+    // Cells whose post THIS extension confirmed (see post-grades.js). Canvas's
+    // own dot on them is stale; on any other cell it is Canvas's to draw.
+    this.postConfirmed = new Set();
     this.pendingAssignments = new Map();
     this.commentVerifiedAssignments = new Set();
     // "assignmentId:userId" -> Date.now() when a local write (a keyboard
@@ -663,8 +666,19 @@
     var prev = this.cells.get(k) || { assignmentId: String(assignmentId), userId: String(userId), comments: CGP.commentAnalysis.analyze([], {}) };
     var next = Object.assign({}, prev, patch || {});
     this.cells.set(k, next);
+    // A later write of ours to the cell can put something new in front of Canvas.
+    if (patch && patch.pending === true) this.postConfirmed.delete(k);
     if (!(opts && opts.silent)) this.emit('cell', { assignmentId: String(assignmentId), userId: String(userId), record: next });
     return next;
+  };
+
+  GradebookModel.prototype.markPostConfirmed = function (assignmentId, userIds) {
+    var self = this;
+    (userIds || []).forEach(function (uid) { self.postConfirmed.add(self.key(assignmentId, uid)); });
+  };
+
+  GradebookModel.prototype.isPostConfirmed = function (assignmentId, userId) {
+    return this.postConfirmed.has(this.key(assignmentId, userId));
   };
 
   GradebookModel.prototype.snapshotCell = function (assignmentId, userId) {
