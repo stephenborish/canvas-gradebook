@@ -839,3 +839,31 @@ suite('grid reliability: PR review follow-ups', (test) => {
     a.eq(painted, 1);
   });
 });
+
+/* ------------------------------------------------------------- post-clear */
+
+suite('grid reliability: Canvas\'s unposted dot follows our confirmed posts', (test) => {
+  const base = { assignmentId: '101', userId: '501', override: null, workflowState: 'graded', score: 3, grade: '3' };
+  const paint = (CGP, rec, confirmed) => {
+    const cell = gradeCell('3');
+    const c = overlayController(CGP, rec);
+    c.model.isPostConfirmed = () => confirmed;
+    c.paintCell(INFO(cell));
+    return cell;
+  };
+  const posted = { postedAt: '2026-10-16T12:00:00Z', postedAtKnown: true };
+  test('a cell still waiting to be posted is not flagged', () => {
+    const cell = paint(loadGradebookDom(), Object.assign({}, base, { postedAt: null, postedAtKnown: true }), true);
+    a.ok(!cell.classList.contains('cgp-post-clear'));
+  });
+  test('posted through the extension: flagged so Canvas\'s stale dot is hidden', () => {
+    a.ok(paint(loadGradebookDom(), Object.assign({}, base, posted), true).classList.contains('cgp-post-clear'));
+  });
+  test('posted but not by this extension: Canvas\'s own dot is left alone', () => {
+    a.ok(!paint(loadGradebookDom(), Object.assign({}, base, posted), false).classList.contains('cgp-post-clear'));
+  });
+  test('has_postable_comments without posted_at is not enough', () => {
+    const rec = Object.assign({}, base, { postedAt: null, postedAtKnown: false, hasPostableKnown: true, hasPostableComments: false });
+    a.ok(!paint(loadGradebookDom(), rec, true).classList.contains('cgp-post-clear'));
+  });
+});

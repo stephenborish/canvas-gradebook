@@ -369,6 +369,20 @@ html.cgp-on .slick-cell.cgp-status-excused::before {
   box-shadow: none !important;
 }
 
+/* Canvas's own unposted-grade / hidden-comment dot, on a cell our model knows
+ * has nothing left to post (indicators.js sets cgp-post-clear). Canvas's store
+ * is not told about a post made through the API, so without this the dot
+ * stayed until a reload. */
+html.cgp-on .slick-cell.cgp-post-clear [class*="unposted" i],
+html.cgp-on .slick-cell.cgp-post-clear [class*="hidden-grade" i],
+html.cgp-on .slick-cell.cgp-post-clear [class*="hiddengrade" i],
+html.cgp-on .slick-cell.cgp-post-clear [class*="hidden-comment" i],
+html.cgp-on .slick-cell.cgp-post-clear [class*="hiddencomment" i],
+html.cgp-on .slick-cell.cgp-post-clear [class*="postable" i],
+html.cgp-on .slick-cell.cgp-post-clear [class*="dot" i]:not([class*="cgp-"]) {
+  display: none !important;
+}
+
 html.cgp-on .cgp-resub {
   position: absolute !important;
   bottom: 0 !important;
@@ -443,6 +457,7 @@ html.cgp-on .slick-cell.cgp-override:has(input:not([type="hidden"])) > *:not(.cg
 html.cgp-on {
   --cgp-excused-tint: rgba(214, 158, 15, 0.18);
   --cgp-excused-edge: #a8790c;
+  --cgp-missing-tint: #fde4e1;
   --cgp-missing-badge: #d1453b;
   --cgp-missing-badge-ink: #ffffff;
   --cgp-late-badge: #e0a300;
@@ -451,6 +466,20 @@ html.cgp-on {
 
 html.cgp-on .slick-cell.cgp-status-excused:not(.excused):not(:has(> .excused)) {
   background-image: linear-gradient(var(--cgp-excused-tint), var(--cgp-excused-tint));
+}
+
+/* A grade the teacher marked Missing stays Missing-coloured. Canvas paints a
+ * cell green ("resubmitted") whenever the student turned something in after
+ * grading, even when the teacher deliberately marked the work Missing so the
+ * student knows it earns no credit until it is submitted properly (blurry
+ * photo, wrong file). The explicit Missing status wins over that green, on the
+ * cell and on Canvas's own nodes inside it. */
+html.cgp-on .slick-cell.cgp-status-missing.resubmitted,
+html.cgp-on .slick-cell.cgp-status-missing:has(.resubmitted),
+html.cgp-on .slick-cell.cgp-status-missing .resubmitted,
+html.cgp-on .slick-cell.cgp-status-missing [class*="resubmitted" i] {
+  background-color: var(--cgp-missing-tint) !important;
+  background-image: none !important;
 }
 
 /* The bar reads at a glance down a whole column and, unlike the tint, it is

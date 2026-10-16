@@ -42,6 +42,7 @@ function fakeModel(reads) {
     assignment: () => ({ name: 'Lab 4' }),
     cell(aid, uid) { return this.loadedAssignments.has(String(aid)) ? this.cells.get(this.key(aid, uid)) : null; },
     patchCell(aid, uid, patch) { Object.assign(this.cells.get(this.key(aid, uid)), patch); },
+    markPostConfirmed() {},
     pendingPosts(aid) {
       if (!this.loadedAssignments.has(String(aid))) return [];
       return users.filter((u) => state.hidden.get(u));
