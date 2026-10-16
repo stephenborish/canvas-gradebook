@@ -44,26 +44,29 @@
    * for the same reason: its posted_at is whatever the record held before the
    * write, which says nothing about the grade being written right now. */
   function needsPost(rec, assignment) {
-    if (!rec || !rec.postedAtKnown) return false;
-    if (rec.pending) return false;
+    if (!rec || rec.pending) return false;
+    // Canvas's own answer to "does this submission hold a comment the student
+    // cannot see yet" (has_postable_comments) wins whenever it was given: it
+    // is exactly the state Canvas's own post action acts on, so counting it
+    // can never offer a button that then posts nothing.
+    if (rec.hasPostableKnown && rec.hasPostableComments === true) return true;
+    if (!rec.postedAtKnown) return false;
     if (rec.postedAt) return false;
     return hasGrade(rec) || hasHiddenComment(rec, assignment);
   }
 
   /* A comment the instructor wrote that the student cannot read yet.
    *
-   * Under a manual posting policy Canvas hides every comment on a submission
-   * until that submission is posted - graded or not. So an instructor comment
-   * on an unposted submission is hidden from the student even when the cell
-   * has no grade at all (e.g. a note on an optional assignment saying it was
-   * not completed). Canvas's postAssignmentGrades(gradedOnly: true) posts a
-   * submission that is graded OR has such hidden comments, so these cells need
-   * no different call - they only need to be counted.
-   *
-   * Only for a manual-policy assignment: under an automatic policy a comment
-   * is visible the moment it is written, and an ungraded submission's null
-   * posted_at says nothing about it. Drafts never reach rec.comments. */
+   * When Canvas reported has_postable_comments for this submission, that is
+   * the whole answer (and needsPost has already used it), so this says no.
+   * Only on a Canvas that does not report it is the state inferred: under a
+   * manual posting policy Canvas hides every comment on an unposted
+   * submission, graded or not, so an instructor comment on one is taken to be
+   * hidden. That is a guess - it cannot tell a comment written before the
+   * assignment was switched to manual posting, which stays visible - which is
+   * why Canvas's own flag is preferred. Drafts never reach rec.comments. */
   function hasHiddenComment(rec, assignment) {
+    if (rec && rec.hasPostableKnown) return false;
     if (!assignment || assignment.postManually !== true) return false;
     return !!(rec && rec.comments && rec.comments.hasInstructorComment);
   }

@@ -146,6 +146,16 @@ suite('grades waiting to be posted', (test) => {
     a.deep(ids, ['20', '21']);
   });
 
+  test('Canvas\'s has_postable_comments wins over inference, both ways', () => {
+    const asked = Object.assign({}, ungraded, withComment, { hasPostableKnown: true });
+    a.eq(ops().needsPost(rec(Object.assign({}, asked, { hasPostableComments: true })), manual), true, 'Canvas says a comment is hidden');
+    a.eq(ops().needsPost(rec(Object.assign({}, asked, { hasPostableComments: true, postedAt: '2026-02-03T00:00:00Z' })), manual), true, 'even with a posted_at');
+    a.eq(ops().needsPost(rec(Object.assign({}, asked, { hasPostableComments: false })), manual), false,
+      'a comment written before the policy went manual is visible: Canvas says nothing is postable');
+    a.eq(ops().needsPost(rec(Object.assign({}, asked, { hasPostableComments: true, pending: true })), manual), false, 'our own write in flight');
+    a.eq(ops().needsPost(rec(Object.assign({ hasPostableKnown: true, hasPostableComments: false })), manual), true, 'a graded, unposted submission is still waiting');
+  });
+
   test('summary counts in plain words', () => {
     a.eq(ops().summary(1), '1 grade or comment is hidden from its student');
     a.eq(ops().summary(4), '4 grades or comments are hidden from their students');

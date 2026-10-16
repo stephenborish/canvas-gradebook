@@ -488,8 +488,8 @@
       // which answers null for a column not currently marked loaded - which
       // is exactly the case when the re-read after the post failed.
       var rec = self.model.cells.get(self.model.key(assignmentId, uid));
-      if (!rec || rec.postedAt) return;
-      self.model.patchCell(assignmentId, uid, { postedAt: when, postedAtKnown: true }, { silent: true });
+      if (!rec || (rec.postedAt && rec.hasPostableComments !== true)) return;
+      self.model.patchCell(assignmentId, uid, { postedAt: rec.postedAt || when, postedAtKnown: true, hasPostableComments: false }, { silent: true });
     });
     if (self.model && typeof self.model.emit === 'function') {
       self.model.emit('cells', { assignmentIds: [String(assignmentId)] });

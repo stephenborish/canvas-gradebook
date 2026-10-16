@@ -462,6 +462,7 @@
       : (prev.comments || CGP.commentAnalysis.analyze([], { instructorId: this.instructorId, instructorNames: this.instructorNames, studentId: userId }));
 
     var postedKnown = Object.prototype.hasOwnProperty.call(sub, 'posted_at');
+    var postableKnown = Object.prototype.hasOwnProperty.call(sub, 'has_postable_comments');
 
     // A cell this extension has written to carries an overlay, because
     // Canvas's own grid never hears about our API write and keeps showing
@@ -502,6 +503,11 @@
       // unposted. See core/post-ops.js.
       postedAt: postedKnown ? (sub.posted_at || null) : (prev.postedAt === undefined ? null : prev.postedAt),
       postedAtKnown: postedKnown || prev.postedAtKnown === true,
+      // Canvas's own flag for a comment the student cannot see yet. Tracked as
+      // known/unknown for the same reason posted_at is: a payload without it
+      // says nothing (see core/post-ops.js).
+      hasPostableComments: postableKnown ? !!sub.has_postable_comments : (prev.hasPostableComments === undefined ? null : prev.hasPostableComments),
+      hasPostableKnown: postableKnown || prev.hasPostableKnown === true,
       gradeMatchesCurrent: sub.grade_matches_current_submission !== false,
       attempt: sub.attempt === undefined ? null : sub.attempt,
       submissionType: sub.submission_type === undefined ? (prev.submissionType || null) : sub.submission_type,
@@ -693,6 +699,10 @@
         comments: CGP.commentAnalysis.analyze(submissionOrComment.submission_comments, opts),
         commentList: submissionOrComment.submission_comments.filter(function (c) { return c && c.draft !== true; })
       };
+      if (Object.prototype.hasOwnProperty.call(submissionOrComment, 'has_postable_comments')) {
+        next.hasPostableComments = !!submissionOrComment.has_postable_comments;
+        next.hasPostableKnown = true;
+      }
     } else {
       var folded = CGP.commentAnalysis.applyNewComment(rec.commentList || [], submissionOrComment, opts);
       next = { comments: folded.analysis, commentList: folded.comments };
@@ -708,10 +718,10 @@
     if (!rec) return null;
     var opts = { instructorId: this.instructorId, instructorNames: this.instructorNames, studentId: String(userId) };
     var list = (rec.commentList || []).filter(function (c) { return !c || String(c.id) !== String(commentId); });
-    return this.patchCell(assignmentId, userId, {
-      comments: CGP.commentAnalysis.analyze(list, opts),
-      commentList: list
-    });
+    var analysis = CGP.commentAnalysis.analyze(list, opts);
+    var patch = { comments: analysis, commentList: list };
+    if (rec.hasPostableKnown && !analysis.hasInstructorComment) patch.hasPostableComments = false;
+    return this.patchCell(assignmentId, userId, patch);
   };
 
   GradebookModel.prototype.queueTotalRefresh = function (userId) {
