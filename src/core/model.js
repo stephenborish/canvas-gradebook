@@ -489,6 +489,10 @@
       latePolicyStatus: sub.late_policy_status || null,
       workflowState: sub.workflow_state || null,
       submittedAt: sub.submitted_at || null,
+      // Kept so a write that lifts an explicit Missing can tell the work was
+      // handed in late (see gradeOps.handedInLate); null when Canvas omits them.
+      secondsLate: sub.seconds_late === undefined ? (prev.secondsLate === undefined ? null : prev.secondsLate) : sub.seconds_late,
+      cachedDueDate: sub.cached_due_date || (prev.cachedDueDate || null),
       gradedAt: sub.graded_at || null,
       // posted_at is Canvas's record of whether the student can see this
       // grade yet: null means it is still hidden from them. Canvas omits the

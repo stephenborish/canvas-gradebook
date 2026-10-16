@@ -89,10 +89,40 @@
    *
    * EXCUSED is an explicit status command and is left alone.
    */
+  /* Taking an explicit Missing off must not also take away that the work came
+   * in late. Missing REPLACES Late on a submission (a submission has one
+   * status), so once Missing is lifted there is nothing left saying "late" -
+   * writing 'none' would pin the submission to "no status" and silently switch
+   * off the late policy for work that really was handed in after the due date.
+   * opts.wasLate is an explicit Late (never true on a Missing cell, which is
+   * the whole point); opts.handedInLate is the submission-time evidence. */
+  function lateAfterMissing(opts) {
+    return !!(opts && (opts.wasLate || opts.handedInLate));
+  }
+
+  /* Was this submission actually handed in after its due date?
+   *
+   * Judged from the submission and its due date, never from the record's own
+   * late/missing flags - those are exactly what an explicit Missing status
+   * overrides. Nothing handed in can never be late. When the assignment has
+   * per-section/student due dates and Canvas did not give this submission's own
+   * (cached_due_date), the assignment-level date proves nothing, so the answer
+   * is "no" rather than a guess: that leaves the write exactly as it was. */
+  function handedInLate(rec, assignment) {
+    if (!rec || !rec.submittedAt) return false;
+    if (rec.late === true || Number(rec.secondsLate) > 0) return true;
+    var due = rec.cachedDueDate ||
+      (assignment && !assignment.hasMultipleDueDates ? assignment.dueAt : null);
+    if (!due) return false;
+    var submitted = Date.parse(rec.submittedAt);
+    var dueMs = Date.parse(due);
+    return isFinite(submitted) && isFinite(dueMs) && submitted > dueMs;
+  }
+
   /* The raw late_policy_status a grade write leaves behind: cleared (or
    * kept Late) when it takes an explicit Missing off, otherwise unchanged. */
   function keptStatus(opts) {
-    if (opts.wasExplicitMissing) return opts.wasLate ? 'late' : null;
+    if (opts.wasExplicitMissing) return lateAfterMissing(opts) ? 'late' : null;
     if (opts.latePolicyStatus !== undefined) return opts.latePolicyStatus || null;
     return opts.wasLate ? 'late' : null;
   }
@@ -146,6 +176,15 @@
           display: null // status only; the grade text is unchanged
         };
       case KIND.CLEAR_MISSING:
+        if (lateAfterMissing(opts)) {
+          return {
+            kind: parsed.kind,
+            summary: 'Missing cleared after grading (kept Late)',
+            form: { 'submission[late_policy_status]': 'late' },
+            patch: { missing: false, late: true, latePolicyStatus: 'late' },
+            display: null
+          };
+        }
         return {
           kind: parsed.kind,
           summary: 'Missing cleared after grading',
@@ -176,7 +215,7 @@
         // switching off the course's automatic late/missing policy for it
         // even if the student later hands the work in late.
         if (opts.wasExplicitMissing) {
-          numberForm['submission[late_policy_status]'] = opts.wasLate ? 'late' : 'none';
+          numberForm['submission[late_policy_status]'] = lateAfterMissing(opts) ? 'late' : 'none';
         }
         var numberPatch = {
           score: Number(parsed.value),
@@ -193,7 +232,7 @@
       case KIND.LETTER: {
         var gradeForm = { 'submission[posted_grade]': String(parsed.value) };
         if (opts.wasExplicitMissing) {
-          gradeForm['submission[late_policy_status]'] = opts.wasLate ? 'late' : 'none';
+          gradeForm['submission[late_policy_status]'] = lateAfterMissing(opts) ? 'late' : 'none';
         }
         var gradePatch = {
           grade: String(parsed.value),
@@ -308,6 +347,7 @@
     KIND: KIND,
     parseToken: parseToken,
     operationFor: operationFor,
+    handedInLate: handedInLate,
     cellStatus: cellStatus,
     acceptsToken: acceptsToken,
     /* The statuses this extension is willing to paint and to correct on a

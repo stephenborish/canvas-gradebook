@@ -225,6 +225,9 @@
       wasExplicitMissing: !!(currentRec && currentRec.latePolicyStatus === 'missing'),
       wasMissing: !!(currentRec && (currentRec.missing || currentRec.latePolicyStatus === 'missing')),
       wasExcused: !!(currentRec && currentRec.excused),
+      // Lifting an explicit Missing must not also erase that the work came in
+      // late - see gradeOps.lateAfterMissing.
+      handedInLate: CGP.gradeOps.handedInLate(currentRec, assignment),
       latePolicyStatus: currentRec ? (currentRec.latePolicyStatus || null) : undefined
     });
     if (!op) {

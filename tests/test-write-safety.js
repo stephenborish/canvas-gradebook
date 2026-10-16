@@ -648,3 +648,78 @@ suite('write safety: PR review round 2', (test) => {
     } finally { CGP.util.sleep = real; }
   });
 });
+
+suite('write safety: lifting an explicit Missing keeps work that came in late', (test) => {
+  const ops = () => CGP.gradeOps;
+  const due = '2026-10-08T12:55:00Z';
+  const lateRec = (over) => Object.assign({ submittedAt: '2026-10-13T20:39:00Z', latePolicyStatus: 'missing', missing: true, late: false }, over || {});
+
+  test('handedInLate judges from submission time, not from the Missing-overridden flags', () => {
+    a.eq(ops().handedInLate(lateRec(), { dueAt: due }), true, 'submitted five days after the due date');
+    a.eq(ops().handedInLate(lateRec({ submittedAt: '2026-10-08T08:00:00Z' }), { dueAt: due }), false, 'on time');
+    a.eq(ops().handedInLate(lateRec({ submittedAt: null }), { dueAt: due }), false, 'nothing handed in is never late');
+    a.eq(ops().handedInLate(lateRec(), { dueAt: null }), false, 'no due date, nothing to be late against');
+    a.eq(ops().handedInLate(null, { dueAt: due }), false);
+  });
+
+  test('with per-student due dates only the submission\'s own due date counts', () => {
+    const multi = { dueAt: due, hasMultipleDueDates: true };
+    a.eq(ops().handedInLate(lateRec(), multi), false, 'the assignment-level date proves nothing here');
+    a.eq(ops().handedInLate(lateRec({ cachedDueDate: '2026-10-20T00:00:00Z' }), multi), false, 'on time for their own date');
+    a.eq(ops().handedInLate(lateRec({ cachedDueDate: due }), multi), true, 'late for their own date');
+    a.eq(ops().handedInLate(lateRec({ secondsLate: 3600 }), multi), true, 'Canvas says so directly');
+  });
+
+  test('grading a Missing cell that was handed in late keeps Late; otherwise still clears to none', () => {
+    const late = ops().operationFor(ops().parseToken('7'), { wasExplicitMissing: true, handedInLate: true });
+    a.eq(late.form['submission[late_policy_status]'], 'late');
+    a.eq(late.patch.latePolicyStatus, 'late');
+    const notLate = ops().operationFor(ops().parseToken('7'), { wasExplicitMissing: true, handedInLate: false });
+    a.eq(notLate.form['submission[late_policy_status]'], 'none');
+    const pct = ops().operationFor(ops().parseToken('80%'), { wasExplicitMissing: true, handedInLate: true });
+    a.eq(pct.form['submission[late_policy_status]'], 'late');
+  });
+
+  test('CLEAR_MISSING after Canvas saves a grade restores Late for late work, and only then', () => {
+    const KIND = ops().KIND;
+    const late = ops().operationFor({ kind: KIND.CLEAR_MISSING }, { handedInLate: true });
+    a.eq(late.form['submission[late_policy_status]'], 'late');
+    a.eq(late.patch.late, true);
+    a.eq(late.patch.missing, false);
+    const plain = ops().operationFor({ kind: KIND.CLEAR_MISSING }, {});
+    a.eq(plain.form['submission[late_policy_status]'], 'none');
+    a.eq(plain.patch.latePolicyStatus, null);
+  });
+
+  test('end to end: the writer sends Late for a late submission whose Missing is lifted after grading', async () => {
+    stubUi();
+    const forms = [];
+    const m = model();
+    m.assignments.set('50', { id: '50', name: 'HW', gradingType: 'points', dueAt: due });
+    m.loadedAssignments.add('50');
+    m.patchCell('50', '10', { latePolicyStatus: 'missing', missing: true, submittedAt: '2026-10-13T20:39:00Z', score: 3, grade: '3' }, { silent: true });
+    const w = new CGP.GradeWriter({
+      api: { updateSubmission: (c, aid, uid, form) => { forms.push(form); return Promise.resolve({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: 'late', submitted_at: '2026-10-13T20:39:00Z', score: 3, grade: '3' }); } },
+      model: m, settings: { values: {} }
+    });
+    await w.apply([{ assignmentId: '50', userId: '10', parsed: { kind: CGP.gradeOps.KIND.CLEAR_MISSING } }]);
+    a.eq(forms.length, 1);
+    a.eq(forms[0]['submission[late_policy_status]'], 'late');
+  });
+
+  test('end to end: typing a grade through the writer on that cell also keeps Late', async () => {
+    stubUi();
+    const forms = [];
+    const m = model();
+    m.assignments.set('50', { id: '50', name: 'HW', gradingType: 'points', dueAt: due });
+    m.loadedAssignments.add('50');
+    m.patchCell('50', '10', { latePolicyStatus: 'missing', missing: true, submittedAt: '2026-10-13T20:39:00Z' }, { silent: true });
+    const w = new CGP.GradeWriter({
+      api: { updateSubmission: (c, aid, uid, form) => { forms.push(form); return Promise.resolve({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: 'late', submitted_at: '2026-10-13T20:39:00Z', score: 3, grade: '3' }); } },
+      model: m, settings: { values: {} }
+    });
+    await w.apply([{ assignmentId: '50', userId: '10', parsed: CGP.gradeOps.parseToken('3') }]);
+    a.eq(forms[0]['submission[late_policy_status]'], 'late');
+    a.eq(forms[0]['submission[posted_grade]'], '3');
+  });
+});
