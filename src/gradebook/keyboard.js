@@ -544,16 +544,33 @@
     var self = this;
     var row = info.rowIndex, col = info.colIndex;
     if (editorEl) this.adapter.sendKey(editorEl, 'Enter', 13);
-    setTimeout(function () { self.focusCell(row + dRow, col + dCol, dCol, dRow); }, 130);
+    setTimeout(function () {
+      if (self.canvasRefusedGrade(info, row, col)) return;
+      self.focusCell(row + dRow, col + dCol, dCol, dRow);
+    }, 130);
   };
 
-  /* Let Canvas act first; only step in if the active cell did not move. */
+  /* Canvas rejected what was typed (invalid grade) and left the editor open for
+   * the teacher to fix it. Moving on from here would strand the error. The cell
+   * is looked up again rather than trusting info.el, which the grid may have
+   * recycled in the meantime. */
+  P.canvasRefusedGrade = function (info, row, col) {
+    if (typeof this.adapter.holdsInvalidGrade !== 'function') return false;
+    var el = (typeof this.adapter.cellElementAt === 'function' && this.adapter.cellElementAt(row, col)) || (info && info.el);
+    var refused = this.adapter.holdsInvalidGrade(el);
+    if (refused) CGP.diag.bump('keyboard.moveHeldForInvalidGrade');
+    return refused;
+  };
+
+  /* Let Canvas act first; only step in if the active cell did not move - and
+   * never past a grade Canvas refused, which it deliberately leaves in place. */
   P.assistMove = function (info, dRow, dCol) {
     var self = this;
     var fromRow = info.rowIndex, fromCol = info.colIndex;
     setTimeout(function () {
       var now = self.adapter.activeCellInfo();
       if (now && (now.rowIndex !== fromRow || now.colIndex !== fromCol)) return; // Canvas handled it
+      if (self.canvasRefusedGrade(info, fromRow, fromCol)) return;
       self.focusCell(fromRow + dRow, fromCol + dCol, dCol, dRow);
     }, 110);
   };

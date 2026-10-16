@@ -723,3 +723,71 @@ suite('write safety: lifting an explicit Missing keeps work that came in late', 
     a.eq(forms[0]['submission[posted_grade]'], '3');
   });
 });
+
+suite('write safety: an invalid grade stays put for the teacher to fix', (test) => {
+  const { loadGradebookDom, domshim } = require('./domharness');
+  const mkKb = (adapter) => {
+    loadGradebookDom();
+    return new CGP.KeyboardGradingController({
+      adapter: Object.assign({ scrollRowIntoView() {}, scrollColumnIntoView() {}, columnAt: () => ({ type: 'assignment' }) }, adapter),
+      model: {}, writer: {}, selection: { size: () => 0 }, settings: { values: {} }
+    });
+  };
+  const info = { rowIndex: 3, colIndex: 5, el: { id: 'origin' } };
+
+  test('Enter/Tab/arrow assist does not move off a cell Canvas refused', async () => {
+    let activated = 0;
+    const kb = mkKb({
+      activeCellInfo: () => info,                      // Canvas did not move
+      cellElementAt: (r, c) => ({ r, c }),
+      holdsInvalidGrade: () => true,
+      activateCell: () => { activated++; }
+    });
+    kb.assistMove(info, 1, 0);
+    await new Promise((r) => setTimeout(r, 250));
+    a.eq(activated, 0, 'the invalid cell keeps its editor');
+  });
+
+  test('...and still steps in when Canvas simply did not move on a valid grade', async () => {
+    let activated = null;
+    const kb = mkKb({
+      activeCellInfo: () => info,
+      cellElementAt: (r, c) => ({ r, c }),
+      holdsInvalidGrade: () => false,
+      activateCell: (el) => { activated = el; }
+    });
+    kb.assistMove(info, 1, 0);
+    await new Promise((r) => setTimeout(r, 250));
+    a.eq(activated && activated.r, 4);
+  });
+
+  test('Shift+Enter commit-and-move also stays on a refused grade', async () => {
+    let activated = 0, keys = 0;
+    const kb = mkKb({
+      sendKey: () => { keys++; },
+      cellElementAt: (r, c) => ({ r, c }),
+      holdsInvalidGrade: () => true,
+      activateCell: () => { activated++; }
+    });
+    kb.commitAndMove(info, { tag: 'input' }, -1, 0);
+    await new Promise((r) => setTimeout(r, 300));
+    a.eq(keys, 1, 'Enter was still sent to Canvas');
+    a.eq(activated, 0);
+  });
+
+  test('holdsInvalidGrade: an invalid marker, or an open editor with Canvas\'s alert up', () => {
+    loadGradebookDom();
+    const holds = (cell, alerts) => {
+      const saved = globalThis.document;
+      globalThis.document = { querySelectorAll: () => alerts || [] };
+      try { return CGP.GradebookDomAdapter.prototype.holdsInvalidGrade.call({ editorInput: (c) => c.editor || null }, cell); }
+      finally { globalThis.document = saved; }
+    };
+    const alertEl = { textContent: 'You have entered an invalid grade for this student. Check the value and try again.' };
+    a.eq(holds({ querySelector: () => ({}) }), true, 'marker inside the cell');
+    a.eq(holds({ querySelector: () => null, editor: {} }, [alertEl]), true, 'editor still open and Canvas is complaining');
+    a.eq(holds({ querySelector: () => null }, [alertEl]), false, 'a lingering alert alone never pins a cell that is not editing');
+    a.eq(holds({ querySelector: () => null, editor: {} }, [{ textContent: 'Saved' }]), false, 'open editor, no complaint');
+    a.eq(holds(null), false);
+  });
+});
