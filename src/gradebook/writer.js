@@ -432,16 +432,28 @@
       return Promise.reject(new Error(
         'Comments cannot be deleted here on an anonymous or moderated assignment - use SpeedGrader instead.'));
     }
+    // The comment disappears the moment the teacher confirms: the model is
+    // updated now and rolled back only if Canvas refuses. The API call itself
+    // queues behind any other write to this cell, like grade writes do.
+    var before = this.model.cell(assignmentId, userId);
+    var removed = before && (before.commentList || []).filter(function (c) { return c && String(c.id) === String(commentId); })[0];
+    var index = before ? (before.commentList || []).indexOf(removed) : -1;
+    var prior = before ? { hasPostableComments: before.hasPostableComments, hasPostableKnown: before.hasPostableKnown } : null;
     var priorMark = this.model.markLocalWrite(assignmentId, userId);
+    this.model.applyCommentDeleted(assignmentId, userId, commentId);
     function done() {
       self.model.finishLocalWrite(assignmentId, userId);
-      self.model.applyCommentDeleted(assignmentId, userId, commentId);
+      self.model.applyCommentDeleted(assignmentId, userId, commentId); // idempotent; wins over a stale response
       CGP.diag.bump('comment.deleted');
     }
-    return this.api.deleteComment(this.model.courseId, assignmentId, userId, commentId).then(done, function (err) {
-      if (err && err.status === 404) { done(); return; }
-      self.model.clearLocalWrite(assignmentId, userId, priorMark);
-      throw err;
+    return this.serialize(assignmentId, userId, function () {
+      return self.api.deleteComment(self.model.courseId, assignmentId, userId, commentId).then(done, function (err) {
+        if (err && err.status === 404) { done(); return; }
+        self.model.clearLocalWrite(assignmentId, userId, priorMark);
+        // Only this comment goes back; the thread may have changed meanwhile.
+        if (removed) self.model.restoreComment(assignmentId, userId, removed, prior, index);
+        throw err;
+      });
     });
   };
 

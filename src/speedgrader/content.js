@@ -53,21 +53,19 @@
     if (!el || !el.matches) return false;
     if (el.matches(TEXTAREA_SELECTORS)) return true;
     var tag = el.tagName ? el.tagName.toLowerCase() : '';
-    // Free-text surfaces (a textarea or a rich-text editor) are always fair
-    // game on a grading page: an expansion needs a real "/trigger" right
-    // before the caret AND a matching snippet, so a stray one costs nothing.
-    // They used to have to prove they were "a comment box" by sitting inside
-    // one of the containers below or by carrying the word "comment" in an
-    // attribute - which SpeedGrader's right-hand panel happens to satisfy, but
-    // the Gradebook's Grade Detail Tray (opened by double-clicking a cell) did
-    // not, so snippets silently did nothing there. Single-line inputs keep the
-    // stricter test, since a grade or search box has no business expanding.
-    if (tag === 'textarea' || el.matches('[contenteditable="true"]')) return true;
-    if (el.matches('input[type="text"]')) {
+    // Any free-text surface (textarea, rich-text editor, single-line input)
+    // must prove it is a comment/feedback box: it sits in one of the comment
+    // containers below (SpeedGrader's right-hand panel, the Gradebook's Grade
+    // Detail Tray, the comment popover) or says so in an attribute. A text
+    // submission view or a stray field never expands snippets.
+    if (tag === 'textarea' || el.matches('[contenteditable="true"]') || el.matches('input[type="text"]')) {
       if (el.closest(
         '#speedgrader_comment_textarea_mount_point, #add_a_comment, #discussion, .comment_area, ' +
         '#right_side, .rubric_container, #rubric_assessments, .grade-detail-tray, [data-testid*="comment" i], ' +
-        '.cgp-pop, .cgp-comment-popover, #comment-form, .comments, .comment_list, [class*="grade-detail" i]'
+        '.cgp-pop, .cgp-comment-popover, #comment-form, .comments, .comment_list, [class*="grade-detail" i], ' +
+        // The Grade Detail Tray's comment box carries no comment-ish id or
+        // label; it is only identifiable as a field inside the tray's dialog.
+        '[role="dialog"]'
       )) return true;
       var label = ((el.getAttribute('aria-label') || '') + ' ' +
         (el.getAttribute('placeholder') || '') + ' ' +
@@ -77,7 +75,6 @@
         (el.getAttribute('class') || '') + ' ' +
         (el.getAttribute('role') || '')).toLowerCase();
       if (/comment|feedback|message|rubric|note/i.test(label)) return true;
-      if (el.closest('#right_side') && tag === 'textarea') return true;
     }
     return false;
   }
@@ -528,30 +525,41 @@
      * class has to be a direct child of a block that also holds the editor;
      * stickyTarget finds exactly that. Canvas re-renders this panel on every
      * student change, hence the observer instead of a one-off lookup. */
+    var cachedSubmit = null;
+    var lastTextScan = 0;
     function findSubmitButton() {
-      var btn = document.querySelector(SUBMIT_SELECTORS);
-      if (btn) return btn;
+      if (cachedSubmit && cachedSubmit.isConnected) return cachedSubmit;
+      cachedSubmit = document.querySelector(SUBMIT_SELECTORS);
+      if (cachedSubmit) return cachedSubmit;
+      // The text scan walks every button on the page: not on every mutation.
+      var now = Date.now();
+      if (now - lastTextScan < 2000) return null;
+      lastTextScan = now;
       var buttons = document.querySelectorAll('button');
       for (var i = 0; i < buttons.length; i++) {
-        if (/^\s*submit comment\s*$/i.test(buttons[i].textContent || '')) return buttons[i];
+        if (/^\s*submit comment\s*$/i.test(buttons[i].textContent || '')) { cachedSubmit = buttons[i]; return cachedSubmit; }
       }
       return null;
     }
 
+    function unpinAll(except) {
+      var pinned = document.querySelectorAll('.cgp-sticky-submit');
+      for (var i = 0; i < pinned.length; i++) if (pinned[i] !== except) pinned[i].classList.remove('cgp-sticky-submit');
+    }
+
     function pinSubmitButton() {
-      var btn = findSubmitButton();
-      var current = document.querySelector('.cgp-sticky-submit');
       if (!CGP.settings.values.speedgraderStickySubmit) {
-        if (current) current.classList.remove('cgp-sticky-submit');
+        unpinAll(null);
         return;
       }
+      var btn = findSubmitButton();
       if (!btn) return;
       var editor = document.querySelector(TEXTAREA_SELECTORS) ||
         document.querySelector('iframe[id*="comment" i], .tox-tinymce, [class*="rce" i]') ||
         findTextareaFallback();
       var target = CGP.speedgraderUi.stickyTarget(btn, editor);
       if (!target) return;
-      if (current && current !== target) current.classList.remove('cgp-sticky-submit');
+      unpinAll(target);
       if (!target.classList.contains('cgp-sticky-submit')) {
         target.classList.add('cgp-sticky-submit');
         CGP.diag.bump('speedgrader.submitPinned');

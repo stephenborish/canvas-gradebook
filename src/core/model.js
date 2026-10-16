@@ -720,7 +720,31 @@
     var list = (rec.commentList || []).filter(function (c) { return !c || String(c.id) !== String(commentId); });
     var analysis = CGP.commentAnalysis.analyze(list, opts);
     var patch = { comments: analysis, commentList: list };
-    if (rec.hasPostableKnown && !analysis.hasInstructorComment) patch.hasPostableComments = false;
+    if (rec.hasPostableKnown) {
+      // Which comment made the submission postable is not known, so once any
+      // comment is gone the old flag cannot be trusted: false when no
+      // instructor comment remains, otherwise "unknown" (post-ops then infers).
+      if (!analysis.hasInstructorComment) patch.hasPostableComments = false;
+      else patch.hasPostableKnown = false;
+    }
+    return this.patchCell(assignmentId, userId, patch);
+  };
+
+  /* Put back one comment whose delete Canvas refused, into the thread as it is
+   * NOW (other comments may have been added or removed meanwhile). `prior` is
+   * the postable state to restore. */
+  GradebookModel.prototype.restoreComment = function (assignmentId, userId, comment, prior, index) {
+    var rec = this.cells.get(this.key(assignmentId, userId));
+    if (!rec || !comment) return null;
+    var opts = { instructorId: this.instructorId, instructorNames: this.instructorNames, studentId: String(userId) };
+    var list = (rec.commentList || []).slice();
+    var exists = list.some(function (c) { return c && String(c.id) === String(comment.id); });
+    if (!exists) list.splice(Math.min(index >= 0 ? index : list.length, list.length), 0, comment);
+    var patch = { comments: CGP.commentAnalysis.analyze(list, opts), commentList: list };
+    if (prior) {
+      patch.hasPostableComments = prior.hasPostableComments;
+      patch.hasPostableKnown = prior.hasPostableKnown;
+    }
     return this.patchCell(assignmentId, userId, patch);
   };
 

@@ -65,7 +65,7 @@ function cellTarget(info, input) {
 }
 
 suite('Test Student guard: nothing is typed into the hidden row', (test) => {
-  const settings = (on) => ({ values: { hideTestStudent: on !== false, testStudentAutoClear: false } });
+  const settings = (on) => ({ values: { hideTestStudent: on !== false } });
 
   test('a grade keystroke on the hidden Test Student row is stopped and the cursor moves on', async () => {
     const CGP = loadGuard();
@@ -191,7 +191,7 @@ suite('Test Student guard: grades already in the hidden row', (test) => {
     model.assignments.set('52', { id: '52', name: 'Blind essay', anonymous: true });
     const saved = [];
     const settingsObj = {
-      values: { hideTestStudent: true, testStudentAutoClear: !!(opts && opts.auto) },
+      values: { hideTestStudent: true },
       save: (patch) => { saved.push(patch); return Promise.resolve(); }
     };
     const api = {
@@ -220,21 +220,19 @@ suite('Test Student guard: grades already in the hidden row', (test) => {
     a.eq(has({}), false);
   });
 
-  test('found grades are reported, not cleared, until the teacher says so', async () => {
+  test('found grades are cleared automatically, with no notice', async () => {
     const { g, writes } = setup(SUBS);
     const found = await g.scan();
     a.eq(found.length, 2, 'Lab 1 and Quiz 2; never the anonymous column, never the empty one');
-    a.eq(writes.length, 0, 'nothing written without asking');
-    a.ok(g.noticeEl, 'the teacher is told');
-    const text = (g.noticeEl.children && g.noticeEl.children[0] && g.noticeEl.children[0].textContent) || g.noticeEl.textContent;
-    a.ok(/hidden Test Student has 2 grades/.test(text), text);
-    a.ok(/Lab 1, Quiz 2/.test(text), 'names the columns');
+    await new Promise((r) => setTimeout(r, 0));
+    a.eq(writes.length, 2);
+    a.ok(!g.noticeEl, 'no notice is shown');
   });
 
   test('clearing empties the grade, un-excuses, and pins "no status" so the missing policy cannot refill it', async () => {
     const { g, writes } = setup(SUBS);
-    const found = await g.scan();
-    await g.clear(found);
+    await g.scan();
+    await new Promise((r) => setTimeout(r, 0));
     a.eq(writes.length, 2);
     const lab = writes.find((w) => w.aid === '50');
     a.eq(lab.uid, '999');
@@ -242,14 +240,6 @@ suite('Test Student guard: grades already in the hidden row', (test) => {
     a.eq(lab.form['submission[late_policy_status]'], 'none');
     const quiz = writes.find((w) => w.aid === '51');
     a.eq(quiz.form['submission[excuse]'], 'false');
-  });
-
-  test('with auto-clear on, they are cleared without a prompt', async () => {
-    const { g, writes } = setup(SUBS, { auto: true });
-    await g.scan();
-    await new Promise((r) => setTimeout(r, 0));
-    a.eq(writes.length, 2);
-    a.eq(g.noticeEl, null);
   });
 
   test('nothing is read at all while the row is shown', async () => {
