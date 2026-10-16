@@ -359,6 +359,7 @@
   function fill(values) {
     BOOLS.forEach(function (k) { var el = $(k); if (el) el.checked = !!values[k]; });
     NUMS.forEach(function (k) { var el = $(k); if (el) el.value = values[k]; });
+    $('gradingScale').value = CGP.totals.scaleToText(values.gradingScale);
     var snips = Array.isArray(values.snippets) ? values.snippets.slice() : [];
     renderSnippetCards(snips);
     $('snippets').value = snippetsToText(snips);
@@ -380,6 +381,7 @@
     BOOLS.forEach(function (k) { var el = $(k); if (el) patch[k] = el.checked; });
     NUMS.forEach(function (k) { var el = $(k); if (el) patch[k] = Number(el.value); });
     patch.snippets = readRawSnippets();
+    patch.gradingScale = CGP.totals.textToScale($('gradingScale').value);
     return CGP.sanitizeSettings(patch);
   }
 
@@ -479,6 +481,12 @@
   }
 
   function save() {
+    var badLines = CGP.totals.badScaleLines($('gradingScale').value);
+    if (badLines.length) {
+      status('Not saved: the letter-grade scale has line(s) that are not "Letter: number" - ' +
+        badLines.join('; ') + '. Fix or remove them, then save again.', { error: true });
+      return Promise.resolve();
+    }
     var raw = readRawSnippets();
     var values = read();
     var problem = checkSavable(values, raw);
@@ -674,6 +682,9 @@
 
   /* ---------------------------------------------------------------- wiring */
 
+  $('resetGradingScale').addEventListener('click', function () {
+    $('gradingScale').value = CGP.totals.scaleToText(CGP.DEFAULT_GRADING_SCALE);
+  });
   $('save').addEventListener('click', save);
 
   $('reset').addEventListener('click', function () {

@@ -9,6 +9,15 @@
 
   CGP.VERSION = '1.13.0';
 
+  /* Default letter-grade scale: the lowest rounded percentage (to 0.1) that
+   * earns each letter. The last entry is the floor and always has min 0. */
+  CGP.DEFAULT_GRADING_SCALE = [
+    { letter: 'A+', min: 96.5 }, { letter: 'A', min: 92.5 }, { letter: 'A-', min: 89.5 },
+    { letter: 'B+', min: 86.5 }, { letter: 'B', min: 82.5 }, { letter: 'B-', min: 79.5 },
+    { letter: 'C+', min: 76.5 }, { letter: 'C', min: 72.5 }, { letter: 'C-', min: 69.5 },
+    { letter: 'D', min: 64.5 }, { letter: 'F', min: 0 }
+  ];
+
   CGP.DEFAULTS = {
     // layout
     narrowColumns: true,
@@ -17,6 +26,7 @@
     hideCanvasUtilityControls: true,
     maximizeHeight: true,
     frozenTotal: true,
+    gradingScale: CGP.DEFAULT_GRADING_SCALE,
     centerAssignmentColumns: true,
     showAssignmentDueDate: true,
     hideTestStudent: true,
@@ -262,6 +272,19 @@
         else if (k === 'bulkConfirmThreshold') out[k] = Math.round(util.clampNum(v, 1, 2000, d[k]));
         else if (k === 'gradeFontSize') out[k] = Math.round(util.clampNum(v, 11, 24, d[k]));
         else out[k] = util.clampNum(v, -1e9, 1e9, d[k]);
+        return;
+      }
+      if (k === 'gradingScale') {
+        // Unusable values fall back to the default scale rather than leaving
+        // the Total hover without any letter grade.
+        var rows = Array.isArray(v) ? v.map(function (r) {
+          return { letter: String((r && r.letter) || '').trim().slice(0, 6), min: Number(r && r.min) };
+        }).filter(function (r) { return r.letter && isFinite(r.min); }).slice(0, 20) : [];
+        if (!rows.length) { out[k] = d[k]; return; }
+        rows.forEach(function (r) { r.min = Math.max(0, Math.min(1000, Math.round(r.min * 10) / 10)); });
+        rows.sort(function (a, b) { return b.min - a.min; });
+        rows[rows.length - 1].min = 0;   // every score maps to some letter
+        out[k] = rows;
         return;
       }
       if (k === 'snippets') {

@@ -512,9 +512,19 @@ suite('grid reliability D: page bridge', (test) => {
 
   test('narrow:false + hideTotal: only the native Total is resized', async () => {
     const b = loadBridge({ columns: COLS });
-    const res = await b.request({ studentWidth: 180, assignmentWidth: 72, hideTotal: true, narrow: false });
-    a.deep(res.result, { ok: true, changed: 1 });
+    const res = await b.request({ studentWidth: 180, assignmentWidth: 72, hideTotal: true, narrow: false, moveTotal: true });
+    a.deep(res.result, { ok: true, changed: 2 });   // Total resized and moved beside the names
+    a.deep(b.model().map((c) => c.width), [260, 84, 100, 140, 90, 110, 120]);
+  });
+
+  test('hideTotal without moveTotal leaves the native Total where Canvas put it', async () => {
+    const b = loadBridge({ columns: COLS });
+    await b.request({ studentWidth: 180, assignmentWidth: 72, hideTotal: true, narrow: false });
     a.deep(b.model().map((c) => c.width), [260, 100, 140, 90, 84, 110, 120]);
+    await b.request({ studentWidth: 180, assignmentWidth: 72, hideTotal: true, narrow: false, moveTotal: true });
+    a.deep(b.model().map((c) => c.width), [260, 84, 100, 140, 90, 110, 120]);
+    await b.request({ studentWidth: 180, assignmentWidth: 72, hideTotal: true, narrow: false, moveTotal: false });
+    a.deep(b.model().map((c) => c.width), [260, 100, 140, 90, 84, 110, 120], 'moved back on stand-down');
   });
 
   test('a SlickGrid outside #gradebook_grid is never patched', () => {
@@ -780,8 +790,8 @@ suite('grid reliability G/H: frozen Total failure path and overflow clamp', (tes
 suite('grid reliability D: settings turned off restore Canvas widths', (test) => {
   test('turning narrowing and the frozen Total off puts Canvas\'s own widths back', async () => {
     const b = loadBridge({ columns: COLS });
-    await b.request({ studentWidth: 180, assignmentWidth: 72, hideTotal: true, narrow: true });
-    a.deep(b.model().map((c) => c.width), [180, 100, 72, 90, 84, 110, 120]);
+    await b.request({ studentWidth: 180, assignmentWidth: 72, hideTotal: true, narrow: true, moveTotal: true });
+    a.deep(b.model().map((c) => c.width), [180, 84, 100, 72, 90, 110, 120]);
     const res = await b.request({ studentWidth: null, assignmentWidth: null, hideTotal: false, narrow: false });
     a.eq(res.result.ok, true);
     a.deep(b.model().map((c) => c.width), COLS.map((c) => c.width), 'every resized column restored');

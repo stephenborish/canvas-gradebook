@@ -99,7 +99,7 @@
 
   /* ------------------------------------------------------------- the grid */
 
-  var cgpState = window.__cgpState = { active: false, narrow: false, hideTotal: false, studentWidth: null, assignmentWidth: null };
+  var cgpState = window.__cgpState = { active: false, narrow: false, hideTotal: false, moveTotal: false, studentWidth: null, assignmentWidth: null };
 
   function isWindow(obj) {
     if (!obj) return false;
@@ -412,6 +412,45 @@
     return changed;
   }
 
+  /* The frozen Total sits immediately right of the frozen pane, so a native
+   * Total still parked at the far right (Canvas's default, the first time a
+   * teacher turns the feature on) is moved to be the first scrolling column.
+   * Returns a reordered copy, or the same array when nothing needs to move.
+   * Only runs while the frozen Total is wanted; in-memory only, so Canvas's
+   * own saved column order is never rewritten. */
+  var totalHome = null;   // Canvas's own index for Total, while it is moved
+  function totalFirst(grid, columns) {
+    if (!Array.isArray(columns)) return columns;
+    if (!cgpState.active || !cgpState.hideTotal || !cgpState.moveTotal) {
+      // Feature turned off, or the frozen Total stood down: put Total back where Canvas had it.
+      if (totalHome === null) return columns;
+      var cur = -1;
+      for (var j = 0; j < columns.length; j++) if (columnKind(columns[j]) === 'total') { cur = j; break; }
+      var home = Math.min(totalHome, columns.length - 1);
+      totalHome = null;
+      if (cur < 0 || cur === home) return columns;
+      var back = columns.slice();
+      back.splice(home, 0, back.splice(cur, 1)[0]);
+      return back;
+    }
+    var from = -1, studentAt = -1;
+    for (var i = 0; i < columns.length; i++) {
+      var kind = columnKind(columns[i]);
+      if (kind === 'total' && from < 0) from = i;
+      if (kind === 'student' && studentAt < 0) studentAt = i;
+    }
+    if (from < 0) return columns;
+    var frozen = -1;
+    try { frozen = Number((grid.getOptions() || {}).frozenColumn); } catch (e) { frozen = -1; }
+    var target = isFinite(frozen) && frozen >= 0 ? frozen + 1 : (studentAt >= 0 ? studentAt + 1 : -1);
+    if (target < 0 || from <= target) return columns;
+    totalHome = from;
+    var next = columns.slice();
+    var moved = next.splice(from, 1)[0];
+    next.splice(target, 0, moved);
+    return next;
+  }
+
   function redraw(grid) {
     if (typeof grid.invalidate === 'function') grid.invalidate();
     if (typeof grid.render === 'function') grid.render();
@@ -426,6 +465,8 @@
     if (!Array.isArray(columns) || !columns.length) return false;
     var changed = false;
     columns.forEach(function (col) { if (col && applyWidth(col)) changed = true; });
+    var ordered = totalFirst(grid, columns);
+    if (ordered !== columns) { columns = ordered; changed = true; }
     if (changed) {
       try {
         (grid.__cgpOrigSetColumns || grid.setColumns).call(grid, columns);
@@ -465,8 +506,9 @@
       grid.setColumns = function (columns) {
         if (cgpState.active && Array.isArray(columns)) {
           columns.forEach(function (col) { if (col) applyWidth(col); });
+          columns = totalFirst(this, columns);
         }
-        return origSetColumns.apply(this, arguments);
+        return origSetColumns.call(this, columns);
       };
     }
 
@@ -524,10 +566,11 @@
     });
   }
 
-  function doResize(grid, studentWidth, assignmentWidth, hideTotal, narrow) {
+  function doResize(grid, studentWidth, assignmentWidth, hideTotal, narrow, moveTotal) {
     cgpState.active = true;
     cgpState.narrow = !!narrow;
     cgpState.hideTotal = !!hideTotal;
+    cgpState.moveTotal = !!moveTotal;
     cgpState.studentWidth = studentWidth;
     cgpState.assignmentWidth = assignmentWidth;
     patchGrid(grid);
@@ -548,6 +591,8 @@
         if (applyWidth(copy)) changed++;
         return copy;
       });
+      var ordered = totalFirst(grid, next);
+      if (ordered !== next) { next = ordered; changed++; }
       if (!changed) return { ok: true, changed: 0 };
       try {
         grid.setColumns(next);
@@ -563,12 +608,12 @@
     });
   }
 
-  function resizeColumns(studentWidth, assignmentWidth, hideTotal, narrow) {
+  function resizeColumns(studentWidth, assignmentWidth, hideTotal, narrow, moveTotal) {
     var grid = findGrid();
-    if (grid) return doResize(grid, studentWidth, assignmentWidth, hideTotal, narrow);
+    if (grid) return doResize(grid, studentWidth, assignmentWidth, hideTotal, narrow, moveTotal);
     return waitForGrid(4500).then(function (g) {
       if (!g) return { ok: false, reason: 'unavailable' };
-      return doResize(g, studentWidth, assignmentWidth, hideTotal, narrow);
+      return doResize(g, studentWidth, assignmentWidth, hideTotal, narrow, moveTotal);
     });
   }
 
@@ -625,7 +670,7 @@
     // Senders that predate the flag only ever asked in order to narrow.
     var narrow = message.narrow === undefined ? true : !!message.narrow;
     if (narrow && (!isFinite(studentWidth) || !isFinite(assignmentWidth) || studentWidth < 1 || assignmentWidth < 1)) return;
-    resizeColumns(Math.round(studentWidth) || null, Math.round(assignmentWidth) || null, hideTotal, narrow).then(function (result) {
+    resizeColumns(Math.round(studentWidth) || null, Math.round(assignmentWidth) || null, hideTotal, narrow, !!message.moveTotal).then(function (result) {
       post({ source: 'cgp-grid-response', id: message.id, result: result });
     });
   });
