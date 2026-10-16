@@ -172,12 +172,28 @@ suite('time shortcut controller', (test) => {
     handlers.keydown({ key: 'Tab', target: { tagName: 'TEXTAREA' } });
   });
 
-  test('ignores an auto-completed tail the combobox left selected', () => {
+  test('ignores an auto-completed tail the combobox left selected after the last keystroke', () => {
     const { handlers } = boot();
-    const box = new FakeInput({}, 'Time');
+    const box = new FakeInput({}, 'Time').type('1');
+    handlers.input({ isTrusted: true, target: box });
     box.value = '1:00 AM'; box.selectionStart = 1; box.selectionEnd = 7;
     handlers.keydown({ key: 'Tab', target: box });
     a.eq(box.value, '8:55 AM');
+  });
+
+  test('never treats the teacher’s own selection inside a real time as a completion', () => {
+    const { handlers } = boot();
+    // Typed "12:30", then selected "2:30" (a suffix that leaves the key "1").
+    const box = new FakeInput({}, 'Time').type('12:30');
+    handlers.input({ isTrusted: true, target: box });
+    box.selectionStart = 1; box.selectionEnd = 5;
+    handlers.keydown({ key: 'Tab', target: box });
+    a.eq(box.value, '12:30');
+    // Same when the box was filled by Canvas (no keystroke seen at all).
+    const filled = new FakeInput({}, 'Time');
+    filled.value = '12:30'; filled.selectionStart = 1; filled.selectionEnd = 5;
+    handlers.focusout({ target: filled });
+    a.eq(filled.value, '12:30');
   });
 
   test('does nothing while the setting is off, and follows later edits to the list', () => {

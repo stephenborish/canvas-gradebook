@@ -42,12 +42,21 @@
     return TIME_WORD.test(describe(el));
   }
 
-  /** What the teacher typed, ignoring any inline auto-completion the combobox
-   * may have appended and left selected. */
+  /* The text up to the caret after the teacher's last real keystroke in each
+   * box. A combobox may append an auto-completed tail after the caret and
+   * leave it selected; only a selection that starts exactly where that last
+   * keystroke left the caret is such a tail. Any other selection is the
+   * teacher's own (say, the "2:30" of "12:30") and must never be stripped. */
+  var lastTyped = new WeakMap();
+
+  /** What the teacher typed, ignoring a combobox's selected auto-completion. */
   function typedText(input) {
     var v = String(input.value || '');
     var s = input.selectionStart, e = input.selectionEnd;
-    if (typeof s === 'number' && s !== e && e === v.length) v = v.slice(0, s);
+    var typed = lastTyped.get(input);
+    if (typeof s === 'number' && s !== e && e === v.length && typed !== undefined && v.slice(0, s) === typed) {
+      return typed;
+    }
     return v;
   }
 
@@ -84,6 +93,12 @@
     document.addEventListener('keydown', function (e) {
       if ((e.key !== 'Enter' && e.key !== 'Tab') || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
       self.apply(e.target);
+    }, true);
+    document.addEventListener('input', function (e) {
+      // Trusted only: our own swap below dispatches an untrusted `input`.
+      if (!e.isTrusted || !e.target || e.target.tagName !== 'INPUT') return;
+      var t = e.target;
+      lastTyped.set(t, String(t.value || '').slice(0, typeof t.selectionStart === 'number' ? t.selectionStart : undefined));
     }, true);
     // focusout, not blur: it bubbles, so one document listener covers boxes
     // Canvas mounts later. Also covers clicking straight onto another field.
