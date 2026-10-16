@@ -190,7 +190,8 @@
         });
         CGP.diag.set('testStudentCellsWithData', found.length);
         if (!found.length) return found;
-        self.clear(found);
+        // The row may have been shown again while the requests were in flight.
+        if (self.active()) self.clear(found);
         return found;
       });
     }, function (err) {
