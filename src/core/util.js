@@ -70,6 +70,16 @@
     studentSearch: true,
     speedgraderDrafts: true,
     speedgraderStickySubmit: true,
+    // Canvas's Assign To "Time" boxes: type a short key (1-4 = school periods)
+    // and Tab/Enter to fill in that period's start time. Times are stored as
+    // 24-hour "HH:MM" and rendered in Canvas's own 12/24-hour style on use.
+    timeShortcutsEnabled: true,
+    timeShortcuts: [
+      { key: '1', time: '08:55' },
+      { key: '2', time: '10:10' },
+      { key: '3', time: '12:30' },
+      { key: '4', time: '13:45' }
+    ],
     snippets: [
       { trigger: 'evidence', text: 'Good claim - now tie it back to the evidence in your data so the reasoning is complete.' },
       { trigger: 'units', text: 'Check your units and significant figures; the value is right but the label is missing.' },
@@ -250,6 +260,24 @@
   var MAX_SNIPPET_TEXT = 280;
   // Leaves ~2KB of the 8192-byte item for every other setting.
   var MAX_SNIPPET_BYTES = 6000;
+  // ~35 bytes each, so the whole list stays well inside what the snippet
+  // budget above leaves for "every other setting".
+  var MAX_TIME_SHORTCUTS = 10;
+  var MAX_TIME_SHORTCUT_KEY = 12;
+
+  /** "8:55", "08:55" -> "08:55"; anything that is not a 24-hour time -> null. */
+  function normalizeClock(v) {
+    var m = /^\s*(\d{1,2}):(\d{2})\s*$/.exec(String(v == null ? '' : v));
+    if (!m) return null;
+    var h = Number(m[1]), min = Number(m[2]);
+    if (h > 23 || min > 59) return null;
+    return (h < 10 ? '0' : '') + h + ':' + m[2];
+  }
+
+  /** A shortcut key as stored: letters, digits, - and _ only, lower-cased. */
+  function normalizeTimeKey(k) {
+    return String(k == null ? '' : k).trim().toLowerCase().replace(/[^\w-]/g, '').slice(0, MAX_TIME_SHORTCUT_KEY);
+  }
 
   /** UTF-8 byte length - what chrome.storage.sync's quotas actually count. */
   util.byteLength = function (str) {
@@ -287,6 +315,20 @@
         out[k] = rows;
         return;
       }
+      if (k === 'timeShortcuts') {
+        // As with snippets, an unusable stored value falls back to the real
+        // defaults; an empty array is a real choice (no shortcuts) and stays.
+        if (!Array.isArray(v)) { out[k] = d[k]; return; }
+        var seen = Object.create(null);
+        out[k] = v.map(function (r) {
+          return { key: normalizeTimeKey(r && r.key), time: normalizeClock(r && r.time) };
+        }).filter(function (r) {
+          if (!r.key || !r.time || seen[r.key]) return false;
+          seen[r.key] = true;
+          return true;
+        }).slice(0, MAX_TIME_SHORTCUTS);
+        return;
+      }
       if (k === 'snippets') {
         // Unlike every other field above, an unusable stored value here used
         // to be silently coerced to an EMPTY array rather than falling back
@@ -321,7 +363,12 @@
     return out;
   }
   CGP.sanitizeSettings = sanitizeSettings;
-  CGP.SETTINGS_LIMITS = { MAX_SNIPPETS: MAX_SNIPPETS, MAX_SNIPPET_TEXT: MAX_SNIPPET_TEXT, MAX_SNIPPET_BYTES: MAX_SNIPPET_BYTES };
+  CGP.SETTINGS_LIMITS = {
+    MAX_SNIPPETS: MAX_SNIPPETS, MAX_SNIPPET_TEXT: MAX_SNIPPET_TEXT, MAX_SNIPPET_BYTES: MAX_SNIPPET_BYTES,
+    MAX_TIME_SHORTCUTS: MAX_TIME_SHORTCUTS, MAX_TIME_SHORTCUT_KEY: MAX_TIME_SHORTCUT_KEY
+  };
+  CGP.normalizeClock = normalizeClock;
+  CGP.normalizeTimeKey = normalizeTimeKey;
 
   CGP.settings = {
     values: sanitizeSettings({}),

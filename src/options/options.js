@@ -354,6 +354,126 @@
     }
   }
 
+  /* ------------------------------------------------------- time shortcuts */
+
+  var MAX_TIME_SHORTCUTS = (CGP.SETTINGS_LIMITS && CGP.SETTINGS_LIMITS.MAX_TIME_SHORTCUTS) || 10;
+  var MAX_TIME_KEY = (CGP.SETTINGS_LIMITS && CGP.SETTINGS_LIMITS.MAX_TIME_SHORTCUT_KEY) || 12;
+  var currentTimeShortcuts = [];
+
+  function updateTimeShortcutsCounter() {
+    var el = $('time-shortcuts-counter');
+    if (el) el.textContent = currentTimeShortcuts.length + ' of ' + MAX_TIME_SHORTCUTS + ' shortcuts';
+    var add = $('btn-add-time-shortcut');
+    if (add) add.disabled = currentTimeShortcuts.length >= MAX_TIME_SHORTCUTS;
+  }
+
+  function timePreview(row) {
+    var key = CGP.normalizeTimeKey(row.key);
+    var shown = CGP.timeShortcuts.format(row.time, { hour12: true });
+    return key && shown ? 'Typing \u201c' + key + '\u201d fills in ' + shown : '';
+  }
+
+  function renderTimeShortcuts(list) {
+    currentTimeShortcuts = (Array.isArray(list) ? list : []).map(function (r) {
+      return { key: String((r && r.key) || ''), time: String((r && r.time) || '') };
+    });
+    var container = $('time-shortcuts-list');
+    if (!container) return;
+    container.innerHTML = '';
+    if (!currentTimeShortcuts.length) {
+      var empty = document.createElement('div');
+      empty.className = 'snippets-empty';
+      empty.innerHTML = '<p>No time shortcuts. Click <strong>+ Add Shortcut</strong>, or <strong>Restore period defaults</strong>.</p>';
+      container.appendChild(empty);
+    }
+    currentTimeShortcuts.forEach(function (row) {
+      var el = document.createElement('div');
+      el.className = 'time-shortcut-row';
+
+      var key = document.createElement('input');
+      key.type = 'text';
+      key.className = 'time-shortcut-row__key';
+      key.maxLength = MAX_TIME_KEY;
+      key.value = row.key;
+      key.placeholder = 'key';
+      key.setAttribute('aria-label', 'Shortcut key');
+      key.spellcheck = false;
+
+      var time = document.createElement('input');
+      time.type = 'time';
+      time.className = 'time-shortcut-row__time';
+      time.value = row.time;
+      time.setAttribute('aria-label', 'Start time');
+
+      var preview = document.createElement('span');
+      preview.className = 'time-shortcut-row__preview';
+      preview.textContent = timePreview(row);
+
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'time-shortcut-row__delete';
+      del.title = 'Delete shortcut';
+      del.setAttribute('aria-label', 'Delete shortcut');
+      del.textContent = '\u00d7';
+
+      key.addEventListener('input', function () { row.key = key.value; preview.textContent = timePreview(row); });
+      time.addEventListener('input', function () { row.time = time.value; preview.textContent = timePreview(row); });
+      del.addEventListener('click', function () {
+        currentTimeShortcuts.splice(currentTimeShortcuts.indexOf(row), 1);
+        renderTimeShortcuts(currentTimeShortcuts);
+      });
+
+      el.appendChild(key);
+      el.appendChild(time);
+      el.appendChild(preview);
+      el.appendChild(del);
+      container.appendChild(el);
+    });
+    updateTimeShortcutsCounter();
+  }
+
+  /** The rows as entered, minus ones left completely blank. */
+  function readRawTimeShortcuts() {
+    return currentTimeShortcuts.filter(function (r) { return String(r.key).trim() || r.time; })
+      .map(function (r) { return { key: String(r.key).trim(), time: r.time }; });
+  }
+
+  /* What sanitizeSettings would silently drop from these rows, by key, so
+   * nothing the teacher typed vanishes on Save without saying so. */
+  function timeShortcutProblems(raw) {
+    var notes = [];
+    var seen = Object.create(null);
+    raw.forEach(function (r) {
+      var key = CGP.normalizeTimeKey(r.key);
+      if (!key) { notes.push('A time (' + r.time + ') has no usable key (letters, numbers, - and _ only).'); return; }
+      if (key !== r.key.toLowerCase()) notes.push('The key \u201c' + r.key + '\u201d can only use letters, numbers, - and _ (up to ' + MAX_TIME_KEY + ').');
+      if (!CGP.normalizeClock(r.time)) notes.push('The key \u201c' + key + '\u201d needs a start time.');
+      if (seen[key]) notes.push('The key \u201c' + key + '\u201d is used twice.');
+      seen[key] = true;
+    });
+    return notes;
+  }
+
+  function initTimeShortcutsUI() {
+    var add = $('btn-add-time-shortcut');
+    if (add) {
+      add.addEventListener('click', function () {
+        if (currentTimeShortcuts.length >= MAX_TIME_SHORTCUTS) return;
+        currentTimeShortcuts.push({ key: '', time: '' });
+        renderTimeShortcuts(currentTimeShortcuts);
+        var keys = document.querySelectorAll('.time-shortcut-row__key');
+        if (keys.length) keys[keys.length - 1].focus();
+      });
+    }
+    var reset = $('btn-reset-time-shortcuts');
+    if (reset) {
+      reset.addEventListener('click', function () {
+        renderTimeShortcuts(DEFAULTS.timeShortcuts);
+        status('Period defaults restored below \u2014 click Save changes to keep them.');
+      });
+    }
+  }
+
   /* --------------------------------------------------------------- form io */
 
   function fill(values) {
@@ -363,6 +483,7 @@
     var snips = Array.isArray(values.snippets) ? values.snippets.slice() : [];
     renderSnippetCards(snips);
     $('snippets').value = snippetsToText(snips);
+    renderTimeShortcuts(values.timeShortcuts);
   }
 
   /** The snippets exactly as the teacher entered them, before sanitizing. */
@@ -381,6 +502,7 @@
     BOOLS.forEach(function (k) { var el = $(k); if (el) patch[k] = el.checked; });
     NUMS.forEach(function (k) { var el = $(k); if (el) patch[k] = Number(el.value); });
     patch.snippets = readRawSnippets();
+    patch.timeShortcuts = readRawTimeShortcuts();
     patch.gradingScale = CGP.totals.textToScale($('gradingScale').value);
     return CGP.sanitizeSettings(patch);
   }
@@ -485,6 +607,11 @@
     if (badLines.length) {
       status('Not saved: the letter-grade scale has line(s) that are not "Letter: number" - ' +
         badLines.join('; ') + '. Fix or remove them, then save again.', { error: true });
+      return Promise.resolve();
+    }
+    var timeProblems = timeShortcutProblems(readRawTimeShortcuts());
+    if (timeProblems.length) {
+      status('Not saved: ' + timeProblems.join(' ') + ' Fix or remove those time shortcuts, then save again.', { error: true });
       return Promise.resolve();
     }
     var raw = readRawSnippets();
@@ -728,6 +855,7 @@
 
   initTabs();
   initSnippetsUI();
+  initTimeShortcutsUI();
   initVersion();
 
   load().then(function () {

@@ -34,6 +34,10 @@
           <svg class="tab__icon" viewBox="0 0 20 20" aria-hidden="true" fill="currentColor" stroke="none"><path d="M11.3 1.8 4.3 11.6h4.9L8 18.2l7.7-9.7h-5z"/></svg>
           <span class="tab__label">Comment Snippets</span>
         </button>
+        <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-times" id="tab-times" data-tab="times">
+          <svg class="tab__icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M10 5.5V10l3 2"/></svg>
+          <span class="tab__label">Time Shortcuts</span>
+        </button>
         <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-course" id="tab-course" data-tab="course">
           <svg class="tab__icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><line x1="2.5" y1="10" x2="17.5" y2="10"/><path d="M10 2.5c2.4 2 2.4 13 0 15M10 2.5c-2.4 2-2.4 13 0 15"/></svg>
           <span class="tab__label">Course &amp; Domains</span>
@@ -362,6 +366,46 @@
           </div>
         </section>
 
+        <section class="panel" id="panel-times" role="tabpanel" aria-labelledby="tab-times" data-panel="times" hidden>
+          <header class="panel__head">
+            <h1>Time Shortcuts</h1>
+            <p>Type a short key in a Canvas &ldquo;Time&rdquo; box and it fills in that time &ndash; built for school periods.</p>
+          </header>
+
+          <div class="setting">
+            <label class="setting__label" for="timeShortcutsEnabled">Expand time shortcuts in Canvas&rsquo;s Assign To time boxes
+              <span class="hint">Works on the Due Date, Available from and Until time boxes when you create or edit an
+                assignment (and the same Assign To card on quizzes, discussions and modules).</span>
+            </label>
+            <input id="timeShortcutsEnabled" type="checkbox" class="switch">
+          </div>
+
+          <div class="snippets-instructions">
+            <h2 class="snippets-instructions__title">How Time Shortcuts Work</h2>
+            <ol class="snippets-steps">
+              <li><strong>Pick a key and a time:</strong> a key is a short word or number (e.g. <code>1</code>, <code>lunch</code>, <code>hr</code>) and the time is when it should start.</li>
+              <li><strong>Save your changes:</strong> click the blue <strong>Save changes</strong> button at the bottom-left.</li>
+              <li><strong>Use it in Canvas:</strong> type the key alone in a Time box, then press <kbd>Tab</kbd> or <kbd>Enter</kbd> (or click elsewhere). Typing <kbd>2</kbd> becomes <strong>10:10 AM</strong>.</li>
+            </ol>
+            <div class="snippets-tip">
+              <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M10 2a6 6 0 0 0-6 6c0 2.2 1.2 4.1 3 5.2V15a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1.8c1.8-1.1 3-3 3-5.2a6 6 0 0 0-6-6zm-1 15h2v1H9v-1z"/></svg>
+              <span><strong>Good to know:</strong> a key only counts when it is the whole box, so <kbd>12:30</kbd> or <kbd>1 pm</kbd> still mean exactly what they say. A key such as <kbd>1</kbd> does mean period 1, not 1 o&rsquo;clock. Keys are not case-sensitive.</span>
+            </div>
+          </div>
+
+          <div class="snippets-manager">
+            <div class="snippets-manager__bar">
+              <h2 class="panel__group" style="margin: 0; border: none; padding: 0;">Your Time Shortcuts</h2>
+              <div class="snippets-manager__actions">
+                <span id="time-shortcuts-counter" class="snippets-counter">0 of 10 shortcuts</span>
+                <button type="button" id="btn-add-time-shortcut" class="btn btn--secondary btn--sm">+ Add Shortcut</button>
+                <button type="button" id="btn-reset-time-shortcuts" class="btn btn--quiet btn--sm">Restore period defaults</button>
+              </div>
+            </div>
+            <div id="time-shortcuts-list" class="time-shortcuts-list"></div>
+          </div>
+        </section>
+
         <section class="panel" id="panel-course" role="tabpanel" aria-labelledby="tab-course" data-panel="course" hidden>
           <header class="panel__head">
             <h1>Course &amp; Domains</h1>
@@ -443,6 +487,7 @@
   <script src="../core/util.js"></script>
   <script src="../core/totals.js"></script>
   <script src="../core/snippets.js"></script>
+  <script src="../core/time-shortcuts.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

@@ -24,6 +24,7 @@ const CORE_FILES = [
   'src/core/grid-map.js',
   'src/core/totals.js',
   'src/core/snippets.js',
+  'src/core/time-shortcuts.js',
   'src/core/model.js'
 ];
 

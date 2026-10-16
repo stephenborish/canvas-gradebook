@@ -388,13 +388,22 @@ and clicking it never triggers the header's own sort/drag handling underneath.
 Type `/evidence` then `Tab` in SpeedGrader or in the comment popover to expand a saved snippet.
 Edit the snippet list in the options page (first line = trigger, following lines = text).
 
+### Time shortcuts (Assign To time boxes)
+
+When creating or editing an assignment, type a period number — `1`, `2`, `3` or `4` — in a
+Due Date / Available from / Until **Time** box, then press `Tab` or `Enter` (or click away) and
+it becomes that period's start time (by default 8:55 AM, 10:10 AM, 12:30 PM, 1:45 PM). Only a box
+holding nothing but a shortcut is touched, so `12:30` or `1 pm` still mean what they say. Add,
+edit or remove shortcuts (any short key, e.g. `lunch` → 11:30 AM) on the **Time Shortcuts** tab of
+the options page; the same Assign To card on quizzes, discussions and modules is covered too.
+
 ---
 
 ## Settings
 
 Everything is in the options page — click the toolbar icon, or `chrome://extensions` →
 Canvas Gradebook+ → Details → Extension options. It opens to a sidebar of tabs (Layout &
-Display, Cell Indicators, Grading Input, Comment Snippets, Course & Domains, Backup &
+Display, Cell Indicators, Grading Input, Comment Snippets, Time Shortcuts, Course & Domains, Backup &
 Transfer, Diagnostics); Save and Restore defaults stay visible in the sidebar no matter which
 tab you're on. Every feature above can be switched off individually. Nothing is configurable
 from inside the gradebook, by design.
@@ -439,6 +448,7 @@ src/core/                         pure logic - no DOM, no chrome.* at load time
   grid-map.js                     cell <-> (student_id, assignment_id) mapping maths
   totals.js                       Total formatting and row alignment
   snippets.js                     /trigger + Tab expansion
+  time-shortcuts.js               period key -> start time lookup and formatting
   model.js                        assignments, students, submissions, caches, events
   ui.js                           the one transient toast
 
@@ -460,6 +470,7 @@ src/gradebook/
   content.js                      bootstrap (full gradebook, or just the course switcher
                                    elsewhere in the course), single rAF paint pass, observers
 
+src/assignments/time-shortcuts.js period keys in Assign To time boxes (Tab/Enter/blur)
 src/speedgrader/content.js        comment draft autosave
 src/page/env-bridge.js            reads a few ENV ids from the page context
 src/options/                      the only settings UI
