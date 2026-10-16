@@ -65,7 +65,7 @@ function cellTarget(info, input) {
 }
 
 suite('Test Student guard: nothing is typed into the hidden row', (test) => {
-  const settings = (on) => ({ values: { hideTestStudent: on !== false, testStudentAutoClear: false } });
+  const settings = (on) => ({ values: { hideTestStudent: on !== false } });
 
   test('a grade keystroke on the hidden Test Student row is stopped and the cursor moves on', async () => {
     const CGP = loadGuard();
@@ -191,7 +191,7 @@ suite('Test Student guard: grades already in the hidden row', (test) => {
     model.assignments.set('52', { id: '52', name: 'Blind essay', anonymous: true });
     const saved = [];
     const settingsObj = {
-      values: { hideTestStudent: true, testStudentAutoClear: !!(opts && opts.auto) },
+      values: { hideTestStudent: true },
       save: (patch) => { saved.push(patch); return Promise.resolve(); }
     };
     const api = {

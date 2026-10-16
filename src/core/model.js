@@ -720,7 +720,13 @@
     var list = (rec.commentList || []).filter(function (c) { return !c || String(c.id) !== String(commentId); });
     var analysis = CGP.commentAnalysis.analyze(list, opts);
     var patch = { comments: analysis, commentList: list };
-    if (rec.hasPostableKnown && !analysis.hasInstructorComment) patch.hasPostableComments = false;
+    if (rec.hasPostableKnown) {
+      // Which comment made the submission postable is not known, so once any
+      // comment is gone the old flag cannot be trusted: false when no
+      // instructor comment remains, otherwise "unknown" (post-ops then infers).
+      if (!analysis.hasInstructorComment) patch.hasPostableComments = false;
+      else patch.hasPostableKnown = false;
+    }
     return this.patchCell(assignmentId, userId, patch);
   };
 

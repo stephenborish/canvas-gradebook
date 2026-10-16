@@ -543,9 +543,10 @@
   P.commitAndMove = function (info, editorEl, dRow, dCol) {
     var self = this;
     var row = info.rowIndex, col = info.colIndex;
+    var seen = this.alertSnapshot();
     if (editorEl) this.adapter.sendKey(editorEl, 'Enter', 13);
     setTimeout(function () {
-      if (self.canvasRefusedGrade(info, row, col)) return;
+      if (self.canvasRefusedGrade(info, row, col, seen)) return;
       self.focusCell(row + dRow, col + dCol, dCol, dRow);
     }, 130);
   };
@@ -554,10 +555,14 @@
    * the teacher to fix it. Moving on from here would strand the error. The cell
    * is looked up again rather than trusting info.el, which the grid may have
    * recycled in the meantime. */
-  P.canvasRefusedGrade = function (info, row, col) {
+  P.alertSnapshot = function () {
+    return typeof this.adapter.invalidGradeAlerts === 'function' ? this.adapter.invalidGradeAlerts() : null;
+  };
+
+  P.canvasRefusedGrade = function (info, row, col, seen) {
     if (typeof this.adapter.holdsInvalidGrade !== 'function') return false;
     var el = (typeof this.adapter.cellElementAt === 'function' && this.adapter.cellElementAt(row, col)) || (info && info.el);
-    var refused = this.adapter.holdsInvalidGrade(el);
+    var refused = this.adapter.holdsInvalidGrade(el, seen);
     if (refused) CGP.diag.bump('keyboard.moveHeldForInvalidGrade');
     return refused;
   };
@@ -567,10 +572,11 @@
   P.assistMove = function (info, dRow, dCol) {
     var self = this;
     var fromRow = info.rowIndex, fromCol = info.colIndex;
+    var seen = this.alertSnapshot();
     setTimeout(function () {
       var now = self.adapter.activeCellInfo();
       if (now && (now.rowIndex !== fromRow || now.colIndex !== fromCol)) return; // Canvas handled it
-      if (self.canvasRefusedGrade(info, fromRow, fromCol)) return;
+      if (self.canvasRefusedGrade(info, fromRow, fromCol, seen)) return;
       self.focusCell(fromRow + dRow, fromCol + dCol, dCol, dRow);
     }, 110);
   };

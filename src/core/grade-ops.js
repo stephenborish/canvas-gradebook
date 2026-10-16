@@ -110,13 +110,18 @@
    * is "no" rather than a guess: that leaves the write exactly as it was. */
   function handedInLate(rec, assignment) {
     if (!rec || !rec.submittedAt) return false;
-    if (rec.late === true || Number(rec.secondsLate) > 0) return true;
     var due = rec.cachedDueDate ||
       (assignment && !assignment.hasMultipleDueDates ? assignment.dueAt : null);
-    if (!due) return false;
-    var submitted = Date.parse(rec.submittedAt);
-    var dueMs = Date.parse(due);
-    return isFinite(submitted) && isFinite(dueMs) && submitted > dueMs;
+    if (due) {
+      // The dates are authoritative; Canvas's late/seconds_late can be stale
+      // after an override or an explicit status.
+      var submitted = Date.parse(rec.submittedAt);
+      var dueMs = Date.parse(due);
+      return isFinite(submitted) && isFinite(dueMs) && submitted > dueMs;
+    }
+    // No due date we can trust for this submission: only Canvas's own word
+    // can say it was late.
+    return rec.late === true || Number(rec.secondsLate) > 0;
   }
 
   /* The raw late_policy_status a grade write leaves behind: cleared (or

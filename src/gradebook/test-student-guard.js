@@ -71,7 +71,7 @@
     else if (key === 'ArrowUp' || key === 'PageUp' || (key === 'Enter' && e.shiftKey)) this.direction = -1;
 
     var target = e.target;
-    if (target && target.closest && target.closest('[role="dialog"], .ui-dialog, [role="menu"], .cgp-pop, .cgp-notice')) return;
+    if (target && target.closest && target.closest('[role="dialog"], .ui-dialog, [role="menu"], .cgp-pop')) return;
     // Typing in a field outside the grid (a search box, a comment) is never
     // about the grid's active cell, wherever that happens to be.
     var inCell = !!(target && target.closest && target.closest('.slick-cell'));

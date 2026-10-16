@@ -665,6 +665,7 @@ suite('write safety: lifting an explicit Missing keeps work that came in late', 
   test('with per-student due dates only the submission\'s own due date counts', () => {
     const multi = { dueAt: due, hasMultipleDueDates: true };
     a.eq(ops().handedInLate(lateRec(), multi), false, 'the assignment-level date proves nothing here');
+    a.eq(ops().handedInLate(lateRec({ secondsLate: 3600, submittedAt: '2026-10-08T08:00:00Z' }), { dueAt: due }), false, 'a stale seconds_late never beats the dates');
     a.eq(ops().handedInLate(lateRec({ cachedDueDate: '2026-10-20T00:00:00Z' }), multi), false, 'on time for their own date');
     a.eq(ops().handedInLate(lateRec({ cachedDueDate: due }), multi), true, 'late for their own date');
     a.eq(ops().handedInLate(lateRec({ secondsLate: 3600 }), multi), true, 'Canvas says so directly');
@@ -789,6 +790,15 @@ suite('write safety: an invalid grade stays put for the teacher to fix', (test) 
     a.eq(holds({ querySelector: () => null }, [alertEl]), false, 'a lingering alert alone never pins a cell that is not editing');
     a.eq(holds({ querySelector: () => null, editor: {} }, [{ textContent: 'Saved' }]), false, 'open editor, no complaint');
     a.eq(holds(null), false);
+    const seen = [alertEl];
+    const holdsSeen = (cell, alerts) => {
+      const saved = globalThis.document;
+      globalThis.document = { querySelectorAll: () => alerts };
+      try { return CGP.GradebookDomAdapter.prototype.holdsInvalidGrade.call({ editorInput: (c) => c.editor || null }, cell, seen); }
+      finally { globalThis.document = saved; }
+    };
+    a.eq(holdsSeen({ querySelector: () => null, editor: {} }, [alertEl]), false, 'an alert already up before the move is not this grade\'s');
+    a.eq(holdsSeen({ querySelector: () => null, editor: {} }, [alertEl, { textContent: 'invalid grade again' }]), true, 'a new alert is');
   });
 });
 
@@ -830,6 +840,19 @@ suite('write safety: deleting a comment', (test) => {
     a.eq(failed, true);
     a.deep(m2.cell('50', '10').commentList.map((c) => c.id), ['5', '6']);
     a.eq(m2._writesInFlight.size, 0, 'no write left marked in flight');
+  });
+
+  test('the comment disappears immediately, before Canvas answers, and returns if Canvas refuses', async () => {
+    stubUi();
+    const m = mk2();
+    let reject;
+    const w = new CGP.GradeWriter({ api: { deleteComment: () => new Promise((_, rj) => { reject = rj; }) }, model: m, settings: { values: {} } });
+    const p = w.deleteComment('50', '10', '5');
+    a.deep(m.cell('50', '10').commentList.map((c) => c.id), ['6'], 'gone the moment the delete is confirmed');
+    await new Promise((r) => setTimeout(r, 0));
+    reject({ status: 500 });
+    await p.catch(() => {});
+    a.deep(m.cell('50', '10').commentList.map((c) => c.id), ['5', '6'], 'restored after a refusal');
   });
 
   test('refused on an anonymous assignment, like adding one', async () => {

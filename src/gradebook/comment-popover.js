@@ -340,14 +340,21 @@
         btn.disabled = true;
         btn.classList.add('cgp-pop__del--busy');
         var userId = info.studentId;
-        self.writer.deleteComment(info.assignmentId, userId, commentId).then(function () {
+        var pending = self.writer.deleteComment(info.assignmentId, userId, commentId);
+        // The writer has already dropped the comment from the model: show that
+        // now, without waiting for Canvas.
+        if (self.requestPaint) self.requestPaint();
+        if (self.isShowing(info.assignmentId, userId)) self.renderCurrent();
+        pending.then(function () {
           if (self.requestPaint) self.requestPaint();
-          // Whenever this same submission's thread is on screen - including a
-          // popover closed and reopened while the delete was in flight, which
-          // bumps _seq - it must stop offering the comment that is now gone.
+          // A popover closed and reopened while the delete was in flight
+          // still must not offer the comment that is now gone.
           if (self.isShowing(info.assignmentId, userId)) self.renderCurrent();
           else CGP.ui.toast('Comment deleted');
         }, function (err) {
+          // Canvas refused: the writer restored the comment; show it again.
+          if (self.requestPaint) self.requestPaint();
+          if (self.isShowing(info.assignmentId, userId)) self.renderCurrent();
           busy = false;
           btn.disabled = false;
           btn.classList.remove('cgp-pop__del--busy');

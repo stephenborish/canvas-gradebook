@@ -1099,17 +1099,32 @@
    * on screen. Builds differ in class names, so markers are matched loosely,
    * and "no editor, no marker" always answers false - a cell that simply is
    * not editing is never treated as refused. */
-  P.holdsInvalidGrade = function (cellEl) {
+  P.holdsInvalidGrade = function (cellEl, seenAlerts) {
     if (!cellEl) return false;
     try {
-      if (cellEl.querySelector && cellEl.querySelector('[aria-invalid="true"], [class*="invalid" i], [class*="Invalid"]')) return true;
+      if (cellEl.querySelector && cellEl.querySelector('[aria-invalid="true"], .invalid, .invalid-grade, [class*="InvalidGrade"], [class*="GradeInvalid"]')) return true;
       if (!this.editorInput(cellEl)) return false;
-      var alerts = document.querySelectorAll('[role="alert"], #flash_message_holder, .flash-message-container, .ic-flash-error');
+      // Only an alert raised since the caller's snapshot counts: Canvas's
+      // flash message lingers for seconds, so one left over from a grade the
+      // teacher already corrected must not hold back a valid entry.
+      var alerts = P.invalidGradeAlerts.call(this);
       for (var i = 0; i < alerts.length; i++) {
-        if (/invalid grade/i.test(String(alerts[i].textContent || ''))) return true;
+        if (!seenAlerts || seenAlerts.indexOf(alerts[i]) < 0) return true;
       }
     } catch (e) { /* a probe must never break grading */ }
     return false;
+  };
+
+  /* Canvas's "invalid grade" alerts currently on screen. */
+  P.invalidGradeAlerts = function () {
+    var out = [];
+    try {
+      var alerts = document.querySelectorAll('[role="alert"], #flash_message_holder, .flash-message-container, .ic-flash-error');
+      for (var i = 0; i < alerts.length; i++) {
+        if (/invalid grade/i.test(String(alerts[i].textContent || ''))) out.push(alerts[i]);
+      }
+    } catch (e) { /* ignore */ }
+    return out;
   };
 
   /* Whether a grade cell is currently open for editing - SlickGrid mounts an
