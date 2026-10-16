@@ -633,7 +633,7 @@
 
   /* Ask the page-context bridge to transact against Canvas's SlickGrid. The
    * grid object itself cannot cross Chrome's isolated-world boundary. */
-  P.requestColumnSizing = function (studentWidth, assignmentWidth, hideTotal, narrow) {
+  P.requestColumnSizing = function (studentWidth, assignmentWidth, hideTotal, narrow, moveTotal) {
     return new Promise(function (resolve) {
       var id = 'cgp-grid-' + Date.now() + '-' + Math.random().toString(36).slice(2);
       var timer;
@@ -654,7 +654,9 @@
         studentWidth: studentWidth, assignmentWidth: assignmentWidth,
         hideTotal: !!hideTotal,
         // false: leave student/assignment widths alone (frozenTotal only).
-        narrow: !!narrow
+        narrow: !!narrow,
+        // Only while the frozen Total's widen is confirmed (frozen-total.js).
+        moveTotal: !!moveTotal
       }, window.location.origin);
     });
   };
@@ -726,7 +728,7 @@
     var hideTotal = !!s.frozenTotal;
     // narrowColumns off + frozenTotal on: only the Total column is handled.
     var narrow = !!s.narrowColumns;
-    return this.requestColumnSizing(studentW, assignmentW, hideTotal, narrow).then(function (result) {
+    return this.requestColumnSizing(studentW, assignmentW, hideTotal, narrow, this.moveTotal).then(function (result) {
       if (result && result.ok) {
         document.documentElement.classList.remove('cgp-column-sizing-presentation-only');
         self._resizeAttempts = 0;

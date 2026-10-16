@@ -20,6 +20,9 @@
     // frozen pane against a grid whose column widths are momentarily
     // between Canvas's old model and the extension's narrowed one.
     this.isSizingPending = ctx.isSizingPending || function () { return false; };
+    // Called with true once the widen is confirmed and false when it is lost,
+    // so the native Total is only relocated while the overlay really shows.
+    this.onTotalMove = ctx.onTotalMove || function () {};
     this.width = 84;
     this.enabled = false;   // the setting is on and a frozen pane was found at start
     // Verified to actually be showing, not merely attempted - see
@@ -76,6 +79,7 @@
   };
 
   P.stop = function () {
+    if (this.working) this.onTotalMove(false);
     this.enabled = false;
     this._standingDown = false;
     this._standDowns = 0;
@@ -266,7 +270,9 @@
    * would otherwise leave an empty Total-sized gap beside the names). Then
    * back off - 2s, 4s, ... up to 30s - before probing again from paint(). */
   P.standDown = function () {
+    var wasWorking = this.working;
     this.teardownDrawn();
+    if (wasWorking) this.onTotalMove(false);
     this.restorePaneGeometry();
     this.restoreAncestorOverflow();
     document.documentElement.classList.remove('cgp-frozen-total');
@@ -409,6 +415,7 @@
       this.working = true;
       document.documentElement.classList.add('cgp-frozen-total-active');
       CGP.diag.bump('frozenTotal.confirmed');
+      this.onTotalMove(true);
     }
 
     var layer = this.ensureLayer();

@@ -133,6 +133,14 @@
       // grid Canvas has finished laying out, never a half-applied one.
       isSizingPending: function () {
         return !!(layout._resizing && layout._resizeStartedAt && (Date.now() - layout._resizeStartedAt < 2000));
+      },
+      // The native Total is only relocated beside the names while the frozen
+      // overlay's widen is confirmed; losing it puts Canvas's column back.
+      onTotalMove: function (on) {
+        if (!!layout.moveTotal === !!on) return;
+        layout.moveTotal = !!on;
+        _reconcileAttempts = 0;
+        reconcileColumns();
       }
     });
     // Keeps the hidden Test Student row from being typed into, and offers to

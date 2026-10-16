@@ -21,14 +21,23 @@
     return list[list.length - 1].letter;
   }
 
+  var LINE_RE = /^\s*(\S+?)\s*[:=\s]\s*(\d+(?:\.\d+)?)\s*%?\s*$/;
+
   /* "A+: 96.5" per line, as shown in the options page. */
   function scaleToText(scale) {
     return (scale || []).map(function (r) { return r.letter + ': ' + r.min; }).join('\n');
   }
+  /* Non-blank lines textToScale cannot read, so a typo is reported instead of
+   * silently saving a different scale. */
+  function badScaleLines(text) {
+    return String(text || '').split(/\r?\n/).filter(function (line) {
+      return line.trim() && !LINE_RE.test(line);
+    }).map(function (line) { return line.trim(); });
+  }
   function textToScale(text) {
     var out = [];
     String(text || '').split(/\r?\n/).forEach(function (line) {
-      var m = /^\s*(\S+?)\s*[:=\s]\s*(\d+(?:\.\d+)?)\s*%?\s*$/.exec(line);
+      var m = LINE_RE.exec(line);
       if (m) out.push({ letter: m[1], min: Number(m[2]) });
     });
     return out;
@@ -74,6 +83,6 @@
 
   CGP.totals = {
     formatTotal: formatTotal, buildTotalRows: buildTotalRows,
-    letterFor: letterFor, scaleToText: scaleToText, textToScale: textToScale
+    letterFor: letterFor, scaleToText: scaleToText, textToScale: textToScale, badScaleLines: badScaleLines
   };
 })();

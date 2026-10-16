@@ -481,6 +481,12 @@
   }
 
   function save() {
+    var badLines = CGP.totals.badScaleLines($('gradingScale').value);
+    if (badLines.length) {
+      status('Not saved: the letter-grade scale has line(s) that are not "Letter: number" - ' +
+        badLines.join('; ') + '. Fix or remove them, then save again.', { error: true });
+      return Promise.resolve();
+    }
     var raw = readRawSnippets();
     var values = read();
     var problem = checkSavable(values, raw);

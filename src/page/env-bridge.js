@@ -99,7 +99,7 @@
 
   /* ------------------------------------------------------------- the grid */
 
-  var cgpState = window.__cgpState = { active: false, narrow: false, hideTotal: false, studentWidth: null, assignmentWidth: null };
+  var cgpState = window.__cgpState = { active: false, narrow: false, hideTotal: false, moveTotal: false, studentWidth: null, assignmentWidth: null };
 
   function isWindow(obj) {
     if (!obj) return false;
@@ -421,8 +421,8 @@
   var totalHome = null;   // Canvas's own index for Total, while it is moved
   function totalFirst(grid, columns) {
     if (!Array.isArray(columns)) return columns;
-    if (!cgpState.active || !cgpState.hideTotal) {
-      // Feature turned off: put Total back where Canvas had it.
+    if (!cgpState.active || !cgpState.hideTotal || !cgpState.moveTotal) {
+      // Feature turned off, or the frozen Total stood down: put Total back where Canvas had it.
       if (totalHome === null) return columns;
       var cur = -1;
       for (var j = 0; j < columns.length; j++) if (columnKind(columns[j]) === 'total') { cur = j; break; }
@@ -566,10 +566,11 @@
     });
   }
 
-  function doResize(grid, studentWidth, assignmentWidth, hideTotal, narrow) {
+  function doResize(grid, studentWidth, assignmentWidth, hideTotal, narrow, moveTotal) {
     cgpState.active = true;
     cgpState.narrow = !!narrow;
     cgpState.hideTotal = !!hideTotal;
+    cgpState.moveTotal = !!moveTotal;
     cgpState.studentWidth = studentWidth;
     cgpState.assignmentWidth = assignmentWidth;
     patchGrid(grid);
@@ -607,12 +608,12 @@
     });
   }
 
-  function resizeColumns(studentWidth, assignmentWidth, hideTotal, narrow) {
+  function resizeColumns(studentWidth, assignmentWidth, hideTotal, narrow, moveTotal) {
     var grid = findGrid();
-    if (grid) return doResize(grid, studentWidth, assignmentWidth, hideTotal, narrow);
+    if (grid) return doResize(grid, studentWidth, assignmentWidth, hideTotal, narrow, moveTotal);
     return waitForGrid(4500).then(function (g) {
       if (!g) return { ok: false, reason: 'unavailable' };
-      return doResize(g, studentWidth, assignmentWidth, hideTotal, narrow);
+      return doResize(g, studentWidth, assignmentWidth, hideTotal, narrow, moveTotal);
     });
   }
 
@@ -669,7 +670,7 @@
     // Senders that predate the flag only ever asked in order to narrow.
     var narrow = message.narrow === undefined ? true : !!message.narrow;
     if (narrow && (!isFinite(studentWidth) || !isFinite(assignmentWidth) || studentWidth < 1 || assignmentWidth < 1)) return;
-    resizeColumns(Math.round(studentWidth) || null, Math.round(assignmentWidth) || null, hideTotal, narrow).then(function (result) {
+    resizeColumns(Math.round(studentWidth) || null, Math.round(assignmentWidth) || null, hideTotal, narrow, !!message.moveTotal).then(function (result) {
       post({ source: 'cgp-grid-response', id: message.id, result: result });
     });
   });

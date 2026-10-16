@@ -268,6 +268,10 @@ suite('Total letter grades', (test) => {
     a.deep(CGP.sanitizeSettings({ gradingScale: 'bad' }).gradingScale, CGP.DEFAULT_GRADING_SCALE);
     a.deep(CGP.totals.textToScale(CGP.totals.scaleToText(CGP.DEFAULT_GRADING_SCALE)), CGP.DEFAULT_GRADING_SCALE);
   });
+  test('malformed scale lines are reported, not dropped', () => {
+    a.deep(CGP.totals.badScaleLines('P: 60\nF: zero\n\n'), ['F: zero']);
+    a.deep(CGP.totals.badScaleLines(CGP.totals.scaleToText(CGP.DEFAULT_GRADING_SCALE)), []);
+  });
   test('Total title shows the scale letter', () => {
     a.ok(CGP.totals.formatTotal({ currentScore: 91.2, currentGrade: 'x' }).title.indexOf('(A-)') > 0);
   });
