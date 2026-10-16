@@ -248,10 +248,9 @@ and because you can no longer see it, nothing is allowed to fill it in behind yo
 - Shift-click ranges skip the row, and a paste that would put a value on it is refused with a
   message saying so. The extension's own writes never target it.
 - Grades that get there anyway — Canvas's automatic missing-submission policy gives the Test
-  Student zeros as due dates pass — are found when the gradebook opens. You are told how many
-  and in which columns, with a one-click **Clear them**. Clearing empties the grade, removes any
-  excusal, and sets "no status" so the missing policy cannot put the zero straight back. Turn on
-  *Keep the hidden Test Student's grades empty* to have this done without asking.
+  Student zeros as due dates pass — are found and cleared automatically in the background when
+  the gradebook opens, with no prompt. Clearing empties the grade, removes any excusal, and sets
+  "no status" so the missing policy cannot put the zero straight back.
 
 Canvas's own whole-column actions (Set Default Grade, Curve Grades) can still reach the Test
 Student; anything they put there is caught the next time the gradebook opens. With the row

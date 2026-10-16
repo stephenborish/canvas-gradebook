@@ -17,8 +17,7 @@
  *      policy gives the Test Student automatic zeros as due dates pass, and
  *      older stray entries may already be there. On load, the Test
  *      Student's submissions are read; if any carry a grade, an excusal or a
- *      status, the teacher is told and offered a one-click clear (or, with
- *      testStudentAutoClear on, they are cleared without asking).
+ *      status, they are cleared silently in the background.
  *
  * Only active while hideTestStudent is on: a visible row is the teacher's
  * to type in, and its contents are in plain sight. */
@@ -39,8 +38,6 @@
     this.direction = 1;       // last vertical direction of travel
     this._checkTimer = null;
     this._stepping = false;
-    this.noticeEl = null;
-    this.dismissed = false;
   }
 
   var P = TestStudentGuard.prototype;
@@ -193,11 +190,7 @@
         });
         CGP.diag.set('testStudentCellsWithData', found.length);
         if (!found.length) return found;
-        if (self.settings.values.testStudentAutoClear) {
-          self.clear(found, { quiet: true });
-        } else {
-          self.showNotice(found);
-        }
+        self.clear(found);
         return found;
       });
     }, function (err) {
@@ -230,69 +223,9 @@
       if (failed) {
         CGP.ui.error('Cleared ' + ok + ' of ' + found.length + ' Test Student grades; ' + failed +
           ' could not be cleared. ' + CGP.util.describeApiError(firstError, { fallback: 'Canvas refused' }));
-      } else if (ok) {
-        CGP.ui.toast('Cleared ' + ok + ' hidden Test Student ' +
-          (ok === 1 ? 'grade' : 'grades') + ' so ' + (ok === 1 ? 'it no longer counts' : 'they no longer count') +
-          ' in column averages. Reload to see Canvas’s averages update.');
       }
       return { ok: ok, failed: failed };
     });
-  };
-
-  P.hideNotice = function () {
-    if (this.noticeEl && this.noticeEl.parentElement) this.noticeEl.parentElement.removeChild(this.noticeEl);
-    this.noticeEl = null;
-  };
-
-  P.showNotice = function (found) {
-    var self = this;
-    if (this.dismissed) return;
-    this.hideNotice();
-    var columns = [];
-    found.forEach(function (f) {
-      var a = self.model.assignment(f.assignmentId);
-      var name = a && a.name ? a.name : 'an assignment';
-      if (columns.indexOf(name) < 0) columns.push(name);
-    });
-    var n = found.length;
-    var el = document.createElement('div');
-    el.className = 'cgp-notice';
-    el.setAttribute('role', 'alert');
-    var text = document.createElement('p');
-    text.className = 'cgp-notice__text';
-    text.textContent = 'The hidden Test Student has ' + n + (n === 1 ? ' grade or status' : ' grades or statuses') +
-      ' (in ' + columns.slice(0, 3).join(', ') + (columns.length > 3 ? ' and ' + (columns.length - 3) + ' more' : '') +
-      '). Canvas counts ' + (n === 1 ? 'it' : 'them') + ' in column averages.';
-    el.appendChild(text);
-    var actions = document.createElement('div');
-    actions.className = 'cgp-notice__actions';
-    function button(label, cls, onClick) {
-      var b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'cgp-notice__btn ' + cls;
-      b.textContent = label;
-      b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); onClick(b); });
-      actions.appendChild(b);
-      return b;
-    }
-    button('Clear them', 'cgp-notice__btn--primary', function (b) {
-      b.disabled = true;
-      b.textContent = 'Clearing…';
-      self.clear(found).then(function () { self.hideNotice(); });
-    });
-    button('Always clear automatically', '', function (b) {
-      b.disabled = true;
-      Promise.resolve(self.settings.save ? self.settings.save({ testStudentAutoClear: true }) : null).catch(function () { return null; })
-        .then(function () { return self.clear(found); })
-        .then(function () { self.hideNotice(); });
-    });
-    button('Not now', 'cgp-notice__btn--quiet', function () {
-      self.dismissed = true;
-      self.hideNotice();
-    });
-    el.appendChild(actions);
-    (document.body || document.documentElement).appendChild(el);
-    this.noticeEl = el;
   };
 
   CGP.TestStudentGuard = TestStudentGuard;
