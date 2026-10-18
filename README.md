@@ -11,19 +11,28 @@ into. No API token to paste, no server, no student data leaving your machine.
 
 ## Install
 
-1. Download / unzip this folder somewhere permanent (e.g. `~/Documents/canvas-gradebook-plus`).
-   Chrome loads the folder from disk every time it starts, so don't leave it in Downloads.
-2. Open `chrome://extensions`.
-3. Turn on **Developer mode** (top right).
-4. Click **Load unpacked** and choose the `canvas-gradebook-plus` folder (the one containing
-   `manifest.json`).
-5. Open your course gradebook: `https://<yourschool>.instructure.com/courses/<id>/gradebook`.
+Install it from the Chrome Web Store (unlisted, so use this link):
+**https://chromewebstore.google.com/detail/ijohiadaoippjnjcgnemhcidabnbncfa**
+
+Then open your course gradebook: `https://<yourschool>.instructure.com/courses/<id>/gradebook`.
+
+A store install follows your Chrome profile: with Chrome sync on, it installs itself on every
+computer you sign into, and its settings come with it. New versions arrive on their own; the
+extension checks for one when Chrome starts and when you open a Canvas course (at most hourly),
+and switches over as soon as no Canvas course page is open, so it never cuts out mid-grading.
+
+If you used an earlier unpacked copy (**Load unpacked** on `chrome://extensions`), remove it
+once the store version is installed, or both will run on the gradebook. Its settings don't
+carry over on their own: use **Export** on the old copy's options page and **Import** on the
+new one first.
 
 It works out of the box on `*.instructure.com`. If your school self-hosts Canvas on its own
 domain, open the extension's options page (click the toolbar icon), type the domain under
 **Self-hosted Canvas domain**, and click **Enable here**.
 
-To make a fresh ZIP after editing anything:
+For development, **Load unpacked** on `chrome://extensions` (Developer mode on) still works on
+a checkout of this repo. To make a ZIP for a Web Store upload after raising `"version"` in
+`manifest.json`:
 
 ```bash
 cd .. && zip -r canvas-gradebook-plus.zip canvas-gradebook-plus -x "*/.DS_Store"
