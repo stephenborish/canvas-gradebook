@@ -19,7 +19,8 @@ Then open your course gradebook: `https://<yourschool>.instructure.com/courses/<
 A store install follows your Chrome profile: with Chrome sync on, it installs itself on every
 computer you sign into, and its settings come with it. New versions arrive on their own; the
 extension checks for one when Chrome starts and when you open a Canvas course (at most hourly),
-and switches over as soon as no Canvas course page is open, so it never cuts out mid-grading.
+and switches over as soon as it is downloaded. A gradebook tab that was already open keeps
+working, but reload it to pick up the new version and any settings changes.
 
 If you used an earlier unpacked copy (**Load unpacked** on `chrome://extensions`), remove it
 once the store version is installed, or both will run on the gradebook. Its settings don't

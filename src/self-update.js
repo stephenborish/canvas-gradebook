@@ -1,21 +1,19 @@
 /* Canvas Gradebook+ - picking up a new Web Store version promptly.
  *
  * Chrome checks the Web Store for updates every few hours on its own. This
- * asks sooner (when Chrome starts, and when a Canvas course page loads, at
- * most once an hour) and, once Chrome has downloaded a new version, reloads
- * the extension so it takes effect right away instead of at the next browser
- * restart.
+ * asks sooner: when Chrome starts, and when a Canvas course page loads, at
+ * most once an hour. Once Chrome has downloaded a new version it reloads the
+ * extension straight away.
  *
- * Reloading orphans the content scripts already running in open tabs: they
- * lose chrome.storage and every other extension API until the page is
- * reloaded. So a downloaded update waits until no Canvas course page is open
- * - closing or navigating away from the last one applies it. The pending flag
- * lives in chrome.storage.session, which survives the service worker being
- * stopped between events and is cleared by the reload itself. */
+ * Chrome installs a downloaded update as soon as the service worker goes
+ * idle, and open content scripts do not count as activity, so an update
+ * cannot usefully be held back while a gradebook is open; reloading at once
+ * only saves the idle wait. A page that was already open when the update
+ * landed keeps working (its writes go straight to Canvas) but loses
+ * chrome.storage until it is reloaded. */
 
 export const CHECK_INTERVAL_MS = 60 * 60 * 1000;
 const LAST_CHECK_KEY = 'cgp.lastUpdateCheck';
-const PENDING_KEY = 'cgp.updatePending';
 const CANVAS_PATTERN = '*://*.instructure.com/courses/*';
 
 /* Course pages on instructure.com plus any self-hosted Canvas domain the
@@ -61,37 +59,14 @@ export function createSelfUpdater(chrome, now = () => Date.now()) {
     }
   }
 
-  /** Reload into the downloaded version if no Canvas page would be orphaned. */
-  async function applyIfIdle() {
-    try {
-      const got = await chrome.storage.session.get(PENDING_KEY);
-      if (!got || !got[PENDING_KEY]) return false;
-      // Chrome ignores the url filter for hosts the extension has lost access
-      // to (site access set to "on click") and returns every tab, which
-      // only errs toward waiting for the next browser restart.
-      const tabs = await chrome.tabs.query({ url: await canvasPatterns(chrome) });
-      if (tabs && tabs.length) return false;
-      chrome.runtime.reload();
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  async function onUpdateAvailable(details) {
-    try {
-      await chrome.storage.session.set({ [PENDING_KEY]: (details && details.version) || true });
-    } catch (e) { /* applyIfIdle then finds nothing pending; restart applies it */ }
-    return applyIfIdle();
+  function onUpdateAvailable() {
+    chrome.runtime.reload();
   }
 
   async function onTabUpdated(tabId, changeInfo, tab) {
     if (!changeInfo || changeInfo.status !== 'complete') return;
-    // A tab that just left Canvas may have been the last one holding an
-    // update back. Keyed on status, not url: Chrome only reports a tab's URL
-    // for sites this extension has host access to, so a tab navigating from
-    // Canvas to anywhere else never reports its new one.
-    if (await applyIfIdle()) return;
+    // tab.url is only visible for hosts this extension has access to, which
+    // is every Canvas host it runs on.
     if (tab && isCanvasCourseUrl(tab.url, await canvasPatterns(chrome))) await checkForUpdate();
   }
 
@@ -99,11 +74,8 @@ export function createSelfUpdater(chrome, now = () => Date.now()) {
   function start() {
     chrome.runtime.onUpdateAvailable.addListener(onUpdateAvailable);
     chrome.runtime.onStartup.addListener(() => { checkForUpdate(); });
-    chrome.tabs.onRemoved.addListener(() => { applyIfIdle(); });
     chrome.tabs.onUpdated.addListener(onTabUpdated);
   }
 
-  return { start, checkForUpdate, applyIfIdle, onUpdateAvailable, onTabUpdated };
+  return { start, checkForUpdate, onUpdateAvailable, onTabUpdated };
 }
-
-export const _test = { isCanvasCourseUrl };
