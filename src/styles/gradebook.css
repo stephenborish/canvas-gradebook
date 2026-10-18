@@ -2382,3 +2382,53 @@ html.cgp-on .cgp-stats__list li {
 html.cgp-on .cgp-stats__list li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 html.cgp-on .cgp-stats__list li b { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 html.cgp-on .cgp-stats__list li i { font-style: normal; font-weight: 400; color: var(--cgp-muted); }
+
+/* ===================================== View Options sync (layout.js) ===== */
+
+/* While syncViewOptions() opens Canvas's Gradebook Settings tray only to
+ * drive its View Options checkboxes and close it again, the tray is kept off
+ * screen so a teacher with "Apply these to Canvas's own settings
+ * automatically" on never sees it flash open. Programmatic clicks still
+ * reach it. */
+html.cgp-syncing-view-options [role="dialog"]:has([role="tab"]),
+html.cgp-syncing-view-options [aria-modal="true"]:has([role="tab"]) {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* The wizard beside "Analyze Scores" in a column's "..." menu
+ * (score-analysis.js). */
+html.cgp-on .cgp-analyze-icon {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  margin-left: 6px;
+  vertical-align: -5px;
+  flex: none;
+}
+
+/* ======================================== gutter beside the global nav ==== */
+
+/* Canvas reserves room on the left of the page for its course navigation
+ * (#left-side) and pads the content area on top of that. On the gradebook,
+ * course navigation is this extension's overlay drawer (course-menu.js) and
+ * takes no room in the layout, so all that was left of the reservation was
+ * a blank white strip between Canvas's global nav and the Student Name
+ * column. A small, even gutter replaces it. */
+html.cgp-gradebook #main,
+html.cgp-gradebook .ic-Layout-columns,
+html.cgp-gradebook #not_right_side,
+html.cgp-gradebook .ic-app-main-content,
+html.cgp-gradebook #content-wrapper,
+html.cgp-gradebook .ic-Layout-contentWrapper {
+  margin-left: 0 !important;
+  padding-left: 0 !important;
+}
+html.cgp-gradebook #content,
+html.cgp-gradebook .ic-Layout-contentMain {
+  padding-left: 12px !important;
+  padding-right: 12px !important;
+}
+html.cgp-gradebook .ic-app-nav-toggle-and-crumbs {
+  margin-left: 12px !important;
+}
