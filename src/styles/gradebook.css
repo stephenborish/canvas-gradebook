@@ -2414,21 +2414,21 @@ html.cgp-on .cgp-analyze-icon {
  * course navigation is this extension's overlay drawer (course-menu.js) and
  * takes no room in the layout, so all that was left of the reservation was
  * a blank white strip between Canvas's global nav and the Student Name
- * column. A small, even gutter replaces it. */
+ * column. A small, even gutter replaces it. Logical (inline-start)
+ * properties, so an RTL locale's right-side reservation clears too. */
 html.cgp-gradebook #main,
 html.cgp-gradebook .ic-Layout-columns,
 html.cgp-gradebook #not_right_side,
 html.cgp-gradebook .ic-app-main-content,
 html.cgp-gradebook #content-wrapper,
 html.cgp-gradebook .ic-Layout-contentWrapper {
-  margin-left: 0 !important;
-  padding-left: 0 !important;
+  margin-inline-start: 0 !important;
+  padding-inline-start: 0 !important;
 }
 html.cgp-gradebook #content,
 html.cgp-gradebook .ic-Layout-contentMain {
-  padding-left: 12px !important;
-  padding-right: 12px !important;
+  padding-inline: 12px !important;
 }
 html.cgp-gradebook .ic-app-nav-toggle-and-crumbs {
-  margin-left: 12px !important;
+  margin-inline-start: 12px !important;
 }
