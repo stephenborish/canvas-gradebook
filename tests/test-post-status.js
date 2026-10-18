@@ -46,6 +46,13 @@ suite('cell status (what M and L must show immediately)', (test) => {
     a.eq(status({ score: 3, grade: '3', missing: true, latePolicyStatus: null }), 'none', 'graded paper submission is none');
     a.eq(status({ enteredScore: 3, grade: '3', missing: true, latePolicyStatus: null }), 'none', 'enteredScore paper submission is none');
     a.eq(status({ score: 3, grade: '3', missing: true, late: true, latePolicyStatus: null }), 'late', 'late paper submission is late');
+  });
+
+  test('a zero on Canvas\'s automatic Missing stays missing', () => {
+    a.eq(status({ score: 0, grade: '0', missing: true, latePolicyStatus: null }), 'missing', 'zero score');
+    a.eq(status({ enteredScore: 0, grade: '0', missing: true, latePolicyStatus: null }), 'missing', 'zero entered score');
+    a.eq(status({ grade: '0%', missing: true, latePolicyStatus: null }), 'missing', 'zero percent grade');
+    a.eq(status({ score: 0, grade: '0', missing: false, latePolicyStatus: null }), 'none', 'a zero alone is never missing');
     a.eq(status({ missing: true, latePolicyStatus: 'none' }), 'none', 'explicit none status clears missing');
     a.eq(status({ score: 0, missing: true, latePolicyStatus: 'missing' }), 'missing', 'explicit missing remains missing');
   });

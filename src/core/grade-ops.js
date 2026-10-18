@@ -275,6 +275,15 @@
    * and Canvas's derived booleans are consulted, because a submission handed
    * in after its due date is late (late: true) with no explicit status at all.
    */
+  function earnedCredit(rec) {
+    var scores = [rec.score, rec.enteredScore].filter(function (v) { return v !== null && v !== undefined && v !== ''; });
+    if (scores.length) return scores.some(function (v) { return Number(v) > 0; });
+    var g = rec.grade;
+    if (g === null || g === undefined || g === '' || g === '-') return false;
+    var n = parseFloat(String(g));
+    return isNaN(n) ? true : n > 0;
+  }
+
   function cellStatus(rec) {
     if (!rec) return null;
     var explicit = rec.latePolicyStatus || null;
@@ -283,12 +292,12 @@
     if (explicit && explicit !== 'missing' && explicit !== 'late') return explicit;
     if (explicit === 'missing') return 'missing';
     if (rec.missing) {
-      // If there is an entered score/grade and the teacher has not explicitly marked it missing,
-      // it is not missing (the student submitted work, e.g. on paper).
-      var hasScore = (rec.score !== null && rec.score !== undefined) ||
-                     (rec.enteredScore !== null && rec.enteredScore !== undefined) ||
-                     (rec.grade !== null && rec.grade !== undefined && rec.grade !== '' && rec.grade !== '-');
-      if (hasScore) {
+      // Canvas's automatic Missing (past due, nothing submitted online) stays
+      // on a graded submission. Real credit means the work came in some other
+      // way (on paper), so it is not missing. A zero is not credit: it is
+      // how a teacher records the missing work itself, and Canvas still
+      // draws its own missing icon on it.
+      if (earnedCredit(rec)) {
         return (rec.late || explicit === 'late') ? 'late' : 'none';
       }
       return 'missing';
