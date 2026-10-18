@@ -22,17 +22,23 @@
   var ASSIGNMENT_MENU_ITEMS = /^(curve grades|set default grade|message students who)/i;
   var OPEN_WINDOW_MS = 4000;
   var ITEM_LABEL = 'Analyze Scores';
-  // A violet tile holding three rising bars and a twinkling sparkle: big and
-  // colourful enough to read as "something new here" in a menu of plain text.
-  // The tile is a CSS gradient (gradebook.css), so the SVG needs no ids.
-  var ANALYZE_ICON =
-    '<span class="cgp-analyze-icon" aria-hidden="true">' +
-      '<svg viewBox="0 0 24 24" width="16" height="16" focusable="false">' +
-        '<rect x="3" y="12" width="4" height="9" rx="1.2" fill="#fff" fill-opacity=".75"/>' +
-        '<rect x="10" y="9" width="4" height="12" rx="1.2" fill="#fff" fill-opacity=".9"/>' +
-        '<rect x="17" y="5" width="4" height="16" rx="1.2" fill="#fff"/>' +
-        '<path class="cgp-analyze-icon__spark" d="M5.5 0l1.3 3.2 3.2 1.3-3.2 1.3-1.3 3.2-1.3-3.2-3.2-1.3 3.2-1.3z" fill="#fde047"/>' +
-      '</svg>' +
+  // Canvas's other items are bare text, so this one gets a bar-chart icon, a
+  // line saying what it does and a NEW pill (styled in gradebook.css). The
+  // icon and pill take currentColor / invert with the row, so they stay
+  // legible under Canvas's blue focus highlight.
+  var ITEM_HINT = 'Mean, median, histogram';
+  var ITEM_HTML =
+    '<svg class="cgp-analyze-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true" focusable="false">' +
+      '<rect x="2.5" y="14" width="3.6" height="7" rx=".8"/>' +
+      '<rect x="7.3" y="8" width="3.6" height="13" rx=".8"/>' +
+      '<rect x="12.1" y="4" width="3.6" height="17" rx=".8"/>' +
+      '<rect x="16.9" y="10" width="3.6" height="11" rx=".8"/>' +
+    '</svg>' +
+    '<span class="cgp-analyze-text">' +
+      '<span class="cgp-analyze-title">' + ITEM_LABEL +
+        '<span class="cgp-analyze-pill" aria-hidden="true">NEW</span>' +
+      '</span>' +
+      '<span class="cgp-analyze-hint">' + ITEM_HINT + '</span>' +
     '</span>';
 
   function ScoreAnalysisController(ctx) {
@@ -128,8 +134,8 @@
     item.removeAttribute('href');
     item.classList.add('cgp-analyze-item');
     var label = labelNode(item, itemText(anchor));
-    label.textContent = ITEM_LABEL;
-    label.insertAdjacentHTML('beforeend', ANALYZE_ICON);
+    label.innerHTML = ITEM_HTML;
+    label.classList.add('cgp-analyze-label');
     item.setAttribute('aria-label', ITEM_LABEL);
     item.setAttribute('title', 'Mean, median, standard deviation, high/low students and a letter-grade histogram for this column');
 
