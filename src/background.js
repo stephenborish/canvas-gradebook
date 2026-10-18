@@ -1,10 +1,12 @@
 /* Canvas Gradebook+ - service worker.
  *
  * Deliberately tiny. It seeds default settings, opens the options page from the
- * toolbar icon, and registers the content scripts for self-hosted Canvas
- * domains the teacher has granted. It never touches Canvas data. */
+ * toolbar icon, registers the content scripts for self-hosted Canvas
+ * domains the teacher has granted, and applies Web Store updates promptly
+ * (self-update.js). It never touches Canvas data. */
 
 import { CONTENT_JS, CONTENT_CSS } from './script-manifest.js';
+import { createSelfUpdater } from './self-update.js';
 
 const SETTINGS_KEY = 'cgp.settings';
 const DYNAMIC_ID = 'cgp-custom-domains';
@@ -99,6 +101,8 @@ if (chrome.permissions && chrome.permissions.onAdded) {
   chrome.permissions.onAdded.addListener(() => { syncDynamicScripts(); });
   chrome.permissions.onRemoved.addListener(() => { syncDynamicScripts(); });
 }
+
+createSelfUpdater(chrome).start();
 
 chrome.action.onClicked.addListener(() => {
   chrome.runtime.openOptionsPage();

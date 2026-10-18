@@ -22,23 +22,24 @@
   var ASSIGNMENT_MENU_ITEMS = /^(curve grades|set default grade|message students who)/i;
   var OPEN_WINDOW_MS = 4000;
   var ITEM_LABEL = 'Analyze Scores';
-  // A little wizard in a starry hat, pointing his wand at a bar chart.
-  var WIZARD_ICON =
-    '<svg class="cgp-analyze-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">' +
-      '<rect x="14.5" y="15" width="2.2" height="6" rx=".6" fill="#0ea5e9"/>' +
-      '<rect x="17.6" y="11.5" width="2.2" height="9.5" rx=".6" fill="#22c55e"/>' +
-      '<rect x="20.7" y="13.5" width="2.2" height="7.5" rx=".6" fill="#f59e0b"/>' +
-      '<path d="M2 12.2 L7.2 1.8 L12.4 12.2 Z" fill="#7c3aed"/>' +
-      '<ellipse cx="7.2" cy="12.4" rx="6" ry="1.5" fill="#6d28d9"/>' +
-      '<path d="M6.4 6.1l.5 1 1.1.2-.8.8.2 1.1-1-.5-1 .5.2-1.1-.8-.8 1.1-.2z" fill="#fde047"/>' +
-      '<circle cx="9.3" cy="9.6" r=".7" fill="#fde047"/>' +
-      '<circle cx="7.2" cy="15.6" r="2.7" fill="#fcd9b6"/>' +
-      '<circle cx="6.2" cy="15.3" r=".45" fill="#1e293b"/>' +
-      '<circle cx="8.2" cy="15.3" r=".45" fill="#1e293b"/>' +
-      '<path d="M4.4 16.6 Q7.2 23.2 10 16.6 Q7.2 18.4 4.4 16.6 Z" fill="#f8fafc" stroke="#cbd5e1" stroke-width=".4"/>' +
-      '<path d="M10.6 17.4 L14 13.4" stroke="#78350f" stroke-width="1" stroke-linecap="round"/>' +
-      '<path d="M14.6 11.2l.4.9.9.4-.9.4-.4.9-.4-.9-.9-.4.9-.4z" fill="#facc15"/>' +
-    '</svg>';
+  // Canvas's other items are bare text, so this one gets a bar-chart icon, a
+  // line saying what it does and a NEW pill (styled in gradebook.css). The
+  // icon and pill take currentColor / invert with the row, so they stay
+  // legible under Canvas's blue focus highlight.
+  var ITEM_HINT = 'Mean, median, histogram';
+  var ITEM_HTML =
+    '<svg class="cgp-analyze-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true" focusable="false">' +
+      '<rect x="2.5" y="14" width="3.6" height="7" rx=".8"/>' +
+      '<rect x="7.3" y="8" width="3.6" height="13" rx=".8"/>' +
+      '<rect x="12.1" y="4" width="3.6" height="17" rx=".8"/>' +
+      '<rect x="16.9" y="10" width="3.6" height="11" rx=".8"/>' +
+    '</svg>' +
+    '<span class="cgp-analyze-text">' +
+      '<span class="cgp-analyze-title">' + ITEM_LABEL +
+        '<span class="cgp-analyze-pill" aria-hidden="true">NEW</span>' +
+      '</span>' +
+      '<span class="cgp-analyze-hint">' + ITEM_HINT + '</span>' +
+    '</span>';
 
   function ScoreAnalysisController(ctx) {
     this.model = ctx.model;
@@ -133,8 +134,8 @@
     item.removeAttribute('href');
     item.classList.add('cgp-analyze-item');
     var label = labelNode(item, itemText(anchor));
-    label.textContent = ITEM_LABEL;
-    label.insertAdjacentHTML('beforeend', WIZARD_ICON);
+    label.innerHTML = ITEM_HTML;
+    label.classList.add('cgp-analyze-label');
     item.setAttribute('aria-label', ITEM_LABEL);
     item.setAttribute('title', 'Mean, median, standard deviation, high/low students and a letter-grade histogram for this column');
 

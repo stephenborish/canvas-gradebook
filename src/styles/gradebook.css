@@ -2396,15 +2396,56 @@ html.cgp-syncing-view-options [aria-modal="true"]:has([role="tab"]) {
   pointer-events: none !important;
 }
 
-/* The wizard beside "Analyze Scores" in a column's "..." menu
- * (score-analysis.js). */
+/* "Analyze Scores" in a column's "..." menu (score-analysis.js). Canvas's
+ * items are bare text; this one is a lightly tinted row with a left accent,
+ * a bar-chart icon, a one-line description and a NEW pill so teachers notice
+ * it. The tint yields to Canvas's own hover/focus highlight. */
+html.cgp-on .cgp-analyze-item:not(:hover):not(:focus) {
+  background: #eef6fb !important;
+}
+html.cgp-on .cgp-analyze-item {
+  box-shadow: inset 3px 0 0 #0374b5;
+}
+html.cgp-on .cgp-analyze-label {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
 html.cgp-on .cgp-analyze-icon {
-  display: inline-block;
-  width: 20px;
-  height: 20px;
-  margin-left: 6px;
-  vertical-align: -5px;
   flex: none;
+}
+html.cgp-on .cgp-analyze-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+html.cgp-on .cgp-analyze-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+html.cgp-on .cgp-analyze-hint {
+  font-size: 12px;
+  opacity: .75;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+html.cgp-on .cgp-analyze-pill {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #0374b5;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  line-height: 1.2;
+}
+html.cgp-on .cgp-analyze-item:hover .cgp-analyze-pill,
+html.cgp-on .cgp-analyze-item:focus .cgp-analyze-pill {
+  background: #fff;
+  color: #0374b5;
 }
 
 /* ======================================== gutter beside the global nav ==== */
