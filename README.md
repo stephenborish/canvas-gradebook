@@ -56,6 +56,9 @@ comment does not light up your cell.
   pane — for that submission.
 - Indicators survive Canvas's virtualized scrolling; they are repainted as rows and columns
   come back into view.
+- A comment, grade or status (Missing, Late, Excused) saved through Canvas's own Grade Detail
+  Tray shows up in the cell as soon as Canvas saves it — the extension notices Canvas's own
+  write and re-reads that one cell, so the bubble and the M/L badge appear without a reload.
 
 ### One-keystroke statuses
 

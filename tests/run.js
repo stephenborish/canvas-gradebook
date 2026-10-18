@@ -21,6 +21,7 @@ require('./test-hide-test-student');
 require('./test-pane-scroll-identity');
 require('./test-layout-column-sizing');
 require('./test-page-grid-bridge');
+require('./test-native-writes');
 require('./test-scrolled-column-resolution');
 require('./test-canvas-cell-classes');
 require('./test-course-menu');

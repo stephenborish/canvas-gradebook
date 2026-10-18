@@ -450,7 +450,9 @@
     var prev = this.cells.get(k) || {};
 
     var comments;
-    if (Array.isArray(sub.submission_comments) && sub.submission_comments.length > 0) {
+    if (opts.commentsAuthoritative && Array.isArray(sub.submission_comments)) {
+      comments = sub.submission_comments;
+    } else if (Array.isArray(sub.submission_comments) && sub.submission_comments.length > 0) {
       comments = sub.submission_comments;
     } else if (prev.commentList && prev.commentList.length > 0 &&
                (!sub.submission_comments || (this.commentVerifiedAssignments && this.commentVerifiedAssignments.has(assignmentId)))) {
@@ -625,6 +627,14 @@
     this._writeStartedAt.set(key, Date.now());
   };
 
+  /* Canvas saved this cell through its own UI (see env-bridge.js). Stamped
+   * like a finished local write so a column read already in flight - which
+   * may have been served before Canvas committed - cannot land afterwards
+   * and undo what the follow-up refreshCell picks up. */
+  GradebookModel.prototype.noteNativeWrite = function (assignmentId, userId) {
+    this._writeStartedAt.set(this.key(assignmentId, userId), Date.now());
+  };
+
   GradebookModel.prototype._decInFlight = function (key) {
     var n = (this._writesInFlight.get(key) || 0) - 1;
     if (n > 0) this._writesInFlight.set(key, n); else this._writesInFlight.delete(key);
@@ -692,14 +702,33 @@
     this.emit('cell', { assignmentId: String(assignmentId), userId: String(userId), record: snapshot || null });
   };
 
-  GradebookModel.prototype.refreshCell = function (assignmentId, userId) {
+  /* opts.commentsAuthoritative: the read asked for submission_comments, so
+   * an empty list really means "no comments left" (one deleted in Canvas's
+   * own tray) rather than "this payload did not include them". */
+  GradebookModel.prototype.refreshCell = function (assignmentId, userId, opts) {
     var self = this;
     return this.api.submission(this.courseId, assignmentId, userId).then(function (sub) {
-      return self.applySubmission(sub);
+      return self.applySubmission(sub, opts);
     }, function (err) {
       CGP.diag.error('model.refreshCell.failed', { status: err && err.status });
       return null;
     });
+  };
+
+  /* The cell whose thread holds this comment id, or null. */
+  GradebookModel.prototype.cellForComment = function (commentId) {
+    var id = String(commentId);
+    var found = null;
+    this.cells.forEach(function (rec) {
+      if (found || !rec || !rec.commentList) return;
+      for (var i = 0; i < rec.commentList.length; i++) {
+        if (rec.commentList[i] && String(rec.commentList[i].id) === id) {
+          found = { assignmentId: String(rec.assignmentId), userId: String(rec.userId) };
+          return;
+        }
+      }
+    });
+    return found;
   };
 
   GradebookModel.prototype.applyCommentWrite = function (assignmentId, userId, submissionOrComment) {

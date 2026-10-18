@@ -227,7 +227,9 @@
           enteredScore: Number(parsed.value),
           grade: String(parsed.value),
           excused: false,
-          missing: false,
+          // Canvas keeps its automatic Missing on a zero (see cellStatus), so
+          // the optimistic record must too, or M blinks off until Canvas answers.
+          missing: Number(parsed.value) > 0 || opts.wasExplicitMissing ? false : !!opts.wasMissing,
           latePolicyStatus: keptStatus(opts),
           workflowState: 'graded'
         };
@@ -251,6 +253,19 @@
       default:
         return null;
     }
+  }
+
+  /* Did this record earn any credit? A zero is not credit; neither is an
+   * incomplete. A complete/pass counts even on a zero-point column, where
+   * its score is 0. */
+  function earnedCredit(rec) {
+    var g = rec.grade;
+    if (g !== null && g !== undefined && /^\s*(complete|pass)\s*$/i.test(String(g))) return true;
+    var scores = [rec.score, rec.enteredScore].filter(function (v) { return v !== null && v !== undefined && v !== ''; });
+    if (scores.length) return scores.some(function (v) { return Number(v) > 0; });
+    if (g === null || g === undefined || g === '' || g === '-') return false;
+    var n = parseFloat(String(g));
+    return isNaN(n) ? true : n > 0;
   }
 
   /* The one status a grade cell is currently in, as this extension understands
@@ -283,12 +298,12 @@
     if (explicit && explicit !== 'missing' && explicit !== 'late') return explicit;
     if (explicit === 'missing') return 'missing';
     if (rec.missing) {
-      // If there is an entered score/grade and the teacher has not explicitly marked it missing,
-      // it is not missing (the student submitted work, e.g. on paper).
-      var hasScore = (rec.score !== null && rec.score !== undefined) ||
-                     (rec.enteredScore !== null && rec.enteredScore !== undefined) ||
-                     (rec.grade !== null && rec.grade !== undefined && rec.grade !== '' && rec.grade !== '-');
-      if (hasScore) {
+      // Canvas's automatic Missing (past due, nothing submitted online) stays
+      // on a graded submission. Real credit means the work came in some other
+      // way (on paper), so it is not missing. A zero is not credit: it is
+      // how a teacher records the missing work itself, and Canvas still
+      // draws its own missing icon on it.
+      if (earnedCredit(rec)) {
         return (rec.late || explicit === 'late') ? 'late' : 'none';
       }
       return 'missing';

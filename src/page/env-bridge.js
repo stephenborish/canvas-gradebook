@@ -720,6 +720,122 @@
     } catch (e) { /* never break the page */ }
   });
 
+  /* ------------------------------------------------- Canvas's own writes */
+
+  /* A grade, status or comment saved through Canvas's OWN UI - the Grade
+   * Detail Tray above all - goes into Canvas's store but never reaches the
+   * content script's model, which only hears about its own API writes. The
+   * model then kept its old record: no comment bubble, no M badge, and the
+   * status painter even stripped Canvas's own fresh "missing" class because
+   * the stale record said the cell had no status. So the page's own
+   * successful submission writes are watched here and only their ids -
+   * never bodies or responses - are posted as {source:'cgp-native-write'};
+   * the content script re-reads that one cell from the API. The content
+   * script's own requests run in the isolated world and never pass through
+   * these wrappers. */
+  var SUBMISSION_URL = /\/api\/v1\/courses\/(\d+)\/assignments\/(\d+)\/submissions\/(\d+)(?:[\/?#]|$)/;
+  var LEGACY_UPDATE_URL = /\/courses\/(\d+)\/gradebook\/update_submission(?:[?#]|$)/;
+  var COMMENT_URL = /\/submission_comments\/(\d+)(?:[\/?#]|$)/;
+
+  function bodyField(body, name) {
+    try {
+      if (!body) return null;
+      if (typeof body === 'string') {
+        if (/^\s*\{/.test(body)) {
+          var json = JSON.parse(body);
+          var path = name.replace(/\]/g, '').split('[');
+          for (var i = 0; i < path.length && json; i++) json = json[path[i]];
+          return json === undefined || json === null ? null : String(json);
+        }
+        var params = new URLSearchParams(body);
+        return params.get(name);
+      }
+      if (typeof body.get === 'function') {
+        var v = body.get(name);
+        return v === null || v === undefined ? null : String(v);
+      }
+    } catch (e) { /* unreadable body: nothing to report */ }
+    return null;
+  }
+
+  function nativeWriteTarget(method, url, body) {
+    method = String(method || 'GET').toUpperCase();
+    if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return null;
+    var href;
+    try {
+      var u = new URL(String(url), window.location.href);
+      if (u.origin !== window.location.origin) return null;
+      href = u.pathname + u.search;
+    } catch (e) { return null; }
+    var m = SUBMISSION_URL.exec(href);
+    if (m) return { courseId: m[1], assignmentId: m[2], userId: m[3] };
+    m = LEGACY_UPDATE_URL.exec(href);
+    if (m) {
+      var aid = bodyField(body, 'submission[assignment_id]');
+      var uid = bodyField(body, 'submission[user_id]');
+      if (aid && uid && /^\d+$/.test(aid) && /^\d+$/.test(uid)) return { courseId: m[1], assignmentId: aid, userId: uid };
+      return null;
+    }
+    m = COMMENT_URL.exec(href);
+    if (m) return { commentId: m[1] };
+    return null;
+  }
+
+  function reportNativeWrite(target) {
+    var message = { source: 'cgp-native-write' };
+    Object.keys(target).forEach(function (k) { message[k] = target[k]; });
+    post(message);
+  }
+
+  function watchNativeWrites() {
+    var XHR = window.XMLHttpRequest;
+    if (XHR && XHR.prototype && !XHR.prototype.__cgpWatched) {
+      var origOpen = XHR.prototype.open;
+      var origSend = XHR.prototype.send;
+      XHR.prototype.open = function (method, url) {
+        try { this.__cgpReq = { method: method, url: url }; } catch (e) { /* ignore */ }
+        return origOpen.apply(this, arguments);
+      };
+      XHR.prototype.send = function (body) {
+        try {
+          var req = this.__cgpReq;
+          // Kept on the request, not captured per send: a reused XHR must
+          // report only the write it is finishing now, never an earlier one.
+          this.__cgpTarget = (req && nativeWriteTarget(req.method, req.url, body)) || null;
+          if (this.__cgpTarget && !this.__cgpListening) {
+            this.__cgpListening = true;
+            this.addEventListener('loadend', function () {
+              var target = this.__cgpTarget;
+              this.__cgpTarget = null;
+              if (target && this.status >= 200 && this.status < 300) reportNativeWrite(target);
+            });
+          }
+        } catch (e) { /* never break Canvas's request */ }
+        return origSend.apply(this, arguments);
+      };
+      XHR.prototype.__cgpWatched = true;
+    }
+    var origFetch = window.fetch;
+    if (typeof origFetch === 'function' && !origFetch.__cgpWatched) {
+      var wrapped = function (input, init) {
+        var promise = origFetch.apply(this, arguments);
+        try {
+          var isRequest = input && typeof input === 'object' && typeof input.url === 'string';
+          var method = (init && init.method) || (isRequest ? input.method : 'GET');
+          var target = nativeWriteTarget(method, isRequest ? input.url : input, init && init.body);
+          if (target) {
+            promise.then(function (res) {
+              if (res && res.ok) reportNativeWrite(target);
+            }, function () { /* failed write: nothing changed */ });
+          }
+        } catch (e) { /* never break Canvas's request */ }
+        return promise;
+      };
+      wrapped.__cgpWatched = true;
+      window.fetch = wrapped;
+    }
+  }
+
   pollEnv();
   if (onGradebookPage()) {
     try {
@@ -728,6 +844,7 @@
       }
     } catch (e) { /* ignore */ }
     startSearch();
+    try { watchNativeWrites(); } catch (e) { /* never break the page */ }
     if (typeof setInterval === 'function') {
       setInterval(function () { pollEnv(); watchGrid(); }, POLL_EVERY_MS);
     }
