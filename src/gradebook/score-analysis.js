@@ -22,6 +22,23 @@
   var ASSIGNMENT_MENU_ITEMS = /^(curve grades|set default grade|message students who)/i;
   var OPEN_WINDOW_MS = 4000;
   var ITEM_LABEL = 'Analyze Scores';
+  // A little wizard in a starry hat, pointing his wand at a bar chart.
+  var WIZARD_ICON =
+    '<svg class="cgp-analyze-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">' +
+      '<rect x="14.5" y="15" width="2.2" height="6" rx=".6" fill="#0ea5e9"/>' +
+      '<rect x="17.6" y="11.5" width="2.2" height="9.5" rx=".6" fill="#22c55e"/>' +
+      '<rect x="20.7" y="13.5" width="2.2" height="7.5" rx=".6" fill="#f59e0b"/>' +
+      '<path d="M2 12.2 L7.2 1.8 L12.4 12.2 Z" fill="#7c3aed"/>' +
+      '<ellipse cx="7.2" cy="12.4" rx="6" ry="1.5" fill="#6d28d9"/>' +
+      '<path d="M6.4 6.1l.5 1 1.1.2-.8.8.2 1.1-1-.5-1 .5.2-1.1-.8-.8 1.1-.2z" fill="#fde047"/>' +
+      '<circle cx="9.3" cy="9.6" r=".7" fill="#fde047"/>' +
+      '<circle cx="7.2" cy="15.6" r="2.7" fill="#fcd9b6"/>' +
+      '<circle cx="6.2" cy="15.3" r=".45" fill="#1e293b"/>' +
+      '<circle cx="8.2" cy="15.3" r=".45" fill="#1e293b"/>' +
+      '<path d="M4.4 16.6 Q7.2 23.2 10 16.6 Q7.2 18.4 4.4 16.6 Z" fill="#f8fafc" stroke="#cbd5e1" stroke-width=".4"/>' +
+      '<path d="M10.6 17.4 L14 13.4" stroke="#78350f" stroke-width="1" stroke-linecap="round"/>' +
+      '<path d="M14.6 11.2l.4.9.9.4-.9.4-.4.9-.4-.9-.9-.4.9-.4z" fill="#facc15"/>' +
+    '</svg>';
 
   function ScoreAnalysisController(ctx) {
     this.model = ctx.model;
@@ -115,7 +132,9 @@
     item.removeAttribute('aria-describedby');
     item.removeAttribute('href');
     item.classList.add('cgp-analyze-item');
-    labelNode(item, itemText(anchor)).textContent = ITEM_LABEL;
+    var label = labelNode(item, itemText(anchor));
+    label.textContent = ITEM_LABEL;
+    label.insertAdjacentHTML('beforeend', WIZARD_ICON);
     item.setAttribute('aria-label', ITEM_LABEL);
     item.setAttribute('title', 'Mean, median, standard deviation, high/low students and a letter-grade histogram for this column');
 
@@ -132,6 +151,16 @@
     // own handlers, which would act on whichever item this was cloned from.
     item.addEventListener('click', choose, true);
     item.addEventListener('mousedown', function (e) { e.stopPropagation(); }, true);
+    // Canvas highlights whichever of its items has focus, and moves focus on
+    // hover only for items it rendered itself. Without taking focus here, the
+    // item the pointer just left (Set Default Grade from above, Hide grades
+    // from below) stayed highlighted alongside this one.
+    if (!item.hasAttribute('tabindex')) item.setAttribute('tabindex', '-1');
+    item.addEventListener('mouseenter', function () {
+      if (document.activeElement !== item) {
+        try { item.focus({ preventScroll: true }); } catch (e) { item.focus(); }
+      }
+    });
     item.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' || e.key === ' ') choose(e);
     }, true);

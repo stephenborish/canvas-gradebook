@@ -209,16 +209,57 @@
     });
   };
 
-  /* Canvas's own Apply/Done button for the View Options tray - scanned by
-   * label text, not a fixed id, for the same reason as everything else in
-   * this file. */
-  P.findTrayApplyButton = function () {
-    var buttons = document.querySelectorAll('button, [role="button"]');
+  /* The tray (Canvas's Gradebook Settings dialog) the View Options tab lives
+   * in, so the buttons below are looked up inside it and never matched
+   * against some other "Close" on the page - the old document-wide lookup
+   * found the wrong one, which left the tray sitting open on every load. */
+  P.findSettingsTray = function () {
+    var tab = this.findViewOptionsTab();
+    if (!tab) return null;
+    return tab.closest('[role="dialog"], [aria-modal="true"]') || null;
+  };
+
+  function buttonLabel(btn) {
+    return ((btn.textContent || '') + ' ' + (btn.getAttribute('aria-label') || '') + ' ' +
+      (btn.getAttribute('title') || '')).trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  /* Canvas's own Apply button for the View Options tray ("Apply Settings" on
+   * current builds) - scanned by label text, not a fixed id, for the same
+   * reason as everything else in this file. */
+  P.findTrayApplyButton = function (tray) {
+    var buttons = (tray || document).querySelectorAll('button, [role="button"]');
     for (var i = 0; i < buttons.length; i++) {
-      var label = (buttons[i].textContent || '').trim().toLowerCase();
-      if (label === 'apply' || label === 'update' || label === 'done') return buttons[i];
+      var label = buttonLabel(buttons[i]);
+      if (label.indexOf('apply') === 0 || label === 'update' || label === 'done' || label === 'save') return buttons[i];
     }
     return null;
+  };
+
+  /* The tray's own X (its name is often only in a screen-reader span, hence
+   * textContent) or, failing that, its Cancel button. */
+  P.findTrayCloseButton = function (tray) {
+    if (!tray) return null;
+    var buttons = tray.querySelectorAll('button, [role="button"]');
+    var cancel = null;
+    for (var i = 0; i < buttons.length; i++) {
+      var label = buttonLabel(buttons[i]);
+      if (label === 'close' || label.indexOf('close ') === 0) return buttons[i];
+      if (!cancel && label === 'cancel') cancel = buttons[i];
+    }
+    return cancel;
+  };
+
+  /* Close the tray if it is still showing, whichever way is available. */
+  P.closeSettingsTray = function () {
+    var tray = this.findSettingsTray();
+    if (!tray) return;
+    var btn = this.findTrayCloseButton(tray);
+    if (btn) { btn.click(); return; }
+    try {
+      var opts = { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true };
+      tray.dispatchEvent(new KeyboardEvent('keydown', opts));
+    } catch (e) { /* nothing else to try */ }
   };
 
   /* openArrangeMenu() reveals Canvas's utility strip (it has to - the gear
@@ -270,8 +311,26 @@
     if (!s.syncViewOptionsToCanvas) return Promise.resolve(false);
     var self = this;
     var wasHidden = this.controlsHidden;
+    var root = document.documentElement;
+    // The tray is opened only to be driven and closed again; the teacher
+    // never needs to see it (see the matching rule in gradebook.css).
+    root.classList.add('cgp-syncing-view-options');
+    var finish = function () {
+      self.reapplyHiddenState(wasHidden);
+      return new Promise(function (resolve) {
+        // Canvas closes the tray itself after Apply; anything still open by
+        // now is closed here so it never lingers on screen.
+        setTimeout(function () {
+          self.closeSettingsTray();
+          setTimeout(function () {
+            root.classList.remove('cgp-syncing-view-options');
+            resolve();
+          }, 250);
+        }, 400);
+      });
+    };
     return this.openArrangeMenu().then(function (onTab) {
-      if (!onTab) { self.reapplyHiddenState(wasHidden); return false; }
+      if (!onTab) return finish().then(function () { return false; });
       var changed = 0;
       var missing = 0;
       VIEW_OPTION_CHECKBOXES.forEach(function (spec) {
@@ -283,23 +342,17 @@
         changed++;
       });
       if (changed) {
-        var apply = self.findTrayApplyButton();
+        var apply = self.findTrayApplyButton(self.findSettingsTray());
         if (apply) apply.click();
       } else {
-        // Nothing to change: close the tray the same way opening it would
-        // have been undone, rather than leaving it sitting open for no
-        // reason.
-        var closeBtn = document.querySelector('[aria-label="Close" i], button[aria-label*="close" i]');
-        if (closeBtn) closeBtn.click();
+        // Nothing to change: close the tray rather than leaving it open.
+        self.closeSettingsTray();
       }
-      // This flow is fully automated end to end (unlike the "control not
-      // found" branch above, which deliberately leaves the tray open with a
-      // message inviting the teacher to finish by hand) - every path through
-      // it either applied a change or determined none was needed, so
-      // restoring the prior hidden state is always correct here.
-      self.reapplyHiddenState(wasHidden);
       CGP.diag.set('layout.viewOptionsSynced', { changed: changed, missing: missing });
-      return changed > 0;
+      return finish().then(function () { return changed > 0; });
+    }, function () {
+      root.classList.remove('cgp-syncing-view-options');
+      return false;
     });
   };
 
