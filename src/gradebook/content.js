@@ -78,27 +78,31 @@
     // it, so that one cell is re-read; a burst on the same cell (status, then
     // comment) collapses into one read.
     var nativeRefresh = {};
-    function refreshAfterNativeWrite(assignmentId, userId) {
+    function refreshAfterNativeWrite(assignmentId, userId, gradeMayChange) {
       var k = assignmentId + ':' + userId;
-      clearTimeout(nativeRefresh[k]);
-      nativeRefresh[k] = setTimeout(function () {
+      var pending = nativeRefresh[k];
+      if (pending) clearTimeout(pending.timer);
+      var totals = gradeMayChange || !!(pending && pending.totals);
+      model.noteNativeWrite(assignmentId, userId);
+      nativeRefresh[k] = { totals: totals, timer: setTimeout(function () {
         delete nativeRefresh[k];
         CGP.diag.bump('nativeWrite.refresh');
         model.refreshCell(assignmentId, userId, { commentsAuthoritative: true, staleIfWrittenAfter: Date.now() });
-        model.queueTotalRefresh(userId);
-      }, 250);
+        // A comment edit/delete cannot move the course total.
+        if (totals) model.queueTotalRefresh(userId);
+      }, 250) };
     }
     window.addEventListener('message', function (e) {
       if (e.source !== window || !e.data || e.data.source !== 'cgp-native-write') return;
       var d = e.data;
       if (d.commentId) {
         var owner = model.cellForComment(d.commentId);
-        if (owner) refreshAfterNativeWrite(owner.assignmentId, owner.userId);
+        if (owner) refreshAfterNativeWrite(owner.assignmentId, owner.userId, false);
         return;
       }
       if (String(d.courseId) !== String(courseId)) return;
       if (!/^\d+$/.test(String(d.assignmentId)) || !/^\d+$/.test(String(d.userId))) return;
-      refreshAfterNativeWrite(String(d.assignmentId), String(d.userId));
+      refreshAfterNativeWrite(String(d.assignmentId), String(d.userId), true);
     });
     // The bridge runs from document_start and may have posted before this
     // listener existed; ask it for the current ENV now that we're listening.

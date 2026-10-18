@@ -627,6 +627,14 @@
     this._writeStartedAt.set(key, Date.now());
   };
 
+  /* Canvas saved this cell through its own UI (see env-bridge.js). Stamped
+   * like a finished local write so a column read already in flight - which
+   * may have been served before Canvas committed - cannot land afterwards
+   * and undo what the follow-up refreshCell picks up. */
+  GradebookModel.prototype.noteNativeWrite = function (assignmentId, userId) {
+    this._writeStartedAt.set(this.key(assignmentId, userId), Date.now());
+  };
+
   GradebookModel.prototype._decInFlight = function (key) {
     var n = (this._writesInFlight.get(key) || 0) - 1;
     if (n > 0) this._writesInFlight.set(key, n); else this._writesInFlight.delete(key);

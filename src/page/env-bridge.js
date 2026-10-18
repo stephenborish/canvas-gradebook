@@ -799,10 +799,15 @@
       XHR.prototype.send = function (body) {
         try {
           var req = this.__cgpReq;
-          var target = req && nativeWriteTarget(req.method, req.url, body);
-          if (target) {
+          // Kept on the request, not captured per send: a reused XHR must
+          // report only the write it is finishing now, never an earlier one.
+          this.__cgpTarget = (req && nativeWriteTarget(req.method, req.url, body)) || null;
+          if (this.__cgpTarget && !this.__cgpListening) {
+            this.__cgpListening = true;
             this.addEventListener('loadend', function () {
-              if (this.status >= 200 && this.status < 300) reportNativeWrite(target);
+              var target = this.__cgpTarget;
+              this.__cgpTarget = null;
+              if (target && this.status >= 200 && this.status < 300) reportNativeWrite(target);
             });
           }
         } catch (e) { /* never break Canvas's request */ }

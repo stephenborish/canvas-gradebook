@@ -49,6 +49,18 @@ suite('Canvas-native writes reach the model', (test) => {
     a.eq(Object.keys(writes()[0]).sort().join(','), 'assignmentId,courseId,source,userId', 'ids only');
   });
 
+  test('a reused XHR reports only the request it is finishing', () => {
+    const { win, writes } = loadBridge();
+    const xhr = new win.XMLHttpRequest();
+    xhr.open('PUT', '/api/v1/courses/379/assignments/50/submissions/10');
+    xhr.send(null);
+    xhr.finish(200);
+    xhr.open('GET', '/api/v1/courses/379/assignments/50/submissions/10');
+    xhr.send(null);
+    xhr.finish(200);
+    a.eq(writes().length, 1);
+  });
+
   test('failed writes, reads and other origins are not reported', () => {
     const { win, writes } = loadBridge();
     const failed = new win.XMLHttpRequest();

@@ -53,6 +53,7 @@ suite('cell status (what M and L must show immediately)', (test) => {
     a.eq(status({ enteredScore: 0, grade: '0', missing: true, latePolicyStatus: null }), 'missing', 'zero entered score');
     a.eq(status({ grade: '0%', missing: true, latePolicyStatus: null }), 'missing', 'zero percent grade');
     a.eq(status({ score: 0, grade: '0', missing: false, latePolicyStatus: null }), 'none', 'a zero alone is never missing');
+    a.eq(status({ score: 0, grade: 'complete', missing: true, latePolicyStatus: null }), 'none', 'complete on a zero-point column is credit');
     a.eq(status({ missing: true, latePolicyStatus: 'none' }), 'none', 'explicit none status clears missing');
     a.eq(status({ score: 0, missing: true, latePolicyStatus: 'missing' }), 'missing', 'explicit missing remains missing');
   });

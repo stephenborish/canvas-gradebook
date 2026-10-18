@@ -227,7 +227,9 @@
           enteredScore: Number(parsed.value),
           grade: String(parsed.value),
           excused: false,
-          missing: false,
+          // Canvas keeps its automatic Missing on a zero (see cellStatus), so
+          // the optimistic record must too, or M blinks off until Canvas answers.
+          missing: Number(parsed.value) > 0 || opts.wasExplicitMissing ? false : !!opts.wasMissing,
           latePolicyStatus: keptStatus(opts),
           workflowState: 'graded'
         };
@@ -253,6 +255,19 @@
     }
   }
 
+  /* Did this record earn any credit? A zero is not credit; neither is an
+   * incomplete. A complete/pass counts even on a zero-point column, where
+   * its score is 0. */
+  function earnedCredit(rec) {
+    var g = rec.grade;
+    if (g !== null && g !== undefined && /^\s*(complete|pass)\s*$/i.test(String(g))) return true;
+    var scores = [rec.score, rec.enteredScore].filter(function (v) { return v !== null && v !== undefined && v !== ''; });
+    if (scores.length) return scores.some(function (v) { return Number(v) > 0; });
+    if (g === null || g === undefined || g === '' || g === '-') return false;
+    var n = parseFloat(String(g));
+    return isNaN(n) ? true : n > 0;
+  }
+
   /* The one status a grade cell is currently in, as this extension understands
    * it, derived from the record the model holds right now - including a record
    * an optimistic write has only just patched.
@@ -275,15 +290,6 @@
    * and Canvas's derived booleans are consulted, because a submission handed
    * in after its due date is late (late: true) with no explicit status at all.
    */
-  function earnedCredit(rec) {
-    var scores = [rec.score, rec.enteredScore].filter(function (v) { return v !== null && v !== undefined && v !== ''; });
-    if (scores.length) return scores.some(function (v) { return Number(v) > 0; });
-    var g = rec.grade;
-    if (g === null || g === undefined || g === '' || g === '-') return false;
-    var n = parseFloat(String(g));
-    return isNaN(n) ? true : n > 0;
-  }
-
   function cellStatus(rec) {
     if (!rec) return null;
     var explicit = rec.latePolicyStatus || null;
