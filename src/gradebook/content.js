@@ -73,6 +73,33 @@
       if (env.courseId) CGP.diag.set('envCourseId', String(env.courseId));
       if (env.currentGradingPeriodId !== undefined) model.setGradingPeriod(env.currentGradingPeriodId);
     });
+    // A grade, status or comment Canvas saved through its own UI (the Grade
+    // Detail Tray, mostly) - see env-bridge.js. The model never heard about
+    // it, so that one cell is re-read; a burst on the same cell (status, then
+    // comment) collapses into one read.
+    var nativeRefresh = {};
+    function refreshAfterNativeWrite(assignmentId, userId) {
+      var k = assignmentId + ':' + userId;
+      clearTimeout(nativeRefresh[k]);
+      nativeRefresh[k] = setTimeout(function () {
+        delete nativeRefresh[k];
+        CGP.diag.bump('nativeWrite.refresh');
+        model.refreshCell(assignmentId, userId, { commentsAuthoritative: true, staleIfWrittenAfter: Date.now() });
+        model.queueTotalRefresh(userId);
+      }, 250);
+    }
+    window.addEventListener('message', function (e) {
+      if (e.source !== window || !e.data || e.data.source !== 'cgp-native-write') return;
+      var d = e.data;
+      if (d.commentId) {
+        var owner = model.cellForComment(d.commentId);
+        if (owner) refreshAfterNativeWrite(owner.assignmentId, owner.userId);
+        return;
+      }
+      if (String(d.courseId) !== String(courseId)) return;
+      if (!/^\d+$/.test(String(d.assignmentId)) || !/^\d+$/.test(String(d.userId))) return;
+      refreshAfterNativeWrite(String(d.assignmentId), String(d.userId));
+    });
     // The bridge runs from document_start and may have posted before this
     // listener existed; ask it for the current ENV now that we're listening.
     try { window.postMessage({ source: 'cgp-env-request' }, location.origin); } catch (e) { /* ignore */ }
