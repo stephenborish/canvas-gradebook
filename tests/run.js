@@ -31,6 +31,7 @@ require('./test-comments-ui');
 require('./test-grid-reliability');
 require('./test-test-student');
 require('./test-time-shortcuts');
+require('./test-score-stats');
 
 // run() awaits each case, so the process must not exit before it settles.
 harness.run().then((okAll) => {

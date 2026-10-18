@@ -675,6 +675,51 @@
     });
   });
 
+  /* ------------------------------------------------------- posted grades */
+
+  /* Canvas draws its orange "hidden grade / unposted comment" dot from the
+   * submission objects in its own grid rows, and a post made through the API
+   * (post-grades.js) never reaches them - so the dot stayed until a reload.
+   * On a {source:'cgp-posted'} from the content script, the submissions it
+   * names are marked posted in Canvas's own row data and just those rows are
+   * re-rendered, so Canvas's formatter redraws the cells without the dot.
+   * Only posted_at / has_postable_comments are touched, in whichever spelling
+   * the row's submission object already uses. */
+  function markRowsPosted(grid, assignmentId, userIds, postedAt) {
+    if (!grid || typeof grid.getDataLength !== 'function' || typeof grid.getDataItem !== 'function') return 0;
+    var wanted = {};
+    userIds.forEach(function (uid) { wanted[String(uid)] = true; });
+    var field = 'assignment_' + assignmentId;
+    var rows = [];
+    var n = grid.getDataLength();
+    for (var i = 0; i < n; i++) {
+      var item = grid.getDataItem(i);
+      if (!item || !wanted[String(item.id)]) continue;
+      var sub = item[field];
+      if (!sub || typeof sub !== 'object') continue;
+      if ('posted_at' in sub || !('postedAt' in sub)) { if (!sub.posted_at) sub.posted_at = postedAt; }
+      if ('postedAt' in sub) { if (!sub.postedAt) sub.postedAt = postedAt; }
+      if ('has_postable_comments' in sub) sub.has_postable_comments = false;
+      if ('hasPostableComments' in sub) sub.hasPostableComments = false;
+      rows.push(i);
+    }
+    if (!rows.length) return 0;
+    if (typeof grid.invalidateRows === 'function') grid.invalidateRows(rows);
+    else if (typeof grid.invalidate === 'function') grid.invalidate();
+    if (typeof grid.render === 'function') grid.render();
+    return rows.length;
+  }
+
+  window.addEventListener('message', function (event) {
+    var message = event.data;
+    if (event.source !== window || !message || message.source !== 'cgp-posted') return;
+    if (!/^\d+$/.test(String(message.assignmentId)) || !Array.isArray(message.userIds)) return;
+    try {
+      markRowsPosted(findGrid(), String(message.assignmentId), message.userIds,
+        typeof message.postedAt === 'string' ? message.postedAt : new Date().toISOString());
+    } catch (e) { /* never break the page */ }
+  });
+
   pollEnv();
   if (onGradebookPage()) {
     try {

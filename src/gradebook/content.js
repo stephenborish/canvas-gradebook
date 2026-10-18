@@ -159,6 +159,8 @@
     var posting = new CGP.PostGradesController({
       model: model, adapter: adapter, api: api, settings: settings, requestPaint: requestPaint
     });
+    // "Analyze Scores" in each assignment column's "..." menu.
+    var scoreAnalysis = new CGP.ScoreAnalysisController({ model: model, adapter: adapter, settings: settings });
     var paste = new CGP.BulkPasteController({
       adapter: adapter, model: model, writer: writer, selection: selection,
       settings: settings, requestPaint: requestPaint
@@ -396,6 +398,7 @@
       testStudentGuard.start();
       keyboard.start();
       paste.start();
+      scoreAnalysis.start();
       frozen.start();
       bindScroll();
       bindDocumentScroll();

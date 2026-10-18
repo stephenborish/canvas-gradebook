@@ -100,4 +100,47 @@ suite('page-context SlickGrid bridge', (test) => {
     a.deep(model.map((column) => column.id), ['student', 'total_grade', 'assignment_1'], 'preserves natural column order so headers and body cells remain in sync');
     a.deep(model.map((column) => column.width), [190, 84, 124], 'sizes student, total (84px), and assignments correctly');
   });
+
+  test('marks submissions posted in Canvas\'s own rows and re-renders just those rows', async () => {
+    const rows = [
+      { id: '1', assignment_7: { posted_at: null, has_postable_comments: true, score: 4 } },
+      { id: '2', assignment_7: { posted_at: null, score: 3 } },
+      { id: '3', assignment_7: { postedAt: null, hasPostableComments: true, score: 2 } }
+    ];
+    const calls = [];
+    const grid = {
+      getColumns: function () { return []; },
+      setColumns: function () {},
+      getDataLength: function () { return rows.length; },
+      getDataItem: function (i) { return rows[i]; },
+      invalidateRows: function (r) { calls.push(['invalidateRows', r]); },
+      render: function () { calls.push(['render']); }
+    };
+    const listeners = [];
+    const win = {
+      ENV: {},
+      location: { origin: 'https://canvas.example.edu' },
+      addEventListener: function (type, listener) { if (type === 'message') listeners.push(listener); },
+      postMessage: function (message) {
+        listeners.slice().forEach(function (listener) { listener({ source: win, data: message }); });
+      }
+    };
+    const context = {
+      window: win,
+      document: { querySelector: function () { return { slickGrid: grid }; } },
+      Promise: Promise, Object: Object, Array: Array, String: String, Number: Number,
+      Math: Math, Date: Date, isFinite: isFinite, setTimeout: function (fn) { fn(); }
+    };
+    vm.runInNewContext(fs.readFileSync('src/page/env-bridge.js', 'utf8'), context);
+
+    win.postMessage({ source: 'cgp-posted', assignmentId: '7', userIds: ['1', '3'], postedAt: '2026-10-18T12:00:00Z' }, win.location.origin);
+
+    a.eq(rows[0].assignment_7.posted_at, '2026-10-18T12:00:00Z');
+    a.eq(rows[0].assignment_7.has_postable_comments, false);
+    a.eq(rows[1].assignment_7.posted_at, null, 'a student not named is left alone');
+    a.eq(rows[2].assignment_7.postedAt, '2026-10-18T12:00:00Z', 'camelCase submissions keep their own spelling');
+    a.eq(rows[2].assignment_7.hasPostableComments, false);
+    a.ok(!('posted_at' in rows[2].assignment_7));
+    a.deep(calls, [['invalidateRows', [0, 2]], ['render']]);
+  });
 });

@@ -327,6 +327,11 @@
             // first N pending ids used to mark students whose grades were
             // STILL hidden as posted, and hide the button while they were.)
             var postedCount = count - left;
+            var stillPending = self.model.pendingPosts(id);
+            var nowPosted = pendingIds.filter(function (uid) { return stillPending.indexOf(uid) < 0; });
+            self.model.markPostConfirmed(id, nowPosted);
+            self.tellCanvasPosted(id, nowPosted);
+            self.requestPaint();
             CGP.ui.toast(postedCount + ' of ' + count + ' grades posted in ' + name);
             CGP.diag.bump('post.completed', postedCount);
             var copy = self.label(left, self.model.assignment(id));
@@ -381,7 +386,7 @@
               btn.parentElement.classList.remove('cgp-has-post');
             }
             if (btn && btn.isConnected) btn.remove();
-            self.recheckLater(id);
+            self.recheckLater(id, 0, pendingIds);
           }
         }, function (err) {
           CGP.diag.error('post.failed', { assignmentId: id, status: err && err.status, message: String(err && err.message) });
@@ -393,7 +398,7 @@
             // the column in the background and let it show the truth.
             CGP.ui.error('Canvas could not be reached while posting ' + ((assignment && assignment.name) || 'this column') +
               ', so it is not certain whether the grades went out. The column will re-check itself shortly.');
-            self.recheckLater(id);
+            self.recheckLater(id, 0, pendingIds);
           } else {
             CGP.ui.error('Canvas would not post these grades' +
               (err && err.status ? ' (Canvas ' + err.status + ')' : (err && err.message ? ': ' + err.message : '')) +
@@ -430,7 +435,7 @@
    * truth for that attempt, so it reports nothing itself and simply repaints;
    * running out of attempts is logged to diagnostics only; a teacher who is
    * still looking at the column can always press Post again. */
-  P.recheckLater = function (assignmentId, attempt) {
+  P.recheckLater = function (assignmentId, attempt, userIds) {
     var self = this;
     var id = String(assignmentId);
     attempt = attempt || 0;
@@ -452,10 +457,19 @@
         // has pending posts" so a swallowed failure keeps retrying instead of
         // being mistaken for success.
         var loaded = self.model.loadedAssignments.has(id);
-        var left = loaded ? self.model.pendingPosts(id).length : -1;
+        var stillPending = loaded ? self.model.pendingPosts(id) : null;
+        var left = loaded ? stillPending.length : -1;
+        // Whichever of the submissions we tried to post this read shows as
+        // posted now: Canvas's own grid still thinks they are hidden.
+        if (loaded && userIds && userIds.length) {
+          var cleared = userIds.filter(function (uid) {
+            return stillPending.indexOf(uid) < 0 && !(self.model.isPostConfirmed && self.model.isPostConfirmed(id, uid));
+          });
+          if (cleared.length) self.markPostedLocally(id, cleared);
+        }
         if (!loaded || left > 0) {
           if (attempt + 1 < MAX_ATTEMPTS) {
-            self.recheckLater(id, attempt + 1);
+            self.recheckLater(id, attempt + 1, userIds);
             return;
           }
           CGP.diag.warn('post.recheckExhausted', { assignmentId: id, left: loaded ? left : null });
@@ -466,7 +480,7 @@
         self.requestPaint();
       }, function () {
         self._rechecking.delete(id);
-        if (attempt + 1 < MAX_ATTEMPTS) self.recheckLater(id, attempt + 1);
+        if (attempt + 1 < MAX_ATTEMPTS) self.recheckLater(id, attempt + 1, userIds);
         else { self._awaitingCatchUp.delete(id); self.requestPaint(); }
       });
     }, delay);
@@ -475,11 +489,10 @@
   /* Stamp posted_at on the cells Canvas has just told us it posted.
    *
    * Only ever called after Canvas has affirmatively reported the posting job
-   * complete AND the re-reads either failed or still lag that job - never
-   * over a read showing partial progress, which is the current truth about
-   * the column - and only for the exact submissions counted as pending
-   * immediately before the post. The background recheck's next real read
-   * replaces this with Canvas's own timestamps. */
+   * complete (or a re-read shows these exact submissions posted) - never
+   * over a read showing them still hidden - and only for submissions counted
+   * as pending immediately before the post. The background recheck's next
+   * real read replaces this with Canvas's own timestamps. */
   P.markPostedLocally = function (assignmentId, userIds) {
     var self = this;
     self.model.markPostConfirmed(assignmentId, userIds);
@@ -495,6 +508,24 @@
     if (self.model && typeof self.model.emit === 'function') {
       self.model.emit('cells', { assignmentIds: [String(assignmentId)] });
     }
+    self.tellCanvasPosted(assignmentId, userIds, when);
+  };
+
+  /* Canvas's own grid keeps its own copy of every submission and draws its
+   * orange unposted dot from that copy, which a post through the API never
+   * updates. The page-world bridge (env-bridge.js) owns that grid: ask it to
+   * mark these submissions posted and re-render their rows, so the dot goes
+   * the moment the post is confirmed instead of on the next reload. */
+  P.tellCanvasPosted = function (assignmentId, userIds, when) {
+    if (!userIds || !userIds.length) return;
+    try {
+      window.postMessage({
+        source: 'cgp-posted',
+        assignmentId: String(assignmentId),
+        userIds: userIds.map(String),
+        postedAt: when || new Date().toISOString()
+      }, location.origin);
+    } catch (e) { /* the CSS fallback in gradebook.css still applies */ }
   };
 
   /* Fallback for Canvas builds without the postAssignmentGrades mutation.
