@@ -849,7 +849,7 @@
   function initVersion() {
     var el = $('extensionVersion');
     if (!el) return;
-    var ver = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest && chrome.runtime.getManifest().version) || CGP.VERSION || '1.14.2';
+    var ver = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest && chrome.runtime.getManifest().version) || CGP.VERSION || '1.15.0';
     el.textContent = ver;
   }
 
