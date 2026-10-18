@@ -69,4 +69,33 @@ suite('score analysis: column statistics', (test) => {
     a.eq((html.match(/cgp-stats__letter/g) || []).length, 5, 'a label for every letter');
     a.ok(/No graded scores/.test(ctrl.render(stats().analyze([], 10, SCALE))));
   });
+
+  test('an anonymous or moderated column is never analysed (the lists name students)', async () => {
+    const C = globalThis.CGP.ScoreAnalysisController;
+    let shown = 0;
+    const ctrl = new C({ model: { assignment: () => ({ name: 'X', anonymous: true }) }, adapter: {}, settings: { values: {} } });
+    ctrl.showDialog = () => { shown++; return {}; };
+    a.eq(await ctrl.open('1'), null);
+    a.eq(shown, 0);
+  });
+
+  test('a panel closed or replaced while loading is not filled with the old column', async () => {
+    const C = globalThis.CGP.ScoreAnalysisController;
+    let release;
+    const model = {
+      assignment: () => ({ name: 'A', pointsPossible: 10 }),
+      ensureAssignments: () => new Promise((r) => { release = r; }),
+      loadedAssignments: new Set(['1']), everLoadedAssignments: new Set(['1']),
+      studentOrder: [], students: new Map(), cells: new Map(), key: (x, y) => x + ':' + y
+    };
+    const ctrl = new C({ model, adapter: {}, settings: { values: {} } });
+    const bodies = [];
+    ctrl.showDialog = function () { this._dialog = {}; return this._dialog; };
+    ctrl.setBody = (html) => bodies.push(html);
+    const p = ctrl.open('1');
+    ctrl._dialog = {};   // another column's panel opened meanwhile
+    release();
+    a.eq(await p, null);
+    a.eq(bodies.length, 0);
+  });
 });

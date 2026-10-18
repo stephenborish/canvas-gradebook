@@ -93,7 +93,10 @@
       if (ASSIGNMENT_MENU_ITEMS.test(itemText(it))) anchor = it;
     });
     if (!anchor) return;
-    if (!this.model.assignment(trig.assignmentId)) return;
+    // Never on an anonymous or moderated column: the high/low lists name
+    // students, which is exactly what anonymous grading hides from graders.
+    var meta = this.model.assignment(trig.assignmentId);
+    if (!meta || meta.anonymous || meta.moderated) return;
 
     // Canvas wraps each item in a role="none" list item in some builds; the
     // clone goes in at the same level so it lines up with its neighbours.
@@ -166,8 +169,11 @@
     var self = this;
     var id = String(assignmentId);
     var assignment = this.model.assignment(id);
-    this.showDialog(assignment ? assignment.name : 'Assignment', '<p class="cgp-stats__note">Loading scores…</p>');
+    if (assignment && (assignment.anonymous || assignment.moderated)) return Promise.resolve(null);
+    var dialog = this.showDialog(assignment ? assignment.name : 'Assignment', '<p class="cgp-stats__note">Loading scores…</p>');
     return this.model.ensureAssignments([id], { includeComments: false }).then(function () {
+      // Closed, or replaced by another column's panel, while loading.
+      if (self._dialog !== dialog) return null;
       if (!self.model.loadedAssignments.has(id) && !self.model.everLoadedAssignments.has(id)) {
         self.setBody('<p class="cgp-stats__note">Couldn’t load this column’s scores from Canvas. Try again in a moment.</p>');
         return null;
@@ -296,6 +302,7 @@
     document.body.appendChild(root);
     this._dialog = root;
     try { root.querySelector('.cgp-stats__panel').focus(); } catch (e) { /* ignore */ }
+    return root;
   };
 
   P.setBody = function (html) {
