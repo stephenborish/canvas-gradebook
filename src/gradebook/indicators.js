@@ -275,6 +275,14 @@
    * (one of PAINTED_STATUSES, or 'none', or null for "unknown"), so paintCell
    * can decide what to draw without recomputing it a second time. */
   var PAINTED = CGP.gradeOps.PAINTED_STATUSES;
+  var NATIVE_STATUS_ICONS = '.Grid__GradeCell__StartContainer, .Grid__GradeCell__Status, [class*="icon-late"], [class*="icon-missing"], [class*="status-icon"], [class*="late-icon"], [class*="missing-icon"], svg[class*="late"], svg[class*="missing"]';
+  var MISSING_ICONS = '[class*="icon-missing"], [class*="missing-icon"], svg[class*="missing"]';
+  var LATE_ICONS = '[class*="icon-late"], [class*="late-icon"], svg[class*="late"]';
+  // Canvas icons that contradict a status we know the cell is in.
+  var STALE_ICONS_FOR = {
+    none: MISSING_ICONS + ', ' + LATE_ICONS,
+    excused: MISSING_ICONS + ', ' + LATE_ICONS
+  };
 
   P.syncStatus = function (cell, rec, settled) {
     var status = CGP.gradeOps.cellStatus(rec);
@@ -308,24 +316,27 @@
     if (settled) return status;
 
     // Canvas's native status icons collide with our M/L badge, so they are
-    // hidden - but ONLY on cells that carry that badge. Elsewhere Canvas's own
-    // dropped / extended / resubmitted icons are the only indicator there is,
-    // and anything this sweep hid earlier is put back.
+    // hidden - but ONLY on cells that carry that badge, or where the icon
+    // names a missing/late status the cell no longer has (M or L just taken
+    // off: Canvas's own icon is stale until its row re-renders). Elsewhere
+    // Canvas's own dropped / extended / resubmitted icons are the only
+    // indicator there is, and anything this sweep hid earlier is put back.
     var badge = status === 'missing' || status === 'late';
-    if (badge) {
-      var nativeIcons = cell.querySelectorAll('.Grid__GradeCell__StartContainer, .Grid__GradeCell__Status, [class*="icon-late"], [class*="icon-missing"], [class*="status-icon"], [class*="late-icon"], [class*="missing-icon"], svg[class*="late"], svg[class*="missing"]');
-      for (var ni = 0; ni < nativeIcons.length; ni++) {
-        nativeIcons[ni].style.setProperty('display', 'none', 'important');
-        nativeIcons[ni].style.setProperty('visibility', 'hidden', 'important');
-        nativeIcons[ni].setAttribute('data-cgp-hid', '1');
-      }
-    } else {
-      var hid = cell.querySelectorAll('[data-cgp-hid]');
-      for (var hi = 0; hi < hid.length; hi++) {
-        hid[hi].style.removeProperty('display');
-        hid[hi].style.removeProperty('visibility');
-        hid[hi].removeAttribute('data-cgp-hid');
-      }
+    var hide = badge ? NATIVE_STATUS_ICONS : STALE_ICONS_FOR[status] || null;
+    var hidden = hide ? cell.querySelectorAll(hide) : [];
+    var keep = new Set();
+    for (var ni = 0; ni < hidden.length; ni++) {
+      hidden[ni].style.setProperty('display', 'none', 'important');
+      hidden[ni].style.setProperty('visibility', 'hidden', 'important');
+      hidden[ni].setAttribute('data-cgp-hid', '1');
+      keep.add(hidden[ni]);
+    }
+    var hid = cell.querySelectorAll('[data-cgp-hid]');
+    for (var hi = 0; hi < hid.length; hi++) {
+      if (keep.has(hid[hi])) continue;
+      hid[hi].style.removeProperty('display');
+      hid[hi].style.removeProperty('visibility');
+      hid[hi].removeAttribute('data-cgp-hid');
     }
 
     return status;

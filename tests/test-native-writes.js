@@ -49,6 +49,20 @@ suite('Canvas-native writes reach the model', (test) => {
     a.eq(Object.keys(writes()[0]).sort().join(','), 'assignmentId,courseId,source,userId', 'ids only');
   });
 
+  test('a comment-only write is flagged so it can never take Missing off', () => {
+    const { win, writes } = loadBridge();
+    const comment = new win.XMLHttpRequest();
+    comment.open('PUT', '/api/v1/courses/379/assignments/50/submissions/10');
+    comment.send('{"comment":{"text_comment":"see me"}}');
+    comment.finish(200);
+    const status = new win.XMLHttpRequest();
+    status.open('PUT', '/api/v1/courses/379/assignments/50/submissions/10');
+    status.send('comment%5Btext_comment%5D=hi&submission%5Bposted_grade%5D=3');
+    status.finish(200);
+    a.eq(writes()[0].commentOnly, true);
+    a.eq(writes()[1].commentOnly, undefined, 'a grade sent with a comment is not comment-only');
+  });
+
   test('a reused XHR reports only the request it is finishing', () => {
     const { win, writes } = loadBridge();
     const xhr = new win.XMLHttpRequest();

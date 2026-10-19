@@ -87,13 +87,19 @@ the status back off. Neither one ever touches the grade, in either direction, an
 ever touches the other — marking a submission Missing does not change a grade already sitting
 there.
 
-There is one deliberate exception: typing a real grade into a cell you explicitly marked
-Missing means the work is in, so once Canvas has saved that grade the extension takes the
-Missing status off (keeping Late if you marked it Late). It waits for Canvas's own save to
-land first, so a value Canvas refuses — or an edit you cancel with `Escape` — never clears
-anything. A Missing that Canvas merely *computed* (past due, nothing handed in) is left to
-Canvas, which drops it by itself once the submission is graded; the extension never pins such
-a submission to "no status", which would switch off the course's automatic late policy for it.
+There is one deliberate exception: typing a real grade into a cell that shows Missing means the
+work is in — late. Once Canvas has saved that grade the extension takes Missing off and marks the
+submission **Late** in its place (a submission carries one status). Take Late off afterwards with
+`L`, or with "None" in the Grade Detail Tray; either one updates the cell without a reload. It
+waits for Canvas's own save to land first, so a value Canvas refuses — or an edit you cancel with
+`Escape` — never changes anything. A `0` (or fail / incomplete) typed over Missing leaves
+Missing on: a zero is how missing work is recorded.
+
+Typing a grade and then pressing `M` (before leaving the cell) saves that grade with Missing off
+and no other status — `M` is you saying "not missing", not "late".
+
+Adding a comment — yours, or one saved through the Grade Detail Tray — never takes Missing off.
+If Canvas's answer to a comment comes back without a Missing that was applied, it is put back.
 
 Typed grades are saved by Canvas's own editor and nothing else — the extension never sends a
 second copy of a grade you typed.
@@ -119,7 +125,9 @@ excused cells from its own in-page store, which a write to the Submissions API n
 so the cell used to keep whatever colour Canvas last rendered until the whole gradebook was
 reloaded. The extension now paints the status itself, from the record it holds, the instant a
 key is pressed. It also *removes* a status Canvas is still showing that the submission no
-longer has — `M` or `L` toggled off on a cell that already carried that status.
+longer has — `M` or `L` toggled off on a cell that already carried that status — and hands
+every saved grade and status to Canvas's own grid rows as well, so Canvas's cell, its status icon
+and the Grade Detail Tray stop showing the old status without a reload.
 
 Missing and Late are drawn as a plain, bold letter in a solid circle at the top-left of the cell —
 a red **M**, a yellow **L** — rather than a tint, so the two can never be mistaken for each other

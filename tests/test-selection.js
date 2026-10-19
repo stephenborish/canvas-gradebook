@@ -269,6 +269,7 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
       queueTotalRefresh: () => {},
       refreshCell: () => { calls.refreshes++; return Promise.resolve(refreshed); }
     };
+    if (opts.modelExtras) Object.assign(fakeModel, opts.modelExtras);
     const kb = new CGP.KeyboardGradingController({
       adapter: {
         cellInfo: () => ({ columnType: 'assignment', assignmentId: '101', studentId: '201' }),
@@ -309,6 +310,37 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     a.eq(calls.applied.length, 1, 'one guarded write through GradeWriter');
     a.eq(calls.applied[0][0].parsed.kind, CGP.gradeOps.KIND.CLEAR_MISSING);
     a.eq(calls.applied[0][0].userId, '201');
+  });
+
+  test('Canvas\u2019s own save of the grade (stamped by the page bridge) does not stop Missing coming off', async () => {
+    const CGP = loadGradebookDom();
+    // noteNativeWrite stamps _writeStartedAt moments AFTER the edit; reading
+    // that map is what used to make this follow-up stand down every time.
+    const stamped = new Map([['101:201', Date.now() + 500]]);
+    const calls = focusOutHarness(CGP, { assignmentId: '101', userId: '201', grade: '3', enteredScore: 3, score: 3,
+      gradedAt: 't1', latePolicyStatus: 'missing', missing: true, excused: false },
+    { modelExtras: { _writeStartedAt: stamped, key: (x, y) => x + ':' + y, localWriteSince: () => false } });
+    await new Promise((r) => setTimeout(r, 1300));
+    a.eq(calls.applied.length, 1);
+    a.eq(calls.applied[0][0].parsed.kind, CGP.gradeOps.KIND.CLEAR_MISSING);
+    a.eq(calls.applied[0][0].fromMissing, true);
+  });
+
+  test('a newer write of ours since the edit wins over the follow-up', async () => {
+    const CGP = loadGradebookDom();
+    const calls = focusOutHarness(CGP, { assignmentId: '101', userId: '201', grade: '3', enteredScore: 3, score: 3,
+      gradedAt: 't1', latePolicyStatus: 'missing', missing: true, excused: false },
+    { modelExtras: { localWriteSince: () => true } });
+    await new Promise((r) => setTimeout(r, 1300));
+    a.eq(calls.applied.length, 0);
+  });
+
+  test('a zero typed over Missing leaves Missing on', async () => {
+    const CGP = loadGradebookDom();
+    const calls = focusOutHarness(CGP, { assignmentId: '101', userId: '201', grade: '0', enteredScore: 0, score: 0,
+      gradedAt: 't1', latePolicyStatus: 'missing', missing: true, excused: false }, { typed: '' });
+    await new Promise((r) => setTimeout(r, 1300));
+    a.eq(calls.applied.length, 0);
   });
 
   test('an edit Canvas did not save (cancelled, refused) never clears Missing', async () => {
@@ -361,13 +393,13 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     a.eq(dupNumbers, null, 'no duplicate hardcoded step numbers inside strong tags');
   });
 
-  test('extension version is bumped to 1.16.0 and displayed directly above Save changes button', () => {
+  test('extension version is bumped to 1.16.1 and displayed directly above Save changes button', () => {
     const manifestPath = path.resolve(__dirname, '../manifest.json');
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    a.eq(manifest.version, '1.16.0', 'manifest.json version is 1.16.0');
+    a.eq(manifest.version, '1.16.1', 'manifest.json version is 1.16.1');
 
     const CGP = loadGradebookDom();
-    a.eq(CGP.VERSION, '1.16.0', 'CGP.VERSION is 1.16.0');
+    a.eq(CGP.VERSION, '1.16.1', 'CGP.VERSION is 1.16.1');
 
     const htmlPath = path.resolve(__dirname, '../src/options/options.html');
     const content = fs.readFileSync(htmlPath, 'utf8');
@@ -377,6 +409,6 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     const saveBtnIdx = content.indexOf('id="save"');
     a.ok(versionIdx > 0, 'sidebar__version element exists');
     a.ok(saveBtnIdx > versionIdx, 'sidebar__version appears directly above save button');
-    a.ok(content.includes('id="extensionVersion">1.16.0<'), 'displays 1.16.0 version number');
+    a.ok(content.includes('id="extensionVersion">1.16.1<'), 'displays 1.16.1 version number');
   });
 });

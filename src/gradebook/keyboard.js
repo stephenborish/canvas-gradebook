@@ -3,9 +3,10 @@
  * M = Missing, written to Canvas instantly; pressed again it is removed. L =
  * Late, same shape; pressed again it is removed. E = Excused. Missing and
  * Late are independent flags: neither one ever touches the grade. Typing a
- * grade into a cell explicitly marked Missing takes Missing off once Canvas
- * has saved that grade (see scheduleReconcile). Typing 0 is still an
- * ordinary zero.
+ * grade into a cell that reads Missing swaps Missing for Late once Canvas
+ * has saved that grade (see scheduleReconcile); typing a grade and then
+ * pressing M saves it with Missing off and no status. Typing 0 is still an
+ * ordinary zero, and leaves Missing on.
  * Shortcuts only fire when a real editable grade cell is active (or cells are
  * multi-selected); typing anywhere else on Canvas is never intercepted.
  *
@@ -148,6 +149,7 @@
           enteredScore: before.enteredScore,
           gradedAt: before.gradedAt,
           latePolicyStatus: before.latePolicyStatus || null,
+          readsMissing: CGP.gradeOps.cellStatus(before) === 'missing',
           at: Date.now()
         } : null);
       }
@@ -195,9 +197,9 @@
 
   /* Canvas committed a grade its own way: re-read the submission so the
    * indicators and Total stay truthful, and - once the read shows Canvas
-   * really did save a NEW grade - take off an explicitly applied Missing
-   * status, which Canvas itself keeps on a graded submission. A typed grade
-   * is the teacher saying the work is in.
+   * really did save a NEW grade that earns credit - swap the Missing the cell
+   * showed for Late. Canvas itself keeps an applied Missing on a graded
+   * submission; a typed grade is the teacher saying the work is in, late.
    *
    * Re-read a few times on a backoff: Canvas's own request can take longer
    * than the first look. A read showing nothing new (Canvas refused the
@@ -226,13 +228,20 @@
         // typed is taken off - never one applied since (an M pressed after
         // the edit, while this follow-up was still waiting), which is the
         // teacher's newer decision. Nor while the course is still loading.
-        var markedSince = self.model._writeStartedAt && self.model._writeStartedAt.get &&
-          self.model._writeStartedAt.get(self.model.key ? self.model.key(assignmentId, userId) : assignmentId + ':' + userId);
-        if (markedSince && before.at && markedSince > before.at) return;
-        if (before.latePolicyStatus === 'missing' && rec.latePolicyStatus === 'missing' && !rec.excused &&
-          self.writer && self.model.ready !== false) {
+        // Canvas's own save of this very grade is not such a decision: it is
+        // what this follow-up is here for (see model.localWriteSince).
+        if (typeof self.model.localWriteSince === 'function' &&
+          self.model.localWriteSince(assignmentId, userId, before.at)) return;
+        if (!before.readsMissing && before.latePolicyStatus !== 'missing') return;
+        // A zero typed over Missing is how missing work is recorded: it stays.
+        if (rec.excused || !CGP.gradeOps.earnedCredit(rec)) return;
+        var stillMissing = rec.latePolicyStatus === 'missing';
+        // Canvas drops a computed Missing on grading by itself; the work still
+        // came in late, so Late goes on - unless some status is already there.
+        var computedDropped = !rec.latePolicyStatus && !rec.late;
+        if ((stillMissing || computedDropped) && self.writer && self.model.ready !== false) {
           self.writer.apply([{
-            assignmentId: assignmentId, userId: userId,
+            assignmentId: assignmentId, userId: userId, fromMissing: true,
             parsed: { kind: CGP.gradeOps.KIND.CLEAR_MISSING, raw: '' }
           }]).then(function () { if (self.requestPaint) self.requestPaint(); });
         }
@@ -494,6 +503,12 @@
       return String(t.assignmentId) === String(editorInfo.assignmentId) && String(t.userId) === String(editorInfo.studentId);
     }));
     var pendingKey = (nativeEditor && inScope) ? (editorInfo.assignmentId + ':' + editorInfo.studentId) : null;
+    // A grade typed into the open editor and then M on a cell that reads
+    // Missing: the teacher is entering the work AND taking Missing off. The
+    // typed grade used to be thrown away with the editor while only the
+    // status was toggled, so the cell kept its old 0.
+    var typedOverMissing = token === 'M' && scope.length === 1 && nativeEditor && inScope
+      ? this.typedGradeOverMissing(nativeEditor, editorInfo) : null;
     if (nativeEditor && inScope) {
       // Closing the editor fires a focusout that the reconcile-from-Canvas path
       // in onFocusOut would otherwise act on - and seeing a graded submission
@@ -512,8 +527,10 @@
       if (self._refreshTimers.has(k)) { clearTimeout(self._refreshTimers.get(k)); self._refreshTimers.delete(k); }
     });
     var built = this.writer.targetsFromTokens(scope.map(function (t) {
-      return { assignmentId: t.assignmentId, userId: t.userId, token: token };
+      return { assignmentId: t.assignmentId, userId: t.userId, token: typedOverMissing || token };
     }));
+    // One request: the typed grade, with Missing off and no other status.
+    if (typedOverMissing) built.targets.forEach(function (t) { t.liftMissingTo = 'none'; });
     if (built.invalid.length && !built.targets.length) {
       if (pendingKey) this._nativeMPending.delete(pendingKey);
       CGP.ui.error('"' + token + '" is not a grade Canvas will accept.');
@@ -537,6 +554,25 @@
       if (pendingKey) self._nativeMPending.delete(pendingKey);
       if (self.requestPaint) self.requestPaint();
     });
+  };
+
+  /* The grade the teacher typed into this open editor, when the cell reads
+   * Missing and what was typed is a grade the column accepts - otherwise
+   * null, and M keeps its ordinary meaning. */
+  P.typedGradeOverMissing = function (input, info) {
+    var watch = this._editorWatch.get(input);
+    if (!watch || !info) return null;
+    var typed = String(input.value === undefined ? '' : input.value).trim();
+    var baseline = watch.shown === undefined ? watch.value : watch.shown;
+    if (typed === '' || sameGrade(typed, baseline)) return null;
+    var rec = this.model.cell(info.assignmentId, info.studentId);
+    if (CGP.gradeOps.cellStatus(rec) !== 'missing') return null;
+    var assignment = this.model.assignment(info.assignmentId);
+    var parsed = CGP.gradeOps.parseToken(typed, { gradingType: assignment && assignment.gradingType });
+    var K = CGP.gradeOps.KIND;
+    if ([K.NUMBER, K.PERCENT, K.LETTER].indexOf(parsed.kind) < 0) return null;
+    if (!CGP.gradeOps.acceptsToken(parsed, assignment && assignment.gradingType)) return null;
+    return typed;
   };
 
   /* Uses Canvas's own commit (Enter) and then moves where Canvas would not. */

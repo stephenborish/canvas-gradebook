@@ -143,4 +143,50 @@ suite('page-context SlickGrid bridge', (test) => {
     a.ok(!('posted_at' in rows[2].assignment_7));
     a.deep(calls, [['invalidateRows', [0, 2]], ['render']]);
   });
+
+  test('a submission saved through the API is handed to Canvas\'s own row, in its own spelling', () => {
+    const rows = [
+      { id: '1', assignment_7: { latePolicyStatus: 'missing', missing: true, late: false, grade: '0', score: 0, enteredScore: 0 } },
+      { id: '2', assignment_7: { late_policy_status: 'missing', missing: true, grade: '0' } }
+    ];
+    const calls = [];
+    const grid = {
+      getColumns: function () { return []; },
+      setColumns: function () {},
+      getDataLength: function () { return rows.length; },
+      getDataItem: function (i) { return rows[i]; },
+      invalidateRows: function (r) { calls.push(['invalidateRows', r]); },
+      render: function () { calls.push(['render']); }
+    };
+    const listeners = [];
+    const win = {
+      ENV: {},
+      location: { origin: 'https://canvas.example.edu' },
+      addEventListener: function (type, listener) { if (type === 'message') listeners.push(listener); },
+      postMessage: function (message) {
+        listeners.slice().forEach(function (listener) { listener({ source: win, data: message }); });
+      }
+    };
+    const context = {
+      window: win,
+      document: { querySelector: function () { return { slickGrid: grid }; } },
+      Promise: Promise, Object: Object, Array: Array, String: String, Number: Number,
+      Math: Math, Date: Date, isFinite: isFinite, setTimeout: function (fn) { fn(); }
+    };
+    vm.runInNewContext(fs.readFileSync('src/page/env-bridge.js', 'utf8'), context);
+
+    const fields = { latePolicyStatus: 'late', missing: false, late: true, excused: false, grade: '3', score: 3, enteredScore: 3, workflowState: 'graded' };
+    win.postMessage({ source: 'cgp-submission-sync', assignmentId: '7', userId: '1', fields: fields }, win.location.origin);
+    win.postMessage({ source: 'cgp-submission-sync', assignmentId: '7', userId: '2', fields: fields }, win.location.origin);
+
+    a.eq(rows[0].assignment_7.latePolicyStatus, 'late');
+    a.eq(rows[0].assignment_7.missing, false);
+    a.eq(rows[0].assignment_7.late, true);
+    a.eq(rows[0].assignment_7.grade, '3');
+    a.ok(!('late_policy_status' in rows[0].assignment_7), 'no snake_case field added');
+    a.ok(!('workflowState' in rows[0].assignment_7), 'a field Canvas does not have is never added');
+    a.eq(rows[1].assignment_7.late_policy_status, 'late', 'snake_case submissions keep their own spelling');
+    a.eq(rows[1].assignment_7.missing, false);
+    a.deep(calls, [['invalidateRows', [0]], ['render'], ['invalidateRows', [1]], ['render']]);
+  });
 });
