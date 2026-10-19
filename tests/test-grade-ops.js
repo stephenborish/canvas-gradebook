@@ -81,20 +81,20 @@ suite('grade shortcuts (M / E / L / 0)', (test) => {
   });
 
   test('grading a Missing submission clears Missing status automatically', () => {
-    // Entering a grade removes Missing status automatically while preserving Late if late.
+    // Entering a grade removes Missing and marks the work Late.
     const op = ops().operationFor(ops().parseToken('7'), { wasExplicitMissing: true });
     a.form(op.form, {
       'submission[posted_grade]': '7',
-      'submission[late_policy_status]': 'none'
+      'submission[late_policy_status]': 'late'
     }, 'graded-while-missing form');
     a.eq(op.patch.missing, false, 'the patch clears missing');
-    a.eq(op.patch.latePolicyStatus, null, 'latePolicyStatus is reset');
+    a.eq(op.patch.latePolicyStatus, 'late', 'Missing is swapped for Late');
 
     // Letter grades clear missing too
     const letterOp = ops().operationFor(ops().parseToken('B+'), { wasExplicitMissing: true });
     a.form(letterOp.form, {
       'submission[posted_grade]': 'B+',
-      'submission[late_policy_status]': 'none'
+      'submission[late_policy_status]': 'late'
     });
     a.eq(letterOp.patch.missing, false);
 

@@ -57,6 +57,10 @@
     // trusted for that cell (it may have been served before the write
     // committed); the write's own response is what settles it.
     this._writesInFlight = new Map();
+    // "assignmentId:userId" -> Date.now() when one of OUR writes to that cell
+    // last succeeded. Unlike _writeStartedAt, Canvas's own saves (see
+    // noteNativeWrite) never stamp it - see localWriteSince.
+    this._localWriteDoneAt = new Map();
     // assignmentId -> generation, bumped by reloadAssignment(). A column read
     // only applies if its generation is still current, so an older read that
     // happens to land after a newer one can never roll the column back.
@@ -495,8 +499,7 @@
       latePolicyStatus: sub.late_policy_status || null,
       workflowState: sub.workflow_state || null,
       submittedAt: sub.submitted_at || null,
-      // Kept so a write that lifts an explicit Missing can tell the work was
-      // handed in late (see gradeOps.handedInLate); null when Canvas omits them.
+      // null when Canvas omits them.
       secondsLate: sub.seconds_late === undefined ? (prev.secondsLate === undefined ? null : prev.secondsLate) : sub.seconds_late,
       cachedDueDate: sub.cached_due_date || (prev.cachedDueDate || null),
       gradedAt: sub.graded_at || null,
@@ -625,6 +628,21 @@
     var key = this.key(assignmentId, userId);
     this._decInFlight(key);
     this._writeStartedAt.set(key, Date.now());
+    this._localWriteDoneAt.set(key, Date.now());
+  };
+
+  /* Has this extension written to the cell since `since` (or is a write of
+   * ours still out)? Asked by the follow-up to a grade Canvas saved itself
+   * (keyboard.js scheduleReconcile), which must stand down for a newer
+   * command of ours - an M pressed meanwhile - but NOT for Canvas's own save
+   * of the very grade it is following up, which noteNativeWrite stamps into
+   * _writeStartedAt moments after the edit. Reading that map instead is what
+   * left Missing on every grade typed over it. */
+  GradebookModel.prototype.localWriteSince = function (assignmentId, userId, since) {
+    var key = this.key(assignmentId, userId);
+    if ((this._writesInFlight.get(key) || 0) > 0) return true;
+    var done = this._localWriteDoneAt.get(key);
+    return !!(done && since && done > since);
   };
 
   /* Canvas saved this cell through its own UI (see env-bridge.js). Stamped

@@ -720,6 +720,61 @@
     } catch (e) { /* never break the page */ }
   });
 
+  /* A grade or status the content script wrote through the API never reaches
+   * the submission objects Canvas renders its cells (and the Grade Detail
+   * Tray) from, so Canvas kept drawing the status from before the write -
+   * a Missing that M had just taken off, a Late the teacher had removed -
+   * until a reload. On a {source:'cgp-submission-sync'} the named submission
+   * in Canvas's own row data gets the fields Canvas answered with, in
+   * whichever spelling (camelCase or snake_case) that object already uses -
+   * a field it does not have is never added - and only that row re-renders. */
+  var SYNC_FIELDS = {
+    latePolicyStatus: 'late_policy_status',
+    missing: 'missing',
+    late: 'late',
+    excused: 'excused',
+    grade: 'grade',
+    score: 'score',
+    enteredScore: 'entered_score',
+    workflowState: 'workflow_state'
+  };
+
+  function syncRowSubmission(grid, assignmentId, userId, fields) {
+    if (!grid || typeof grid.getDataLength !== 'function' || typeof grid.getDataItem !== 'function') return false;
+    var field = 'assignment_' + assignmentId;
+    var n = grid.getDataLength();
+    for (var i = 0; i < n; i++) {
+      var item = grid.getDataItem(i);
+      if (!item || String(item.id) !== String(userId)) continue;
+      var sub = item[field];
+      if (!sub || typeof sub !== 'object') return false;
+      Object.keys(SYNC_FIELDS).forEach(function (camel) {
+        if (!Object.prototype.hasOwnProperty.call(fields, camel)) return;
+        var value = fields[camel];
+        var t = typeof value;
+        if (value !== null && t !== 'string' && t !== 'number' && t !== 'boolean') return;
+        var snake = SYNC_FIELDS[camel];
+        if (camel in sub) sub[camel] = value;
+        if (snake !== camel && snake in sub) sub[snake] = value;
+      });
+      if (typeof grid.invalidateRows === 'function') grid.invalidateRows([i]);
+      else if (typeof grid.invalidate === 'function') grid.invalidate();
+      if (typeof grid.render === 'function') grid.render();
+      return true;
+    }
+    return false;
+  }
+
+  window.addEventListener('message', function (event) {
+    var message = event.data;
+    if (event.source !== window || !message || message.source !== 'cgp-submission-sync') return;
+    if (!/^\d+$/.test(String(message.assignmentId)) || !/^\d+$/.test(String(message.userId))) return;
+    if (!message.fields || typeof message.fields !== 'object') return;
+    try {
+      syncRowSubmission(findGrid(), String(message.assignmentId), String(message.userId), message.fields);
+    } catch (e) { /* never break the page */ }
+  });
+
   /* ------------------------------------------------- Canvas's own writes */
 
   /* A grade, status or comment saved through Canvas's OWN UI - the Grade
@@ -758,6 +813,28 @@
     return null;
   }
 
+  /* Does this write carry a comment and nothing else (no grade, no status)?
+   * Lets the content script make sure a comment never takes Missing off. */
+  function commentOnly(body) {
+    try {
+      if (!body) return false;
+      var keys = [];
+      if (typeof body === 'string') {
+        if (/^\s*\{/.test(body)) {
+          var json = JSON.parse(body) || {};
+          return !!json.comment && !json.submission;
+        }
+        new URLSearchParams(body).forEach(function (v, k) { keys.push(k); });
+      } else if (typeof body.forEach === 'function' && typeof body.get === 'function') {
+        body.forEach(function (v, k) { keys.push(k); });
+      } else {
+        return false;
+      }
+      return keys.some(function (k) { return /^comment\[/.test(k); }) &&
+        !keys.some(function (k) { return /^submission\[/.test(k); });
+    } catch (e) { return false; }
+  }
+
   function nativeWriteTarget(method, url, body) {
     method = String(method || 'GET').toUpperCase();
     if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return null;
@@ -768,7 +845,11 @@
       href = u.pathname + u.search;
     } catch (e) { return null; }
     var m = SUBMISSION_URL.exec(href);
-    if (m) return { courseId: m[1], assignmentId: m[2], userId: m[3] };
+    if (m) {
+      var target = { courseId: m[1], assignmentId: m[2], userId: m[3] };
+      if (commentOnly(body)) target.commentOnly = true;
+      return target;
+    }
     m = LEGACY_UPDATE_URL.exec(href);
     if (m) {
       var aid = bodyField(body, 'submission[assignment_id]');
