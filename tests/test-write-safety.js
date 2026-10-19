@@ -766,6 +766,39 @@ suite('write safety: a grade typed over Missing swaps it for Late', (test) => {
     a.eq(CGP.gradeOps.cellStatus(m.cell('50', '10')), 'missing');
   });
 
+  test('Missing removed while the comment was saving is not put back', async () => {
+    stubUi();
+    let sent = 0;
+    const m = model();
+    m.loadedAssignments.add('50');
+    m.patchCell('50', '10', { latePolicyStatus: 'missing', missing: true }, { silent: true });
+    const w = new CGP.GradeWriter({
+      api: { updateSubmission: () => { sent++; return Promise.resolve({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: null, missing: false }); } },
+      model: m, settings: { values: {} }
+    });
+    const writesBefore = w.statusWriteCount('50', '10');
+    await w.apply([{ assignmentId: '50', userId: '10', parsed: CGP.gradeOps.parseToken('M') }]);
+    a.eq(sent, 1, 'the M that removed Missing');
+    await w.keepMissingAfterComment('50', '10', true, { late_policy_status: null }, writesBefore);
+    a.eq(sent, 1, 'Missing was not written back over the teacher\u2019s removal');
+  });
+
+  test('a failed restore re-reads the cell and tells the teacher', async () => {
+    stubUi();
+    let refreshed = 0;
+    const m = model();
+    m.patchCell('50', '10', { latePolicyStatus: 'missing', missing: true }, { silent: true });
+    m.refreshCell = () => { refreshed++; return Promise.resolve(m.applySubmission({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: null, missing: false })); };
+    const w = new CGP.GradeWriter({
+      api: { updateSubmission: () => Promise.reject(Object.assign(new Error('x'), { status: 500 })) },
+      model: m, settings: { values: {} }
+    });
+    await w.keepMissingAfterComment('50', '10', true, { late_policy_status: null }, w.statusWriteCount('50', '10'));
+    a.eq(refreshed, 1);
+    a.eq(CGP.gradeOps.cellStatus(m.cell('50', '10')), 'none', 'the cell shows what Canvas really has');
+    a.ok(said.some((x) => x.level === 'error' && /Missing/.test(x.text)));
+  });
+
   test('a comment that keeps Missing sends nothing more', async () => {
     stubUi();
     let sent = 0;

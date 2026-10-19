@@ -21,9 +21,18 @@
     // (see serialize below). Different cells still run concurrently, bounded
     // by the pool.
     this.chains = new Map();
+    // "assignmentId:userId" -> how many grade/status writes have started on
+    // that cell. A comment remembers the count it began with, so putting
+    // Missing back afterwards never overrides a status the teacher set while
+    // the comment was saving (see keepMissingAfterComment).
+    this.statusWrites = new Map();
   }
 
   var P = GradeWriter.prototype;
+
+  P.statusWriteCount = function (assignmentId, userId) {
+    return this.statusWrites.get(String(assignmentId) + ':' + String(userId)) || 0;
+  };
 
   /** targets: [{assignmentId, userId, parsed}] */
   P.apply = function (targets, opts) {
@@ -253,6 +262,8 @@
       return Promise.resolve();
     }
     this.inflight.add(dupKey);
+    var statusKey = String(assignmentId) + ':' + String(userId);
+    this.statusWrites.set(statusKey, (this.statusWrites.get(statusKey) || 0) + 1);
 
     var snapshot = this.model.snapshotCell(assignmentId, userId);
     if (!opts.noOptimistic) {
@@ -392,8 +403,12 @@
    * to a comment write is checked: if a cell that carried an explicit Missing
    * comes back without it, the status is put straight back. A response that
    * does not say (no late_policy_status field) proves nothing and is left
-   * alone. */
-  P.keepMissingAfterComment = function (assignmentId, userId, wasExplicitMissing, submission) {
+   * alone, and so does a cell given any grade or status write since the
+   * comment began (writesBefore: statusWriteCount from then) - removing
+   * Missing meanwhile was the teacher's decision. If putting it back fails,
+   * the cell is re-read so it shows what Canvas really has, and the teacher
+   * is told. */
+  P.keepMissingAfterComment = function (assignmentId, userId, wasExplicitMissing, submission, writesBefore) {
     var self = this;
     if (!wasExplicitMissing || !submission || typeof submission !== 'object' ||
       !Object.prototype.hasOwnProperty.call(submission, 'late_policy_status') ||
@@ -404,6 +419,7 @@
     return this.serialize(assignmentId, userId, function () {
       var current = self.model.cell(assignmentId, userId);
       // Something newer than the comment may have set a status meanwhile.
+      if (writesBefore !== undefined && self.statusWriteCount(assignmentId, userId) !== writesBefore) return null;
       if (current && current.latePolicyStatus && current.latePolicyStatus !== 'missing') return null;
       return self.api.updateSubmission(self.model.courseId, assignmentId, userId,
         { 'submission[late_policy_status]': 'missing' }).then(function (fresh) {
@@ -413,7 +429,12 @@
           return rec;
         }, function (err) {
           CGP.diag.error('comment.missingRestoreFailed', { assignmentId: assignmentId, status: err && err.status });
-          return null;
+          CGP.ui.error('Canvas took Missing off this submission when the comment was saved, and ' +
+            'putting it back failed' + (err && err.status ? ' (' + err.status + ')' : '') + '. Press M to mark it Missing again.');
+          return self.model.refreshCell(assignmentId, userId).then(function (rec) {
+            self.syncCanvasStore(rec);
+            return null;
+          });
         });
     });
   };
@@ -467,12 +488,13 @@
     }
     var before = this.model.cell(assignmentId, userId);
     var wasExplicitMissing = !!(before && before.latePolicyStatus === 'missing');
+    var writesBefore = this.statusWriteCount(assignmentId, userId);
     var priorMark = this.model.markLocalWrite(assignmentId, userId);
     return this.api.addComment(this.model.courseId, assignmentId, userId, text).then(function (submission) {
       self.model.finishLocalWrite(assignmentId, userId);
       self.model.applyCommentWrite(assignmentId, userId, submission);
       CGP.diag.bump('comment.saved');
-      self.keepMissingAfterComment(assignmentId, userId, wasExplicitMissing, submission);
+      self.keepMissingAfterComment(assignmentId, userId, wasExplicitMissing, submission, writesBefore);
       return submission;
     }, function (err) {
       self.model.clearLocalWrite(assignmentId, userId, priorMark);

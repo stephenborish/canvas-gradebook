@@ -89,8 +89,9 @@
       var onlyComments = !!isCommentOnly && (!pending || pending.onlyComments);
       var prior = pending ? pending.wasExplicitMissing : !!(model.cell(assignmentId, userId) &&
         model.cell(assignmentId, userId).latePolicyStatus === 'missing');
+      var writesBefore = pending ? pending.writesBefore : (writer ? writer.statusWriteCount(assignmentId, userId) : 0);
       model.noteNativeWrite(assignmentId, userId);
-      nativeRefresh[k] = { totals: totals, onlyComments: onlyComments, wasExplicitMissing: prior, timer: setTimeout(function () {
+      nativeRefresh[k] = { totals: totals, onlyComments: onlyComments, wasExplicitMissing: prior, writesBefore: writesBefore, timer: setTimeout(function () {
         delete nativeRefresh[k];
         CGP.diag.bump('nativeWrite.refresh');
         model.refreshCell(assignmentId, userId, { commentsAuthoritative: true, staleIfWrittenAfter: Date.now() })
@@ -98,7 +99,7 @@
             if (!onlyComments || !prior || !rec || !writer) return;
             writer.keepMissingAfterComment(assignmentId, userId, true, {
               late_policy_status: rec.latePolicyStatus, excused: rec.excused
-            });
+            }, writesBefore);
           });
         // A comment edit/delete cannot move the course total.
         if (totals) model.queueTotalRefresh(userId);
