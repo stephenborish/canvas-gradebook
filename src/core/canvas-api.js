@@ -281,7 +281,11 @@
       'assignment_ids[]': (assignmentIds || []).map(String),
       grouped: false
     };
-    if (opts.includeComments !== false) params['include[]'] = ['submission_comments'];
+    var include = [];
+    if (opts.includeComments !== false) include.push('submission_comments');
+    // Only reads whose submissions go on to Canvas's own store need it.
+    if (opts.visibility) include.push('visibility');
+    if (include.length) params['include[]'] = include;
     return this.getAll('/api/v1/courses/' + courseId + '/students/submissions', params,
       { maxPages: opts.maxPages || 60 });
   };
@@ -296,10 +300,36 @@
     }, { maxPages: opts.maxPages || 100 });
   };
 
+  /* include[]=visibility rides on every single-submission read and write:
+   * the answer may be handed to Canvas's own gradebook store (see
+   * gradebook/canvas-store.js), and Canvas treats a submission that arrives
+   * there without assignment_visible as one the student is no longer
+   * assigned. Canvas's own gradebook asks for it on its writes for the same
+   * reason. */
   CanvasApi.prototype.submission = function (courseId, assignmentId, userId) {
     return this.get('/api/v1/courses/' + courseId + '/assignments/' + assignmentId + '/submissions/' + userId,
-      { 'include[]': ['submission_comments'] });
+      { 'include[]': ['submission_comments', 'visibility'] });
   };
+
+  /* "submission[late_policy_status]" -> { submission: { late_policy_status } }.
+   * A form body cannot say null - it drops the key, or sends "" which Canvas
+   * refuses - and null is how a status is handed back to Canvas's own
+   * automatic rules, so a form holding one is sent as JSON instead. */
+  function formToJson(form) {
+    var out = {};
+    Object.keys(form || {}).forEach(function (k) {
+      var v = form[k];
+      if (v === undefined) return;
+      var m = /^([^\[\]]+)\[([^\[\]]+)\]$/.exec(k);
+      if (m) (out[m[1]] = out[m[1]] || {})[m[2]] = v;
+      else out[k] = v;
+    });
+    return out;
+  }
+
+  function holdsNull(form) {
+    return Object.keys(form || {}).some(function (k) { return form[k] === null; });
+  }
 
   /* A grade/status write is idempotent - sending the same posted_grade or
    * late_policy_status twice leaves the same record - so a lost response is
@@ -307,13 +337,15 @@
    * Canvas throttled before acting on it. */
   CanvasApi.prototype.updateSubmission = function (courseId, assignmentId, userId, form, opts) {
     opts = opts || {};
-    return this.request('/api/v1/courses/' + courseId + '/assignments/' + assignmentId + '/submissions/' + userId, {
+    var req = {
       method: 'PUT',
-      form: form,
-      params: { 'include[]': ['submission_comments'] },
+      params: { 'include[]': ['submission_comments', 'visibility'] },
       retries: 1,
       idempotent: opts.idempotent !== false
-    }).then(function (r) { return r.data; });
+    };
+    if (holdsNull(form)) req.json = formToJson(form); else req.form = form;
+    return this.request('/api/v1/courses/' + courseId + '/assignments/' + assignmentId + '/submissions/' + userId, req)
+      .then(function (r) { return r.data; });
   };
 
   CanvasApi.prototype.addComment = function (courseId, assignmentId, userId, text) {
@@ -475,5 +507,5 @@
 
   CGP.CanvasApi = CanvasApi;
   CGP.CanvasApiError = CanvasApiError;
-  CGP.apiInternals = { parseBody: parseBody, nextLink: nextLink, isThrottled: isThrottled, retryAfterMs: retryAfterMs };
+  CGP.apiInternals = { parseBody: parseBody, nextLink: nextLink, isThrottled: isThrottled, retryAfterMs: retryAfterMs, formToJson: formToJson };
 })();

@@ -17,10 +17,10 @@
     MISSING: 'missing',
     EXCUSED: 'excused',
     LATE: 'late',
-    // Internal only, never produced by parseToken: takes an explicitly
-    // applied Missing status off a submission whose grade Canvas has just
-    // committed through its own editor (see keyboard.js reconcile).
-    CLEAR_MISSING: 'clear_missing',
+    // Internal only, never produced by parseToken: hands an explicitly
+    // applied Missing back to Canvas's own rules once Canvas has committed a
+    // grade typed through its own editor (see keyboard.js reconcile).
+    LIFT_MISSING: 'lift_missing',
     INVALID: 'invalid'
   };
 
@@ -62,14 +62,19 @@
    * Canvas API form parameters + the optimistic local patch for a parsed token.
    * Returns null for SKIP / INVALID (callers must not write those).
    *
-   * Missing and Late are independent, instant status flags. Entering a grade
-   * that earns credit (NUMBER / PERCENT / LETTER) on a cell that reads Missing
-   * swaps Missing for Late in the same request, so teachers never have to
-   * toggle M off by hand; a zero leaves Missing on. See liftedStatus.
+   * Missing and Late are independent, instant status flags, and a grade is
+   * only a grade: entering one never adds a status. Canvas's own rules then
+   * apply exactly as they do in its own editor (Submission#missing? / late?):
+   * its automatic Missing goes away the moment anything is graded, a zero
+   * included, while a status somebody applied stays until somebody removes
+   * it. The one exception is opt-in (opts.liftMissing): a grade that earns
+   * credit over an APPLIED Missing hands the status back to Canvas, which
+   * then marks the work Late only if it was really submitted after its due
+   * date - never on paper or no-submission work. See liftedStatus.
    *
-   * opts.readsMissing - the cell currently shows Missing (cellStatus), whether
-   * the status was applied or Canvas computed it.
-   * opts.liftMissingTo - force the status a grade write leaves ('none').
+   * opts.liftMissing - the "a real grade takes Missing off" setting is on.
+   * opts.liftMissingTo - force the status a grade write leaves ('none', when
+   * a grade was typed and M pressed to say "not missing").
    * opts.latePolicyStatus - the cell's current raw status, carried through
    * unchanged into the optimistic patch when this write does not touch it.
    * opts.wasExcused - CLEAR also has to un-excuse explicitly.
@@ -92,8 +97,8 @@
    * EXCUSED is an explicit status command and is left alone.
    */
   /* Does this grade mean the work came in? A zero (or fail / incomplete) is
-   * how a teacher records the missing work itself, so it leaves Missing
-   * where it is; anything that earns credit lifts it. */
+   * how a teacher records the missing work itself, so it never lifts an
+   * applied Missing; anything that earns credit can. */
   function gradeEarnsCredit(parsed) {
     if (!parsed) return false;
     if (parsed.kind === KIND.NUMBER) return Number(parsed.value) > 0;
@@ -102,35 +107,32 @@
     return false;
   }
 
-  /* The status a grade write leaves on a cell that reads Missing, or null
-   * when the write must not touch the status at all.
-   *
-   * Entering a real grade over Missing is the teacher saying the work is in,
-   * after its due date - so Missing comes off and Late goes on in the same
-   * request (a submission holds one status). The teacher can then take Late
-   * off with L, or in the Grade Detail Tray. opts.liftMissingTo overrides
-   * that ('none' when the grade was typed and M pressed to remove Missing). */
+  /* What a grade write does to the status:
+   *   undefined - leaves it alone (the default, and what Canvas's editor does)
+   *   null      - hands an applied Missing back to Canvas's automatic rules
+   *   'none'    - pins "no status" (opts.liftMissingTo)
+   * Only an APPLIED Missing is ever lifted: Canvas's computed one already
+   * goes away by itself once the cell is graded. */
   function liftedStatus(parsed, opts) {
     if (opts.liftMissingTo) return opts.liftMissingTo;
-    if (!(opts.wasExplicitMissing || opts.readsMissing)) return null;
-    return gradeEarnsCredit(parsed) ? 'late' : null;
-  }
-
-  /* The raw late_policy_status a grade write leaves behind. */
-  function keptStatus(opts, lifted) {
-    if (lifted) return lifted === 'none' ? null : lifted;
-    if (opts.latePolicyStatus !== undefined) return opts.latePolicyStatus || null;
-    if (opts.wasExplicitMissing) return 'missing';
-    return opts.wasLate ? 'late' : null;
+    if (opts.liftMissing && opts.wasExplicitMissing && gradeEarnsCredit(parsed)) return null;
+    return undefined;
   }
 
   /* Optimistic status fields for a grade write. */
   function gradeStatusPatch(patch, opts, lifted) {
-    if (lifted) {
-      patch.missing = false;
-      patch.late = lifted === 'late';
+    if (lifted === undefined) {
+      var kept = opts.latePolicyStatus !== undefined ? (opts.latePolicyStatus || null)
+        : (opts.wasExplicitMissing ? 'missing' : (opts.wasLate ? 'late' : null));
+      patch.latePolicyStatus = kept;
+      // An applied Missing survives grading; Canvas's own does not.
+      patch.missing = kept === 'missing';
+      return patch;
     }
-    patch.latePolicyStatus = keptStatus(opts, lifted);
+    patch.latePolicyStatus = lifted;
+    patch.missing = false;
+    // Handed back (null), Canvas decides Late from the submission itself.
+    if (lifted === 'none') patch.late = false;
     return patch;
   }
 
@@ -182,13 +184,15 @@
           patch: { late: true, missing: false, latePolicyStatus: 'late' },
           display: null // status only; the grade text is unchanged
         };
-      case KIND.CLEAR_MISSING:
-        // Canvas has saved a grade typed over Missing: the work came in late.
+      case KIND.LIFT_MISSING:
+        // Canvas has saved a grade typed over an applied Missing: the status
+        // goes back to Canvas, which marks Late only for work that was
+        // actually submitted after its due date.
         return {
           kind: parsed.kind,
-          summary: 'Missing removed after grading (marked Late)',
-          form: { 'submission[late_policy_status]': 'late' },
-          patch: { missing: false, late: true, latePolicyStatus: 'late' },
+          summary: 'Missing removed after grading',
+          form: { 'submission[late_policy_status]': null },
+          patch: { missing: false, latePolicyStatus: null },
           display: null
         };
       case KIND.CLEAR: {
@@ -207,22 +211,17 @@
       }
       case KIND.NUMBER: {
         var numberForm = { 'submission[posted_grade]': String(parsed.value) };
-        // Only a cell that reads Missing has its status touched, and only by
-        // a grade that earns credit (see liftedStatus). Every other grade
-        // leaves late_policy_status out: restating it would pin the
-        // submission to that status and switch off the course's automatic
-        // late/missing policy for it.
+        // late_policy_status is left out unless an applied Missing is being
+        // lifted (see liftedStatus): restating it would pin the submission
+        // to that status and switch off the course's automatic late/missing
+        // policy for it.
         var numberLift = liftedStatus(parsed, opts);
-        if (numberLift) numberForm['submission[late_policy_status]'] = numberLift;
+        if (numberLift !== undefined) numberForm['submission[late_policy_status]'] = numberLift;
         var numberPatch = gradeStatusPatch({
           score: Number(parsed.value),
           enteredScore: Number(parsed.value),
           grade: String(parsed.value),
           excused: false,
-          // A zero leaves Missing on (Canvas keeps its automatic Missing on a
-          // zero too, see cellStatus), so the optimistic record must as well,
-          // or M blinks off until Canvas answers.
-          missing: Number(parsed.value) > 0 ? false : !!(opts.wasMissing || opts.wasExplicitMissing),
           workflowState: 'graded'
         }, opts, numberLift);
         return { kind: parsed.kind, summary: String(parsed.value), form: numberForm, patch: numberPatch, display: String(parsed.value) };
@@ -231,11 +230,10 @@
       case KIND.LETTER: {
         var gradeForm = { 'submission[posted_grade]': String(parsed.value) };
         var gradeLift = liftedStatus(parsed, opts);
-        if (gradeLift) gradeForm['submission[late_policy_status]'] = gradeLift;
+        if (gradeLift !== undefined) gradeForm['submission[late_policy_status]'] = gradeLift;
         var gradePatch = gradeStatusPatch({
           grade: String(parsed.value),
           excused: false,
-          missing: gradeEarnsCredit(parsed) ? false : !!(opts.wasMissing || opts.wasExplicitMissing),
           workflowState: 'graded'
         }, opts, gradeLift);
         return { kind: parsed.kind, summary: String(parsed.value), form: gradeForm, patch: gradePatch, display: String(parsed.value) };
@@ -275,31 +273,40 @@
    *                                     callers leave those cells alone
    *   null                            - nothing is known about this cell yet
    *
-   * Excused wins over everything: Canvas shows an excused submission as
-   * excused even when it also arrived late. Both the raw late_policy_status
-   * and Canvas's derived booleans are consulted, because a submission handed
-   * in after its due date is late (late: true) with no explicit status at all.
+   * It mirrors Canvas's own Submission#missing? / late?, never second-guesses
+   * them: the Grade Detail Tray, SpeedGrader and the student's grades page
+   * all show what Canvas computes, so a cell that decided differently (as
+   * this once did from the grade) would be the one place telling the teacher
+   * something else. Canvas already knows the submission type - its automatic
+   * Missing never applies to on-paper or no-submission work, and its
+   * automatic Late only to work actually submitted after the due date.
+   *
+   * Excused wins over everything, then a custom grade status (Canvas reports
+   * neither missing nor late under one), then the raw late_policy_status
+   * somebody applied, then Canvas's derived booleans - because a submission
+   * handed in after its due date is late (late: true) with no explicit
+   * status at all.
    */
   function cellStatus(rec) {
     if (!rec) return null;
     var explicit = rec.latePolicyStatus || null;
     if (rec.excused) return 'excused';
-    if (explicit === 'none') return 'none';
-    if (explicit && explicit !== 'missing' && explicit !== 'late') return explicit;
-    if (explicit === 'missing') return 'missing';
-    if (rec.missing) {
-      // Canvas's automatic Missing (past due, nothing submitted online) stays
-      // on a graded submission. Real credit means the work came in some other
-      // way (on paper), so it is not missing. A zero is not credit: it is
-      // how a teacher records the missing work itself, and Canvas still
-      // draws its own missing icon on it.
-      if (earnedCredit(rec)) {
-        return (rec.late || explicit === 'late') ? 'late' : 'none';
-      }
-      return 'missing';
-    }
-    if (rec.late || explicit === 'late') return 'late';
+    if (rec.customStatusId) return 'custom';
+    if (explicit) return explicit;
+    if (rec.missing) return 'missing';
+    if (rec.late) return 'late';
     return 'none';
+  }
+
+  /* Did the student hand in new work after it was graded? Canvas's own
+   * Submission#resubmitted?: it needs grading (a real student submission -
+   * submission_type set - that is submitted, graded or pending review) AND
+   * grade_matches_current_submission is false, which Canvas only sets when a
+   * student submits over an existing score. On-paper and no-submission work
+   * has no student submission, so it can never read as resubmitted. */
+  function resubmitted(rec) {
+    if (!rec || rec.excused || !rec.submissionType || rec.gradeMatchesCurrent !== false) return false;
+    return ['submitted', 'graded', 'pending_review'].indexOf(String(rec.workflowState || '')) >= 0;
   }
 
   /* Does this assignment's grading type accept this parsed token?
@@ -328,7 +335,7 @@
       case KIND.EXCUSED: return 'Excused';
       case KIND.LATE: return 'Late';
       case KIND.CLEAR: return 'cleared';
-      case KIND.CLEAR_MISSING: return 'Missing cleared';
+      case KIND.LIFT_MISSING: return 'Missing removed';
       default: return 'grade';
     }
   }
@@ -359,6 +366,7 @@
     operationFor: operationFor,
     earnedCredit: earnedCredit,
     cellStatus: cellStatus,
+    resubmitted: resubmitted,
     acceptsToken: acceptsToken,
     /* The statuses this extension is willing to paint and to correct on a
      * cell. Anything else Canvas renders (dropped, extended, resubmitted) is

@@ -53,7 +53,7 @@
       </nav>
 
       <div class="sidebar__foot">
-        <div class="sidebar__version">Version <span id="extensionVersion">1.16.1</span></div>
+        <div class="sidebar__version">Version <span id="extensionVersion">1.17.0</span></div>
         <div class="sidebar__actions">
           <button id="save" type="button" class="btn btn--primary">Save changes</button>
           <button id="reset" type="button" class="btn btn--quiet">Restore defaults</button>
@@ -239,8 +239,7 @@
           <div class="setting">
             <label class="setting__label" for="enableM"><kbd>M</kbd> marks the submission Missing instantly, and again removes it
               <span class="hint">Written to Canvas itself, so it shows as Missing everywhere &ndash; the Grade Detail
-                Tray, SpeedGrader and the student&rsquo;s own grades page. A toggle: press <kbd>M</kbd> again to remove it.
-                Entering a grade in the cell automatically removes Missing so the badge clears without needing a page refresh.</span>
+                Tray, SpeedGrader and the student&rsquo;s own grades page. A toggle: press <kbd>M</kbd> again to remove it.</span>
             </label>
             <input id="enableM" type="checkbox" class="switch">
           </div>
@@ -254,6 +253,16 @@
           <div class="setting">
             <label class="setting__label" for="enableE"><kbd>E</kbd> marks the submission Excused</label>
             <input id="enableE" type="checkbox" class="switch">
+          </div>
+          <div class="setting">
+            <label class="setting__label" for="liftMissingOnGrade">A real grade typed over a Missing you applied takes Missing off
+              <span class="hint">Only a Missing somebody set (with <kbd>M</kbd>, the Grade Detail Tray or SpeedGrader), and only
+                for a grade above zero. The status goes back to Canvas, which marks the work Late only if the student
+                really submitted it after the due date &ndash; never on-paper or no-submission work. Canvas&rsquo;s own
+                automatic Missing needs nothing: Canvas removes it the moment any grade is saved. Off: grades never
+                touch a status, exactly as in Canvas itself. No status is ever added by entering a grade.</span>
+            </label>
+            <input id="liftMissingOnGrade" type="checkbox" class="switch">
           </div>
 
           <h2 class="panel__group">Navigation &amp; entry</h2>
@@ -277,6 +286,17 @@
               <input id="bulkConfirmThreshold" type="number" min="1" max="2000" step="1">
               <span class="unit">cells</span>
             </div>
+          </div>
+
+          <h2 class="panel__group">Keeping every view in step</h2>
+          <div class="setting">
+            <label class="setting__label" for="liveSync">Keep the gradebook and SpeedGrader up to date with each other, without reloading
+              <span class="hint">A grade, status or comment saved in SpeedGrader shows up in a gradebook already open in
+                another tab &ndash; in the cell, the Total and the Grade Detail Tray &ndash; and one saved in the gradebook
+                reaches an open SpeedGrader. The gradebook also re-reads the columns on screen when you come back to its
+                tab. Only ids pass between your tabs; nothing is stored.</span>
+            </label>
+            <input id="liveSync" type="checkbox" class="switch">
           </div>
 
           <h2 class="panel__group">Opening a submission</h2>

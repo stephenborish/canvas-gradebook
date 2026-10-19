@@ -67,8 +67,9 @@ comment does not light up your cell.
 - Indicators survive Canvas's virtualized scrolling; they are repainted as rows and columns
   come back into view.
 - A comment, grade or status (Missing, Late, Excused) saved through Canvas's own Grade Detail
-  Tray shows up in the cell as soon as Canvas saves it — the extension notices Canvas's own
-  write and re-reads that one cell, so the bubble and the M/L badge appear without a reload.
+  Tray — or in SpeedGrader, in another tab — shows up in the cell as soon as Canvas saves it: the
+  extension notices the write and re-reads that one cell, so the bubble and the M/L badge appear
+  without a reload. See "Every view stays in step" below.
 
 ### One-keystroke statuses
 
@@ -87,19 +88,34 @@ the status back off. Neither one ever touches the grade, in either direction, an
 ever touches the other — marking a submission Missing does not change a grade already sitting
 there.
 
-There is one deliberate exception: typing a real grade into a cell that shows Missing means the
-work is in — late. Once Canvas has saved that grade the extension takes Missing off and marks the
-submission **Late** in its place (a submission carries one status). Take Late off afterwards with
-`L`, or with "None" in the Grade Detail Tray; either one updates the cell without a reload. It
-waits for Canvas's own save to land first, so a value Canvas refuses — or an edit you cancel with
-`Escape` — never changes anything. A `0` (or fail / incomplete) typed over Missing leaves
-Missing on: a zero is how missing work is recorded.
+**Entering a grade never adds a status.** The extension follows Canvas's own rules
+(`Submission#missing?` / `late?`) exactly, and those already know the assignment's submission
+type:
 
-Typing a grade and then pressing `M` (before leaving the cell) saves that grade with Missing off
-and no other status — `M` is you saying "not missing", not "late".
+- Canvas's *automatic* Missing (past due, nothing submitted, on an assignment that takes online
+  submissions) disappears by itself the moment any grade is saved, a `0` included. Nothing extra is
+  sent.
+- Canvas's automatic Missing and Late never apply to **on paper** or **no submission** assignments,
+  and automatic Late only applies to work a student actually submitted after the due date.
+- A Missing somebody *applied* (with `M`, the Grade Detail Tray or SpeedGrader) stays on a graded
+  submission in Canvas. With **A real grade typed over a Missing you applied takes Missing off** on
+  (the default, under Grading Input), typing or pasting a grade above zero over it hands the status
+  back to Canvas (`late_policy_status: null`), and Canvas marks the work Late only if it really was
+  submitted late. It waits for Canvas's own save of the grade to land first, so a value Canvas
+  refuses — or an edit you cancel with `Escape` — never changes anything. A `0` (or fail /
+  incomplete) leaves an applied Missing on: a zero is how missing work is recorded. Turn the setting
+  off and grades never touch a status at all.
 
-Adding a comment — yours, or one saved through the Grade Detail Tray — never takes Missing off.
-If Canvas's answer to a comment comes back without a Missing that was applied, it is put back.
+Earlier versions marked the work **Late** whenever a grade was typed over any Missing, a second or
+more after Canvas's own save and without regard to the submission type; that is gone.
+
+Typing a grade and then pressing `M` (before leaving the cell) saves that grade with an applied
+Missing off and no other status — `M` is you saying "not missing", not "late".
+
+Adding a comment never touches a status: Canvas's comment write leaves it exactly where it was.
+(Earlier versions put Missing back whenever a comment's answer came back without it — which also
+re-marked Missing that had just been removed in SpeedGrader or the tray.) Canvas's answer to a
+comment is now taken as the current truth for the cell's status too.
 
 Typed grades are saved by Canvas's own editor and nothing else — the extension never sends a
 second copy of a grade you typed.
@@ -121,13 +137,13 @@ GPA-scale assignments a bare `A`–`F` is treated as the letter grade it is, and
 are available as `MISSING`, `EX`, `LATE` instead.
 
 **The designation appears the moment you press the key.** Canvas colours its late / missing /
-excused cells from its own in-page store, which a write to the Submissions API never reaches —
-so the cell used to keep whatever colour Canvas last rendered until the whole gradebook was
-reloaded. The extension now paints the status itself, from the record it holds, the instant a
-key is pressed. It also *removes* a status Canvas is still showing that the submission no
-longer has — `M` or `L` toggled off on a cell that already carried that status — and hands
-every saved grade and status to Canvas's own grid rows as well, so Canvas's cell, its status icon
-and the Grade Detail Tray stop showing the old status without a reload.
+excused cells, computes its Total and draws the Grade Detail Tray from its own in-page store,
+which a write to the Submissions API never reaches. So the extension paints the status itself,
+from the record it holds, the instant a key is pressed — and then hands Canvas's answer to
+Canvas's own store, through the same method Canvas's tray and its Curve Grades / Set Default Grade
+dialogs use (`updateSubmissionsFromExternal`). Canvas's cell, its status icon, its Total and the
+Grade Detail Tray (redrawn if it is open on that submission) all show the new grade and status
+without a reload, and Canvas's own editor compares your next edit against the right value.
 
 Missing and Late are drawn as a plain, bold letter in a solid circle at the top-left of the cell —
 a red **M**, a yellow **L** — rather than a tint, so the two can never be mistaken for each other
@@ -224,11 +240,13 @@ Shift-clicking the other always builds the same rectangle, in either direction. 
 `E`, `L`, or type a number and press `Enter` to apply it to everything selected. `Escape` clears
 the selection. No toolbar appears; the selection is just an outline on the cells.
 
-Grades entered this way are saved straight to Canvas, but Canvas's own grid keeps showing its old
-values until the page reloads, so the extension draws the saved grade over each cell — including
-the cell you Shift-clicked, which Canvas treats as its active cell. Open one of those cells to
-change it and the editor starts from the grade Canvas actually has. Whatever you type replaces it:
-if Canvas would skip it as "unchanged" (typing back the value the cell had before the bulk entry),
+Grades entered this way are saved straight to Canvas and handed to Canvas's own in-page store,
+so Canvas's cells, Total and Grade Detail Tray show them at once. Until Canvas's store confirms it
+holds a saved grade, the extension draws that grade over the cell — including the cell you
+Shift-clicked, which Canvas treats as its active cell — and the overlay goes as soon as Canvas
+confirms. Open one of those cells to change it and the editor starts from the grade Canvas actually
+has. Whatever you type replaces it: if Canvas would still skip it as "unchanged" (typing back the
+value the cell had before the bulk entry, on a Canvas build where the hand-off could not happen),
 the extension saves it instead.
 
 Press `C` with one or more cells selected to add the same comment to every one of them at once —
@@ -300,12 +318,18 @@ than claiming "nothing submitted" when the truth simply hasn't arrived.
 
 Canvas puts a small arrow button inside a grade cell while you are editing it; that arrow opens
 the Grade Detail Tray (or SpeedGrader, depending on your Canvas). **That arrow is now hidden**,
-and double-clicking anywhere in the cell presses it instead — a whole-cell target rather than a
-~14px one, and the cell gets its width back. Canvas's own control is clicked, so nothing about
-what it opens is reimplemented or guessed. The button is only hidden, never removed, and only
-while double-click is switched on, so the action can never become unreachable; if Canvas ever
-ships markup where the button can't be found, double-click falls back to opening SpeedGrader for
-that exact submission rather than doing nothing.
+and double-clicking anywhere in the cell opens the tray instead — a whole-cell target rather than a
+~14px one, and the cell gets its width back.
+
+Canvas's own arrow opens the tray *without* saving what is still typed in the cell, so typing a
+grade and then opening the tray used to show the grade from before the edit. A double-click now
+first saves what you typed — Canvas's own save, exactly as Enter would make it — and then has
+Canvas's own Gradebook open the tray, which shows the new grade straight away (pending, then
+saved). Where that is not possible, Canvas's own arrow is clicked as before, so nothing about what
+it opens is reimplemented or guessed. The button is only hidden, never removed, and only while
+double-click is switched on, so the action can never become unreachable; if Canvas ever ships
+markup where the button can't be found, double-click falls back to opening SpeedGrader for that
+exact submission rather than doing nothing.
 
 ### Find a student across every course you teach
 
@@ -372,9 +396,40 @@ Turn it off with *Mark cells whose grade the student cannot see yet* in the opti
 
 ### Resubmission indicator
 
-A small purple corner wedge in the cell's bottom-left means the student resubmitted after you graded (Canvas's
-`grade_matches_current_submission`). Missing / late / excused status is Canvas's own gradebook
-chrome and is left entirely alone here - no duplicate dots to keep in sync with it.
+A small purple corner wedge in the cell's bottom-left means the student resubmitted after you
+graded — Canvas's own `Submission#resubmitted?`: a real student submission that is waiting to be
+graded again (`grade_matches_current_submission` false). Canvas only sets that when a student
+submits over an existing score, so on-paper and no-submission work, and excused cells, never show
+it.
+
+### Every view stays in step
+
+A grade, status or comment is the same wherever you look at it — the grid, the Grade Detail
+Tray, SpeedGrader — and you never have to reload a page to see a change made in another one:
+
+- **Gradebook → Grade Detail Tray.** Everything the extension saves (keyboard statuses, pastes,
+  multi-cell entry, comments) is handed to Canvas's own in-page store, which the tray is drawn
+  from; an open tray on that submission is redrawn, and re-reads its comment thread when a comment
+  was added or deleted. A grade typed in the cell and then double-clicked is saved before the tray
+  opens (see above).
+- **Grade Detail Tray → Gradebook.** Canvas saves those itself; the extension notices and re-reads
+  the cell so its own badges and bubbles agree.
+- **SpeedGrader → Gradebook.** A grade, status or comment saved in SpeedGrader (classic or the
+  newer platform SpeedGrader) is announced to the gradebook tabs of that course, which re-read that
+  submission and hand it to Canvas's store — cell, Total and tray included. A column-wide change
+  (posting grades, Canvas's Set Default Grade / Curve Grades) re-reads the column.
+- **Gradebook → SpeedGrader.** A SpeedGrader opened afterwards always loads what Canvas has. One
+  that is already open on the submission you changed is told to refetch it — the same message
+  Canvas's own code sends the platform SpeedGrader. Classic SpeedGrader has no such hook, so it
+  shows a notice with a **Reload** button instead (unsent comments are kept by the draft
+  protection).
+- **Coming back to the gradebook tab** (or its window) re-reads the columns on screen, at most every
+  15 seconds, and hands anything that changed to Canvas's store — this covers changes no tab could
+  announce, such as another teacher grading or a student submitting.
+
+Only ids (course, assignment, student) pass between your tabs, through the extension's own
+background worker; nothing is stored. Turn it off with *Keep the gradebook and SpeedGrader up to
+date with each other, without reloading* under Grading Input.
 
 ### Course switching
 
@@ -449,6 +504,10 @@ Student names, grades and comment text are never written to the log — only cou
 - Student data is never persisted. The cross-course student search holds its rosters in memory
   for the life of the page and no longer; the only thing cached on disk from Canvas is your own
   list of course names and terms, for 30 minutes.
+- Keeping tabs in step passes only ids (course, assignment, student) between your own Canvas tabs,
+  through the extension's background worker, and stores nothing. What is handed to Canvas's own
+  page is the grading fields of a submission Canvas itself just returned — never comments, names or
+  submission content.
 
 ---
 
@@ -477,6 +536,8 @@ src/gradebook/
   dom-adapter.js                  THE ONLY file that knows Canvas's grid markup
   cell-registry.js                element <-> cell identity, paint signatures
   indicators.js                   bubbles, counts, late/missing/excused status, value overrides
+  canvas-store.js                 hands saved submissions to Canvas's own in-page store
+  live-sync.js                    tells other tabs of the course what changed; follows them
   writer.js                       optimistic writes with rollback, dedupe, error reporting
   selection.js                    multi-cell selection
   cell-actions.js                 double-click -> Canvas's own tray arrow; two-pane row hover
@@ -492,8 +553,10 @@ src/gradebook/
                                    elsewhere in the course), single rAF paint pass, observers
 
 src/assignments/time-shortcuts.js period keys in Assign To time boxes (Tab/Enter/blur)
-src/speedgrader/content.js        comment draft autosave
-src/page/env-bridge.js            reads a few ENV ids from the page context
+src/speedgrader/content.js        comment draft autosave; live sync with the gradebook
+src/page/env-bridge.js            page context: ENV ids, column widths, Canvas's store and tray
+src/page/write-watch.js           page context: reports Canvas's own submission writes (ids only)
+src/live-relay.js                 service worker: relays change announcements between course tabs
 src/options/                      the only settings UI
 src/styles/                       all CSS, scoped under html.cgp-*
 tests/                            node:vm test harness + suites
@@ -502,7 +565,10 @@ tests/                            node:vm test harness + suites
 Design rules the code sticks to:
 
 - **Writes go through Canvas's REST API**, not through simulated clicks. Before any API write,
-  any open Canvas cell editor is cancelled so it cannot commit a stale value afterwards.
+  any open Canvas cell editor is cancelled so it cannot commit a stale value afterwards. Canvas's
+  answer then goes into Canvas's own in-page store, so there is one record, not two.
+- **Canvas decides statuses.** Missing, Late and resubmitted are read from what Canvas computes,
+  never inferred from a grade; entering a grade never adds a status.
 - **The DOM is for display and identity only.** All grid-markup knowledge lives in
   `dom-adapter.js`; if Canvas ships a new gradebook, that is the file to update.
 - **One paint pass.** Every repaint is coalesced into a single `requestAnimationFrame`
@@ -517,10 +583,12 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-101 assertions covering the parts where being wrong would be expensive: `M` → Missing and `M`
+438 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
 again → not Missing, `L` → Late and `L` again → not Late, both leaving the grade untouched either
-way, `E` → Excused, a grade entered on a Missing (or Late) submission never changing that status,
-plain `0` is *not* Missing, letter-grade exceptions, clipboard
+way, `E` → Excused, a grade never adding a status (and lifting an applied Missing only when asked),
+statuses read exactly as Canvas computes them, the hand-off to Canvas's own store (and never
+without `assignment_visible`), opening the tray on a grade still being typed, change
+announcements between tabs, plain `0` is *not* Missing, letter-grade exceptions, clipboard
 matrix parsing (TSV / column / spaced / ragged / CRLF), clipboard-to-cell mapping and its
 refusals, instructor-comment authorship (including drafts, other teachers, numeric vs string
 ids, student replies), comment cache updates after a save, bulk dedupe and last-write-wins,
@@ -599,4 +667,12 @@ Two things that no longer happen, as of this fix:
   error), never after a network failure — the post may already have gone through, and the
   column is re-checked instead. If both are refused, nothing is changed and the column's own
   menu still works. The Post button posts every section's graded submissions.
+- **Keeping every view in step relies on Canvas's own page objects** — its Gradebook component
+  (`updateSubmissionsFromExternal`, `openSubmissionTray`, `renderSubmissionTray`) and the platform
+  SpeedGrader's `canvas.refetchSubmission` message — read from Canvas's open-source code but not
+  exercised against a live instance here. Each step falls back to the previous behaviour when it
+  cannot be reached: patching the grid's rows directly, clicking Canvas's own tray arrow, a reload
+  notice in SpeedGrader. Diagnostics counts which path each hand-off took (`canvasStore.stored.*`).
+- Changes made by **someone else** (another teacher, a student submitting) are picked up when you
+  come back to the gradebook tab, not the instant they happen; only your own tabs announce changes.
 - Chrome / Edge (Chromium 116+). Not tested in Firefox, which needs a different manifest.

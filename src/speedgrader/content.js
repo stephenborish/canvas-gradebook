@@ -580,6 +580,15 @@
     bindDraftListeners();
     watchSubmit();
     watchSubmitButton();
+    // SpeedGrader's saves reach an open gradebook, and the gradebook's reach
+    // this SpeedGrader, without a reload (live-sync.js).
+    var follower = null;
+    if (courseId && CGP.LiveSync && CGP.LiveSpeedGraderFollower) {
+      follower = new CGP.LiveSpeedGraderFollower({
+        liveSync: new CGP.LiveSync({ courseId: courseId, settings: CGP.settings })
+      });
+      follower.start();
+    }
     // The options page can flip this while a SpeedGrader tab sits idle: apply (or
     // lift) the pin straight away instead of waiting for Canvas to mutate the page.
     if (CGP.settings && typeof CGP.settings.onChange === 'function') CGP.settings.onChange(pinSubmitButton);
@@ -603,7 +612,7 @@
     setTimeout(function () { clearInterval(poll); }, 60000);
     void settings;
     // For tests: a handle on the live state and the confirmation check.
-    return { state: state, checkConfirmation: checkConfirmation, flushPendingSave: flushPendingSave };
+    return { state: state, checkConfirmation: checkConfirmation, flushPendingSave: flushPendingSave, follower: follower };
   }
 
   CGP.startSpeedGrader = startSpeedGrader;

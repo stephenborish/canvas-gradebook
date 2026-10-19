@@ -32,6 +32,9 @@
     this.api = ctx.api;
     this.settings = ctx.settings;
     this.requestPaint = ctx.requestPaint || function () {};
+    // Other tabs of this course (live-sync.js): an open SpeedGrader shows
+    // the grades as posted, another gradebook re-reads the column.
+    this.liveSync = ctx.liveSync || null;
     this.busy = new Set();          // assignmentIds with a post in flight
     this._rechecking = new Set();   // assignmentIds with a delayed re-read pending
     // Columns Canvas confirmed posting but whose reads have not caught up:
@@ -509,6 +512,7 @@
       self.model.emit('cells', { assignmentIds: [String(assignmentId)] });
     }
     self.tellCanvasPosted(assignmentId, userIds, when);
+    if (self.liveSync && userIds && userIds.length) self.liveSync.announce([{ assignmentId: String(assignmentId) }]);
   };
 
   /* Canvas's own grid keeps its own copy of every submission and draws its

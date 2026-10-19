@@ -497,6 +497,11 @@
       missing: !!sub.missing,
       late: !!sub.late,
       latePolicyStatus: sub.late_policy_status || null,
+      // A custom grade status (Canvas's own, set in the Grade Detail Tray)
+      // replaces missing/late entirely; Canvas omits the field when the
+      // feature is off.
+      customStatusId: sub.custom_grade_status_id === undefined ? (prev.customStatusId || null)
+        : (sub.custom_grade_status_id === null ? null : String(sub.custom_grade_status_id)),
       workflowState: sub.workflow_state || null,
       submittedAt: sub.submitted_at || null,
       // null when Canvas omits them.
@@ -733,6 +738,97 @@
     });
   };
 
+  /* What a cell shows - grade, status, posted state - in one comparable
+   * string, so a re-read can tell "Canvas has something new" from "same as
+   * before". Comments are left out: they never go to Canvas's own store. */
+  function gradingSignature(rec) {
+    if (!rec) return '';
+    return [rec.score, rec.enteredScore, rec.grade, rec.excused, rec.missing, rec.late,
+      rec.latePolicyStatus, rec.customStatusId, rec.workflowState, rec.submittedAt, rec.gradedAt,
+      rec.postedAt, rec.gradeMatchesCurrent, rec.attempt].map(function (v) {
+      return v === null || v === undefined ? '' : String(v);
+    }).join('|');
+  }
+
+  function commentSignature(rec) {
+    return ((rec && rec.commentList) || []).map(function (c) { return c && c.id; }).join(',');
+  }
+
+  /* Re-read one cell because it changed somewhere this page could not see
+   * (SpeedGrader in another tab, most often). Unlike refreshCell, it says
+   * what happened: whether the read was applied at all (a write of ours
+   * that started after it was sent wins - see applySubmission), and whether
+   * anything the cell shows is actually different now. */
+  GradebookModel.prototype.syncCell = function (assignmentId, userId) {
+    var self = this;
+    var k = this.key(assignmentId, userId);
+    var readStartedAt = Date.now();
+    return this.api.submission(this.courseId, assignmentId, userId).then(function (sub) {
+      var before = self.cells.get(k) || null;
+      var sig = gradingSignature(before);
+      var comments = commentSignature(before);
+      var rec = self.applySubmission(sub, { commentsAuthoritative: true, staleIfWrittenAfter: readStartedAt });
+      var applied = !!rec && rec !== before;
+      return {
+        submission: sub,
+        record: rec,
+        applied: applied,
+        changed: applied && gradingSignature(rec) !== sig,
+        commentsChanged: applied && commentSignature(rec) !== comments,
+        readStartedAt: readStartedAt
+      };
+    }, function (err) {
+      CGP.diag.error('model.syncCell.failed', { status: err && err.status });
+      return null;
+    });
+  };
+
+  /* Re-read whole columns the same way, without unloading them first (the
+   * cells keep painting from what they hold while the read is out). Only
+   * columns this page has already loaded are read: one it never looked at
+   * has nothing on screen to correct. Resolves with the raw submissions
+   * whose grade, status or posted state actually changed. */
+  GradebookModel.prototype.resyncAssignments = function (ids) {
+    var self = this;
+    var wanted = [];
+    (ids || []).map(String).forEach(function (id) {
+      if (self.assignments.has(id) && self.everLoadedAssignments.has(id) && wanted.indexOf(id) < 0) wanted.push(id);
+    });
+    var readStartedAt = Date.now();
+    if (!wanted.length) return Promise.resolve({ submissions: [], readStartedAt: readStartedAt });
+    var batchSize = this._batchSize();
+    var maxPages = Math.ceil((batchSize * Math.max(1, this.students.size) * 2) / 100) + 10;
+    var gens = {};
+    wanted.forEach(function (id) { gens[id] = self._gen(id); });
+    return Promise.all(util.chunk(wanted, batchSize).map(function (batch) {
+      return self.api.submissionsForAssignments(self.courseId, batch, { visibility: true, maxPages: maxPages })
+        .catch(function (err) {
+          CGP.diag.warn('model.resync.failed', { status: err && err.status });
+          return null;
+        });
+    })).then(function (results) {
+      var changed = [];
+      var touched = [];
+      results.forEach(function (subs) {
+        // A partial list says nothing about the cells it never reached.
+        if (!subs || subs.truncated) return;
+        subs.forEach(function (s) {
+          if (!s || gens[String(s.assignment_id)] !== self._gen(s.assignment_id)) return;
+          var k = self.key(s.assignment_id, s.user_id);
+          var before = self.cells.get(k) || null;
+          var sig = gradingSignature(before);
+          var rec = self.applySubmission(s, { silent: true, commentsAuthoritative: true, staleIfWrittenAfter: readStartedAt });
+          if (!rec || rec === before) return;
+          if (touched.indexOf(String(s.assignment_id)) < 0) touched.push(String(s.assignment_id));
+          if (gradingSignature(rec) !== sig) changed.push(s);
+        });
+      });
+      CGP.diag.bump('model.resync.changed', changed.length);
+      if (touched.length) self.emit('cells', { assignmentIds: touched });
+      return { submissions: changed, readStartedAt: readStartedAt };
+    });
+  };
+
   /* The cell whose thread holds this comment id, or null. */
   GradebookModel.prototype.cellForComment = function (commentId) {
     var id = String(commentId);
@@ -866,7 +962,7 @@
       if (rec.missing) missing++;
       if (rec.late) late++;
       if (rec.excused) excused++;
-      if (rec.gradedAt && rec.gradeMatchesCurrent === false) resubmitted++;
+      if (CGP.gradeOps.resubmitted(rec)) resubmitted++;
     });
     return {
       courseId: this.courseId,
@@ -881,4 +977,5 @@
   };
 
   CGP.GradebookModel = GradebookModel;
+  CGP.modelInternals = { gradingSignature: gradingSignature };
 })();

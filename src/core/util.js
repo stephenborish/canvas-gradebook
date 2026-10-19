@@ -7,7 +7,7 @@
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.util) return;
 
-  CGP.VERSION = '1.16.1';
+  CGP.VERSION = '1.17.0';
 
   /* Default letter-grade scale: the lowest rounded percentage (to 0.1) that
    * earns each letter. The last entry is the floor and always has min 0. */
@@ -57,6 +57,16 @@
     enableM: true,
     enableE: true,
     enableL: true,
+    // A grade that earns credit, typed or pasted over a Missing somebody
+    // APPLIED, hands the status back to Canvas (late_policy_status null), so
+    // Canvas marks the work Late only if it really was submitted late. Off
+    // means grades never touch a status at all, exactly like Canvas itself.
+    liftMissingOnGrade: true,
+    // Changes saved in SpeedGrader (or another gradebook tab) reach this
+    // gradebook, and this gradebook's reach an open SpeedGrader, without a
+    // reload; the gradebook also re-reads its visible columns when its tab
+    // comes back into view.
+    liveSync: true,
     spreadsheetNavigation: true,
     bulkPaste: true,
     multiCellSelection: true,

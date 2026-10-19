@@ -672,28 +672,56 @@ suite('write safety: PR review round 2', (test) => {
   });
 });
 
-suite('write safety: a grade typed over Missing swaps it for Late', (test) => {
+suite('write safety: a grade never invents a status', (test) => {
   const ops = () => CGP.gradeOps;
-  const due = '2026-10-08T12:55:00Z';
 
-  test('a grade that earns credit over Missing sends Late in the same request', () => {
-    const num = ops().operationFor(ops().parseToken('7'), { wasExplicitMissing: true });
-    a.eq(num.form['submission[late_policy_status]'], 'late');
-    a.eq(num.patch.latePolicyStatus, 'late');
-    a.eq(num.patch.late, true);
-    a.eq(num.patch.missing, false);
-    a.eq(ops().cellStatus(num.patch), 'late', 'the cell shows L straight away');
-    const pct = ops().operationFor(ops().parseToken('80%'), { wasExplicitMissing: true });
-    a.eq(pct.form['submission[late_policy_status]'], 'late');
+  function writerOver(m, answer, values) {
+    const forms = [];
+    const w = new CGP.GradeWriter({
+      api: { updateSubmission: (c, aid, uid, form) => { forms.push(form); return Promise.resolve(Object.assign({ id: '1', assignment_id: '50', user_id: '10' }, answer)); } },
+      model: m, settings: { values: values || {} }
+    });
+    return { w, forms };
+  }
+
+  function loaded(rec) {
+    const m = model();
+    m.loadedAssignments.add('50');
+    m.patchCell('50', '10', rec, { silent: true });
+    return m;
+  }
+
+  test('a grade that earns credit over an applied Missing hands the status back to Canvas - never Late', async () => {
+    stubUi();
+    const m = loaded({ latePolicyStatus: 'missing', missing: true });
+    const { w, forms } = writerOver(m, { late_policy_status: null, missing: false, late: false, score: 7, grade: '7' });
+    await w.apply([{ assignmentId: '50', userId: '10', parsed: ops().parseToken('7') }]);
+    a.eq(forms.length, 1);
+    a.eq(forms[0]['submission[posted_grade]'], '7');
+    a.ok('submission[late_policy_status]' in forms[0] && forms[0]['submission[late_policy_status]'] === null,
+      'null: Canvas decides, from the submission itself, whether the work was late');
+    a.eq(ops().cellStatus(m.cell('50', '10')), 'none');
   });
 
-  test('a Missing Canvas computed (nothing applied) is swapped for Late too', () => {
-    const op = ops().operationFor(ops().parseToken('4'), { wasMissing: true, readsMissing: true });
-    a.eq(op.form['submission[late_policy_status]'], 'late');
+  test('with the setting off, a grade sends no status and the applied Missing stays', async () => {
+    stubUi();
+    const m = loaded({ latePolicyStatus: 'missing', missing: true });
+    const { w, forms } = writerOver(m, { late_policy_status: 'missing', missing: true, score: 7, grade: '7' }, { liftMissingOnGrade: false });
+    await w.apply([{ assignmentId: '50', userId: '10', parsed: ops().parseToken('7') }]);
+    a.lacksKey(forms[0], 'submission[late_policy_status]');
+    a.eq(ops().cellStatus(m.cell('50', '10')), 'missing');
+  });
+
+  test('Canvas\'s own computed Missing: a grade sends no status at all (Canvas drops it on grading)', async () => {
+    stubUi();
+    const m = loaded({ latePolicyStatus: null, missing: true });
+    const { w, forms } = writerOver(m, { late_policy_status: null, missing: false, late: false, score: 4, grade: '4' });
+    await w.apply([{ assignmentId: '50', userId: '10', parsed: ops().parseToken('4') }]);
+    a.form(forms[0], { 'submission[posted_grade]': '4' });
   });
 
   test('a zero typed over Missing leaves Missing on and sends no status', () => {
-    const op = ops().operationFor(ops().parseToken('0'), { wasExplicitMissing: true, wasMissing: true, latePolicyStatus: 'missing' });
+    const op = ops().operationFor(ops().parseToken('0'), { wasExplicitMissing: true, latePolicyStatus: 'missing', liftMissing: true });
     a.lacksKey(op.form, 'submission[late_policy_status]');
     a.eq(op.patch.latePolicyStatus, 'missing');
     a.eq(ops().cellStatus(op.patch), 'missing');
@@ -702,35 +730,37 @@ suite('write safety: a grade typed over Missing swaps it for Late', (test) => {
   test('liftMissingTo none (grade typed, then M) takes Missing off with no Late', () => {
     const op = ops().operationFor(ops().parseToken('3'), { wasExplicitMissing: true, liftMissingTo: 'none' });
     a.eq(op.form['submission[late_policy_status]'], 'none');
-    a.eq(op.patch.latePolicyStatus, null);
+    a.eq(op.patch.latePolicyStatus, 'none');
     a.eq(op.patch.late, false);
     a.eq(ops().cellStatus(op.patch), 'none');
   });
 
-  test('CLEAR_MISSING after Canvas saves a grade always marks Late', () => {
-    const op = ops().operationFor({ kind: ops().KIND.CLEAR_MISSING }, {});
-    a.eq(op.form['submission[late_policy_status]'], 'late');
-    a.eq(op.patch.late, true);
+  test('LIFT_MISSING after Canvas saves a grade sends null, never Late', () => {
+    const op = ops().operationFor({ kind: ops().KIND.LIFT_MISSING }, {});
+    a.form(op.form, { 'submission[late_policy_status]': null });
     a.eq(op.patch.missing, false);
+    a.lacksKey(op.patch, 'late');
   });
 
-  test('CLEAR_MISSING from a cell that read Missing still marks Late once Canvas dropped its own Missing', async () => {
+  test('LIFT_MISSING is sent as JSON (a form cannot say null) and only while the applied Missing is still there', async () => {
     stubUi();
-    const forms = [];
-    const m = model();
-    m.loadedAssignments.add('50');
-    m.patchCell('50', '10', { latePolicyStatus: null, missing: false, late: false, score: 3, grade: '3' }, { silent: true });
-    const w = new CGP.GradeWriter({
-      api: { updateSubmission: (c, aid, uid, form) => { forms.push(form); return Promise.resolve({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: 'late', late: true, score: 3, grade: '3' }); } },
-      model: m, settings: { values: {} }
-    });
-    await w.apply([{ assignmentId: '50', userId: '10', fromMissing: true, parsed: { kind: CGP.gradeOps.KIND.CLEAR_MISSING } }]);
-    a.eq(forms.length, 1);
-    a.eq(forms[0]['submission[late_policy_status]'], 'late');
+    const sent = [];
+    const api = new CGP.CanvasApi({ origin: 'https://canvas.example.edu', fetch: (url, init) => {
+      sent.push(init);
+      return Promise.resolve({ ok: true, status: 200, headers: { get: () => null },
+        text: () => Promise.resolve(JSON.stringify({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: null, missing: false })) });
+    } });
+    const m = loaded({ latePolicyStatus: 'missing', missing: true, score: 3, grade: '3' });
+    m.api = api;
+    const w = new CGP.GradeWriter({ api: api, model: m, settings: { values: {} } });
+    await w.apply([{ assignmentId: '50', userId: '10', parsed: { kind: CGP.gradeOps.KIND.LIFT_MISSING } }]);
+    a.eq(sent.length, 1);
+    a.eq(sent[0].headers['Content-Type'], 'application/json');
+    a.deep(JSON.parse(sent[0].body), { submission: { late_policy_status: null } });
     // A newer status (L taken off -> 'none') is the teacher's decision and wins.
     m.patchCell('50', '10', { latePolicyStatus: 'none', late: false }, { silent: true });
-    await w.apply([{ assignmentId: '50', userId: '10', fromMissing: true, parsed: { kind: CGP.gradeOps.KIND.CLEAR_MISSING } }]);
-    a.eq(forms.length, 1, 'nothing sent over a newer status');
+    await w.apply([{ assignmentId: '50', userId: '10', parsed: { kind: CGP.gradeOps.KIND.LIFT_MISSING } }]);
+    a.eq(sent.length, 1, 'nothing sent over a newer status');
   });
 
   test('Canvas saving the grade itself does not make the follow-up stand down; our own newer write does', () => {
@@ -744,110 +774,44 @@ suite('write safety: a grade typed over Missing swaps it for Late', (test) => {
     a.eq(m.localWriteSince('50', '10', before), true, 'a write of ours since the edit');
   });
 
-  test('a comment that comes back without an applied Missing puts it back', async () => {
+  test('a comment never writes a status - and Canvas\'s answer corrects one this page held stale', async () => {
     stubUi();
     const forms = [];
     const m = model();
     m.students.set('10', { id: '10', name: 'S' });
     m.assignments.set('50', { id: '50', name: 'HW', gradingType: 'points' });
     m.loadedAssignments.add('50');
+    // This page still thinks Missing; SpeedGrader took it off a minute ago.
     m.patchCell('50', '10', { latePolicyStatus: 'missing', missing: true }, { silent: true });
     const w = new CGP.GradeWriter({
       api: {
-        addComment: () => Promise.resolve({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: null, missing: false, submission_comments: [] }),
-        updateSubmission: (c, aid, uid, form) => { forms.push(form); return Promise.resolve({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: 'missing', missing: true }); }
+        addComment: () => Promise.resolve({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: 'none', missing: false, submission_comments: [{ id: '5', author_id: '1', comment: 'see me' }] }),
+        updateSubmission: (c, aid, uid, form) => { forms.push(form); return Promise.resolve({}); }
       },
       model: m, settings: { values: {} }
     });
     await w.addComment('50', '10', 'see me');
     await new Promise((r) => setTimeout(r, 10));
-    a.eq(forms.length, 1);
-    a.eq(forms[0]['submission[late_policy_status]'], 'missing');
-    a.eq(CGP.gradeOps.cellStatus(m.cell('50', '10')), 'missing');
+    a.eq(forms.length, 0, 'Missing is never written back');
+    a.eq(CGP.gradeOps.cellStatus(m.cell('50', '10')), 'none', 'the cell now shows what Canvas has');
+    a.eq(m.cell('50', '10').commentList.length, 1);
   });
 
-  test('Missing removed while the comment was saving is not put back', async () => {
+  test('a comment saved while a grade write is out takes only the thread from its answer', async () => {
     stubUi();
-    let sent = 0;
-    const m = model();
-    m.loadedAssignments.add('50');
-    m.patchCell('50', '10', { latePolicyStatus: 'missing', missing: true }, { silent: true });
-    const w = new CGP.GradeWriter({
-      api: { updateSubmission: () => { sent++; return Promise.resolve({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: null, missing: false }); } },
-      model: m, settings: { values: {} }
-    });
-    const writesBefore = w.statusWriteCount('50', '10');
-    await w.apply([{ assignmentId: '50', userId: '10', parsed: CGP.gradeOps.parseToken('M') }]);
-    a.eq(sent, 1, 'the M that removed Missing');
-    await w.keepMissingAfterComment('50', '10', true, { late_policy_status: null }, writesBefore);
-    a.eq(sent, 1, 'Missing was not written back over the teacher\u2019s removal');
-  });
-
-  test('a failed restore re-reads the cell and tells the teacher', async () => {
-    stubUi();
-    let refreshed = 0;
-    const m = model();
-    m.patchCell('50', '10', { latePolicyStatus: 'missing', missing: true }, { silent: true });
-    m.refreshCell = () => { refreshed++; return Promise.resolve(m.applySubmission({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: null, missing: false })); };
-    const w = new CGP.GradeWriter({
-      api: { updateSubmission: () => Promise.reject(Object.assign(new Error('x'), { status: 500 })) },
-      model: m, settings: { values: {} }
-    });
-    await w.keepMissingAfterComment('50', '10', true, { late_policy_status: null }, w.statusWriteCount('50', '10'));
-    a.eq(refreshed, 1);
-    a.eq(CGP.gradeOps.cellStatus(m.cell('50', '10')), 'none', 'the cell shows what Canvas really has');
-    a.ok(said.some((x) => x.level === 'error' && /Missing/.test(x.text)));
-  });
-
-  test('a comment that keeps Missing sends nothing more', async () => {
-    stubUi();
-    let sent = 0;
     const m = model();
     m.students.set('10', { id: '10', name: 'S' });
     m.assignments.set('50', { id: '50', name: 'HW', gradingType: 'points' });
-    m.patchCell('50', '10', { latePolicyStatus: 'missing', missing: true }, { silent: true });
+    m.patchCell('50', '10', { latePolicyStatus: 'late', late: true, score: 9 }, { silent: true });
+    m.markLocalWrite('50', '10');   // a grade write of ours, still out
     const w = new CGP.GradeWriter({
-      api: {
-        addComment: () => Promise.resolve({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: 'missing', missing: true, submission_comments: [] }),
-        updateSubmission: () => { sent++; return Promise.resolve({}); }
-      },
+      api: { addComment: () => Promise.resolve({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: null, score: 2, submission_comments: [{ id: '6', comment: 'x' }] }) },
       model: m, settings: { values: {} }
     });
-    await w.addComment('50', '10', 'see me');
-    await new Promise((r) => setTimeout(r, 10));
-    a.eq(sent, 0);
-  });
-
-  test('end to end: the writer sends Late for a late submission whose Missing is lifted after grading', async () => {
-    stubUi();
-    const forms = [];
-    const m = model();
-    m.assignments.set('50', { id: '50', name: 'HW', gradingType: 'points', dueAt: due });
-    m.loadedAssignments.add('50');
-    m.patchCell('50', '10', { latePolicyStatus: 'missing', missing: true, submittedAt: '2026-10-13T20:39:00Z', score: 3, grade: '3' }, { silent: true });
-    const w = new CGP.GradeWriter({
-      api: { updateSubmission: (c, aid, uid, form) => { forms.push(form); return Promise.resolve({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: 'late', submitted_at: '2026-10-13T20:39:00Z', score: 3, grade: '3' }); } },
-      model: m, settings: { values: {} }
-    });
-    await w.apply([{ assignmentId: '50', userId: '10', parsed: { kind: CGP.gradeOps.KIND.CLEAR_MISSING } }]);
-    a.eq(forms.length, 1);
-    a.eq(forms[0]['submission[late_policy_status]'], 'late');
-  });
-
-  test('end to end: typing a grade through the writer on that cell also keeps Late', async () => {
-    stubUi();
-    const forms = [];
-    const m = model();
-    m.assignments.set('50', { id: '50', name: 'HW', gradingType: 'points', dueAt: due });
-    m.loadedAssignments.add('50');
-    m.patchCell('50', '10', { latePolicyStatus: 'missing', missing: true, submittedAt: '2026-10-13T20:39:00Z' }, { silent: true });
-    const w = new CGP.GradeWriter({
-      api: { updateSubmission: (c, aid, uid, form) => { forms.push(form); return Promise.resolve({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: 'late', submitted_at: '2026-10-13T20:39:00Z', score: 3, grade: '3' }); } },
-      model: m, settings: { values: {} }
-    });
-    await w.apply([{ assignmentId: '50', userId: '10', parsed: CGP.gradeOps.parseToken('3') }]);
-    a.eq(forms[0]['submission[late_policy_status]'], 'late');
-    a.eq(forms[0]['submission[posted_grade]'], '3');
+    await w.addComment('50', '10', 'x');
+    a.eq(m.cell('50', '10').score, 9, 'the grade write settles the grade');
+    a.eq(m.cell('50', '10').latePolicyStatus, 'late');
+    a.eq(m.cell('50', '10').commentList.length, 1);
   });
 });
 

@@ -144,49 +144,184 @@ suite('page-context SlickGrid bridge', (test) => {
     a.deep(calls, [['invalidateRows', [0, 2]], ['render']]);
   });
 
-  test('a submission saved through the API is handed to Canvas\'s own row, in its own spelling', () => {
+  test('without Canvas\'s Gradebook object, the row\'s own fields are patched, in its own spelling', () => {
     const rows = [
-      { id: '1', assignment_7: { latePolicyStatus: 'missing', missing: true, late: false, grade: '0', score: 0, enteredScore: 0 } },
-      { id: '2', assignment_7: { late_policy_status: 'missing', missing: true, grade: '0' } }
+      { id: '1', assignment_7: { latePolicyStatus: 'missing', missing: true, late: false, grade: '0', score: 0, enteredScore: 0, rawGrade: '0' } },
+      { id: '2', assignment_7: { late_policy_status: 'missing', missing: true, grade: '0', entered_grade: '0' } }
     ];
     const calls = [];
-    const grid = {
-      getColumns: function () { return []; },
-      setColumns: function () {},
-      getDataLength: function () { return rows.length; },
-      getDataItem: function (i) { return rows[i]; },
-      invalidateRows: function (r) { calls.push(['invalidateRows', r]); },
-      render: function () { calls.push(['render']); }
-    };
-    const listeners = [];
-    const win = {
-      ENV: {},
-      location: { origin: 'https://canvas.example.edu' },
-      addEventListener: function (type, listener) { if (type === 'message') listeners.push(listener); },
-      postMessage: function (message) {
-        listeners.slice().forEach(function (listener) { listener({ source: win, data: message }); });
-      }
-    };
-    const context = {
-      window: win,
-      document: { querySelector: function () { return { slickGrid: grid }; } },
-      Promise: Promise, Object: Object, Array: Array, String: String, Number: Number,
-      Math: Math, Date: Date, isFinite: isFinite, setTimeout: function (fn) { fn(); }
-    };
-    vm.runInNewContext(fs.readFileSync('src/page/env-bridge.js', 'utf8'), context);
+    const grid = gridOver(rows, calls);
+    const { win, replies } = loadBridgeWith({ querySelector: () => ({ slickGrid: grid }) });
 
-    const fields = { latePolicyStatus: 'late', missing: false, late: true, excused: false, grade: '3', score: 3, enteredScore: 3, workflowState: 'graded' };
-    win.postMessage({ source: 'cgp-submission-sync', assignmentId: '7', userId: '1', fields: fields }, win.location.origin);
-    win.postMessage({ source: 'cgp-submission-sync', assignmentId: '7', userId: '2', fields: fields }, win.location.origin);
+    const sub = (uid) => ({ assignment_id: '7', user_id: uid, late_policy_status: null, missing: false, late: false, excused: false,
+      grade: '3', score: 3, entered_score: 3, entered_grade: '3', workflow_state: 'graded', submission_comments: [{ comment: 'never crosses' }] });
+    win.postMessage({ source: 'cgp-submission-sync', id: 'a', submissions: [sub('1')] }, win.location.origin);
+    win.postMessage({ source: 'cgp-submission-sync', id: 'b', submissions: [sub('2')] }, win.location.origin);
 
-    a.eq(rows[0].assignment_7.latePolicyStatus, 'late');
+    a.eq(rows[0].assignment_7.latePolicyStatus, null);
     a.eq(rows[0].assignment_7.missing, false);
-    a.eq(rows[0].assignment_7.late, true);
     a.eq(rows[0].assignment_7.grade, '3');
+    a.eq(rows[0].assignment_7.rawGrade, '3', 'pass/fail cells draw from the unformatted copy');
     a.ok(!('late_policy_status' in rows[0].assignment_7), 'no snake_case field added');
     a.ok(!('workflowState' in rows[0].assignment_7), 'a field Canvas does not have is never added');
-    a.eq(rows[1].assignment_7.late_policy_status, 'late', 'snake_case submissions keep their own spelling');
-    a.eq(rows[1].assignment_7.missing, false);
+    a.ok(!('submissionComments' in rows[0].assignment_7) && !('submission_comments' in rows[0].assignment_7));
+    a.eq(rows[1].assignment_7.late_policy_status, null, 'snake_case submissions keep their own spelling');
+    a.eq(rows[1].assignment_7.entered_grade, '3', 'the entered grade the tray shows is carried too');
     a.deep(calls, [['invalidateRows', [0]], ['render'], ['invalidateRows', [1]], ['render']]);
+    a.deep(replies().map((r) => [r.id, r.results[0].via, r.results[0].stored]), [['a', 'rows', true], ['b', 'rows', true]]);
+  });
+
+  test('a saved submission goes through Canvas\'s own updateSubmissionsFromExternal, and an open tray is redrawn', () => {
+    const store = { '10': { assignment_7: { late_policy_status: 'missing', missing: true, score: 0, entered_score: 0 } } };
+    const gb = fakeGradebook(store, { open: true, studentId: '10', assignmentId: '7' });
+    const { win, replies } = loadBridgeWith({ querySelector: (sel) => (sel === '#gradebook_app' ? reactMount(gb) : null) });
+
+    win.postMessage({ source: 'cgp-submission-sync', id: 'x', readStartedAt: 1, submissions: [{
+      assignment_id: '7', user_id: '10', id: '99', late_policy_status: null, missing: false, late: false, excused: false,
+      score: 8, entered_score: 8, grade: '8', entered_grade: '8', workflow_state: 'graded', assignment_visible: true,
+      submission_comments: [{ comment: 'private' }], body: 'essay text'
+    }] }, win.location.origin);
+
+    a.eq(gb.calls.external.length, 1, 'one hand-off');
+    const handed = gb.calls.external[0][0];
+    a.eq(handed.user_id, '10');
+    a.eq(handed.assignment_visible, true);
+    a.ok(!('submission_comments' in handed) && !('body' in handed), 'only grading fields reach the page');
+    a.eq(store['10'].assignment_7.score, 8);
+    a.deep(gb.calls.tray, ['10'], 'the open tray on this submission is drawn again');
+    a.deep(replies()[0].results.map((r) => [r.assignmentId, r.userId, r.via, r.stored]), [['7', '10', 'gradebook', true]]);
+  });
+
+  test('a submission without assignment_visible is never given to Canvas\'s method (it would unassign the student)', () => {
+    const store = { '10': { assignment_7: { late_policy_status: 'missing', missing: true } } };
+    const gb = fakeGradebook(store, { open: false });
+    const rows = [{ id: '10', assignment_7: store['10'].assignment_7 }];
+    const grid = gridOver(rows, []);
+    gb.gradebookGrid = { grid: grid };
+    const { win, replies } = loadBridgeWith({ querySelector: (sel) => (sel === '#gradebook_app' ? reactMount(gb) : null) });
+    win.postMessage({ source: 'cgp-submission-sync', id: 'v', submissions: [{
+      assignment_id: '7', user_id: '10', late_policy_status: 'none', missing: false
+    }] }, win.location.origin);
+    a.eq(gb.calls.external.length, 0);
+    a.eq(store['10'].assignment_7.late_policy_status, 'none', 'patched in place instead');
+    a.eq(replies()[0].results[0].via, 'rows');
+  });
+
+  test('Canvas\'s own write to the cell, newer than the read, wins: the read is not handed over', () => {
+    const store = { '10': { assignment_7: { score: 5 } } };
+    const gb = fakeGradebook(store, { open: false });
+    const { win, replies } = loadBridgeWith({
+      querySelector: (sel) => (sel === '#gradebook_app' ? reactMount(gb) : null),
+      nativeWrites: { '7:10': { pending: 0, lastStartedAt: 2000 } }
+    });
+    win.postMessage({ source: 'cgp-submission-sync', id: 'n', readStartedAt: 1000, submissions: [{
+      assignment_id: '7', user_id: '10', score: 3, assignment_visible: true
+    }] }, win.location.origin);
+    a.eq(gb.calls.external.length, 0);
+    a.eq(store['10'].assignment_7.score, 5);
+    a.eq(replies()[0].results[0].skipped, 'canvas-write');
+    a.eq(replies()[0].results[0].stored, undefined);
+  });
+
+  test('opening the tray first saves a grade still typed in the cell, then opens it through Canvas', () => {
+    const order = [];
+    const gb = fakeGradebook({ '10': { assignment_7: {} } }, { open: false });
+    gb.gradebookGrid = { grid: {
+      getColumns() { return []; }, setColumns() {},
+      getEditorLock: () => ({ isActive: () => true, commitCurrentEdit: () => { order.push('commit'); return true; } })
+    } };
+    gb.openSubmissionTray = (uid, aid) => order.push('open:' + aid + ':' + uid);
+    const { win, posted } = loadBridgeWith({ querySelector: (sel) => (sel === '#gradebook_app' ? reactMount(gb) : null) });
+    win.postMessage({ source: 'cgp-open-tray', id: 't1', assignmentId: '7', userId: '10' }, win.location.origin);
+    a.deep(order, ['commit', 'open:7:10'], 'the typed grade is Canvas\'s own save, before the tray reads the store');
+    const res = posted().find((m) => m.source === 'cgp-open-tray-result');
+    a.eq(res.id, 't1');
+    a.eq(res.ok, true);
+    a.eq(res.committed, true);
+  });
+
+  test('with no Gradebook object to open it, the tray request says so (the arrow is clicked instead)', () => {
+    const { win, posted } = loadBridgeWith({ querySelector: () => null });
+    win.postMessage({ source: 'cgp-open-tray', id: 't2', assignmentId: '7', userId: '10' }, win.location.origin);
+    a.eq(posted().find((m) => m.source === 'cgp-open-tray-result').ok, false);
+  });
+
+  test('a comment saved elsewhere makes an open tray on that submission re-read its thread', () => {
+    const gb = fakeGradebook({ '10': { assignment_7: {} } }, { open: true, studentId: '10', assignmentId: '7' });
+    const { win } = loadBridgeWith({ querySelector: (sel) => (sel === '#gradebook_app' ? reactMount(gb) : null) });
+    win.postMessage({ source: 'cgp-submission-sync', id: 'c', submissions: [], commentsFor: [{ assignmentId: '7', userId: '10' }] }, win.location.origin);
+    win.postMessage({ source: 'cgp-submission-sync', id: 'd', submissions: [], commentsFor: [{ assignmentId: '8', userId: '10' }] }, win.location.origin);
+    a.deep(gb.calls.comments, [['7', '10']]);
   });
 });
+
+function gridOver(rows, calls) {
+  return {
+    getColumns: function () { return []; },
+    setColumns: function () {},
+    getDataLength: function () { return rows.length; },
+    getDataItem: function (i) { return rows[i]; },
+    invalidateRows: function (r) { calls.push(['invalidateRows', r]); },
+    render: function () { calls.push(['render']); }
+  };
+}
+
+/* A stand-in for Canvas's Gradebook component: the methods the bridge uses,
+ * recording calls; updateSubmissionsFromExternal merges like Canvas's own. */
+function fakeGradebook(store, tray) {
+  const calls = { external: [], tray: [], comments: [] };
+  return {
+    calls: calls,
+    student: function (id) { return store[id] ? Object.assign({ id: id }, store[id]) : undefined; },
+    getSubmission: function (uid, aid) { return store[uid] ? store[uid]['assignment_' + aid] : undefined; },
+    updateSubmissionsFromExternal: function (subs) {
+      calls.external.push(subs);
+      subs.forEach(function (s) {
+        const row = store[s.user_id] || (store[s.user_id] = {});
+        const cell = row['assignment_' + s.assignment_id] || (row['assignment_' + s.assignment_id] = {});
+        Object.assign(cell, s, { excused: Boolean(s.excused) });
+      });
+    },
+    getSubmissionTrayState: function () { return tray; },
+    renderSubmissionTray: function (student) { calls.tray.push(student && student.id); },
+    loadSubmissionComments: function (aid, uid) { calls.comments.push([aid, uid]); }
+  };
+}
+
+/* #gradebook_app as React leaves it after a legacy render: a root whose
+ * current fiber tree holds the Gradebook instance a level or two down. */
+function reactMount(gb) {
+  const gradebookFiber = { stateNode: gb, child: null, sibling: null };
+  const dataFiber = { stateNode: null, child: gradebookFiber, sibling: null };
+  const hostRoot = { stateNode: null, child: dataFiber, sibling: null };
+  return { _reactRootContainer: { _internalRoot: { current: hostRoot } } };
+}
+
+function loadBridgeWith(opts) {
+  const listeners = [];
+  const posted = [];
+  const win = {
+    ENV: {},
+    location: { origin: 'https://canvas.example.edu', pathname: '/courses/1/gradebook', search: '' },
+    addEventListener: function (type, listener) { if (type === 'message') listeners.push(listener); },
+    postMessage: function (message) {
+      posted.push(message);
+      listeners.slice().forEach(function (listener) { listener({ source: win, data: message }); });
+    }
+  };
+  if (opts.nativeWrites) {
+    win.__cgpNativeWrites = { state: function (aid, uid) { return opts.nativeWrites[aid + ':' + uid] || null; } };
+  }
+  const context = {
+    window: win,
+    document: { querySelector: opts.querySelector },
+    Promise: Promise, Object: Object, Array: Array, String: String, Number: Number, Set: Set,
+    Math: Math, Date: Date, isFinite: isFinite, setTimeout: function (fn) { fn(); }
+  };
+  vm.runInNewContext(fs.readFileSync('src/page/env-bridge.js', 'utf8'), context);
+  return {
+    win: win,
+    posted: function () { return posted; },
+    replies: function () { return posted.filter(function (m) { return m.source === 'cgp-submission-synced'; }); }
+  };
+}

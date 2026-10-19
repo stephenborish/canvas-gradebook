@@ -1,8 +1,9 @@
 /* A grade, status or comment saved through Canvas's own Grade Detail Tray
- * never reached the model, so the cell kept its old record - no comment
- * bubble, no M badge, and Canvas's own fresh "missing" class was stripped
- * as stale. The page bridge now reports Canvas's successful submission
- * writes (ids only) so the content script can re-read that one cell. */
+ * (or in SpeedGrader) never reached the model, so the cell kept its old
+ * record - no comment bubble, no M badge, and Canvas's own fresh "missing"
+ * class was stripped as stale. The page-world watcher (write-watch.js) now
+ * reports Canvas's successful submission writes (ids only) so the content
+ * script can re-read that one cell, or tell the other tabs. */
 'use strict';
 
 const fs = require('fs');
@@ -10,7 +11,8 @@ const vm = require('vm');
 const { suite, assert: a } = require('./harness');
 const CGP = globalThis.CGP;
 
-function loadBridge() {
+function loadBridge(where) {
+  where = where || {};
   const posted = [];
   const xhrs = [];
   function FakeXHR() { this.listeners = {}; this.status = 0; xhrs.push(this); }
@@ -19,9 +21,11 @@ function loadBridge() {
   FakeXHR.prototype.addEventListener = function (type, fn) { this.listeners[type] = fn; };
   FakeXHR.prototype.finish = function (status) { this.status = status; if (this.listeners.loadend) this.listeners.loadend.call(this); };
   const fetchResults = [];
+  const pathname = where.pathname || '/courses/379/gradebook';
+  const search = where.search || '';
   const win = {
     ENV: {},
-    location: { origin: 'https://canvas.example.edu', href: 'https://canvas.example.edu/courses/379/gradebook', pathname: '/courses/379/gradebook', search: '' },
+    location: { origin: 'https://canvas.example.edu', href: 'https://canvas.example.edu' + pathname + search, pathname: pathname, search: search, hash: where.hash || '' },
     addEventListener: function () {},
     postMessage: function (message) { posted.push(message); },
     XMLHttpRequest: FakeXHR,
@@ -30,9 +34,10 @@ function loadBridge() {
   const context = {
     window: win, document: { querySelector: function () { return null; }, addEventListener: function () {} },
     Promise, Object, Array, String, Number, Math, JSON, URL, URLSearchParams, isFinite, Date,
+    atob: (v) => Buffer.from(String(v), 'base64').toString('binary'),
     setTimeout: function () {}, setInterval: function () { return 1; }, clearInterval: function () {}
   };
-  vm.runInNewContext(fs.readFileSync('src/page/env-bridge.js', 'utf8'), context);
+  vm.runInNewContext(fs.readFileSync('src/page/write-watch.js', 'utf8'), context);
   const writes = () => posted.filter((m) => m.source === 'cgp-native-write');
   return { win, writes, xhrs, fetchResults };
 }
@@ -61,6 +66,19 @@ suite('Canvas-native writes reach the model', (test) => {
     status.finish(200);
     a.eq(writes()[0].commentOnly, true);
     a.eq(writes()[1].commentOnly, undefined, 'a grade sent with a comment is not comment-only');
+  });
+
+  test('classic SpeedGrader\'s comment save (the plain, non-API route) is reported as comment-only', () => {
+    const { win, writes } = loadBridge({ pathname: '/courses/379/gradebook/speed_grader', search: '?assignment_id=50' });
+    const xhr = new win.XMLHttpRequest();
+    xhr.open('PUT', '/courses/379/assignments/50/submissions/10');
+    xhr.send('submission%5Bassignment_id%5D=50&submission%5Bgroup_comment%5D=0&submission%5Bcomment%5D=nice&submission%5Buser_id%5D=10');
+    xhr.finish(200);
+    const graded = new win.XMLHttpRequest();
+    graded.open('PUT', '/courses/379/assignments/50/submissions/10');
+    graded.send('submission%5Bcomment%5D=nice&submission%5Bgrade%5D=4');
+    graded.finish(200);
+    a.deep(writes().map((m) => [m.assignmentId, m.userId, m.commentOnly]), [['50', '10', true], ['50', '10', undefined]]);
   });
 
   test('a reused XHR reports only the request it is finishing', () => {
@@ -101,6 +119,55 @@ suite('Canvas-native writes reach the model', (test) => {
     await win.fetch('/submission_comments/77', { method: 'DELETE' });
     await Promise.resolve();
     a.deep(writes().map((m) => m.commentId || (m.assignmentId + ':' + m.userId)), ['50:10', '77']);
+  });
+
+  test('SpeedGrader 2 saves through GraphQL: the student comes from its URL', async () => {
+    const { win, writes } = loadBridge({ pathname: '/courses/379/gradebook/speed_grader', search: '?assignment_id=50&student_id=10' });
+    await win.fetch('/api/graphql', { method: 'POST', body: JSON.stringify({
+      operationName: 'UpdateSubmissionGrade', query: 'mutation UpdateSubmissionGrade($submissionId: ID!) { x }', variables: { submissionId: 'U3VibWlzc2lvbi05' }
+    }) });
+    await Promise.resolve();
+    a.deep(writes().map((m) => [m.courseId, m.assignmentId, m.userId, m.graphql]), [['379', '50', '10', true]]);
+  });
+
+  test('a posting mutation names its column (relay id decoded); a query is not a write', async () => {
+    const { win, writes } = loadBridge();
+    await win.fetch('/api/graphql', { method: 'POST', body: JSON.stringify({
+      query: 'query Grades { assignment(id: 1) { name } }'
+    }) });
+    await win.fetch('/api/graphql', { method: 'POST', body: JSON.stringify({
+      query: 'mutation PostAssignmentGrades($assignmentId: ID!) { postAssignmentGrades(input: {assignmentId: $assignmentId}) { progress { _id } } }',
+      variables: { assignmentId: Buffer.from('Assignment-50').toString('base64') }
+    }) });
+    await win.fetch('/api/graphql', { method: 'POST', body: JSON.stringify({
+      query: 'mutation SaveSettings { updateSpeedGraderSettings(input: {}) { x } }', variables: {}
+    }) });
+    await Promise.resolve();
+    a.deep(writes().map((m) => [m.assignmentId, m.userId, m.graphql]), [['50', undefined, true]],
+      'one write for the column, none for the read or an unrelated mutation');
+  });
+
+  test('Canvas\'s bulk dialogs report their column', () => {
+    const { win, writes } = loadBridge();
+    const bulk = new win.XMLHttpRequest();
+    bulk.open('POST', '/courses/379/gradebook/update_submission');
+    bulk.send('submissions%5B0%5D%5Bassignment_id%5D=50&submissions%5B0%5D%5Buser_id%5D=10&submissions%5B0%5D%5Bgrade%5D=5');
+    bulk.finish(200);
+    a.deep(writes().map((m) => [m.assignmentId, m.userId, m.bulk]), [['50', undefined, true]]);
+  });
+
+  test('a Canvas write still out (or begun after a read) is visible to the store hand-off', async () => {
+    const { win } = loadBridge();
+    const before = Date.now();
+    const xhr = new win.XMLHttpRequest();
+    xhr.open('PUT', '/api/v1/courses/379/assignments/50/submissions/10');
+    xhr.send('submission%5Bposted_grade%5D=4');
+    const out = win.__cgpNativeWrites.state('50', '10');
+    a.eq(out.pending, 1);
+    a.ok(out.lastStartedAt >= before);
+    xhr.finish(200);
+    a.eq(win.__cgpNativeWrites.state('50', '10').pending, 0);
+    a.eq(win.__cgpNativeWrites.state('51', '10'), null);
   });
 
   test('a refresh with an empty comment list clears the bubble', () => {

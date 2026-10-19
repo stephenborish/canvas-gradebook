@@ -142,7 +142,7 @@
       c.instructorCount || 0,
       c.hasInstructorComment ? 1 : 0,
       c.studentRepliedAfter ? 1 : 0,
-      rec.gradeMatchesCurrent === false ? 1 : 0,
+      CGP.gradeOps.resubmitted(rec) ? 1 : 0,
       rec.gradedAt ? 1 : 0,
       rec.pending ? 1 : 0,
       rec.override === null || rec.override === undefined ? '' : rec.override,
@@ -213,7 +213,7 @@
     var wantComment = !!(s.commentIndicator && comments && comments.hasInstructorComment);
     var sub = (s.submissionIndicator && rec) ? this.model.submissionState(rec.assignmentId, rec.userId) : null;
     var wantSub = !!sub;
-    var wantResub = !!(s.resubmissionIndicator && rec && rec.gradedAt && rec.gradeMatchesCurrent === false);
+    var wantResub = !!(s.resubmissionIndicator && CGP.gradeOps.resubmitted(rec));
     var wantMissing = status === 'missing';
     var wantLate = status === 'late';
     var wantBadge = wantMissing || wantLate;
@@ -446,7 +446,7 @@
     var showSub = !!sub;
     if (showSub) parts.push(this.submissionMarkup(sub, info));
 
-    var showResub = !!(s.resubmissionIndicator && rec && rec.gradedAt && rec.gradeMatchesCurrent === false);
+    var showResub = !!(s.resubmissionIndicator && CGP.gradeOps.resubmitted(rec));
     if (showResub) {
       parts.push('<span class="cgp-resub" title="Resubmitted after grading"></span>');
     }

@@ -80,28 +80,51 @@ suite('grade shortcuts (M / E / L / 0)', (test) => {
     a.eq(ops().operationFor(ops().parseToken('L'), { wasLate: false }).patch.late, true);
   });
 
-  test('grading a Missing submission clears Missing status automatically', () => {
-    // Entering a grade removes Missing and marks the work Late.
-    const op = ops().operationFor(ops().parseToken('7'), { wasExplicitMissing: true });
-    a.form(op.form, {
-      'submission[posted_grade]': '7',
-      'submission[late_policy_status]': 'late'
-    }, 'graded-while-missing form');
-    a.eq(op.patch.missing, false, 'the patch clears missing');
-    a.eq(op.patch.latePolicyStatus, 'late', 'Missing is swapped for Late');
+  test('a grade never adds a status: an applied Missing stays unless the lift setting is on', () => {
+    // Canvas keeps a Missing somebody applied on a graded submission, and
+    // nothing here adds Late - ever.
+    const kept = ops().operationFor(ops().parseToken('7'), { wasExplicitMissing: true, latePolicyStatus: 'missing' });
+    a.form(kept.form, { 'submission[posted_grade]': '7' }, 'grade over applied Missing, lift off');
+    a.eq(kept.patch.missing, true, 'the applied Missing is still there');
+    a.eq(kept.patch.latePolicyStatus, 'missing');
 
-    // Letter grades clear missing too
-    const letterOp = ops().operationFor(ops().parseToken('B+'), { wasExplicitMissing: true });
+    // With the lift on, a grade that earns credit hands the status back to
+    // Canvas (null), which marks Late only for work really submitted late.
+    const lifted = ops().operationFor(ops().parseToken('7'), { wasExplicitMissing: true, latePolicyStatus: 'missing', liftMissing: true });
+    a.form(lifted.form, {
+      'submission[posted_grade]': '7',
+      'submission[late_policy_status]': null
+    }, 'graded-while-missing form');
+    a.eq(lifted.patch.missing, false, 'the patch clears missing');
+    a.eq(lifted.patch.latePolicyStatus, null, 'no Late is invented');
+    a.lacksKey(lifted.patch, 'late', 'whether it is late is Canvas\'s to say');
+
+    const letterOp = ops().operationFor(ops().parseToken('B+'), { wasExplicitMissing: true, liftMissing: true });
     a.form(letterOp.form, {
       'submission[posted_grade]': 'B+',
-      'submission[late_policy_status]': 'late'
+      'submission[late_policy_status]': null
     });
     a.eq(letterOp.patch.missing, false);
 
+    // A zero is how missing work is recorded: an applied Missing stays.
+    const zero = ops().operationFor(ops().parseToken('0'), { wasExplicitMissing: true, latePolicyStatus: 'missing', liftMissing: true });
+    a.form(zero.form, { 'submission[posted_grade]': '0' });
+    a.eq(zero.patch.missing, true);
+
     // Grading a Late submission preserves Late without adding late_policy_status
-    const lateOp = ops().operationFor(ops().parseToken('80%'), { wasLate: true });
+    const lateOp = ops().operationFor(ops().parseToken('80%'), { wasLate: true, liftMissing: true });
     a.lacksKey(lateOp.form, 'submission[late_policy_status]');
     a.eq(lateOp.patch.latePolicyStatus, 'late');
+  });
+
+  test('grading drops Canvas\'s own computed Missing - zero included - and sends no status', () => {
+    // Submission#missing?: return false if grader_id && late_policy_status.nil?
+    ['0', '7'].forEach((v) => {
+      const op = ops().operationFor(ops().parseToken(v), { wasExplicitMissing: false, latePolicyStatus: null, liftMissing: true });
+      a.form(op.form, { 'submission[posted_grade]': v }, v + ' over computed Missing');
+      a.eq(op.patch.missing, false, v + ': Canvas drops its own Missing on grading');
+      a.eq(ops().cellStatus(Object.assign({ missing: true }, op.patch)), 'none');
+    });
   });
 
   test('a grade on a submission that was never Missing leaves late policy alone', () => {
