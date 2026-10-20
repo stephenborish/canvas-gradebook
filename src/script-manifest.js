@@ -20,6 +20,8 @@ export const CONTENT_JS = [
   'src/gradebook/dom-adapter.js',
   'src/gradebook/cell-registry.js',
   'src/gradebook/indicators.js',
+  'src/gradebook/canvas-store.js',
+  'src/gradebook/live-sync.js',
   'src/gradebook/writer.js',
   'src/gradebook/selection.js',
   'src/gradebook/cell-actions.js',

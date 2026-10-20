@@ -8,9 +8,11 @@
  *     builds that link straight there). That control is a ~14px target that
  *     only exists while the cell is being edited; the whole cell is a much
  *     easier thing to hit, and double-click is the gesture people already
- *     expect to mean "open this". Canvas's own control is *clicked*, never
- *     reimplemented - so whatever it opens today is what a double-click opens,
- *     with no URL guessing on our part.
+ *     expect to mean "open this". Canvas's own Gradebook opens the tray (see
+ *     open() below, which also saves a grade still typed in the cell first);
+ *     failing that, Canvas's own control is *clicked*, never reimplemented -
+ *     so whatever it opens today is what a double-click opens, with no URL
+ *     guessing on our part.
  *
  *     Because of that, the arrow itself is hidden by default (the CSS keeps it
  *     in the DOM and clickable, it just stops taking up pixels in an already
@@ -62,9 +64,61 @@
     this.settings = ctx.settings;
     this.courseId = ctx.courseId ? String(ctx.courseId) : null;
     this._hoverTop = null;
+    this._seq = 0;
+    // How long to wait for the page bridge before clicking the arrow instead.
+    this._bridgeWaitMs = ctx.bridgeWaitMs || 400;
   }
 
   var P = CellActionsController.prototype;
+
+  /* Open the Grade Detail Tray for this cell.
+   *
+   * Canvas's own arrow opens the tray without saving what is still typed in
+   * the cell's editor - so typing a grade and then double-clicking the cell
+   * showed the grade from BEFORE the edit, and left the new one sitting
+   * unsaved in the editor. The page bridge (env-bridge.js) is asked first:
+   * it commits that edit through Canvas's own editor lock and opens the tray
+   * through Canvas's own Gradebook, which shows the new grade (pending, then
+   * saved). Only when the bridge cannot is Canvas's arrow clicked, as
+   * before. */
+  P.open = function (cell, info) {
+    var self = this;
+    return this.openViaCanvas(info).then(function (ok) {
+      if (ok) { CGP.diag.bump('cellActions.trayOpenedByGradebook'); return true; }
+      self.openTray(cell, info, 8);
+      return false;
+    });
+  };
+
+  P.openViaCanvas = function (info) {
+    var self = this;
+    if (!info || !info.assignmentId || !info.studentId ||
+      typeof window === 'undefined' || typeof window.postMessage !== 'function') return Promise.resolve(false);
+    var id = 'cgp-tray-' + (++this._seq) + '-' + Date.now();
+    return new Promise(function (resolve) {
+      var done = false;
+      var timer = null;
+      function finish(ok) {
+        if (done) return;
+        done = true;
+        window.removeEventListener('message', onMessage);
+        clearTimeout(timer);
+        resolve(ok);
+      }
+      function onMessage(e) {
+        if (e.source !== window || !e.data || e.data.source !== 'cgp-open-tray-result' || e.data.id !== id) return;
+        finish(!!e.data.ok);
+      }
+      window.addEventListener('message', onMessage);
+      timer = setTimeout(function () { finish(false); }, self._bridgeWaitMs);
+      try {
+        window.postMessage({
+          source: 'cgp-open-tray', id: id,
+          assignmentId: String(info.assignmentId), userId: String(info.studentId)
+        }, window.location.origin);
+      } catch (e) { finish(false); }
+    });
+  };
 
   /** Canvas's own "open this submission" control inside one grade cell, or
    * null when this cell holds nothing we can positively identify as one. */
@@ -145,7 +199,7 @@
       if (!info || info.columnType !== 'assignment' || !info.assignmentId || !info.studentId) return;
       // Only suppress the text-selection default; Canvas keeps the event.
       e.preventDefault();
-      self.openTray(cell, info, 8);
+      self.open(cell, info);
     }, true);
   };
 

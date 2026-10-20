@@ -2,11 +2,13 @@
  *
  * M = Missing, written to Canvas instantly; pressed again it is removed. L =
  * Late, same shape; pressed again it is removed. E = Excused. Missing and
- * Late are independent flags: neither one ever touches the grade. Typing a
- * grade into a cell that reads Missing swaps Missing for Late once Canvas
- * has saved that grade (see scheduleReconcile); typing a grade and then
- * pressing M saves it with Missing off and no status. Typing 0 is still an
- * ordinary zero, and leaves Missing on.
+ * Late are independent flags: neither one ever touches the grade, and a
+ * typed grade never adds a status. Typing a grade that earns credit into a
+ * cell carrying a Missing somebody applied hands that status back to Canvas
+ * once Canvas has saved the grade (setting liftMissingOnGrade; see
+ * scheduleReconcile) - Canvas then marks it Late only if the work really was
+ * submitted late. Typing a grade and then pressing M saves it with Missing
+ * off. Typing 0 is still an ordinary zero, and leaves an applied Missing on.
  * Shortcuts only fire when a real editable grade cell is active (or cells are
  * multi-selected); typing anywhere else on Canvas is never intercepted.
  *
@@ -43,6 +45,9 @@
     this.bulkComment = ctx.bulkComment || null;
     this._editorWatch = new WeakMap();
     this._refreshTimers = new Map();
+    // "assignmentId:userId" -> {before, attempt} for a typed edit whose
+    // follow-up has not run yet (see scheduleReconcile / canvasSaved).
+    this._reconcileState = new Map();
     // Timestamp of the most recent focusin on ANY text-entry element in the
     // grid (grade cells and non-assignment ones like a Notes column alike),
     // updated unconditionally in onFocusIn below. Compared against
@@ -149,7 +154,6 @@
           enteredScore: before.enteredScore,
           gradedAt: before.gradedAt,
           latePolicyStatus: before.latePolicyStatus || null,
-          readsMissing: CGP.gradeOps.cellStatus(before) === 'missing',
           at: Date.now()
         } : null);
       }
@@ -196,14 +200,20 @@
   };
 
   /* Canvas committed a grade its own way: re-read the submission so the
-   * indicators and Total stay truthful, and - once the read shows Canvas
-   * really did save a NEW grade that earns credit - swap the Missing the cell
-   * showed for Late. Canvas itself keeps an applied Missing on a graded
-   * submission; a typed grade is the teacher saying the work is in, late.
+   * indicators and Total stay truthful. Nothing else is written unless the
+   * cell carried a Missing somebody APPLIED and still does now that Canvas
+   * has saved a grade that earns credit: Canvas keeps an applied Missing on
+   * a graded submission, so with liftMissingOnGrade on that one status is
+   * handed back to Canvas (LIFT_MISSING), which marks the work Late only if
+   * it really was submitted after its due date. Canvas's own automatic
+   * Missing needs nothing - Canvas drops it itself the moment a grade is
+   * saved - and no Late is ever added here. (This used to send Late for any
+   * cell that had read Missing, seconds after the save, whatever the
+   * assignment's submission type.)
    *
-   * Re-read a few times on a backoff: Canvas's own request can take longer
-   * than the first look. A read showing nothing new (Canvas refused the
-   * value, or the edit was cancelled) changes nothing. */
+   * Runs as soon as write-watch.js reports Canvas's own save of the cell
+   * (canvasSaved), and on a backoff otherwise. A read showing nothing new
+   * (Canvas refused the value, or the edit was cancelled) changes nothing. */
   var RECONCILE_DELAYS = [1200, 3000, 8000];
 
   P.scheduleReconcile = function (assignmentId, userId, before, attempt) {
@@ -211,42 +221,69 @@
     var key = assignmentId + ':' + userId;
     attempt = attempt || 0;
     if (this._refreshTimers.has(key)) clearTimeout(this._refreshTimers.get(key));
+    this._reconcileState.set(key, { before: before, attempt: attempt });
     this._refreshTimers.set(key, setTimeout(function () {
-      self._refreshTimers.delete(key);
-      self.model.refreshCell(assignmentId, userId).then(function (rec) {
-        self.model.queueTotalRefresh(userId);
-        if (self.requestPaint) self.requestPaint();
-        if (!rec || !before) return;
-        var hasGrade = rec.grade !== null && rec.grade !== undefined && String(rec.grade) !== '';
-        var changed = rec.grade !== before.grade || rec.enteredScore !== before.enteredScore ||
-          (rec.gradedAt && rec.gradedAt !== before.gradedAt);
-        if (!changed || !hasGrade) {
-          if (attempt + 1 < RECONCILE_DELAYS.length) self.scheduleReconcile(assignmentId, userId, before, attempt + 1);
-          return;
-        }
-        // Only a Missing that was ALREADY on the cell when the grade was
-        // typed is taken off - never one applied since (an M pressed after
-        // the edit, while this follow-up was still waiting), which is the
-        // teacher's newer decision. Nor while the course is still loading.
-        // Canvas's own save of this very grade is not such a decision: it is
-        // what this follow-up is here for (see model.localWriteSince).
-        if (typeof self.model.localWriteSince === 'function' &&
-          self.model.localWriteSince(assignmentId, userId, before.at)) return;
-        if (!before.readsMissing && before.latePolicyStatus !== 'missing') return;
-        // A zero typed over Missing is how missing work is recorded: it stays.
-        if (rec.excused || !CGP.gradeOps.earnedCredit(rec)) return;
-        var stillMissing = rec.latePolicyStatus === 'missing';
-        // Canvas drops a computed Missing on grading by itself; the work still
-        // came in late, so Late goes on - unless some status is already there.
-        var computedDropped = !rec.latePolicyStatus && !rec.late;
-        if ((stillMissing || computedDropped) && self.writer && self.model.ready !== false) {
-          self.writer.apply([{
-            assignmentId: assignmentId, userId: userId, fromMissing: true,
-            parsed: { kind: CGP.gradeOps.KIND.CLEAR_MISSING, raw: '' }
-          }]).then(function () { if (self.requestPaint) self.requestPaint(); });
-        }
-      });
+      self.runReconcile(assignmentId, userId);
     }, RECONCILE_DELAYS[attempt]));
+  };
+
+  /* Canvas's own save of this cell just landed: follow up now instead of on
+   * the timer. Returns whether a follow-up was waiting. */
+  P.canvasSaved = function (assignmentId, userId) {
+    var key = assignmentId + ':' + userId;
+    if (!this._refreshTimers.has(key)) return false;
+    clearTimeout(this._refreshTimers.get(key));
+    this.runReconcile(assignmentId, userId);
+    return true;
+  };
+
+  P.cancelReconcile = function (assignmentId, userId) {
+    var key = assignmentId + ':' + userId;
+    if (this._refreshTimers.has(key)) clearTimeout(this._refreshTimers.get(key));
+    this._refreshTimers.delete(key);
+    this._reconcileState.delete(key);
+  };
+
+  P.runReconcile = function (assignmentId, userId) {
+    var self = this;
+    var key = assignmentId + ':' + userId;
+    this._refreshTimers.delete(key);
+    var state = this._reconcileState.get(key);
+    if (!state) return;
+    var before = state.before;
+    var attempt = state.attempt;
+    self.model.refreshCell(assignmentId, userId, { commentsAuthoritative: true, staleIfWrittenAfter: Date.now() }).then(function (rec) {
+      // A newer edit (or a shortcut) on the cell took over meanwhile.
+      if (self._reconcileState.get(key) !== state) return;
+      self._reconcileState.delete(key);
+      self.model.queueTotalRefresh(userId);
+      if (self.requestPaint) self.requestPaint();
+      if (!rec || !before) return;
+      var hasGrade = rec.grade !== null && rec.grade !== undefined && String(rec.grade) !== '';
+      var changed = rec.grade !== before.grade || rec.enteredScore !== before.enteredScore ||
+        (rec.gradedAt && rec.gradedAt !== before.gradedAt);
+      if (!changed || !hasGrade) {
+        if (attempt + 1 < RECONCILE_DELAYS.length) self.scheduleReconcile(assignmentId, userId, before, attempt + 1);
+        return;
+      }
+      // Only a Missing that was ALREADY applied when the grade was typed,
+      // and still is - never one applied since (an M pressed after the edit,
+      // while this follow-up was still waiting), which is the teacher's newer
+      // decision. Nor while the course is still loading. Canvas's own save of
+      // this very grade is not such a decision: it is what this follow-up is
+      // here for (see model.localWriteSince).
+      if (typeof self.model.localWriteSince === 'function' &&
+        self.model.localWriteSince(assignmentId, userId, before.at)) return;
+      if (before.latePolicyStatus !== 'missing' || rec.latePolicyStatus !== 'missing') return;
+      if (!self.writer || typeof self.writer.liftsMissing !== 'function' || !self.writer.liftsMissing()) return;
+      // A zero typed over Missing is how missing work is recorded: it stays.
+      if (rec.excused || !CGP.gradeOps.earnedCredit(rec)) return;
+      if (self.model.ready === false) return;
+      self.writer.apply([{
+        assignmentId: assignmentId, userId: userId,
+        parsed: { kind: CGP.gradeOps.KIND.LIFT_MISSING, raw: '' }
+      }]).then(function () { if (self.requestPaint) self.requestPaint(); });
+    });
   };
 
   /* ------------------------------------------------------------- keystrokes */
@@ -522,15 +559,19 @@
     }
     // A pending follow-up from an earlier typed edit on these cells must
     // not act after this newer command (see scheduleReconcile).
-    scope.forEach(function (t) {
-      var k = t.assignmentId + ':' + t.userId;
-      if (self._refreshTimers.has(k)) { clearTimeout(self._refreshTimers.get(k)); self._refreshTimers.delete(k); }
-    });
+    scope.forEach(function (t) { self.cancelReconcile(t.assignmentId, t.userId); });
     var built = this.writer.targetsFromTokens(scope.map(function (t) {
       return { assignmentId: t.assignmentId, userId: t.userId, token: typedOverMissing || token };
     }));
-    // One request: the typed grade, with Missing off and no other status.
-    if (typedOverMissing) built.targets.forEach(function (t) { t.liftMissingTo = 'none'; });
+    // One request: the typed grade with Missing off. An applied Missing is
+    // removed the way M removes it ('none'); Canvas's own Missing needs
+    // nothing, since Canvas drops it as soon as the grade is saved.
+    if (typedOverMissing) {
+      var overRec = this.model.cell(editorInfo.assignmentId, editorInfo.studentId);
+      if (overRec && overRec.latePolicyStatus === 'missing') {
+        built.targets.forEach(function (t) { t.liftMissingTo = 'none'; });
+      }
+    }
     if (built.invalid.length && !built.targets.length) {
       if (pendingKey) this._nativeMPending.delete(pendingKey);
       CGP.ui.error('"' + token + '" is not a grade Canvas will accept.');

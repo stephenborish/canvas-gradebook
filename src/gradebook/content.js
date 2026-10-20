@@ -73,34 +73,32 @@
       if (env.courseId) CGP.diag.set('envCourseId', String(env.courseId));
       if (env.currentGradingPeriodId !== undefined) model.setGradingPeriod(env.currentGradingPeriodId);
     });
+    // Canvas's own in-page store (canvas-store.js) and the other tabs of this
+    // course (live-sync.js): where every saved submission goes next.
+    var canvasStore = new CGP.CanvasStore({ model: model, requestPaint: function () { paint(); } });
+    canvasStore.listen();
+    var liveSync = new CGP.LiveSync({ courseId: courseId, settings: settings });
+
     // A grade, status or comment Canvas saved through its own UI (the Grade
-    // Detail Tray, mostly) - see env-bridge.js. The model never heard about
-    // it, so that one cell is re-read; a burst on the same cell (status, then
-    // comment) collapses into one read.
-    // A burst made only of comments must never take Missing off the cell: if
-    // the re-read shows an applied Missing gone, it is put back
-    // (writer.keepMissingAfterComment).
+    // Detail Tray, the grid's own editor) - see write-watch.js. Canvas's own
+    // store already has it; the model never heard about it, so that one cell
+    // is re-read - a burst on the same cell (status, then comment) collapses
+    // into one read - and other tabs (an open SpeedGrader) are told.
     var nativeRefresh = {};
-    function refreshAfterNativeWrite(assignmentId, userId, gradeMayChange, isCommentOnly) {
+    function refreshAfterNativeWrite(assignmentId, userId, gradeMayChange) {
       var k = assignmentId + ':' + userId;
       var pending = nativeRefresh[k];
       if (pending) clearTimeout(pending.timer);
       var totals = gradeMayChange || !!(pending && pending.totals);
-      var onlyComments = !!isCommentOnly && (!pending || pending.onlyComments);
-      var prior = pending ? pending.wasExplicitMissing : !!(model.cell(assignmentId, userId) &&
-        model.cell(assignmentId, userId).latePolicyStatus === 'missing');
-      var writesBefore = pending ? pending.writesBefore : (writer ? writer.statusWriteCount(assignmentId, userId) : 0);
       model.noteNativeWrite(assignmentId, userId);
-      nativeRefresh[k] = { totals: totals, onlyComments: onlyComments, wasExplicitMissing: prior, writesBefore: writesBefore, timer: setTimeout(function () {
+      nativeRefresh[k] = { totals: totals, timer: setTimeout(function () {
         delete nativeRefresh[k];
         CGP.diag.bump('nativeWrite.refresh');
-        model.refreshCell(assignmentId, userId, { commentsAuthoritative: true, staleIfWrittenAfter: Date.now() })
-          .then(function (rec) {
-            if (!onlyComments || !prior || !rec || !writer) return;
-            writer.keepMissingAfterComment(assignmentId, userId, true, {
-              late_policy_status: rec.latePolicyStatus, excused: rec.excused
-            }, writesBefore);
-          });
+        // A grade typed in the grid has its own follow-up waiting, which
+        // re-reads the cell itself - run it now, not on its timer.
+        if (!(keyboard && keyboard.canvasSaved(assignmentId, userId))) {
+          model.refreshCell(assignmentId, userId, { commentsAuthoritative: true, staleIfWrittenAfter: Date.now() });
+        }
         // A comment edit/delete cannot move the course total.
         if (totals) model.queueTotalRefresh(userId);
       }, 250) };
@@ -110,12 +108,27 @@
       var d = e.data;
       if (d.commentId) {
         var owner = model.cellForComment(d.commentId);
-        if (owner) refreshAfterNativeWrite(owner.assignmentId, owner.userId, false);
+        if (owner) {
+          refreshAfterNativeWrite(owner.assignmentId, owner.userId, false);
+          liveSync.announce([owner], { commentsOnly: true });
+        }
         return;
       }
-      if (String(d.courseId) !== String(courseId)) return;
-      if (!/^\d+$/.test(String(d.assignmentId)) || !/^\d+$/.test(String(d.userId))) return;
-      refreshAfterNativeWrite(String(d.assignmentId), String(d.userId), !d.commentOnly, !!d.commentOnly);
+      if (String(d.courseId) !== String(courseId) || !/^\d+$/.test(String(d.assignmentId))) return;
+      if (!/^\d+$/.test(String(d.userId))) {
+        // A write naming a column but no student (Canvas's own posting, its
+        // Set Default Grade / Curve Grades dialogs): see catchUpColumn.
+        // Every cell of the column is stamped like a single native write, so
+        // a read of it already in flight (a refocus re-read, say) - served
+        // before Canvas committed - cannot land after the catch-up and hand
+        // the old grades back to the model and to Canvas's store.
+        model.studentOrder.forEach(function (uid) { model.noteNativeWrite(String(d.assignmentId), String(uid)); });
+        if (follower) follower.catchUpColumn(String(d.assignmentId));
+        liveSync.announce([{ assignmentId: String(d.assignmentId) }]);
+        return;
+      }
+      refreshAfterNativeWrite(String(d.assignmentId), String(d.userId), !d.commentOnly);
+      liveSync.announce([{ assignmentId: String(d.assignmentId), userId: String(d.userId) }], { commentsOnly: !!d.commentOnly });
     });
     // The bridge runs from document_start and may have posted before this
     // listener existed; ask it for the current ENV now that we're listening.
@@ -147,10 +160,17 @@
       writer: null, // set below
       // Clicking the hover preview opens Canvas's own Grade Detail Tray for
       // that submission, through the same code path double-click uses.
-      openSidePane: function (info) { cellActions.openTray(info.el, info, 8); }
+      openSidePane: function (info) { cellActions.open(info.el, info); }
     });
-    var writer = new CGP.GradeWriter({ api: api, model: model, settings: settings });
+    var writer = new CGP.GradeWriter({
+      api: api, model: model, settings: settings, canvasStore: canvasStore, liveSync: liveSync
+    });
     popover.writer = writer;
+    // Changes saved in SpeedGrader or another gradebook tab, and whatever
+    // changed while this tab was out of view.
+    var follower = new CGP.LiveGradebookFollower({
+      model: model, canvasStore: canvasStore, liveSync: liveSync, adapter: adapter, requestPaint: requestPaint
+    });
 
     var bulkComment = new CGP.BulkCommentController({
       model: model, writer: writer, settings: settings, requestPaint: requestPaint
@@ -201,7 +221,7 @@
     // students. Painted with the headers, because that is where the state it
     // reports (this column has N grades students cannot see) belongs.
     var posting = new CGP.PostGradesController({
-      model: model, adapter: adapter, api: api, settings: settings, requestPaint: requestPaint
+      model: model, adapter: adapter, api: api, settings: settings, requestPaint: requestPaint, liveSync: liveSync
     });
     // "Analyze Scores" in each assignment column's "..." menu.
     var scoreAnalysis = new CGP.ScoreAnalysisController({ model: model, adapter: adapter, settings: settings });
@@ -437,6 +457,7 @@
         return;
       }
       indicators.start();
+      follower.start();
       selection.start();
       cellActions.start();
       testStudentGuard.start();
@@ -615,7 +636,8 @@
       });
       CGP.gradebook = {
         model: model, adapter: adapter, layout: layout, selection: selection,
-        writer: writer, posting: posting, bulkComment: bulkComment, paint: paint, diag: CGP.diag
+        writer: writer, posting: posting, bulkComment: bulkComment, paint: paint, diag: CGP.diag,
+        canvasStore: canvasStore, liveSync: liveSync, follower: follower
       };
     });
   }

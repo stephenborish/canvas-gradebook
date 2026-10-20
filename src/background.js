@@ -2,15 +2,19 @@
  *
  * Deliberately tiny. It seeds default settings, opens the options page from the
  * toolbar icon, registers the content scripts for self-hosted Canvas
- * domains the teacher has granted, and applies Web Store updates promptly
- * (self-update.js). It never touches Canvas data. */
+ * domains the teacher has granted, applies Web Store updates promptly
+ * (self-update.js), and relays "this submission changed" announcements
+ * between the open tabs of one course (live-sync.js) - ids only, never
+ * stored. It never reads or stores Canvas data itself. */
 
 import { CONTENT_JS, CONTENT_CSS } from './script-manifest.js';
 import { createSelfUpdater } from './self-update.js';
+import { createLiveRelay, LIVE_SYNC_TYPE } from './live-relay.js';
 
 const SETTINGS_KEY = 'cgp.settings';
 const DYNAMIC_ID = 'cgp-custom-domains';
 const DYNAMIC_BRIDGE_ID = 'cgp-custom-domains-bridge';
+const DYNAMIC_WATCH_ID = 'cgp-custom-domains-write-watch';
 
 async function seedDefaults() {
   const got = await chrome.storage.sync.get(SETTINGS_KEY);
@@ -58,7 +62,7 @@ async function syncDynamicScripts() {
   try {
     const perms = await chrome.permissions.getAll();
     const origins = (perms.origins || []).filter((o) => !o.includes('instructure.com') && o !== '*://*/*');
-    const ids = [DYNAMIC_ID, DYNAMIC_BRIDGE_ID];
+    const ids = [DYNAMIC_ID, DYNAMIC_BRIDGE_ID, DYNAMIC_WATCH_ID];
     const existing = await chrome.scripting.getRegisteredContentScripts({ ids }).catch(() => []);
     if (existing.length) await chrome.scripting.unregisterContentScripts({ ids: existing.map((s) => s.id) });
     if (!origins.length) return { registered: 0 };
@@ -67,6 +71,16 @@ async function syncDynamicScripts() {
       matches: origins.map(toGradebookPattern),
       excludeMatches: origins.map(toSpeedGraderPattern),
       js: ['src/page/env-bridge.js'],
+      world: 'MAIN',
+      runAt: 'document_start',
+      allFrames: false,
+      persistAcrossSessions: true
+    }, []);
+    // Canvas's own submission writes, on the gradebook and SpeedGrader both.
+    await registerWithFallback({
+      id: DYNAMIC_WATCH_ID,
+      matches: origins.map(toGradebookPattern),
+      js: ['src/page/write-watch.js'],
       world: 'MAIN',
       runAt: 'document_start',
       allFrames: false,
@@ -103,12 +117,17 @@ if (chrome.permissions && chrome.permissions.onAdded) {
 }
 
 createSelfUpdater(chrome).start();
+const liveRelay = createLiveRelay(chrome);
 
 chrome.action.onClicked.addListener(() => {
   chrome.runtime.openOptionsPage();
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, respond) => {
+  if (msg && msg.type === LIVE_SYNC_TYPE) {
+    liveRelay.relay(msg, sender).catch(() => 0);
+    return false;
+  }
   if (!msg || msg.type !== 'cgp.syncDynamicScripts') return false;
   syncDynamicScripts().then(respond);
   return true; // async response

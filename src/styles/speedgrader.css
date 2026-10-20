@@ -1,5 +1,7 @@
 /* Canvas Gradebook+ - SpeedGrader styles.
- * One quiet line under Canvas's own comment box. Nothing else is added. */
+ * One quiet line under Canvas's own comment box, the pinned Submit Comment
+ * row, and - classic SpeedGrader only - a notice when the submission on
+ * screen was changed in another tab. */
 
 html.cgp-speedgrader .cgp-draft-note {
   display: none;
@@ -24,4 +26,50 @@ html.cgp-speedgrader .cgp-sticky-submit {
 html.cgp-speedgrader .cgp-draft-note--warn {
   color: #9b2c1c;
   font-weight: 700;
+}
+
+/* Classic SpeedGrader cannot re-read a submission in place, so a change made
+ * in the gradebook says so here, with a one-click reload. */
+html.cgp-speedgrader .cgp-sg-stale {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(640px, calc(100vw - 32px));
+  padding: 10px 12px 10px 16px;
+  border-radius: 8px;
+  background: #2d3b45;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.4;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+html.cgp-speedgrader .cgp-sg-stale__reload {
+  flex: none;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: #fff;
+  color: #2d3b45;
+  font-weight: 700;
+  cursor: pointer;
+}
+html.cgp-speedgrader .cgp-sg-stale__dismiss {
+  flex: none;
+  padding: 2px 6px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+html.cgp-speedgrader .cgp-sg-stale__reload:focus-visible,
+html.cgp-speedgrader .cgp-sg-stale__dismiss:focus-visible {
+  outline: 2px solid #8fd1ff;
+  outline-offset: 2px;
 }

@@ -42,22 +42,33 @@ suite('cell status (what M and L must show immediately)', (test) => {
     a.eq(status({ missing: true, latePolicyStatus: null }), 'missing', 'past due, nothing handed in');
   });
 
-  test('graded submission with missing:true (e.g. turned in on paper) is not marked missing', () => {
-    a.eq(status({ score: 3, grade: '3', missing: true, latePolicyStatus: null }), 'none', 'graded paper submission is none');
-    a.eq(status({ enteredScore: 3, grade: '3', missing: true, latePolicyStatus: null }), 'none', 'enteredScore paper submission is none');
-    a.eq(status({ score: 3, grade: '3', missing: true, late: true, latePolicyStatus: null }), 'late', 'late paper submission is late');
-  });
-
-  test('a zero on Canvas\'s automatic Missing stays missing', () => {
-    a.eq(status({ score: 0, grade: '0', missing: true, latePolicyStatus: null }), 'missing', 'zero score');
-    a.eq(status({ enteredScore: 0, grade: '0', missing: true, latePolicyStatus: null }), 'missing', 'zero entered score');
-    a.eq(status({ grade: '0%', missing: true, latePolicyStatus: null }), 'missing', 'zero percent grade');
+  test('Canvas\'s own missing flag is shown as it is - the grade is never used to second-guess it', () => {
+    // The tray, SpeedGrader and the student all show Canvas's missing; a cell
+    // that decided otherwise from its grade (as this once did) disagreed.
+    // A graded cell Canvas still calls missing is a policy-applied score or
+    // an applied status, and it IS missing everywhere else.
+    a.eq(status({ score: 3, grade: '3', missing: true, latePolicyStatus: null }), 'missing', 'missing-policy score');
+    a.eq(status({ score: 0, grade: '0', missing: true, latePolicyStatus: null }), 'missing', 'zero');
     a.eq(status({ score: 0, grade: '0', missing: false, latePolicyStatus: null }), 'none', 'a zero alone is never missing');
-    a.eq(status({ score: 0, grade: 'complete', missing: true, latePolicyStatus: null }), 'none', 'complete on a zero-point column is credit');
+    a.eq(status({ score: 5, grade: '5', missing: false, late: true, latePolicyStatus: null }), 'late', 'submitted late');
     a.eq(status({ missing: true, latePolicyStatus: 'none' }), 'none', 'explicit none status clears missing');
     a.eq(status({ score: 0, missing: true, latePolicyStatus: 'missing' }), 'missing', 'explicit missing remains missing');
+    a.eq(status({ score: 9, missing: false, latePolicyStatus: 'missing' }), 'missing', 'an applied status wins over the flag');
   });
 
+  test('a custom grade status is Canvas\'s, never painted over as missing or late', () => {
+    a.eq(status({ customStatusId: '4', missing: true, late: true }), 'custom');
+    a.eq(CGP.gradeOps.PAINTED_STATUSES.indexOf('custom'), -1);
+  });
+
+  test('resubmitted means a real student submission after grading, as in Canvas', () => {
+    const r = CGP.gradeOps.resubmitted;
+    a.eq(r({ submissionType: 'online_upload', workflowState: 'submitted', gradeMatchesCurrent: false }), true);
+    a.eq(r({ submissionType: 'online_upload', workflowState: 'graded', gradeMatchesCurrent: true }), false);
+    a.eq(r({ submissionType: null, workflowState: 'graded', gradeMatchesCurrent: false }), false, 'paper / no submission: nothing was handed in');
+    a.eq(r({ submissionType: 'online_upload', workflowState: 'submitted', gradeMatchesCurrent: false, excused: true }), false);
+    a.eq(r({ submissionType: 'online_upload', workflowState: 'unsubmitted', gradeMatchesCurrent: false }), false);
+  });
 
   test('a status Canvas owns and we do not is reported as-is, never as "none"', () => {
     a.eq(status({ latePolicyStatus: 'extended' }), 'extended');

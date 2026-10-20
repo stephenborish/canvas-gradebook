@@ -15,23 +15,63 @@
     this.api = ctx.api;
     this.model = ctx.model;
     this.settings = ctx.settings;
+    // Where every saved submission goes next: Canvas's own in-page store
+    // (canvas-store.js) and any other tab showing this course (live-sync.js).
+    // Both optional, so the writer still works on its own.
+    this.canvasStore = ctx.canvasStore || null;
+    this.liveSync = ctx.liveSync || null;
     this.inflight = new Set();
     this.gate = CGP.util.pool(3);
     // One chain per cell, so two writes for the SAME submission never overlap
     // (see serialize below). Different cells still run concurrently, bounded
     // by the pool.
     this.chains = new Map();
-    // "assignmentId:userId" -> how many grade/status writes have started on
-    // that cell. A comment remembers the count it began with, so putting
-    // Missing back afterwards never overrides a status the teacher set while
-    // the comment was saving (see keepMissingAfterComment).
-    this.statusWrites = new Map();
   }
 
   var P = GradeWriter.prototype;
 
-  P.statusWriteCount = function (assignmentId, userId) {
-    return this.statusWrites.get(String(assignmentId) + ':' + String(userId)) || 0;
+  /* Is "a grade that earns credit lifts an applied Missing" switched on?
+   * On unless the teacher turned it off (see CGP.DEFAULTS). */
+  P.liftsMissing = function () {
+    var values = this.settings && this.settings.values;
+    return !values || values.liftMissingOnGrade !== false;
+  };
+
+  /* Canvas's answer to a write is the truth for this cell and, on an
+   * assignment graded by group, for every group member in all_submissions:
+   * all of them go into the model, then to Canvas's own store and to other
+   * tabs. opts.comments: the cell's comment thread changed too. */
+  P.handOff = function (answer, startedAt, opts) {
+    opts = opts || {};
+    var self = this;
+    if (!answer || typeof answer !== 'object') return;
+    var cells = [{ assignmentId: String(answer.assignment_id), userId: String(answer.user_id) }];
+    var handed = [answer];
+    if (Array.isArray(answer.all_submissions)) {
+      answer.all_submissions.forEach(function (s) {
+        if (!s || s.assignment_id === undefined || s.user_id === undefined) return;
+        if (String(s.user_id) === cells[0].userId && String(s.assignment_id) === cells[0].assignmentId) return;
+        // A group member's cell: no comments in this payload, so the ones
+        // the model holds are kept (see applySubmission). Their grade moved
+        // too, so their Total is refreshed like the written student's.
+        // Skipped - in the model AND in Canvas's store - when a write to
+        // that member's cell (ours, or Canvas's own) began after this one:
+        // that write's answer is newer than this copy of it.
+        var before = self.model.cell(s.assignment_id, s.user_id);
+        var rec = self.model.applySubmission(s, { staleIfWrittenAfter: startedAt });
+        if (!rec || rec === before) return;
+        handed.push(s);
+        if (!opts.commentsOnly) self.model.queueTotalRefresh(String(s.user_id));
+        cells.push({ assignmentId: String(s.assignment_id), userId: String(s.user_id) });
+      });
+    }
+    if (this.canvasStore) {
+      this.canvasStore.push(handed, {
+        readStartedAt: startedAt,
+        commentsFor: opts.comments ? [cells[0]] : []
+      });
+    }
+    if (this.liveSync) this.liveSync.announce(cells, { commentsOnly: !!opts.commentsOnly });
   };
 
   /** targets: [{assignmentId, userId, parsed}] */
@@ -215,13 +255,11 @@
 
     var currentRec = this.model.cell(assignmentId, userId);
     var KIND = CGP.gradeOps.KIND;
-    // Only meaningful while the cell still carries Missing - explicitly, or
-    // (for a target built from a cell that read Missing before Canvas saved
-    // its grade) with no status at all yet. If anything else has set a status
-    // since (L, M, the Grade Detail Tray, Excused), that newer decision wins.
-    if (target.parsed && target.parsed.kind === KIND.CLEAR_MISSING &&
-      !(currentRec && !currentRec.excused && (currentRec.latePolicyStatus === 'missing' ||
-        (target.fromMissing && !currentRec.latePolicyStatus && !currentRec.late)))) {
+    // Only meaningful while the cell still carries the Missing somebody
+    // applied. If anything else has set a status since (L, M, the Grade
+    // Detail Tray, SpeedGrader, Excused), that newer decision wins.
+    if (target.parsed && target.parsed.kind === KIND.LIFT_MISSING &&
+      !(currentRec && !currentRec.excused && currentRec.latePolicyStatus === 'missing')) {
       this.model.clearLocalWrite(assignmentId, userId, priorWriteMark);
       return Promise.resolve();
     }
@@ -235,9 +273,7 @@
       // merely past due and unsubmitted, and a first M on such a cell must
       // still APPLY the status rather than flip it off.
       wasExplicitMissing: !!(currentRec && currentRec.latePolicyStatus === 'missing'),
-      wasMissing: !!(currentRec && (currentRec.missing || currentRec.latePolicyStatus === 'missing')),
-      // What the cell shows: a grade typed over Missing swaps it for Late.
-      readsMissing: CGP.gradeOps.cellStatus(currentRec) === 'missing',
+      liftMissing: this.liftsMissing(),
       liftMissingTo: target.liftMissingTo || null,
       wasExcused: !!(currentRec && currentRec.excused),
       latePolicyStatus: currentRec ? (currentRec.latePolicyStatus || null) : undefined
@@ -262,8 +298,6 @@
       return Promise.resolve();
     }
     this.inflight.add(dupKey);
-    var statusKey = String(assignmentId) + ':' + String(userId);
-    this.statusWrites.set(statusKey, (this.statusWrites.get(statusKey) || 0) + 1);
 
     var snapshot = this.model.snapshotCell(assignmentId, userId);
     if (!opts.noOptimistic) {
@@ -272,8 +306,11 @@
       this.model.patchCell(assignmentId, userId, optimistic);
     }
 
+    var startedAt = Date.now();
+    var answer = null;
     return this.api.updateSubmission(this.model.courseId, assignmentId, userId, op.form)
       .then(function (submission) {
+        answer = submission;
         self.model.finishLocalWrite(assignmentId, userId);
         var rec = self.model.applySubmission(submission);
         // Awaited, not fired and forgotten: the write is not finished until
@@ -283,7 +320,7 @@
         // Only the M that APPLIES Missing is worth verifying; the second M
         // is a toggle whose whole point is that the status goes away.
         var verified = (op.kind === CGP.gradeOps.KIND.MISSING && !op.toggledOff)
-          ? self.confirmMissing(assignmentId, userId, rec)
+          ? self.confirmMissing(assignmentId, userId, rec, function (retried) { answer = retried; })
           : Promise.resolve(rec);
         return verified.then(function (finalRec) {
           var shown = finalRec || rec;
@@ -311,7 +348,7 @@
           } else if (!opts.noOptimistic) {
             self.model.patchCell(assignmentId, userId, { pending: false });
           }
-          self.syncCanvasStore(shown);
+          self.handOff(answer, startedAt);
           self.model.queueTotalRefresh(userId);
           result.ok++;
         });
@@ -348,13 +385,15 @@
    * back without the status, it is asked for once more on its own, and if
    * Canvas still refuses, the teacher is told plainly instead of being left
    * with a silent no-op. */
-  P.confirmMissing = function (assignmentId, userId, rec) {
+  P.confirmMissing = function (assignmentId, userId, rec, onAnswer) {
     var self = this;
     if (self.isMissing(rec)) return Promise.resolve(rec);
     CGP.diag.warn('write.missingNotAppliedFirstTry', { assignmentId: assignmentId });
     return this.api.updateSubmission(this.model.courseId, assignmentId, userId,
       { 'submission[late_policy_status]': 'missing' })
       .then(function (submission) {
+        // The retry's answer is the newer truth, whatever it says.
+        if (typeof onAnswer === 'function') onAnswer(submission);
         var fresh = self.model.applySubmission(submission);
         if (self.isMissing(fresh)) {
           CGP.diag.bump('write.missingAppliedOnRetry');
@@ -370,73 +409,6 @@
           (err && err.status ? ' (' + err.status + ')' : '') + '.');
         return rec;
       });
-  };
-
-  /* Hand the saved submission to Canvas's own grid (env-bridge.js), so
-   * Canvas's cell, its status colour and icon, and the Grade Detail Tray all
-   * stop showing the status from before this write without a reload. Left
-   * stale, Canvas kept drawing a Missing that M had already taken off - and
-   * a later edit in the tray could even send that stale status back. Only
-   * ids and the status/grade fields go across, never comments or names. */
-  P.syncCanvasStore = function (rec) {
-    if (!rec || typeof window === 'undefined' || typeof window.postMessage !== 'function') return;
-    try {
-      window.postMessage({
-        source: 'cgp-submission-sync',
-        assignmentId: String(rec.assignmentId),
-        userId: String(rec.userId),
-        fields: {
-          latePolicyStatus: rec.latePolicyStatus || null,
-          missing: !!rec.missing,
-          late: !!rec.late,
-          excused: !!rec.excused,
-          grade: rec.grade === undefined ? null : rec.grade,
-          score: rec.score === undefined ? null : rec.score,
-          enteredScore: rec.enteredScore === undefined ? null : rec.enteredScore,
-          workflowState: rec.workflowState || null
-        }
-      }, window.location.origin);
-    } catch (e) { /* never break a write over a repaint */ }
-  };
-
-  /* A comment must never take Missing off a submission. Canvas's own answer
-   * to a comment write is checked: if a cell that carried an explicit Missing
-   * comes back without it, the status is put straight back. A response that
-   * does not say (no late_policy_status field) proves nothing and is left
-   * alone, and so does a cell given any grade or status write since the
-   * comment began (writesBefore: statusWriteCount from then) - removing
-   * Missing meanwhile was the teacher's decision. If putting it back fails,
-   * the cell is re-read so it shows what Canvas really has, and the teacher
-   * is told. */
-  P.keepMissingAfterComment = function (assignmentId, userId, wasExplicitMissing, submission, writesBefore) {
-    var self = this;
-    if (!wasExplicitMissing || !submission || typeof submission !== 'object' ||
-      !Object.prototype.hasOwnProperty.call(submission, 'late_policy_status') ||
-      submission.late_policy_status === 'missing' || submission.excused) {
-      return Promise.resolve(null);
-    }
-    CGP.diag.warn('comment.missingDropped', { assignmentId: assignmentId });
-    return this.serialize(assignmentId, userId, function () {
-      var current = self.model.cell(assignmentId, userId);
-      // Something newer than the comment may have set a status meanwhile.
-      if (writesBefore !== undefined && self.statusWriteCount(assignmentId, userId) !== writesBefore) return null;
-      if (current && current.latePolicyStatus && current.latePolicyStatus !== 'missing') return null;
-      return self.api.updateSubmission(self.model.courseId, assignmentId, userId,
-        { 'submission[late_policy_status]': 'missing' }).then(function (fresh) {
-          var rec = self.model.applySubmission(fresh);
-          self.syncCanvasStore(rec);
-          CGP.diag.bump('comment.missingRestored');
-          return rec;
-        }, function (err) {
-          CGP.diag.error('comment.missingRestoreFailed', { assignmentId: assignmentId, status: err && err.status });
-          CGP.ui.error('Canvas took Missing off this submission when the comment was saved, and ' +
-            'putting it back failed' + (err && err.status ? ' (' + err.status + ')' : '') + '. Press M to mark it Missing again.');
-          return self.model.refreshCell(assignmentId, userId).then(function (rec) {
-            self.syncCanvasStore(rec);
-            return null;
-          });
-        });
-    });
   };
 
   /** Canvas reports the status both ways; either one means Missing stuck. */
@@ -486,15 +458,37 @@
       return Promise.reject(new Error(
         'Comments cannot be added here on an anonymous or moderated assignment - use SpeedGrader instead.'));
     }
-    var before = this.model.cell(assignmentId, userId);
-    var wasExplicitMissing = !!(before && before.latePolicyStatus === 'missing');
-    var writesBefore = this.statusWriteCount(assignmentId, userId);
+    // A comment never touches a status - Canvas's comment write leaves
+    // late_policy_status exactly where it was - so nothing here checks or
+    // re-applies one. (This used to put Missing back whenever the answer
+    // lacked it, which re-marked Missing a teacher had just removed in
+    // SpeedGrader or the tray whenever this page had not heard yet.)
     var priorMark = this.model.markLocalWrite(assignmentId, userId);
+    var startedAt = Date.now();
     return this.api.addComment(this.model.courseId, assignmentId, userId, text).then(function (submission) {
+      // Asked before this comment's own write is marked finished: a grade or
+      // status write of ours that got its answer while the comment was out
+      // may hold a newer status than the comment's answer does.
+      var newerWrite = self.model.localWriteFinishedSince(assignmentId, userId, startedAt);
       self.model.finishLocalWrite(assignmentId, userId);
-      self.model.applyCommentWrite(assignmentId, userId, submission);
+      // Canvas answers with the whole submission, as it stands now: the
+      // truth for its status too (say, Missing taken off in SpeedGrader a
+      // minute ago), unless a grade or status write of ours is still out or
+      // landed meanwhile - then only the thread is taken from it, and that
+      // write's own answer settles the rest.
+      var othersOut = self.model.writeInFlight(assignmentId, userId);
+      var whole = !othersOut && !newerWrite && submission &&
+        submission.assignment_id !== undefined && submission.user_id !== undefined;
+      if (whole) self.model.applySubmission(submission, { commentsAuthoritative: true });
+      else self.model.applyCommentWrite(assignmentId, userId, submission);
       CGP.diag.bump('comment.saved');
-      self.keepMissingAfterComment(assignmentId, userId, wasExplicitMissing, submission, writesBefore);
+      if (whole) {
+        self.handOff(submission, startedAt, { comments: true, commentsOnly: true });
+      } else {
+        var cell = { assignmentId: String(assignmentId), userId: String(userId) };
+        if (self.canvasStore) self.canvasStore.push([], { commentsFor: [cell] });
+        if (self.liveSync) self.liveSync.announce([cell], { commentsOnly: true });
+      }
       return submission;
     }, function (err) {
       self.model.clearLocalWrite(assignmentId, userId, priorMark);
@@ -531,6 +525,11 @@
       self.model.finishLocalWrite(assignmentId, userId);
       self.model.applyCommentDeleted(assignmentId, userId, commentId); // idempotent; wins over a stale response
       CGP.diag.bump('comment.deleted');
+      var cell = { assignmentId: String(assignmentId), userId: String(userId) };
+      // No submission comes back from a delete; an open tray re-reads its
+      // thread, and other tabs re-read the cell.
+      if (self.canvasStore) self.canvasStore.push([], { commentsFor: [cell] });
+      if (self.liveSync) self.liveSync.announce([cell], { commentsOnly: true });
     }
     return this.serialize(assignmentId, userId, function () {
       return self.api.deleteComment(self.model.courseId, assignmentId, userId, commentId).then(done, function (err) {

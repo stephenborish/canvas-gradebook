@@ -2,8 +2,8 @@
  *
  * Registered (manifest.json / background.js) as a MAIN-world document_start
  * script on gradebook URLs only. Content scripts run in an isolated world and
- * can reach neither Canvas's window.ENV nor its SlickGrid object, so this
- * script does two small jobs on their behalf:
+ * can reach neither Canvas's window.ENV, its SlickGrid object nor its
+ * Gradebook object, so this script does these jobs on their behalf:
  *
  *  1. ENV: posts a short allowlist of identifiers ({source:'cgp-env'}) - never
  *     student data, grades or comments - and re-posts the grading period
@@ -15,7 +15,13 @@
  *     request arrives nothing about the grid is changed. Only Canvas's own
  *     gradebook grid (inside #gradebook_grid) is ever patched, only the
  *     student, total and assignment_<id> columns are ever resized, and
- *     maxWidth is never pinned, so teachers can still drag-resize. */
+ *     maxWidth is never pinned, so teachers can still drag-resize.
+ *  3. Canvas's store: every submission the content script saves (or learns
+ *     changed elsewhere) is handed to Canvas's own gradebook store, so its
+ *     cells, Total and Grade Detail Tray show it without a reload. See
+ *     "Canvas's own gradebook store" below.
+ *
+ * Canvas's own writes on this page are watched by write-watch.js. */
 (function () {
   'use strict';
   if (window.__cgpBridgeLoaded) return;
@@ -220,6 +226,13 @@
   function findGrid() {
     var live = window.__cgpLiveGrid;
     if (live && validGrid(live) && gridConnected(live)) return live;
+    // Canvas's own Gradebook object holds the grid outright.
+    var gb = findGradebook();
+    var owned = gb && gb.gradebookGrid && gb.gradebookGrid.grid;
+    if (owned && validGrid(owned)) {
+      window.__cgpLiveGrid = owned;
+      return owned;
+    }
     var root = gradebookRoot();
     if (!root) return null;
 
@@ -720,202 +733,426 @@
     } catch (e) { /* never break the page */ }
   });
 
-  /* A grade or status the content script wrote through the API never reaches
-   * the submission objects Canvas renders its cells (and the Grade Detail
-   * Tray) from, so Canvas kept drawing the status from before the write -
-   * a Missing that M had just taken off, a Late the teacher had removed -
-   * until a reload. On a {source:'cgp-submission-sync'} the named submission
-   * in Canvas's own row data gets the fields Canvas answered with, in
-   * whichever spelling (camelCase or snake_case) that object already uses -
-   * a field it does not have is never added - and only that row re-renders. */
-  var SYNC_FIELDS = {
-    latePolicyStatus: 'late_policy_status',
-    missing: 'missing',
-    late: 'late',
-    excused: 'excused',
-    grade: 'grade',
-    score: 'score',
-    enteredScore: 'entered_score',
-    workflowState: 'workflow_state'
-  };
+  /* ------------------------------------------ Canvas's own gradebook store */
 
-  function syncRowSubmission(grid, assignmentId, userId, fields) {
-    if (!grid || typeof grid.getDataLength !== 'function' || typeof grid.getDataItem !== 'function') return false;
-    var field = 'assignment_' + assignmentId;
+  /* Every grade, status and comment the content script saves goes through
+   * Canvas's REST API, which Canvas's in-page store never hears about. That
+   * store is what Canvas draws its cells, its status colours, its Total and
+   * the Grade Detail Tray from - and what its own editor compares a typed
+   * grade against before deciding whether to save it at all - so until a
+   * reload it went on showing (and comparing against) the old record.
+   *
+   * On a {source:'cgp-submission-sync'} the saved submissions are handed to
+   * Canvas the way Canvas hands its own saves to itself:
+   * Gradebook#updateSubmissionsFromExternal, the method its Grade Detail
+   * Tray's saves land in and its Curve Grades / Set Default Grade dialogs
+   * reach through the 'submissions_updated' topic. That one call merges the
+   * submission into the student's row, refreshes its locked/hidden state,
+   * recalculates the student's grades and re-renders the row and column
+   * header; an open Grade Detail Tray on the same submission is then drawn
+   * again from that store. Only when Canvas's Gradebook object cannot be
+   * reached are the row's own fields patched instead.
+   *
+   * The answer, {source:'cgp-submission-synced'}, says per cell whether
+   * Canvas's store now holds what was sent - the content script drops its
+   * own overlay only on that word. A cell Canvas itself has a write in
+   * flight for (or sent one since this read began) is skipped: Canvas's own
+   * answer is newer and is about to land there anyway. */
+  var STORE_FIELDS = [
+    // Canvas's gradebook submissionsParams.response_fields, less attachments
+    // and proxy_submitter (Object.assign keeps what the row already has),
+    // plus the visibility and postable-comment flags it reads too.
+    'id', 'user_id', 'assignment_id', 'attempt', 'cached_due_date', 'custom_grade_status_id',
+    'entered_grade', 'entered_score', 'excused', 'grade', 'grade_matches_current_submission',
+    'grading_period_id', 'late', 'late_policy_status', 'missing', 'points_deducted', 'posted_at',
+    'proxy_submitter_id', 'redo_request', 'score', 'seconds_late', 'sticker', 'submission_type',
+    'submitted_at', 'workflow_state', 'assignment_visible', 'has_postable_comments'
+  ];
+  // Checked after the hand-off: what Canvas's store must hold for the cell to
+  // show what was sent ("grade" is reformatted on the way in, so it is not).
+  var CHECK_FIELDS = ['excused', 'late_policy_status', 'missing', 'late', 'entered_score', 'score', 'workflow_state', 'entered_grade'];
+
+  function isPrimitive(v) {
+    var t = typeof v;
+    return v === null || t === 'string' || t === 'number' || t === 'boolean';
+  }
+
+  function cleanSubmission(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    if (!/^\d+$/.test(String(raw.assignment_id)) || !/^\d+$/.test(String(raw.user_id))) return null;
+    var out = {};
+    STORE_FIELDS.forEach(function (k) {
+      if (Object.prototype.hasOwnProperty.call(raw, k) && isPrimitive(raw[k])) out[k] = raw[k];
+    });
+    out.assignment_id = String(raw.assignment_id);
+    out.user_id = String(raw.user_id);
+    if (out.id !== undefined && out.id !== null) out.id = String(out.id);
+    return out;
+  }
+
+  function copyOf(sub) {
+    var c = {};
+    Object.keys(sub).forEach(function (k) { c[k] = sub[k]; });
+    return c;
+  }
+
+  function isGradebook(obj) {
+    try {
+      return !!obj && typeof obj === 'object' && !isWindow(obj) &&
+        typeof obj.updateSubmissionsFromExternal === 'function' &&
+        typeof obj.getSubmission === 'function' && typeof obj.student === 'function';
+    } catch (e) { return false; }
+  }
+
+  /* The current HostRoot fiber React keeps on a mount point: legacy render
+   * (what Canvas mounts its gradebook with) or createRoot. */
+  function reactRootFiber(el) {
+    try {
+      var legacy = el._reactRootContainer;
+      var fiberRoot = legacy && (legacy._internalRoot || legacy);
+      if (fiberRoot && fiberRoot.current) return fiberRoot.current;
+      var keys = Object.keys(el);
+      for (var i = 0; i < keys.length; i++) {
+        if (keys[i].indexOf('__reactContainer') !== 0 || !el[keys[i]]) continue;
+        var host = el[keys[i]];
+        // The fiber stored on the element can be the stale alternate; the
+        // root it belongs to always knows the current one.
+        return (host.stateNode && host.stateNode.current) || host;
+      }
+    } catch (e) { /* not a React mount */ }
+    return null;
+  }
+
+  /* Canvas's Gradebook component instance. Canvas renders it into
+   * #gradebook_app (ui/features/gradebook/index.tsx); the SlickGrid it owns
+   * lives in #gradebook_grid, outside that React tree, which is why the grid
+   * search above cannot reach it. A bounded breadth-first walk down from the
+   * root finds it within a few levels. */
+  function findGradebook() {
+    var cached = window.__cgpGradebook;
+    if (isGradebook(cached)) return cached;
+    window.__cgpGradebook = null;
+    if (typeof document === 'undefined' || typeof document.querySelector !== 'function') return null;
+    var mount;
+    try { mount = document.querySelector('#gradebook_app'); } catch (e) { return null; }
+    var start = mount ? reactRootFiber(mount) : null;
+    if (!start) return null;
+    var queue = [start];
+    var seen = new Set();
+    var NodeCtor = typeof Node === 'function' ? Node : null;
+    for (var n = 0; queue.length && n < 5000; n++) {
+      var fiber = queue.shift();
+      if (!fiber || typeof fiber !== 'object' || seen.has(fiber)) continue;
+      seen.add(fiber);
+      var sn = fiber.stateNode;
+      if (sn && !(NodeCtor && sn instanceof NodeCtor) && isGradebook(sn)) {
+        window.__cgpGradebook = sn;
+        return sn;
+      }
+      if (fiber.child) queue.push(fiber.child);
+      if (fiber.sibling) queue.push(fiber.sibling);
+    }
+    return null;
+  }
+
+  function camelCase(snake) {
+    return snake.replace(/_([a-z])/g, function (m, c) { return c.toUpperCase(); });
+  }
+
+  function rowIndexFor(grid, userId) {
+    if (!grid || typeof grid.getDataLength !== 'function' || typeof grid.getDataItem !== 'function') return -1;
     var n = grid.getDataLength();
     for (var i = 0; i < n; i++) {
       var item = grid.getDataItem(i);
-      if (!item || String(item.id) !== String(userId)) continue;
-      var sub = item[field];
-      if (!sub || typeof sub !== 'object') return false;
-      Object.keys(SYNC_FIELDS).forEach(function (camel) {
-        if (!Object.prototype.hasOwnProperty.call(fields, camel)) return;
-        var value = fields[camel];
-        var t = typeof value;
-        if (value !== null && t !== 'string' && t !== 'number' && t !== 'boolean') return;
-        var snake = SYNC_FIELDS[camel];
-        if (camel in sub) sub[camel] = value;
-        if (snake !== camel && snake in sub) sub[snake] = value;
-      });
-      if (typeof grid.invalidateRows === 'function') grid.invalidateRows([i]);
-      else if (typeof grid.invalidate === 'function') grid.invalidate();
-      if (typeof grid.render === 'function') grid.render();
-      return true;
+      if (item && String(item.id) === String(userId)) return i;
     }
-    return false;
+    return -1;
+  }
+
+  /* What Canvas's store holds for one cell right now. */
+  function storedSubmission(gb, assignmentId, userId) {
+    try {
+      if (gb) return gb.getSubmission(String(userId), String(assignmentId)) || null;
+    } catch (e) { /* fall through to the grid's rows */ }
+    var grid = findGrid();
+    var i = rowIndexFor(grid, userId);
+    if (i < 0) return null;
+    var item = grid.getDataItem(i);
+    var sub = item && item['assignment_' + assignmentId];
+    return sub && typeof sub === 'object' ? sub : null;
+  }
+
+  function sameValue(a, b) {
+    var x = a === undefined ? null : a;
+    var y = b === undefined ? null : b;
+    if (x === y) return true;
+    if (x === null || y === null) return false;
+    if (typeof x === 'boolean' || typeof y === 'boolean') return !!x === !!y;
+    if (isFinite(Number(x)) && isFinite(Number(y)) && String(x).trim() !== '' && String(y).trim() !== '') {
+      return Number(x) === Number(y);
+    }
+    return String(x) === String(y);
+  }
+
+  /* Does the store now hold what was sent? Only fields both sides carry are
+   * compared - a row that never had one (in either spelling) has nothing
+   * there to be stale. */
+  function storeHolds(stored, expected) {
+    if (!stored) return false;
+    return CHECK_FIELDS.every(function (k) {
+      if (!Object.prototype.hasOwnProperty.call(expected, k)) return true;
+      var camel = camelCase(k);
+      var have;
+      if (k in stored) have = stored[k];
+      else if (camel in stored) have = stored[camel];
+      else return true;
+      return sameValue(have, expected[k]);
+    });
+  }
+
+  /* Field patch, for when Canvas's Gradebook object cannot be reached: the
+   * row's own submission object gets the new values, in whichever spelling
+   * (snake_case or camelCase) it already uses - a field it does not have is
+   * never added - and only that row re-renders. */
+  function patchRowSubmission(grid, sub) {
+    var i = rowIndexFor(grid, sub.user_id);
+    if (i < 0) return false;
+    var item = grid.getDataItem(i);
+    var target = item && item['assignment_' + sub.assignment_id];
+    if (!target || typeof target !== 'object') return false;
+    Object.keys(sub).forEach(function (snake) {
+      if (snake === 'id' || snake === 'user_id' || snake === 'assignment_id' || snake === 'assignment_visible') return;
+      var camel = camelCase(snake);
+      if (snake in target) target[snake] = sub[snake];
+      if (camel !== snake && camel in target) target[camel] = sub[snake];
+    });
+    // Canvas draws a pass/fail cell from its unformatted copy of the grade.
+    if ('grade' in sub && 'rawGrade' in target) target.rawGrade = sub.grade;
+    if (typeof grid.invalidateRows === 'function') grid.invalidateRows([i]);
+    else if (typeof grid.invalidate === 'function') grid.invalidate();
+    if (typeof grid.render === 'function') grid.render();
+    return true;
+  }
+
+  /* Hands the submissions to Canvas's store. Returns how each one went in:
+   * 'gradebook', 'pubsub' or 'rows' (or nothing). A submission without
+   * assignment_visible is never given to Canvas's own method, which would
+   * read the missing flag as "no longer assigned to this student". */
+  function ingest(gb, subs) {
+    var how = [];
+    var direct = [];
+    var rest = [];
+    subs.forEach(function (s, i) {
+      if (typeof s.assignment_visible === 'boolean') direct.push(i); else rest.push(i);
+    });
+    if (direct.length) {
+      var payload = direct.map(function (i) { return copyOf(subs[i]); });
+      var jq = window.jQuery || window.$;
+      try {
+        if (gb) {
+          gb.updateSubmissionsFromExternal(payload);
+          direct.forEach(function (i) { how[i] = 'gradebook'; });
+        } else if (jq && typeof jq.publish === 'function') {
+          jq.publish('submissions_updated', [payload]);
+          direct.forEach(function (i) { how[i] = 'pubsub'; });
+        } else {
+          rest = rest.concat(direct);
+        }
+      } catch (e) {
+        rest = rest.concat(direct);
+      }
+    }
+    if (rest.length) {
+      var grid = findGrid();
+      rest.forEach(function (i) {
+        try { if (grid && patchRowSubmission(grid, subs[i])) how[i] = 'rows'; } catch (e) { /* leave it */ }
+      });
+    }
+    return how;
+  }
+
+  /* An open Grade Detail Tray is a snapshot of the store taken when it was
+   * drawn; it is drawn again when the submission it shows has just changed,
+   * and its comment list is re-read when that submission's comments did. */
+  function refreshOpenTray(gb, changedCells, commentCells) {
+    if (!gb || typeof gb.getSubmissionTrayState !== 'function') return;
+    try {
+      var tray = gb.getSubmissionTrayState();
+      if (!tray || !tray.open || !tray.studentId || !tray.assignmentId) return;
+      var isTray = function (c) {
+        return String(c.userId) === String(tray.studentId) && String(c.assignmentId) === String(tray.assignmentId);
+      };
+      if (commentCells.some(isTray) && typeof gb.loadSubmissionComments === 'function') {
+        gb.loadSubmissionComments(String(tray.assignmentId), String(tray.studentId));
+      }
+      if (changedCells.some(isTray) && typeof gb.renderSubmissionTray === 'function') {
+        gb.renderSubmissionTray(gb.student(String(tray.studentId)));
+      }
+    } catch (e) { /* the tray stays as drawn */ }
+  }
+
+  /* Has Canvas sent its own write for this cell that is newer than a read
+   * that began at readStartedAt (write-watch.js keeps the record)? */
+  function canvasWriteNewer(assignmentId, userId, readStartedAt) {
+    var watch = window.__cgpNativeWrites;
+    if (!watch || typeof watch.state !== 'function') return false;
+    try {
+      var st = watch.state(assignmentId, userId);
+      if (!st) return false;
+      if (st.pending > 0) return true;
+      return !!(readStartedAt && st.lastStartedAt && st.lastStartedAt >= readStartedAt);
+    } catch (e) { return false; }
+  }
+
+  var syncQueue = [];
+  var syncTimer = null;
+
+  /* A hand-off re-renders the student's row, which reloads (Canvas's
+   * updateCell) or tears down (SlickGrid's invalidateRows, the row-patch
+   * fallback) an editor open in it - so a grade half-typed in that row could
+   * silently vanish the moment a save from SpeedGrader, another tab or a
+   * refocus re-read landed. Only an editor holding an UNSAVED change is
+   * waited for: Canvas keeps an editor open on whichever grade cell is
+   * active, so waiting on any open editor would hold back every save for a
+   * row being graded across with Tab. If the change is still unsaved after
+   * EDIT_WAIT_TRIES, that row is skipped (the content script's overlay then
+   * simply stays) rather than lose what was typed. */
+  var EDIT_WAIT_MS = 300;
+  var EDIT_WAIT_TRIES = 100;  // ~30 s, inside canvas-store.js's wait for a reply
+
+  function editingStudent(gb) {
+    try {
+      var grid = (gb && gb.gradebookGrid && gb.gradebookGrid.grid) || findGrid();
+      var editor = grid && typeof grid.getCellEditor === 'function' ? grid.getCellEditor() : null;
+      if (!editor) return null;
+      // Nothing typed: reloading the editor loses nothing (and shows the new
+      // grade). An editor that cannot say is treated as holding a change.
+      if (typeof editor.isValueChanged === 'function' && !editor.isValueChanged()) return null;
+      var active = typeof grid.getActiveCell === 'function' ? grid.getActiveCell() : null;
+      if (!active || typeof grid.getDataItem !== 'function') return null;
+      var item = grid.getDataItem(active.row);
+      return item && item.id !== undefined && item.id !== null ? String(item.id) : null;
+    } catch (e) { return null; }
+  }
+
+  function touchesStudent(message, userId) {
+    return (Array.isArray(message.submissions) ? message.submissions : []).some(function (s) {
+      return !!s && String(s.user_id) === userId;
+    });
+  }
+
+  function flushSync() {
+    syncTimer = null;
+    var gb = findGradebook();
+    var editing = editingStudent(gb);
+    var batch = [];
+    var held = [];
+    syncQueue.forEach(function (m) {
+      if (editing && (m.editWaits || 0) < EDIT_WAIT_TRIES && touchesStudent(m, editing)) {
+        m.editWaits = (m.editWaits || 0) + 1;
+        held.push(m);
+      } else {
+        batch.push(m);
+      }
+    });
+    syncQueue = held;
+    if (held.length) syncTimer = setTimeout(flushSync, EDIT_WAIT_MS);
+    var accepted = [];
+    var expected = [];
+    var owners = [];
+    var replies = batch.map(function (m) { return { source: 'cgp-submission-synced', id: m.id, results: [] }; });
+    var commentCells = [];
+    batch.forEach(function (m, mi) {
+      (Array.isArray(m.commentsFor) ? m.commentsFor : []).forEach(function (c) {
+        if (c && /^\d+$/.test(String(c.assignmentId)) && /^\d+$/.test(String(c.userId))) commentCells.push(c);
+      });
+      (Array.isArray(m.submissions) ? m.submissions : []).forEach(function (raw) {
+        var sub = cleanSubmission(raw);
+        if (!sub) return;
+        var cell = { assignmentId: sub.assignment_id, userId: sub.user_id };
+        if (editing && cell.userId === editing) {
+          cell.skipped = 'editing';
+          replies[mi].results.push(cell);
+          return;
+        }
+        if (canvasWriteNewer(cell.assignmentId, cell.userId, Number(m.readStartedAt) || 0)) {
+          cell.skipped = 'canvas-write';
+          replies[mi].results.push(cell);
+          return;
+        }
+        accepted.push(sub);
+        expected.push(copyOf(sub));
+        owners.push({ reply: replies[mi], cell: cell });
+      });
+    });
+    var how = accepted.length ? ingest(gb, accepted) : [];
+    var changed = [];
+    owners.forEach(function (o, i) {
+      o.cell.via = how[i] || null;
+      o.cell.stored = !!how[i] && storeHolds(storedSubmission(gb, o.cell.assignmentId, o.cell.userId), expected[i]);
+      if (how[i]) changed.push(o.cell);
+      o.reply.results.push(o.cell);
+    });
+    refreshOpenTray(gb, changed, commentCells);
+    replies.forEach(function (r) { if (r.id) post(r); });
   }
 
   window.addEventListener('message', function (event) {
     var message = event.data;
     if (event.source !== window || !message || message.source !== 'cgp-submission-sync') return;
-    if (!/^\d+$/.test(String(message.assignmentId)) || !/^\d+$/.test(String(message.userId))) return;
-    if (!message.fields || typeof message.fields !== 'object') return;
     try {
-      syncRowSubmission(findGrid(), String(message.assignmentId), String(message.userId), message.fields);
+      syncQueue.push({
+        id: typeof message.id === 'string' ? message.id : null,
+        submissions: message.submissions,
+        commentsFor: message.commentsFor,
+        readStartedAt: message.readStartedAt
+      });
+      // Coalesced: a paste lands as many answers in quick succession, and
+      // Canvas recalculates and re-renders once per hand-off.
+      if (!syncTimer) syncTimer = setTimeout(flushSync, 0);
     } catch (e) { /* never break the page */ }
   });
 
-  /* ------------------------------------------------- Canvas's own writes */
+  /* ----------------------------------------------- opening the Grade Detail Tray */
 
-  /* A grade, status or comment saved through Canvas's OWN UI - the Grade
-   * Detail Tray above all - goes into Canvas's store but never reaches the
-   * content script's model, which only hears about its own API writes. The
-   * model then kept its old record: no comment bubble, no M badge, and the
-   * status painter even stripped Canvas's own fresh "missing" class because
-   * the stale record said the cell had no status. So the page's own
-   * successful submission writes are watched here and only their ids -
-   * never bodies or responses - are posted as {source:'cgp-native-write'};
-   * the content script re-reads that one cell from the API. The content
-   * script's own requests run in the isolated world and never pass through
-   * these wrappers. */
-  var SUBMISSION_URL = /\/api\/v1\/courses\/(\d+)\/assignments\/(\d+)\/submissions\/(\d+)(?:[\/?#]|$)/;
-  var LEGACY_UPDATE_URL = /\/courses\/(\d+)\/gradebook\/update_submission(?:[?#]|$)/;
-  var COMMENT_URL = /\/submission_comments\/(\d+)(?:[\/?#]|$)/;
-
-  function bodyField(body, name) {
+  /* Canvas's own arrow in a grade cell opens the tray WITHOUT committing
+   * what is still typed in that cell's editor
+   * (AssignmentRowCell#handleToggleTrayButtonClick), so a grade typed and
+   * then double-clicked to look at opened the tray on the grade from BEFORE
+   * the edit. On a {source:'cgp-open-tray'} the open edit is committed
+   * through SlickGrid's own editor lock first - Canvas's own save, exactly as
+   * Enter would make it - and the tray is opened through Canvas's own
+   * Gradebook#openSubmissionTray, which draws it with that grade pending and
+   * again once Canvas has saved it. Answered with {source:
+   * 'cgp-open-tray-result', ok}; when it is not ok, the content script
+   * clicks Canvas's arrow as before. */
+  function openTray(assignmentId, userId) {
+    var gb = findGradebook();
+    if (!gb || typeof gb.openSubmissionTray !== 'function') return { ok: false };
+    var committed = null;
     try {
-      if (!body) return null;
-      if (typeof body === 'string') {
-        if (/^\s*\{/.test(body)) {
-          var json = JSON.parse(body);
-          var path = name.replace(/\]/g, '').split('[');
-          for (var i = 0; i < path.length && json; i++) json = json[path[i]];
-          return json === undefined || json === null ? null : String(json);
-        }
-        var params = new URLSearchParams(body);
-        return params.get(name);
+      var grid = gb.gradebookGrid && gb.gradebookGrid.grid;
+      var lock = grid && typeof grid.getEditorLock === 'function' ? grid.getEditorLock() : null;
+      if (lock && typeof lock.isActive === 'function' && lock.isActive() && typeof lock.commitCurrentEdit === 'function') {
+        committed = lock.commitCurrentEdit() !== false;
       }
-      if (typeof body.get === 'function') {
-        var v = body.get(name);
-        return v === null || v === undefined ? null : String(v);
-      }
-    } catch (e) { /* unreadable body: nothing to report */ }
-    return null;
-  }
-
-  /* Does this write carry a comment and nothing else (no grade, no status)?
-   * Lets the content script make sure a comment never takes Missing off. */
-  function commentOnly(body) {
+    } catch (e) { committed = false; }
     try {
-      if (!body) return false;
-      var keys = [];
-      if (typeof body === 'string') {
-        if (/^\s*\{/.test(body)) {
-          var json = JSON.parse(body) || {};
-          return !!json.comment && !json.submission;
-        }
-        new URLSearchParams(body).forEach(function (v, k) { keys.push(k); });
-      } else if (typeof body.forEach === 'function' && typeof body.get === 'function') {
-        body.forEach(function (v, k) { keys.push(k); });
-      } else {
-        return false;
-      }
-      return keys.some(function (k) { return /^comment\[/.test(k); }) &&
-        !keys.some(function (k) { return /^submission\[/.test(k); });
-    } catch (e) { return false; }
+      gb.openSubmissionTray(String(userId), String(assignmentId));
+    } catch (e) {
+      return { ok: false, committed: committed };
+    }
+    return { ok: true, committed: committed };
   }
 
-  function nativeWriteTarget(method, url, body) {
-    method = String(method || 'GET').toUpperCase();
-    if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return null;
-    var href;
-    try {
-      var u = new URL(String(url), window.location.href);
-      if (u.origin !== window.location.origin) return null;
-      href = u.pathname + u.search;
-    } catch (e) { return null; }
-    var m = SUBMISSION_URL.exec(href);
-    if (m) {
-      var target = { courseId: m[1], assignmentId: m[2], userId: m[3] };
-      if (commentOnly(body)) target.commentOnly = true;
-      return target;
-    }
-    m = LEGACY_UPDATE_URL.exec(href);
-    if (m) {
-      var aid = bodyField(body, 'submission[assignment_id]');
-      var uid = bodyField(body, 'submission[user_id]');
-      if (aid && uid && /^\d+$/.test(aid) && /^\d+$/.test(uid)) return { courseId: m[1], assignmentId: aid, userId: uid };
-      return null;
-    }
-    m = COMMENT_URL.exec(href);
-    if (m) return { commentId: m[1] };
-    return null;
-  }
-
-  function reportNativeWrite(target) {
-    var message = { source: 'cgp-native-write' };
-    Object.keys(target).forEach(function (k) { message[k] = target[k]; });
-    post(message);
-  }
-
-  function watchNativeWrites() {
-    var XHR = window.XMLHttpRequest;
-    if (XHR && XHR.prototype && !XHR.prototype.__cgpWatched) {
-      var origOpen = XHR.prototype.open;
-      var origSend = XHR.prototype.send;
-      XHR.prototype.open = function (method, url) {
-        try { this.__cgpReq = { method: method, url: url }; } catch (e) { /* ignore */ }
-        return origOpen.apply(this, arguments);
-      };
-      XHR.prototype.send = function (body) {
-        try {
-          var req = this.__cgpReq;
-          // Kept on the request, not captured per send: a reused XHR must
-          // report only the write it is finishing now, never an earlier one.
-          this.__cgpTarget = (req && nativeWriteTarget(req.method, req.url, body)) || null;
-          if (this.__cgpTarget && !this.__cgpListening) {
-            this.__cgpListening = true;
-            this.addEventListener('loadend', function () {
-              var target = this.__cgpTarget;
-              this.__cgpTarget = null;
-              if (target && this.status >= 200 && this.status < 300) reportNativeWrite(target);
-            });
-          }
-        } catch (e) { /* never break Canvas's request */ }
-        return origSend.apply(this, arguments);
-      };
-      XHR.prototype.__cgpWatched = true;
-    }
-    var origFetch = window.fetch;
-    if (typeof origFetch === 'function' && !origFetch.__cgpWatched) {
-      var wrapped = function (input, init) {
-        var promise = origFetch.apply(this, arguments);
-        try {
-          var isRequest = input && typeof input === 'object' && typeof input.url === 'string';
-          var method = (init && init.method) || (isRequest ? input.method : 'GET');
-          var target = nativeWriteTarget(method, isRequest ? input.url : input, init && init.body);
-          if (target) {
-            promise.then(function (res) {
-              if (res && res.ok) reportNativeWrite(target);
-            }, function () { /* failed write: nothing changed */ });
-          }
-        } catch (e) { /* never break Canvas's request */ }
-        return promise;
-      };
-      wrapped.__cgpWatched = true;
-      window.fetch = wrapped;
-    }
-  }
+  window.addEventListener('message', function (event) {
+    var message = event.data;
+    if (event.source !== window || !message || message.source !== 'cgp-open-tray') return;
+    if (!/^\d+$/.test(String(message.assignmentId)) || !/^\d+$/.test(String(message.userId))) return;
+    var result;
+    try { result = openTray(String(message.assignmentId), String(message.userId)); } catch (e) { result = { ok: false }; }
+    post({ source: 'cgp-open-tray-result', id: message.id, ok: !!result.ok, committed: result.committed === undefined ? null : result.committed });
+  });
 
   pollEnv();
   if (onGradebookPage()) {
@@ -925,7 +1162,6 @@
       }
     } catch (e) { /* ignore */ }
     startSearch();
-    try { watchNativeWrites(); } catch (e) { /* never break the page */ }
     if (typeof setInterval === 'function') {
       setInterval(function () { pollEnv(); watchGrid(); }, POLL_EVERY_MS);
     }
