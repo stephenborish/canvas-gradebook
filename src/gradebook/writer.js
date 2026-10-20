@@ -51,8 +51,10 @@
         if (!s || s.assignment_id === undefined || s.user_id === undefined) return;
         if (String(s.user_id) === cells[0].userId && String(s.assignment_id) === cells[0].assignmentId) return;
         // A group member's cell: no comments in this payload, so the ones
-        // the model holds are kept (see applySubmission).
+        // the model holds are kept (see applySubmission). Their grade moved
+        // too, so their Total is refreshed like the written student's.
         self.model.applySubmission(s);
+        if (!opts.commentsOnly) self.model.queueTotalRefresh(String(s.user_id));
         cells.push({ assignmentId: String(s.assignment_id), userId: String(s.user_id) });
       });
     }

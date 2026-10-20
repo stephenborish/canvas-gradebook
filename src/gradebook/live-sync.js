@@ -147,6 +147,10 @@
     this._timer = null;
     this._lastRefocusAt = 0;
     this._gate = CGP.util.pool(3);
+    // Re-reads after a column-wide write of Canvas's own (catchUpColumn):
+    // straight away, and once Canvas's background job has had time.
+    this._catchUpDelays = ctx.catchUpDelays || [800, 4000];
+    this._catchUpTimers = new Map();
   }
 
   var G = GradebookFollower.prototype;
@@ -222,6 +226,27 @@
       }));
     });
     return Promise.all(jobs.map(function (j) { return j.catch(function () { return null; }); }));
+  };
+
+  /* Canvas itself saved a whole column on this page (its own posting, its
+   * Set Default Grade / Curve Grades dialogs): Canvas's store already has
+   * the new grades, so nothing is handed to it - but the model is re-read,
+   * and the Total of every student whose grade moved is refreshed, or the
+   * frozen Total would keep the course score from before. */
+  G.catchUpColumn = function (assignmentId) {
+    var self = this;
+    var id = String(assignmentId);
+    (this._catchUpTimers.get(id) || []).forEach(clearTimeout);
+    this._catchUpTimers.set(id, this._catchUpDelays.map(function (delay) {
+      return setTimeout(function () {
+        var model = self.model;
+        if (!model || !model.ready) return;
+        model.resyncAssignments([id]).then(function (r) {
+          ((r && r.submissions) || []).forEach(function (s) { model.queueTotalRefresh(String(s.user_id)); });
+          if (r && r.submissions.length && self.requestPaint) self.requestPaint();
+        });
+      }, delay);
+    }));
   };
 
   /* Back in view: whatever changed while nobody was looking, in the columns

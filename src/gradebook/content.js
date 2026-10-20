@@ -103,16 +103,6 @@
         if (totals) model.queueTotalRefresh(userId);
       }, 250) };
     }
-    // A write naming a column but no student (Canvas's own posting, its Set
-    // Default Grade / Curve Grades dialogs): the column is re-read, once
-    // straight away and once after Canvas's background job has had time.
-    var columnRefresh = {};
-    function refreshColumnAfterNativeWrite(assignmentId) {
-      (columnRefresh[assignmentId] || []).forEach(clearTimeout);
-      columnRefresh[assignmentId] = [800, 4000].map(function (delay) {
-        return setTimeout(function () { model.resyncAssignments([assignmentId]); }, delay);
-      });
-    }
     window.addEventListener('message', function (e) {
       if (e.source !== window || !e.data || e.data.source !== 'cgp-native-write') return;
       var d = e.data;
@@ -126,7 +116,9 @@
       }
       if (String(d.courseId) !== String(courseId) || !/^\d+$/.test(String(d.assignmentId))) return;
       if (!/^\d+$/.test(String(d.userId))) {
-        refreshColumnAfterNativeWrite(String(d.assignmentId));
+        // A write naming a column but no student (Canvas's own posting, its
+        // Set Default Grade / Curve Grades dialogs): see catchUpColumn.
+        if (follower) follower.catchUpColumn(String(d.assignmentId));
         liveSync.announce([{ assignmentId: String(d.assignmentId) }]);
         return;
       }

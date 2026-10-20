@@ -127,8 +127,11 @@ suite('a saved grade reaches the store, the model and the other tabs', (test) =>
       canvasStore: { pushAnswer: (answer, opts) => { pushed.push({ answer, opts }); return Promise.resolve(null); } },
       liveSync: { announce: (cells) => announced.push(cells) }
     });
+    const totals = [];
+    m.queueTotalRefresh = (uid) => totals.push(uid);
     const before = Date.now();
     await w.apply([{ assignmentId: '50', userId: '10', parsed: CGP.gradeOps.parseToken('6') }]);
+    a.deep(totals.slice().sort(), ['10', '11'], 'every group member\'s Total, not just the written one');
     a.eq(pushed.length, 1);
     a.ok(pushed[0].opts.readStartedAt >= before, 'stamped with when the write went out');
     a.deep(announced[0], [{ assignmentId: '50', userId: '10' }, { assignmentId: '50', userId: '11' }]);
@@ -271,6 +274,23 @@ suite('the gradebook follows changes made elsewhere', (test) => {
     await f.flush();
     a.eq(columnReads, 1);
     a.eq(pushed[0].subs.length, 1);
+  });
+
+  test('a column Canvas saved itself (Set Default Grade, Curve) re-reads it and refreshes the moved Totals', async () => {
+    const m = model({ submissionsForAssignments: () => Promise.resolve([
+      { id: '1', assignment_id: '50', user_id: '10', score: 9, workflow_state: 'graded' },
+      { id: '2', assignment_id: '50', user_id: '11', score: 4, workflow_state: 'graded' }
+    ]) });
+    m.everLoadedAssignments.add('50');
+    m.applySubmission({ id: '2', assignment_id: '50', user_id: '11', score: 4, workflow_state: 'graded' }, { silent: true });
+    const totals = [];
+    m.queueTotalRefresh = (uid) => totals.push(uid);
+    const { f, pushed } = follower(m, { catchUpDelays: [0] });
+    f.catchUpColumn('50');
+    await tick(20);
+    a.deep(totals, ['10'], 'only the student whose grade moved');
+    a.eq(pushed.length, 0, 'Canvas\'s store already has its own save');
+    a.eq(m.cell('50', '10').score, 9);
   });
 
   test('nothing is read before the course has loaded', async () => {
