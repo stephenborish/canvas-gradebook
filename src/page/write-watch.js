@@ -37,6 +37,10 @@
   // worth a re-read.
   var GRADING_WORDS = /grade|score|submission|comment|status|excuse|rubric|assess|post|hide|sticker|late|missing|extend/i;
   var MUTATING_NAME = /^(update|create|delete|post|hide|set|save|add|remove|submit|grade|excuse|mark|reassign)/i;
+  // Read receipts: MarkSubmissionCommentsRead, UpdateSubmissionsReadState,
+  // and the REST .../submissions/:id/read(/:component).
+  var READ_RECEIPT_OP = /Read(?:State)?$/;
+  var READ_RECEIPT_URL = /\/submissions\/[^\/?#]+\/read(?:[\/?#]|$)/;
 
   function onWatchedPage() {
     try { return PAGE_PATH.test(String(window.location.pathname || '')); } catch (e) { return false; }
@@ -51,20 +55,24 @@
     return m ? m[1] : null;
   }
 
-  /* The assignment and student SpeedGrader is showing: ?assignment_id= and
-   * ?student_id=, or classic SpeedGrader's #{"student_id":"..."} hash. */
+  /* The assignment and student SpeedGrader is showing: ?assignment_id=, and
+   * classic SpeedGrader's #{"student_id":"..."} hash or ?student_id=. The
+   * hash comes first: classic SpeedGrader moves between students by hash,
+   * leaving ?student_id= naming whoever it was opened on (and
+   * speedgrader/content.js reads the student from the hash for the same
+   * reason). */
   function speedGraderIds() {
     var out = { assignmentId: null, userId: null };
     try {
       if (!SPEEDGRADER_PATH.test(String(window.location.pathname || ''))) return out;
       var q = new URLSearchParams(String(window.location.search || ''));
       if (/^\d+$/.test(q.get('assignment_id') || '')) out.assignmentId = q.get('assignment_id');
-      if (/^\d+$/.test(q.get('student_id') || '')) out.userId = q.get('student_id');
-      if (!out.userId) {
+      try {
         var hash = decodeURIComponent(String(window.location.hash || '').replace(/^#/, ''));
         var m = /"student_id"\s*:\s*"?(\d+)"?/.exec(hash);
         if (m) out.userId = m[1];
-      }
+      } catch (e) { /* unreadable hash */ }
+      if (!out.userId && /^\d+$/.test(q.get('student_id') || '')) out.userId = q.get('student_id');
     } catch (e) { /* ids stay unknown */ }
     return out;
   }
@@ -167,8 +175,14 @@
       if (target || !op || typeof op !== 'object') return;
       var query = String(op.query || '');
       var name = String(op.operationName || '');
-      var mutation = /^\s*mutation\b/.test(query.replace(/^\s*#[^\n]*\n/g, '')) || (!query && MUTATING_NAME.test(name));
+      // Comments stripped; the operation can still come after fragment
+      // definitions printed ahead of it in the same document.
+      var doc = query.replace(/#[^\n]*/g, '');
+      var mutation = /(?:^|\})\s*mutation\b/.test(doc) || (!query && MUTATING_NAME.test(name));
       if (!mutation || !GRADING_WORDS.test(name + ' ' + query.slice(0, 400))) return;
+      // A read receipt (comments or a submission marked read) changes
+      // nothing a grade cell shows.
+      if (READ_RECEIPT_OP.test(name || ((/\bmutation\s+(\w+)/.exec(doc) || [])[1] || ''))) return;
       var vars = op.variables || {};
       var sg = speedGraderIds();
       var aid = findVar(vars, ['assignmentId', 'assignment_id', 'assignmentLid'], 'Assignment') || sg.assignmentId;
@@ -189,6 +203,7 @@
       if (u.origin !== window.location.origin) return null;
       href = u.pathname + u.search;
     } catch (e) { return null; }
+    if (READ_RECEIPT_URL.test(u.pathname)) return null;
     var m = SUBMISSION_URL.exec(href);
     if (m) {
       var target = { courseId: m[1], assignmentId: m[2], userId: m[3] };
@@ -278,16 +293,23 @@
       var origOpen = XHR.prototype.open;
       var origSend = XHR.prototype.send;
       XHR.prototype.open = function (method, url) {
-        try { this.__cgpReq = { method: method, url: url }; } catch (e) { /* ignore */ }
+        try {
+          // Re-opened with a watched write still out: open() abandons that
+          // request without any loadend, so it is settled here or the cell
+          // would read as "Canvas has a write in flight" for good.
+          if (this.__cgpTarget) { settled(this.__cgpTarget); this.__cgpTarget = null; }
+          this.__cgpReq = { method: method, url: url };
+        } catch (e) { /* ignore */ }
         return origOpen.apply(this, arguments);
       };
       XHR.prototype.send = function (body) {
+        var mine = null;
         try {
           var req = this.__cgpReq;
           // Kept on the request, not captured per send: a reused XHR must
           // report only the write it is finishing now, never an earlier one.
           this.__cgpTarget = (req && writeTarget(req.method, req.url, body)) || null;
-          if (this.__cgpTarget) started(this.__cgpTarget);
+          if (this.__cgpTarget) { started(this.__cgpTarget); mine = this.__cgpTarget; }
           if (this.__cgpTarget && !this.__cgpListening) {
             this.__cgpListening = true;
             this.addEventListener('loadend', function () {
@@ -299,7 +321,16 @@
             });
           }
         } catch (e) { /* never break Canvas's request */ }
-        return origSend.apply(this, arguments);
+        try {
+          return origSend.apply(this, arguments);
+        } catch (err) {
+          // Never sent (send() before open(), or twice): no loadend will come.
+          if (mine) {
+            settled(mine);
+            if (this.__cgpTarget === mine) this.__cgpTarget = null;
+          }
+          throw err;
+        }
       };
       XHR.prototype.__cgpWatched = true;
     }
@@ -313,7 +344,13 @@
           target = writeTarget(method, isRequest ? input.url : input, init && init.body);
           if (target) started(target);
         } catch (e) { target = null; }
-        var promise = origFetch.apply(this, arguments);
+        var promise;
+        try {
+          promise = origFetch.apply(this, arguments);
+        } catch (err) {
+          if (target) settled(target);   // never sent: nothing will settle it
+          throw err;
+        }
         if (target) {
           try {
             promise.then(function (res) {

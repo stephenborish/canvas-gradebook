@@ -201,10 +201,14 @@
     if (!model || !model.ready) { this._queue.clear(); return Promise.resolve(null); }
     var columns = [];
     var cells = [];
+    // Comment changes inside columns read whole: an open tray on one of
+    // them still re-reads its thread.
+    var columnComments = [];
     this._queue.forEach(function (entry, aid) {
       if (!model.assignment(aid)) return;
       if (entry.whole || entry.users.size > CELL_LIMIT) {
         columns.push(aid);
+        entry.comments.forEach(function (uid) { columnComments.push({ assignmentId: aid, userId: uid }); });
         return;
       }
       entry.users.forEach(function (uid) {
@@ -215,7 +219,7 @@
     var jobs = [];
     if (columns.length) {
       jobs.push(model.resyncAssignments(columns).then(function (r) {
-        if (r) self.deliver(r.submissions, r.readStartedAt, []);
+        if (r) self.deliver(r.submissions, r.readStartedAt, columnComments);
       }));
     }
     cells.forEach(function (c) {
@@ -280,13 +284,16 @@
     if (!loc) return out;
     var q = /[?&]assignment_id=(\d+)/.exec(loc.search || '');
     if (q) out.assignmentId = q[1];
-    var s = /[?&]student_id=(\d+)/.exec(loc.search || '');
-    if (s) out.userId = s[1];
+    // The hash first, as write-watch.js and speedgrader/content.js read it:
+    // classic SpeedGrader moves between students by hash, leaving
+    // ?student_id= naming whoever it was opened on.
+    try {
+      var m = /"student_id"\s*:\s*"?(\d+)"?/.exec(decodeURIComponent(String(loc.hash || '').replace(/^#/, '')));
+      if (m) out.userId = m[1];
+    } catch (e) { /* unreadable hash */ }
     if (!out.userId) {
-      try {
-        var m = /"student_id"\s*:\s*"?(\d+)"?/.exec(decodeURIComponent(String(loc.hash || '').replace(/^#/, '')));
-        if (m) out.userId = m[1];
-      } catch (e) { /* unreadable hash */ }
+      var s = /[?&]student_id=(\d+)/.exec(loc.search || '');
+      if (s) out.userId = s[1];
     }
     return out;
   }

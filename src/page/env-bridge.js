@@ -1007,11 +1007,56 @@
   var syncQueue = [];
   var syncTimer = null;
 
+  /* A hand-off re-renders the student's row, which reloads (Canvas's
+   * updateCell) or tears down (SlickGrid's invalidateRows, the row-patch
+   * fallback) an editor open in it - so a grade half-typed in that row could
+   * silently vanish the moment a save from SpeedGrader, another tab or a
+   * refocus re-read landed. Only an editor holding an UNSAVED change is
+   * waited for: Canvas keeps an editor open on whichever grade cell is
+   * active, so waiting on any open editor would hold back every save for a
+   * row being graded across with Tab. If the change is still unsaved after
+   * EDIT_WAIT_TRIES, that row is skipped (the content script's overlay then
+   * simply stays) rather than lose what was typed. */
+  var EDIT_WAIT_MS = 300;
+  var EDIT_WAIT_TRIES = 100;  // ~30 s, inside canvas-store.js's wait for a reply
+
+  function editingStudent(gb) {
+    try {
+      var grid = (gb && gb.gradebookGrid && gb.gradebookGrid.grid) || findGrid();
+      var editor = grid && typeof grid.getCellEditor === 'function' ? grid.getCellEditor() : null;
+      if (!editor) return null;
+      // Nothing typed: reloading the editor loses nothing (and shows the new
+      // grade). An editor that cannot say is treated as holding a change.
+      if (typeof editor.isValueChanged === 'function' && !editor.isValueChanged()) return null;
+      var active = typeof grid.getActiveCell === 'function' ? grid.getActiveCell() : null;
+      if (!active || typeof grid.getDataItem !== 'function') return null;
+      var item = grid.getDataItem(active.row);
+      return item && item.id !== undefined && item.id !== null ? String(item.id) : null;
+    } catch (e) { return null; }
+  }
+
+  function touchesStudent(message, userId) {
+    return (Array.isArray(message.submissions) ? message.submissions : []).some(function (s) {
+      return !!s && String(s.user_id) === userId;
+    });
+  }
+
   function flushSync() {
     syncTimer = null;
-    var batch = syncQueue;
-    syncQueue = [];
     var gb = findGradebook();
+    var editing = editingStudent(gb);
+    var batch = [];
+    var held = [];
+    syncQueue.forEach(function (m) {
+      if (editing && (m.editWaits || 0) < EDIT_WAIT_TRIES && touchesStudent(m, editing)) {
+        m.editWaits = (m.editWaits || 0) + 1;
+        held.push(m);
+      } else {
+        batch.push(m);
+      }
+    });
+    syncQueue = held;
+    if (held.length) syncTimer = setTimeout(flushSync, EDIT_WAIT_MS);
     var accepted = [];
     var expected = [];
     var owners = [];
@@ -1025,6 +1070,11 @@
         var sub = cleanSubmission(raw);
         if (!sub) return;
         var cell = { assignmentId: sub.assignment_id, userId: sub.user_id };
+        if (editing && cell.userId === editing) {
+          cell.skipped = 'editing';
+          replies[mi].results.push(cell);
+          return;
+        }
         if (canvasWriteNewer(cell.assignmentId, cell.userId, Number(m.readStartedAt) || 0)) {
           cell.skipped = 'canvas-write';
           replies[mi].results.push(cell);

@@ -46,6 +46,7 @@
     var self = this;
     if (!answer || typeof answer !== 'object') return;
     var cells = [{ assignmentId: String(answer.assignment_id), userId: String(answer.user_id) }];
+    var handed = [answer];
     if (Array.isArray(answer.all_submissions)) {
       answer.all_submissions.forEach(function (s) {
         if (!s || s.assignment_id === undefined || s.user_id === undefined) return;
@@ -53,13 +54,19 @@
         // A group member's cell: no comments in this payload, so the ones
         // the model holds are kept (see applySubmission). Their grade moved
         // too, so their Total is refreshed like the written student's.
-        self.model.applySubmission(s);
+        // Skipped - in the model AND in Canvas's store - when a write to
+        // that member's cell (ours, or Canvas's own) began after this one:
+        // that write's answer is newer than this copy of it.
+        var before = self.model.cell(s.assignment_id, s.user_id);
+        var rec = self.model.applySubmission(s, { staleIfWrittenAfter: startedAt });
+        if (!rec || rec === before) return;
+        handed.push(s);
         if (!opts.commentsOnly) self.model.queueTotalRefresh(String(s.user_id));
         cells.push({ assignmentId: String(s.assignment_id), userId: String(s.user_id) });
       });
     }
     if (this.canvasStore) {
-      this.canvasStore.pushAnswer(answer, {
+      this.canvasStore.push(handed, {
         readStartedAt: startedAt,
         commentsFor: opts.comments ? [cells[0]] : []
       });
@@ -459,15 +466,19 @@
     var priorMark = this.model.markLocalWrite(assignmentId, userId);
     var startedAt = Date.now();
     return this.api.addComment(this.model.courseId, assignmentId, userId, text).then(function (submission) {
+      // Asked before this comment's own write is marked finished: a grade or
+      // status write of ours that got its answer while the comment was out
+      // may hold a newer status than the comment's answer does.
+      var newerWrite = self.model.localWriteFinishedSince(assignmentId, userId, startedAt);
       self.model.finishLocalWrite(assignmentId, userId);
       // Canvas answers with the whole submission, as it stands now: the
       // truth for its status too (say, Missing taken off in SpeedGrader a
-      // minute ago), unless a grade or status write of ours is still out -
-      // then only the thread is taken from it, and that write's own answer
-      // settles the rest.
-      var key = self.model.key(assignmentId, userId);
-      var othersOut = self.model._writesInFlight && (self.model._writesInFlight.get(key) || 0) > 0;
-      var whole = !othersOut && submission && submission.assignment_id !== undefined && submission.user_id !== undefined;
+      // minute ago), unless a grade or status write of ours is still out or
+      // landed meanwhile - then only the thread is taken from it, and that
+      // write's own answer settles the rest.
+      var othersOut = self.model.writeInFlight(assignmentId, userId);
+      var whole = !othersOut && !newerWrite && submission &&
+        submission.assignment_id !== undefined && submission.user_id !== undefined;
       if (whole) self.model.applySubmission(submission, { commentsAuthoritative: true });
       else self.model.applyCommentWrite(assignmentId, userId, submission);
       CGP.diag.bump('comment.saved');

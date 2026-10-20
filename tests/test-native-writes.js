@@ -17,7 +17,7 @@ function loadBridge(where) {
   const xhrs = [];
   function FakeXHR() { this.listeners = {}; this.status = 0; xhrs.push(this); }
   FakeXHR.prototype.open = function () {};
-  FakeXHR.prototype.send = function () {};
+  FakeXHR.prototype.send = function () { if (this.sendThrows) throw new Error('InvalidStateError'); };
   FakeXHR.prototype.addEventListener = function (type, fn) { this.listeners[type] = fn; };
   FakeXHR.prototype.finish = function (status) { this.status = status; if (this.listeners.loadend) this.listeners.loadend.call(this); };
   const fetchResults = [];
@@ -145,6 +145,49 @@ suite('Canvas-native writes reach the model', (test) => {
     await Promise.resolve();
     a.deep(writes().map((m) => [m.assignmentId, m.userId, m.graphql]), [['50', undefined, true]],
       'one write for the column, none for the read or an unrelated mutation');
+  });
+
+  test('a mutation printed after its fragments is still a write; a read receipt is not', async () => {
+    const { win, writes } = loadBridge({ pathname: '/courses/379/gradebook/speed_grader', search: '?assignment_id=50&student_id=10' });
+    await win.fetch('/api/graphql', { method: 'POST', body: JSON.stringify({
+      query: '# saved comment\nfragment C on SubmissionComment { _id }\nmutation CreateSubmissionComment($submissionId: ID!) { createSubmissionComment(input: {submissionId: $submissionId}) { submissionComment { ...C } } }',
+      variables: { submissionId: '9' }
+    }) });
+    await win.fetch('/api/graphql', { method: 'POST', body: JSON.stringify({
+      operationName: 'MarkSubmissionCommentsRead',
+      query: 'mutation MarkSubmissionCommentsRead($submissionId: ID!) { markSubmissionCommentsRead(input: {submissionId: $submissionId}) { errors { message } } }',
+      variables: { submissionId: '9' }
+    }) });
+    await win.fetch('/api/v1/courses/379/assignments/50/submissions/10/read', { method: 'PUT' });
+    await Promise.resolve();
+    a.deep(writes().map((m) => [m.assignmentId, m.userId]), [['50', '10']]);
+  });
+
+  test('classic SpeedGrader\'s current student is the one in its hash, not the one it was opened on', async () => {
+    const { win, writes } = loadBridge({ pathname: '/courses/379/gradebook/speed_grader', search: '?assignment_id=50&student_id=10',
+      hash: '#' + encodeURIComponent('{"student_id":"11"}') });
+    await win.fetch('/api/graphql', { method: 'POST', body: JSON.stringify({
+      query: 'mutation UpdateSubmissionGrade($submissionId: ID!) { x }', variables: { submissionId: '9' }
+    }) });
+    await Promise.resolve();
+    a.deep(writes().map((m) => m.userId), ['11']);
+  });
+
+  test('a watched XHR re-opened (or never sent) is not left counted as Canvas\'s write in flight', () => {
+    const { win } = loadBridge();
+    const xhr = new win.XMLHttpRequest();
+    xhr.open('PUT', '/api/v1/courses/379/assignments/50/submissions/10');
+    xhr.send('submission%5Bposted_grade%5D=4');
+    a.eq(win.__cgpNativeWrites.state('50', '10').pending, 1);
+    xhr.open('GET', '/api/v1/courses/379/assignments');   // abandons the PUT without a loadend
+    a.eq(win.__cgpNativeWrites.state('50', '10').pending, 0);
+    const throwing = new win.XMLHttpRequest();
+    throwing.sendThrows = true;
+    throwing.open('PUT', '/api/v1/courses/379/assignments/51/submissions/10');
+    let threw = false;
+    try { throwing.send('submission%5Bposted_grade%5D=4'); } catch (e) { threw = true; }
+    a.ok(threw, 'the page still sees its own error');
+    a.eq(win.__cgpNativeWrites.state('51', '10').pending, 0);
   });
 
   test('Canvas\'s bulk dialogs report their column', () => {

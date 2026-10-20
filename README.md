@@ -427,6 +427,10 @@ Tray, SpeedGrader — and you never have to reload a page to see a change made i
   15 seconds, and hands anything that changed to Canvas's store — this covers changes no tab could
   announce, such as another teacher grading or a student submitting.
 
+A grade you are in the middle of typing is never disturbed: a change for that student's row waits
+until you finish (or, if you leave the edit unsaved for half a minute, skips that row and leaves the
+extension's own overlay showing the saved value).
+
 Only ids (course, assignment, student) pass between your tabs, through the extension's own
 background worker; nothing is stored. Turn it off with *Keep the gradebook and SpeedGrader up to
 date with each other, without reloading* under Grading Input.

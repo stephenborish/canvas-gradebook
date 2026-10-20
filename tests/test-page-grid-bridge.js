@@ -223,6 +223,66 @@ suite('page-context SlickGrid bridge', (test) => {
     a.eq(replies()[0].results[0].stored, undefined);
   });
 
+  test('a hand-off waits while Canvas\'s editor is open in that student\'s row (re-rendering it would drop the edit)', () => {
+    const store = { '10': { assignment_7: { score: 5 } }, '11': { assignment_7: { score: 5 } } };
+    const gb = fakeGradebook(store, { open: false });
+    let checks = 0;
+    gb.gradebookGrid = { grid: {
+      getColumns() { return []; }, setColumns() {},
+      // Open for the first two looks, then the teacher finishes the edit.
+      getCellEditor: () => (++checks <= 2 ? {} : null),
+      getActiveCell: () => ({ row: 0, cell: 3 }),
+      getDataItem: (i) => [{ id: '10' }, { id: '11' }][i]
+    } };
+    const { win, replies } = loadBridgeWith({ querySelector: (sel) => (sel === '#gradebook_app' ? reactMount(gb) : null) });
+    win.postMessage({ source: 'cgp-submission-sync', id: 'e', readStartedAt: 1, submissions: [{
+      assignment_id: '7', user_id: '10', score: 8, assignment_visible: true
+    }] }, win.location.origin);
+    a.eq(checks, 3, 'held while the editor was open, handed over once it closed');
+    a.eq(gb.calls.external.length, 1);
+    a.eq(store['10'].assignment_7.score, 8);
+    a.eq(replies()[0].results[0].stored, true);
+  });
+
+  test('an editor that is merely open (nothing typed) holds nothing back', () => {
+    const store = { '10': { assignment_7: { score: 5 } } };
+    const gb = fakeGradebook(store, { open: false });
+    let checks = 0;
+    gb.gradebookGrid = { grid: {
+      getColumns() { return []; }, setColumns() {},
+      getCellEditor: () => { checks++; return { isValueChanged: () => false }; },
+      getActiveCell: () => ({ row: 0, cell: 3 }),
+      getDataItem: (i) => [{ id: '10' }][i]
+    } };
+    const { win, replies } = loadBridgeWith({ querySelector: (sel) => (sel === '#gradebook_app' ? reactMount(gb) : null) });
+    win.postMessage({ source: 'cgp-submission-sync', id: 'o', readStartedAt: 1, submissions: [{
+      assignment_id: '7', user_id: '10', score: 8, assignment_visible: true
+    }] }, win.location.origin);
+    a.eq(checks, 1, 'looked once, did not wait');
+    a.eq(store['10'].assignment_7.score, 8);
+    a.eq(replies()[0].results[0].stored, true);
+  });
+
+  test('an edit left open is never thrown away for a hand-off: that row is skipped, others go through', () => {
+    const store = { '10': { assignment_7: { score: 5 } }, '11': { assignment_7: { score: 5 } } };
+    const gb = fakeGradebook(store, { open: false });
+    gb.gradebookGrid = { grid: {
+      getColumns() { return []; }, setColumns() {},
+      getCellEditor: () => ({}),
+      getActiveCell: () => ({ row: 0, cell: 3 }),
+      getDataItem: (i) => [{ id: '10' }, { id: '11' }][i]
+    } };
+    const { win, replies } = loadBridgeWith({ querySelector: (sel) => (sel === '#gradebook_app' ? reactMount(gb) : null) });
+    win.postMessage({ source: 'cgp-submission-sync', id: 's', readStartedAt: 1, submissions: [
+      { assignment_id: '7', user_id: '10', score: 8, assignment_visible: true },
+      { assignment_id: '7', user_id: '11', score: 9, assignment_visible: true }
+    ] }, win.location.origin);
+    a.eq(store['10'].assignment_7.score, 5, 'the row being edited is left alone');
+    a.eq(store['11'].assignment_7.score, 9);
+    const results = replies()[0].results;
+    a.deep(results.map((r) => [r.userId, r.skipped || null, !!r.stored]), [['10', 'editing', false], ['11', null, true]]);
+  });
+
   test('opening the tray first saves a grade still typed in the cell, then opens it through Canvas', () => {
     const order = [];
     const gb = fakeGradebook({ '10': { assignment_7: {} } }, { open: false });

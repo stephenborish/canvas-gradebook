@@ -106,11 +106,6 @@ suite('Canvas\'s own store gets every saved submission', (test) => {
     a.eq(m.cell('50', '10').override, '7');
   }));
 
-  test('a write\'s answer carries its group members along', () => {
-    const subs = CGP.canvasStoreInternals.submissionsOf({ assignment_id: '50', user_id: '10', score: 5,
-      all_submissions: [{ assignment_id: '50', user_id: '10', score: 5 }, { assignment_id: '50', user_id: '11', score: 5 }] });
-    a.deep(subs.map((s) => s.user_id), ['10', '11']);
-  });
 });
 
 suite('a saved grade reaches the store, the model and the other tabs', (test) => {
@@ -124,7 +119,7 @@ suite('a saved grade reaches the store, the model and the other tabs', (test) =>
       api: { updateSubmission: () => Promise.resolve({ id: '1', assignment_id: '50', user_id: '10', score: 6, grade: '6', workflow_state: 'graded',
         all_submissions: [{ id: '1', assignment_id: '50', user_id: '10', score: 6 }, { id: '2', assignment_id: '50', user_id: '11', score: 6, grade: '6' }] }) },
       model: m, settings: { values: {} },
-      canvasStore: { pushAnswer: (answer, opts) => { pushed.push({ answer, opts }); return Promise.resolve(null); } },
+      canvasStore: { push: (subs, opts) => { pushed.push({ subs, opts }); return Promise.resolve(null); } },
       liveSync: { announce: (cells) => announced.push(cells) }
     });
     const totals = [];
@@ -133,9 +128,56 @@ suite('a saved grade reaches the store, the model and the other tabs', (test) =>
     await w.apply([{ assignmentId: '50', userId: '10', parsed: CGP.gradeOps.parseToken('6') }]);
     a.deep(totals.slice().sort(), ['10', '11'], 'every group member\'s Total, not just the written one');
     a.eq(pushed.length, 1);
+    a.deep(pushed[0].subs.map((s) => s.user_id), ['10', '11'], 'the written submission and its group member');
     a.ok(pushed[0].opts.readStartedAt >= before, 'stamped with when the write went out');
     a.deep(announced[0], [{ assignmentId: '50', userId: '10' }, { assignmentId: '50', userId: '11' }]);
     a.eq(m.cell('50', '11').grade, '6', 'the group member\'s cell is not left behind');
+  });
+
+  test('a group member written since this write began keeps its own newer answer, here and in Canvas\'s store', async () => {
+    CGP.ui = { toast: () => {}, error: () => {} };
+    const m = model();
+    m.loadedAssignments.add('50');
+    m.applySubmission({ id: '2', assignment_id: '50', user_id: '11', score: 9, grade: '9' });
+    const pushed = [];
+    const w = new CGP.GradeWriter({
+      api: { updateSubmission: () => {
+        // The member's own write (another cell's chain) starts while this one is out.
+        m.markLocalWrite('50', '11');
+        return Promise.resolve({ id: '1', assignment_id: '50', user_id: '10', score: 6, grade: '6',
+          all_submissions: [{ id: '2', assignment_id: '50', user_id: '11', score: 6, grade: '6' }] });
+      } },
+      model: m, settings: { values: {} },
+      canvasStore: { push: (subs) => { pushed.push(subs); return Promise.resolve(null); } }
+    });
+    await w.apply([{ assignmentId: '50', userId: '10', parsed: CGP.gradeOps.parseToken('6') }]);
+    a.eq(m.cell('50', '11').grade, '9', 'the older copy in all_submissions does not overwrite it');
+    a.deep(pushed[0].map((s) => s.user_id), ['10'], 'nor is it handed to Canvas\'s store');
+  });
+
+  test('a comment\'s answer never overrides a status write of ours that landed while the comment was out', async () => {
+    const m = model();
+    m.applySubmission({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: null, missing: false });
+    const pushed = [];
+    let finishComment;
+    const w = new CGP.GradeWriter({
+      api: { addComment: () => new Promise((r) => { finishComment = r; }) },
+      model: m, settings: { values: {} },
+      canvasStore: { push: (subs, opts) => { pushed.push({ subs, opts }); return Promise.resolve(null); } }
+    });
+    const pending = w.addComment('50', '10', 'Nice');
+    await tick(2);
+    // M lands (and finishes) while the comment is still out.
+    m.markLocalWrite('50', '10');
+    m.applySubmission({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: 'missing', missing: true });
+    m.finishLocalWrite('50', '10');
+    // The comment was served before M: its copy of the status is older.
+    finishComment({ id: '1', assignment_id: '50', user_id: '10', late_policy_status: null, missing: false,
+      submission_comments: [{ id: 'c1', author_id: '1', comment: 'Nice' }] });
+    await pending;
+    a.eq(m.cell('50', '10').latePolicyStatus, 'missing', 'the newer Missing stays');
+    a.eq(m.cell('50', '10').commentList.length, 1, 'the thread is still taken from the answer');
+    a.eq(pushed[0].subs.length, 0, 'the older status is not handed to Canvas\'s store');
   });
 });
 
@@ -173,6 +215,18 @@ suite('re-reads that report what actually changed', (test) => {
     a.eq(asked[0].opts.visibility, true);
     a.deep(r.submissions.map((s) => s.user_id), ['11']);
     a.eq(m.cell('50', '11').score, 9);
+  });
+
+  test('a column re-read never wipes a verified thread the bulk endpoint answers as empty', async () => {
+    const m = model({ submissionsForAssignments: () => Promise.resolve([
+      { id: '1', assignment_id: '50', user_id: '10', score: 4, submission_comments: [] }
+    ]) });
+    m.everLoadedAssignments.add('50');
+    m.commentVerifiedAssignments.add('50');
+    m.applySubmission({ id: '1', assignment_id: '50', user_id: '10', score: 4,
+      submission_comments: [{ id: 'c1', author_id: '1', comment: 'See me' }] }, { silent: true });
+    await m.resyncAssignments(['50']);
+    a.eq(m.cell('50', '10').commentList.length, 1, 'the comment the column verified is kept');
   });
 
   test('a truncated column read changes nothing', async () => {

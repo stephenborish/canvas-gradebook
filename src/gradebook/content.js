@@ -118,6 +118,11 @@
       if (!/^\d+$/.test(String(d.userId))) {
         // A write naming a column but no student (Canvas's own posting, its
         // Set Default Grade / Curve Grades dialogs): see catchUpColumn.
+        // Every cell of the column is stamped like a single native write, so
+        // a read of it already in flight (a refocus re-read, say) - served
+        // before Canvas committed - cannot land after the catch-up and hand
+        // the old grades back to the model and to Canvas's store.
+        model.studentOrder.forEach(function (uid) { model.noteNativeWrite(String(d.assignmentId), String(uid)); });
         if (follower) follower.catchUpColumn(String(d.assignmentId));
         liveSync.announce([{ assignmentId: String(d.assignmentId) }]);
         return;

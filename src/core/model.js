@@ -650,6 +650,18 @@
     return !!(done && since && done > since);
   };
 
+  /* Is a write of ours to this cell still waiting for Canvas's answer? */
+  GradebookModel.prototype.writeInFlight = function (assignmentId, userId) {
+    return (this._writesInFlight.get(this.key(assignmentId, userId)) || 0) > 0;
+  };
+
+  /* Did a write of ours to this cell get Canvas's answer at or after
+   * `since`? Unlike localWriteSince, a write still out does not count. */
+  GradebookModel.prototype.localWriteFinishedSince = function (assignmentId, userId, since) {
+    var done = this._localWriteDoneAt.get(this.key(assignmentId, userId));
+    return !!(done && since && done >= since);
+  };
+
   /* Canvas saved this cell through its own UI (see env-bridge.js). Stamped
    * like a finished local write so a column read already in flight - which
    * may have been served before Canvas committed - cannot land afterwards
@@ -817,7 +829,12 @@
           var k = self.key(s.assignment_id, s.user_id);
           var before = self.cells.get(k) || null;
           var sig = gradingSignature(before);
-          var rec = self.applySubmission(s, { silent: true, commentsAuthoritative: true, staleIfWrittenAfter: readStartedAt });
+          // Not commentsAuthoritative: this is the multi-assignment endpoint,
+          // which on some Canvas installs answers an empty comment list for
+          // a thread that has comments (see verifyVisibleComments). Its
+          // comments merge exactly as ensureAssignments' do; a thread that
+          // changed is re-read on its own (syncCell).
+          var rec = self.applySubmission(s, { silent: true, staleIfWrittenAfter: readStartedAt });
           if (!rec || rec === before) return;
           if (touched.indexOf(String(s.assignment_id)) < 0) touched.push(String(s.assignment_id));
           if (gradingSignature(rec) !== sig) changed.push(s);

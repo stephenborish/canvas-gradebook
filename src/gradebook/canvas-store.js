@@ -31,7 +31,8 @@
     'submitted_at', 'workflow_state', 'assignment_visible', 'has_postable_comments'
   ];
 
-  var REPLY_TIMEOUT_MS = 5000;
+  // Longer than env-bridge.js holds a hand-off for a row with an unsaved edit.
+  var REPLY_TIMEOUT_MS = 35000;
 
   function pickFields(sub) {
     if (!sub || typeof sub !== 'object' || sub.assignment_id === undefined || sub.user_id === undefined) return null;
@@ -45,21 +46,6 @@
     out.assignment_id = String(sub.assignment_id);
     out.user_id = String(sub.user_id);
     return out;
-  }
-
-  /* Canvas answers a write with the submission itself plus all_submissions:
-   * every group member's submission when the assignment is graded by group.
-   * Each one is handed over, the written one first. */
-  function submissionsOf(answer) {
-    if (!answer || typeof answer !== 'object') return [];
-    var list = [answer];
-    if (Array.isArray(answer.all_submissions)) {
-      answer.all_submissions.forEach(function (s) {
-        if (!s || (String(s.user_id) === String(answer.user_id) && String(s.assignment_id) === String(answer.assignment_id))) return;
-        list.push(s);
-      });
-    }
-    return list;
   }
 
   function CanvasStore(ctx) {
@@ -123,11 +109,6 @@
     });
   };
 
-  /* The answer to a write: the submission and its group members. */
-  P.pushAnswer = function (answer, opts) {
-    return this.push(submissionsOf(answer), opts);
-  };
-
   P.onReply = function (data) {
     var waiting = this._pending.get(data.id);
     if (!waiting) return;
@@ -137,12 +118,15 @@
     var model = this.model;
     var cleared = 0;
     results.forEach(function (r) {
-      if (!r || !r.stored) { if (r && r.skipped) CGP.diag.bump('canvasStore.skippedForCanvasWrite'); return; }
+      if (!r || !r.stored) {
+        if (r && r.skipped) CGP.diag.bump(r.skipped === 'editing' ? 'canvasStore.skippedForOpenEditor' : 'canvasStore.skippedForCanvasWrite');
+        return;
+      }
       CGP.diag.bump('canvasStore.stored.' + (r.via || 'unknown'));
       if (!model || typeof model.cell !== 'function') return;
       var rec = model.cell(r.assignmentId, r.userId);
       // A newer write of ours still out will hand over its own answer.
-      var inFlight = model._writesInFlight && (model._writesInFlight.get(model.key(r.assignmentId, r.userId)) || 0) > 0;
+      var inFlight = typeof model.writeInFlight === 'function' && model.writeInFlight(r.assignmentId, r.userId);
       if (!rec || inFlight || rec.override === null || rec.override === undefined) return;
       model.patchCell(r.assignmentId, r.userId, { override: null }, { silent: true });
       cleared++;
@@ -152,5 +136,5 @@
   };
 
   CGP.CanvasStore = CanvasStore;
-  CGP.canvasStoreInternals = { pickFields: pickFields, submissionsOf: submissionsOf, FIELDS: FIELDS };
+  CGP.canvasStoreInternals = { pickFields: pickFields, FIELDS: FIELDS };
 })();
