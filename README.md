@@ -365,20 +365,38 @@ one all still show through.
 Canvas's utility strip (student
 and assignment search, filters, Sync, Import, Export, View Options) is collapsed
 along with the empty wrappers it leaves behind, and the grid takes the full height of the window.
-Canvas's own gradebook-settings gear collapses with the rest of the strip. An earlier version
-kept it visible and repositioned it to sit beside Apply Filters instead; because that could only
-be measured once Canvas had laid the toolbar out, the gear was always painted in its natural spot
-first and then jumped — and Canvas re-renders that toolbar often enough that the jump kept
-recurring after the page otherwise looked settled. Hiding it removes the measuring, the polling
-and the jump.
+Canvas's own gradebook-settings gear collapses with the rest of the strip, and a **gear** appears
+in the breadcrumb instead, right after **Find student**. Clicking it opens Canvas's own Gradebook
+Settings, on its **View Options** tab, where **Arrange By** sorts the assignment columns by due date,
+name, points or module (or keeps your own drag order). Late policies and the grade posting policy
+are one tab away. It doesn't copy Canvas's settings: the click goes to Canvas's own hidden gear, so
+Canvas opens its own dialog and saves your changes itself, and the utility strip stays collapsed.
+The breadcrumb gear only shows while the strip is collapsed, so there is never a second one.
 
-Press **Alt+Shift+H** to bring Canvas's controls back for the current page — the gear included,
-so gradebook settings, posting policies and column arrangement (by due date, name, points, module,
-or manual drag, under the gear's own "Arrange columns by" option) stay one keystroke away. Turn the
-whole behaviour off permanently in the options page.
+(An earlier version kept Canvas's gear visible and moved it next to Apply Filters. It could only be
+moved after Canvas had laid out the toolbar, so the gear drew in its usual spot first and then
+jumped, again and again as Canvas redrew the toolbar. The breadcrumb never moves.)
+
+Press **Alt+Shift+H** to bring Canvas's controls back for the current page. Turn the whole
+behaviour off permanently in the options page.
 
 One smaller, unconditional cleanup applies regardless of that setting: Canvas's own "keyboard
 shortcuts" icon button is always hidden.
+
+### Analyze Scores, for a column or the course Total
+
+Every assignment column's `⋮` menu has an **Analyze Scores** item. It opens a panel showing the
+mean, median, standard deviation, range, the five highest and five lowest students, and a
+histogram grouped by the letter-grade cutoffs under Options → Appearance. Blank and excused cells
+are counted but left out of every figure (a blank is not a zero). Anonymous and moderated
+assignments don't get it, since the lists name students.
+
+The **Total** gets the same panel. Click the small bar-chart button beside "Total" in the frozen
+Total header (or, when Canvas's own Total column is the one showing, use **Analyze Scores** in its
+`⋮` menu). The figures are the course totals the Total column shows: Canvas's own weighted scores,
+with the same grading-period filter, shown as percentages. Each student in the highest/lowest
+lists also gets their letter grade. Students with no graded work yet are counted but not included
+in the figures, and the Test Student is never included.
 
 ### Which grades the student can actually see
 
@@ -587,7 +605,7 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-438 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
+456 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
 again → not Missing, `L` → Late and `L` again → not Late, both leaving the grade untouched either
 way, `E` → Excused, a grade never adding a status (and lifting an applied Missing only when asked),
 statuses read exactly as Canvas computes them, the hand-off to Canvas's own store (and never

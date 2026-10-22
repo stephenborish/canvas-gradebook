@@ -195,6 +195,9 @@ Object.defineProperty(FakeElement.prototype, 'className', {
   set: function (v) { this._className = v; }
 });
 
+Object.defineProperty(FakeElement.prototype, 'parentNode', {
+  get: function () { return this.parentElement; }
+});
 Object.defineProperty(FakeElement.prototype, 'isConnected', {
   get: function () {
     var node = this;
@@ -229,6 +232,7 @@ FakeElement.prototype.setAttribute = function (name, value) {
   if (/^data-/.test(name)) this.dataset[toCamel(name.slice(5))] = String(value);
 };
 FakeElement.prototype.removeAttribute = function (name) { delete this.attributes[name]; };
+FakeElement.prototype.hasAttribute = function (name) { return Object.prototype.hasOwnProperty.call(this.attributes, name); };
 
 FakeElement.prototype.appendChild = function (child) {
   if (child.parentElement) child.parentElement.removeChild(child);

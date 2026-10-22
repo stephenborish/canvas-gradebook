@@ -136,10 +136,9 @@
    * control of this extension's own, mounted in normal document flow right
    * above the grid - but that put a second "arrange" control directly over
    * the gradebook a teacher had not asked for. A teacher who wants to arrange
-   * columns while the utility strip is hidden now reaches it the same way as
-   * any other hidden Canvas control: Alt+Shift+H brings the whole strip
-   * (gear included) back for the rest of the page visit, and the teacher
-   * picks Arrange By from Canvas's own View Options tab directly. */
+   * columns while the utility strip is hidden uses the breadcrumb gear
+   * (mountSettingsGear below), which opens Canvas's own dialog on that tab;
+   * Alt+Shift+H still brings the whole strip back for the page visit. */
 
   /* Open Canvas's own gear/Settings modal and land on its View Options tab -
    * used internally by syncViewOptions() below to push a teacher's saved
@@ -165,6 +164,78 @@
     }
     gear.click();
     CGP.diag.bump('layout.arrangeMenuOpened');
+    return this.selectViewOptionsTab();
+  };
+
+  /* With the utility strip collapsed, Canvas's own gear goes with it - and
+   * with the gear go Gradebook Settings and, inside it, Arrange By: the only
+   * way to sort the assignment columns by due date, name, points or module.
+   * So the strip's gear is stood in for by one in the breadcrumb, beside Find
+   * student, where nothing Canvas re-renders can move it (the old in-strip
+   * gear jumped - see SETTINGS_SELECTORS). It is the same control, not a
+   * copy: a click presses Canvas's own (hidden) gear, so Canvas's own dialog
+   * opens and Canvas's own code saves whatever is changed there. gradebook.css
+   * only shows it while the strip is collapsed, since otherwise Canvas's gear
+   * is right there. Idempotent; content.js calls it after the breadcrumb
+   * controls mount and again on its safety tick. */
+  var GEAR_SVG =
+    '<svg class="cgp-settings-gear__glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" ' +
+      'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<circle cx="12" cy="12" r="3"/>' +
+      '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 ' +
+      '1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83' +
+      'l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82' +
+      'l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 ' +
+      '1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09' +
+      'a1.65 1.65 0 0 0-1.51 1z"/></svg>';
+
+  P.mountSettingsGear = function () {
+    var existing = document.querySelector('.cgp-settings-gear');
+    if (existing && existing.isConnected) return existing;
+    var anchor = document.querySelector('#breadcrumbs .cgp-find-student, .ic-app-crumbs .cgp-find-student') ||
+      document.querySelector('#breadcrumbs .cgp-crumb-toggle, .ic-app-crumbs .cgp-crumb-toggle');
+    var crumbs = anchor ? null : document.querySelectorAll('#breadcrumbs li, .ic-app-crumbs li');
+    var host = crumbs && crumbs.length ? crumbs[crumbs.length - 1] : null;
+    if (!anchor && !host) return null;
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cgp-crumb-toggle cgp-settings-gear';
+    btn.setAttribute('aria-label', 'Gradebook settings');
+    btn.setAttribute('aria-haspopup', 'dialog');
+    btn.title = 'Gradebook settings: arrange assignment columns (by due date, name, points or module), ' +
+      'late policies, grade posting policy';
+    btn.innerHTML = GEAR_SVG;
+    var self = this;
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      self.openCanvasSettings();
+    });
+    if (anchor) anchor.insertAdjacentElement('afterend', btn);
+    else host.appendChild(btn);
+    return btn;
+  };
+
+  /* Open Canvas's own Gradebook Settings from the breadcrumb gear, on its
+   * View Options tab - where Arrange By is, the reason a teacher most often
+   * needs it - and leave it with the teacher. Unlike openArrangeMenu() this
+   * never brings the utility strip back: a click on the hidden gear opens the
+   * dialog just the same, since the dialog is not drawn inside the strip. */
+  P.openCanvasSettings = function () {
+    var gear = this.findSettingsButton();
+    if (!gear || !gear.isConnected) {
+      CGP.diag.warn('layout.settingsGear.gearNotFound');
+      if (this.controlsHidden) {
+        this.restoreControls();
+        this.applyGeometry();
+      }
+      CGP.ui.error('Couldn’t open Canvas’s gradebook settings from here, so Canvas’s own controls are back above ' +
+        'the grid. Use the gear there, then View Options → Arrange By, to sort the assignments.');
+      return Promise.resolve(false);
+    }
+    gear.click();
+    CGP.diag.bump('layout.settingsGearOpened');
     return this.selectViewOptionsTab();
   };
 
@@ -429,8 +500,13 @@
    * the utility strip. */
   P.findSettingsButton = function () {
     for (var i = 0; i < SETTINGS_SELECTORS.length; i++) {
-      var el = document.querySelector(SETTINGS_SELECTORS[i]);
-      if (el) return el.closest('button, [role="button"]') || el;
+      // Never this extension's own breadcrumb gear (mountSettingsGear), whose
+      // label also says "gradebook settings".
+      var matches = document.querySelectorAll(SETTINGS_SELECTORS[i]);
+      for (var k = 0; k < matches.length; k++) {
+        var el = matches[k].closest('button, [role="button"]') || matches[k];
+        if (!el.classList.contains('cgp-settings-gear')) return el;
+      }
     }
     // Fallback: anything actually labelled "settings" inside the gradebook's
     // own action area, in case this Canvas build uses none of the ids/test
