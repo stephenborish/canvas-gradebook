@@ -35,6 +35,7 @@ require('./test-test-student');
 require('./test-time-shortcuts');
 require('./test-score-stats');
 require('./test-settings-sync');
+require('./test-settings-gear-totals');
 require('./test-self-update');
 
 // run() awaits each case, so the process must not exit before it settles.

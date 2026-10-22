@@ -885,7 +885,32 @@ html.cgp-frozen-total .cgp-total-header {
   letter-spacing: 0.2px;
   color: var(--cgp-ink-strong);
   z-index: 5;
+  gap: 3px;
 }
+/* "Analyze totals" (frozen-total.js): an icon beside the label, quiet until
+ * hovered, so the header still reads as just "Total". */
+html.cgp-frozen-total .cgp-total-analyze {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--cgp-muted);
+  cursor: pointer;
+  transition: background 100ms ease, color 100ms ease;
+}
+html.cgp-frozen-total .cgp-total-analyze svg { width: 14px; height: 14px; display: block; }
+html.cgp-frozen-total .cgp-total-analyze:hover {
+  background: var(--cgp-brand-wash);
+  color: var(--cgp-brand-dark);
+}
+html.cgp-frozen-total .cgp-total-analyze:focus-visible { outline: none; box-shadow: var(--cgp-focus-ring); }
 html.cgp-frozen-total .cgp-total-layer {
   position: absolute;
   top: 0;
@@ -974,9 +999,26 @@ html.cgp-on.cgp-hide-utility #gradebook_settings_modal_button,
 html.cgp-on.cgp-hide-utility #gradebook-settings,
 html.cgp-on.cgp-hide-utility [data-testid="gradebook-settings-button"],
 html.cgp-on.cgp-hide-utility [data-component="GradebookSettingsButton"],
-html.cgp-on.cgp-hide-utility button[aria-label*="gradebook settings" i],
-html.cgp-on.cgp-hide-utility button[title*="gradebook settings" i] {
+html.cgp-on.cgp-hide-utility button[aria-label*="gradebook settings" i]:not(.cgp-settings-gear),
+html.cgp-on.cgp-hide-utility button[title*="gradebook settings" i]:not(.cgp-settings-gear) {
   display: none !important;
+}
+
+/* The breadcrumb gear that stands in for Canvas's while the strip is
+ * collapsed (layout.js mountSettingsGear). Hidden whenever Canvas's own gear
+ * is showing, so there is never a second one. */
+html.cgp-on .cgp-crumb-toggle.cgp-settings-gear { display: none; }
+html.cgp-on.cgp-hide-utility .cgp-crumb-toggle.cgp-settings-gear {
+  display: inline-flex;
+  padding: 2px 5px;
+  color: var(--cgp-muted);
+}
+html.cgp-on.cgp-hide-utility .cgp-crumb-toggle.cgp-settings-gear:hover { color: var(--cgp-brand-dark); }
+html.cgp-on .cgp-settings-gear__glyph {
+  width: 16px;
+  height: 16px;
+  display: block;
+  flex: 0 0 auto;
 }
 
 /* Canvas's own "keyboard shortcuts" icon button in the gradebook toolbar.
@@ -1870,7 +1912,7 @@ html.cgp-on .cgp-crumb-toggle__label { white-space: nowrap; }
  * element beats one class), so without this exclusion this rule was the one
  * that won and squashed the magnifying glass down to an 8x5px caret-sized
  * sliver - the "search icon is extremely tiny" report. */
-html.cgp-on .cgp-crumb-toggle:not(.cgp-find-student) svg { width: 8px; height: 5px; display: block; flex: 0 0 auto; }
+html.cgp-on .cgp-crumb-toggle:not(.cgp-find-student):not(.cgp-settings-gear) svg { width: 8px; height: 5px; display: block; flex: 0 0 auto; }
 html.cgp-on .cgp-crumb-toggle:hover {
   background: var(--cgp-brand-wash);
   border-color: rgba(3, 116, 181, 0.22);

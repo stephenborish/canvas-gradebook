@@ -1,4 +1,5 @@
-/* Canvas Gradebook+ - "Analyze scores" in an assignment column's "..." menu.
+/* Canvas Gradebook+ - "Analyze scores" in an assignment column's "..." menu,
+ * and the same panel for the course Total.
  *
  * Canvas's column options menu (Sort by, SpeedGrader, Message Students Who,
  * Curve Grades, ...) grows one more item. Choosing it opens a panel with that
@@ -12,7 +13,12 @@
  * to, so the column is remembered from the click that opened it: a press on a
  * control inside an assignment header, immediately followed by a menu that
  * holds Canvas's own assignment-column items. A menu that cannot be tied to a
- * column that way is left exactly as Canvas built it. */
+ * column that way is left exactly as Canvas built it.
+ *
+ * The Total gets the same panel, read from the course scores the Total column
+ * itself shows (Canvas's enrollment scores, already a percentage): through a
+ * button on the frozen Total header (frozen-total.js), and through Canvas's
+ * own Total column menu whenever that column is the one on screen. */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
@@ -20,6 +26,8 @@
 
   // Items only Canvas's assignment-column menu carries.
   var ASSIGNMENT_MENU_ITEMS = /^(curve grades|set default grade|message students who)/i;
+  // Items only Canvas's Total column menu carries.
+  var TOTAL_MENU_ITEMS = /^(move to (front|end)|display as (points|percentage))/i;
   var OPEN_WINDOW_MS = 4000;
   var ITEM_LABEL = 'Analyze Scores';
   // Canvas's other items are bare text, so this one gets a bar-chart icon, a
@@ -27,13 +35,14 @@
   // icon and pill take currentColor / invert with the row, so they stay
   // legible under Canvas's blue focus highlight.
   var ITEM_HINT = 'Mean, median, histogram';
-  var ITEM_HTML =
+  var ICON_SVG =
     '<svg class="cgp-analyze-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true" focusable="false">' +
       '<rect x="2.5" y="14" width="3.6" height="7" rx=".8"/>' +
       '<rect x="7.3" y="8" width="3.6" height="13" rx=".8"/>' +
       '<rect x="12.1" y="4" width="3.6" height="17" rx=".8"/>' +
       '<rect x="16.9" y="10" width="3.6" height="11" rx=".8"/>' +
-    '</svg>' +
+    '</svg>';
+  var ITEM_HTML = ICON_SVG +
     '<span class="cgp-analyze-text">' +
       '<span class="cgp-analyze-title">' + ITEM_LABEL +
         '<span class="cgp-analyze-pill" aria-hidden="true">NEW</span>' +
@@ -45,7 +54,7 @@
     this.model = ctx.model;
     this.adapter = ctx.adapter;
     this.settings = ctx.settings;
-    this._lastTrigger = null;   // {assignmentId, at}
+    this._lastTrigger = null;   // {kind: 'assignment' | 'total', assignmentId, at}
     this._observer = null;
     this._dialog = null;
   }
@@ -75,15 +84,16 @@
     this._observer.observe(document.body, { childList: true, subtree: true });
   };
 
-  /** The assignment a press inside a header column belongs to, if any. */
+  /** The assignment (or the Total) a press inside a header column belongs to, if any. */
   P.rememberTrigger = function (target) {
     var header = target && target.closest && target.closest('.slick-header-column');
     if (!header) return;
     if (!target.closest('button, [role="button"], [aria-haspopup]')) return;
     var colId = this.adapter.columnIdForHeader(header);
+    var kind = CGP.gridMap.classifyColumnId(colId).type;
     var m = /^assignment_(\d+)$/.exec(colId || '');
-    if (!m) return;
-    this._lastTrigger = { assignmentId: m[1], at: Date.now() };
+    if (m) this._lastTrigger = { kind: 'assignment', assignmentId: m[1], at: Date.now() };
+    else if (kind === 'total') this._lastTrigger = { kind: 'total', assignmentId: null, at: Date.now() };
   };
 
   function itemText(el) {
@@ -105,16 +115,19 @@
     var trig = this._lastTrigger;
     if (!trig || Date.now() - trig.at > OPEN_WINDOW_MS) return;
     if (menu.querySelector('.cgp-analyze-item')) return;
+    var isTotal = trig.kind === 'total';
     var items = Array.prototype.slice.call(menu.querySelectorAll('[role="menuitem"]'));
     var anchor = null;
     items.forEach(function (it) {
-      if (ASSIGNMENT_MENU_ITEMS.test(itemText(it))) anchor = it;
+      if ((isTotal ? TOTAL_MENU_ITEMS : ASSIGNMENT_MENU_ITEMS).test(itemText(it))) anchor = it;
     });
     if (!anchor) return;
-    // Never on an anonymous or moderated column: the high/low lists name
-    // students, which is exactly what anonymous grading hides from graders.
-    var meta = this.model.assignment(trig.assignmentId);
-    if (!meta || meta.anonymous || meta.moderated) return;
+    if (!isTotal) {
+      // Never on an anonymous or moderated column: the high/low lists name
+      // students, which is exactly what anonymous grading hides from graders.
+      var meta = this.model.assignment(trig.assignmentId);
+      if (!meta || meta.anonymous || meta.moderated) return;
+    }
 
     // Canvas wraps each item in a role="none" list item in some builds; the
     // clone goes in at the same level so it lines up with its neighbours.
@@ -137,7 +150,8 @@
     label.innerHTML = ITEM_HTML;
     label.classList.add('cgp-analyze-label');
     item.setAttribute('aria-label', ITEM_LABEL);
-    item.setAttribute('title', 'Mean, median, standard deviation, high/low students and a letter-grade histogram for this column');
+    item.setAttribute('title', 'Mean, median, standard deviation, high/low students and a letter-grade histogram for ' +
+      (isTotal ? 'the course totals' : 'this column'));
 
     var self = this;
     var assignmentId = trig.assignmentId;
@@ -146,7 +160,8 @@
       e.stopPropagation();
       if (e.stopImmediatePropagation) e.stopImmediatePropagation();
       self.closeMenu(menu);
-      self.open(assignmentId);
+      if (isTotal) self.openTotals();
+      else self.open(assignmentId);
     }
     // Capture, and on the clone itself: the click must never reach Canvas's
     // own handlers, which would act on whichever item this was cloned from.
@@ -195,6 +210,43 @@
     return out;
   };
 
+  /* Every student's course total, as the Total column shows it: Canvas's own
+   * enrollment score (a percentage, already weighted), never recomputed. A
+   * student with no graded work yet has no total and counts as not graded. */
+  P.totalEntries = function () {
+    var self = this;
+    var out = [];
+    this.model.studentOrder.forEach(function (uid) {
+      var student = self.model.students.get(uid);
+      if (!student || /^test student$/i.test(student.name || '')) return;
+      out.push({
+        userId: uid,
+        name: student.fullName || student.name || ('Student ' + uid),
+        score: student.currentScore,
+        excused: false
+      });
+    });
+    return out;
+  };
+
+  P.openTotals = function () {
+    var self = this;
+    var dialog = this.showDialog('Total', '<p class="cgp-stats__note">Loading totals…</p>');
+    var ready = this.model.ready ? Promise.resolve() : this.model.init();
+    return ready.then(function () {
+      if (self._dialog !== dialog) return null;
+      // Totals are percentages, so they sit on the grading scale as they are.
+      var stats = CGP.scoreStats.analyze(self.totalEntries(), 100, self.settings.values.gradingScale, 5);
+      self.setBody(self.render(stats, { total: true }));
+      return stats;
+    }, function () {
+      if (self._dialog === dialog) {
+        self.setBody('<p class="cgp-stats__note">Couldn’t load the course totals from Canvas. Try again in a moment.</p>');
+      }
+      return null;
+    });
+  };
+
   P.open = function (assignmentId) {
     var self = this;
     var id = String(assignmentId);
@@ -225,37 +277,53 @@
     return String(r);
   }
 
-  P.render = function (s) {
+  /* opts.total: the figures are course totals - percentages already - so
+   * they are shown once, as percentages, rather than as points and percent. */
+  P.render = function (s, opts) {
+    var total = !!(opts && opts.total);
     if (!s.count) {
+      if (total) return '<p class="cgp-stats__note">No student has a course total yet.</p>';
       return '<p class="cgp-stats__note">No graded scores in this column yet.' +
         (s.excused ? ' ' + s.excused + ' excused.' : '') + '</p>';
     }
     var hasPts = s.pointsPossible !== null;
     function both(points, percent) {
+      if (total) return '<b>' + num(points, 1) + '%</b>';
       return '<b>' + num(points, 2) + '</b>' + (hasPts ? '<span>' + num(percent, 1) + '%</span>' : '');
     }
+    var range = total
+      ? '<b>' + num(s.min, 1) + '–' + num(s.max, 1) + '%</b>'
+      : '<b>' + num(s.min, 2) + '–' + num(s.max, 2) + '</b>' + (hasPts ? '<span>of ' + num(s.pointsPossible, 2) + ' pts</span>' : '');
     var tiles = [
       ['Mean', both(s.mean, s.meanPercent)],
       ['Median', both(s.median, s.medianPercent)],
       ['Std. deviation', both(s.sd, s.sdPercent)],
-      ['Range', '<b>' + num(s.min, 2) + '–' + num(s.max, 2) + '</b>' + (hasPts ? '<span>of ' + num(s.pointsPossible, 2) + ' pts</span>' : '')]
+      ['Range', range]
     ].map(function (t) {
       return '<div class="cgp-stats__tile"><div class="cgp-stats__k">' + t[0] + '</div><div class="cgp-stats__v">' + t[1] + '</div></div>';
     }).join('');
 
-    var counted = s.count + ' graded' +
-      (s.ungraded ? ' · ' + s.ungraded + ' not graded' : '') +
-      (s.excused ? ' · ' + s.excused + ' excused' : '') +
-      ' (left out of every figure)';
+    var counted = total
+      ? s.count + (s.count === 1 ? ' student' : ' students') + ' with a total · ' + s.ungraded +
+        ' with no graded work yet (left out of every figure)'
+      : s.count + ' graded' +
+        (s.ungraded ? ' · ' + s.ungraded + ' not graded' : '') +
+        (s.excused ? ' · ' + s.excused + ' excused' : '') +
+        ' (left out of every figure)';
+    var plain = total ? s.count + (s.count === 1 ? ' course total' : ' course totals') : s.count + ' graded scores';
+    var scale = this.settings.values.gradingScale;
 
     function list(title, rows) {
       return '<div class="cgp-stats__list"><h3>' + title + '</h3><ol>' + rows.map(function (g) {
-        return '<li><span>' + esc(g.name) + '</span><b>' + num(g.score, 2) +
-          (hasPts ? ' <i>(' + num(g.percent, 1) + '%)</i>' : '') + '</b></li>';
+        var letter = total ? CGP.totals.letterFor(g.score, scale) : null;
+        var value = total
+          ? num(g.score, 1) + '%' + (letter ? ' <i>(' + esc(letter) + ')</i>' : '')
+          : num(g.score, 2) + (hasPts ? ' <i>(' + num(g.percent, 1) + '%)</i>' : '');
+        return '<li><span>' + esc(g.name) + '</span><b>' + value + '</b></li>';
       }).join('') + '</ol></div>';
     }
 
-    return '<p class="cgp-stats__note">' + (s.ungraded || s.excused ? counted : s.count + ' graded scores') + '</p>' +
+    return '<p class="cgp-stats__note">' + (s.ungraded || s.excused ? counted : plain) + '</p>' +
       '<div class="cgp-stats__tiles">' + tiles + '</div>' +
       (s.buckets ? this.histogram(s.buckets, s.count) : '<p class="cgp-stats__note">This assignment has no points possible, so scores can’t be placed on the letter-grade scale.</p>') +
       '<div class="cgp-stats__lists">' + list('Highest', s.highest) + list('Lowest', s.lowest) + '</div>';
@@ -347,5 +415,6 @@
     this._dialog = null;
   };
 
+  ScoreAnalysisController.ICON_SVG = ICON_SVG;
   CGP.ScoreAnalysisController = ScoreAnalysisController;
 })();
