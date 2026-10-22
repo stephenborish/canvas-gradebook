@@ -133,7 +133,8 @@ anything merely past its due date and not handed in, and a first `M` (or `L`) on
 still applies the status rather than flipping it.
 
 These are writes to the Canvas record, not local decoration. `M` sends
-`late_policy_status=missing` (and removing it sends `none`), so the submission reads as Missing
+`late_policy_status=missing` (removing it sends `null` for work the student handed in, so Canvas
+can mark it Late again, and `none` for work that was never handed in), so the submission reads as Missing
 everywhere — the Grade Detail Tray, SpeedGrader and the student's own grades page — not only
 here. Canvas's editor is closed without committing anything of its own first, so there is never
 a second, plain grade write racing ours. The response is then checked: if the status did not
