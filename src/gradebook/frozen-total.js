@@ -23,6 +23,9 @@
     // Called with true once the widen is confirmed and false when it is lost,
     // so the native Total is only relocated while the overlay really shows.
     this.onTotalMove = ctx.onTotalMove || function () {};
+    // The header's Analyze button: opens the score-analysis panel for the
+    // course totals (score-analysis.js).
+    this.onAnalyze = ctx.onAnalyze || null;
     this.width = 84;
     this.enabled = false;   // the setting is on and a frozen pane was found at start
     // Verified to actually be showing, not merely attempted - see
@@ -351,8 +354,32 @@
       el.innerHTML = '<span class="cgp-total-header__label">Total</span>';
       headerPane.appendChild(el);
     }
+    this.ensureAnalyzeButton(el);
     this.header = el;
     return el;
+  };
+
+  /* The same "Analyze Scores" panel an assignment column's menu opens, for
+   * the totals. This header is the extension's own, with no Canvas menu to
+   * add an item to, so it is a small button beside the label instead. */
+  P.ensureAnalyzeButton = function (header) {
+    if (!this.onAnalyze || header.querySelector('.cgp-total-analyze')) return;
+    var self = this;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cgp-total-analyze';
+    btn.setAttribute('aria-label', 'Analyze totals');
+    btn.title = 'Analyze totals: mean, median, standard deviation, high/low students and a letter-grade histogram';
+    btn.innerHTML = (CGP.ScoreAnalysisController && CGP.ScoreAnalysisController.ICON_SVG) || '';
+    // Nothing under the header (SlickGrid's sort/drag, the selection
+    // controller) may also act on this press.
+    btn.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      self.onAnalyze();
+    });
+    header.appendChild(btn);
   };
 
   P.ensureLayer = function () {

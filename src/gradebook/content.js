@@ -144,6 +144,9 @@
     // the breadcrumb rather than between the course name and its own control.
     var studentSearch = new CGP.StudentSearch({ api: api, courseId: courseId, settings: settings });
     studentSearch.start();
+    // Stands in for Canvas's gear while the utility strip is collapsed; after
+    // the two controls above so it seats itself to the right of them.
+    layout.mountSettingsGear();
 
     if (CGP.CourseMenuController) {
       var courseMenu = new CGP.CourseMenuController({ api: api, courseId: courseId, settings: settings });
@@ -205,7 +208,8 @@
         layout.moveTotal = !!on;
         _reconcileAttempts = 0;
         reconcileColumns();
-      }
+      },
+      onAnalyze: function () { scoreAnalysis.openTotals(); }
     });
     // Keeps the hidden Test Student row from being typed into, and offers to
     // clear grades that end up there anyway. Started before the keyboard
@@ -223,7 +227,8 @@
     var posting = new CGP.PostGradesController({
       model: model, adapter: adapter, api: api, settings: settings, requestPaint: requestPaint, liveSync: liveSync
     });
-    // "Analyze Scores" in each assignment column's "..." menu.
+    // "Analyze Scores" in each assignment column's "..." menu (and Canvas's
+    // Total column menu), plus the frozen Total header's Analyze button.
     var scoreAnalysis = new CGP.ScoreAnalysisController({ model: model, adapter: adapter, settings: settings });
     var paste = new CGP.BulkPasteController({
       adapter: adapter, model: model, writer: writer, selection: selection,
@@ -501,6 +506,8 @@
         // open. The settings gear is covered by the utility-strip re-hide
         // below, plus a CSS rule that needs no JS at all.
         layout.hideKeyboardShortcutsButton();
+        // Canvas can re-render the breadcrumb (and the gear with it).
+        layout.mountSettingsGear();
         if (settings.values.narrowColumns && document.documentElement.classList.contains('cgp-column-sizing-presentation-only')) {
           reconcileColumns();
         }
