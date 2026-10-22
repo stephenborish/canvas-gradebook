@@ -276,7 +276,9 @@
       liftMissing: this.liftsMissing(),
       liftMissingTo: target.liftMissingTo || null,
       wasExcused: !!(currentRec && currentRec.excused),
-      latePolicyStatus: currentRec ? (currentRec.latePolicyStatus || null) : undefined
+      latePolicyStatus: currentRec ? (currentRec.latePolicyStatus || null) : undefined,
+      submitted: !!(currentRec && currentRec.submittedAt),
+      secondsLate: currentRec ? currentRec.secondsLate : null
     });
     if (!op) {
       this.model.clearLocalWrite(assignmentId, userId, priorWriteMark);

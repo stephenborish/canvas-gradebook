@@ -341,6 +341,28 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     a.eq(calls.applied.length, 1, 'the timer no longer fires as well');
   });
 
+  test('a grade saved in the Grade Detail Tray takes an applied Missing off like a typed one', async () => {
+    const CGP = loadGradebookDom();
+    // No editor was opened: focusout never sees this edit.
+    const calls = focusOutHarness(CGP, { assignmentId: '101', userId: '201', grade: '3', enteredScore: 3, score: 3,
+      gradedAt: 't1', latePolicyStatus: 'missing', missing: true, excused: false }, { skipFocusIn: true });
+    calls.kb.followNativeSave('101', '201', { grade: '0', enteredScore: 0, gradedAt: 't0', latePolicyStatus: 'missing', at: Date.now() });
+    await new Promise((r) => setTimeout(r, 20));
+    a.eq(calls.refreshes, 1);
+    a.eq(calls.applied.length, 1);
+    a.eq(calls.applied[0][0].parsed.kind, CGP.gradeOps.KIND.LIFT_MISSING);
+  });
+
+  test('a status-only save in the tray (no new grade) changes nothing and is not retried', async () => {
+    const CGP = loadGradebookDom();
+    const calls = focusOutHarness(CGP, { assignmentId: '101', userId: '201', grade: '0', enteredScore: 0, score: 0,
+      gradedAt: 't0', latePolicyStatus: 'missing', missing: true, excused: false }, { skipFocusIn: true });
+    calls.kb.followNativeSave('101', '201', { grade: '0', enteredScore: 0, gradedAt: 't0', latePolicyStatus: null, at: Date.now() });
+    await new Promise((r) => setTimeout(r, 1400));
+    a.eq(calls.refreshes, 1, 'one read, no retries');
+    a.eq(calls.applied.length, 0);
+  });
+
   test('a grade typed over Canvas\u2019s own computed Missing sends nothing at all - Canvas drops it itself', async () => {
     const CGP = loadGradebookDom();
     const calls = focusOutHarness(CGP, { assignmentId: '101', userId: '201', grade: '3', enteredScore: 3, score: 3,

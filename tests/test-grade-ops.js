@@ -34,6 +34,16 @@ suite('grade shortcuts (M / E / L / 0)', (test) => {
     a.eq(op.display, null, 'the grade text is left exactly as it is');
   });
 
+  test('M off on work the student handed in gives it back to Canvas, so late work is Late again', () => {
+    // 'none' would pin "no status": Canvas's own Late, and its deduction,
+    // would never come back for a submission that really was late.
+    const op = ops().operationFor(ops().parseToken('M'), { wasExplicitMissing: true, submitted: true });
+    a.form(op.form, { 'submission[late_policy_status]': null });
+    a.eq(op.patch.missing, false);
+    a.eq(op.patch.latePolicyStatus, null);
+    a.lacksKey(op.patch, 'late', 'whether it is late is Canvas\'s to say');
+  });
+
   test('M on a cell Canvas merely computes as missing still APPLIES the status', () => {
     // Canvas reports missing: true for anything past due and not handed in.
     // Only a status somebody actually applied is a thing M can toggle off.
@@ -67,6 +77,19 @@ suite('grade shortcuts (M / E / L / 0)', (test) => {
     a.eq(op.patch.late, true);
     a.eq(op.patch.latePolicyStatus, 'late');
     a.eq(op.display, null, 'no display override for a status-only write');
+  });
+
+  test('L carries how late the work really was, as Canvas\'s own tray does, so the deduction applies', () => {
+    // An applied Late counts only seconds_late_override; without one Canvas
+    // treats the work as 0 seconds late and deducts nothing.
+    const op = ops().operationFor(ops().parseToken('L'), { secondsLate: 90061.4 });
+    a.form(op.form, { 'submission[late_policy_status]': 'late', 'submission[seconds_late_override]': '90061' });
+    ['0', 0, null, undefined].forEach((v) => {
+      a.lacksKey(ops().operationFor(ops().parseToken('L'), { secondsLate: v }).form,
+        'submission[seconds_late_override]', 'no lateness known: ' + v);
+    });
+    a.lacksKey(ops().operationFor(ops().parseToken('L'), { wasLate: true, secondsLate: 500 }).form,
+      'submission[seconds_late_override]', 'removing Late sends no lateness');
   });
 
   test('L on a submission already marked Late removes the status instead', () => {

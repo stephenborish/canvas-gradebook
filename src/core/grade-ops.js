@@ -73,8 +73,11 @@
    * date - never on paper or no-submission work. See liftedStatus.
    *
    * opts.liftMissing - the "a real grade takes Missing off" setting is on.
-   * opts.liftMissingTo - force the status a grade write leaves ('none', when
-   * a grade was typed and M pressed to say "not missing").
+   * opts.liftMissingTo - take Missing off with this grade whatever it is
+   * (a grade was typed and M pressed to say "not missing"); see missingOff.
+   * opts.submitted - the student handed something in to Canvas.
+   * opts.secondsLate - Canvas's seconds_late for the cell, which L carries
+   * as the lateness, exactly as Canvas's own Grade Detail Tray does.
    * opts.latePolicyStatus - the cell's current raw status, carried through
    * unchanged into the optimistic patch when this write does not touch it.
    * opts.wasExcused - CLEAR also has to un-excuse explicitly.
@@ -107,14 +110,24 @@
     return false;
   }
 
+  /* The status that takes an applied Missing off. Work the student handed
+   * in goes back to Canvas's own rules (null), so Canvas marks it Late - and
+   * deducts for it - exactly when it came in after the due date; 'none'
+   * would pin "no status" and switch Late off for good. Nothing handed in
+   * has no lateness to keep, and 'none' stays off whatever Canvas version
+   * is reading it. */
+  function missingOff(opts) {
+    return opts.submitted ? null : 'none';
+  }
+
   /* What a grade write does to the status:
    *   undefined - leaves it alone (the default, and what Canvas's editor does)
    *   null      - hands an applied Missing back to Canvas's automatic rules
-   *   'none'    - pins "no status" (opts.liftMissingTo)
+   *   'none'    - pins "no status" (opts.liftMissingTo, nothing handed in)
    * Only an APPLIED Missing is ever lifted: Canvas's computed one already
    * goes away by itself once the cell is graded. */
   function liftedStatus(parsed, opts) {
-    if (opts.liftMissingTo) return opts.liftMissingTo;
+    if (opts.liftMissingTo) return missingOff(opts);
     if (opts.liftMissing && opts.wasExplicitMissing && gradeEarnsCredit(parsed)) return null;
     return undefined;
   }
@@ -146,7 +159,7 @@
             kind: parsed.kind,
             toggledOff: true,
             summary: 'Missing removed',
-            form: { 'submission[late_policy_status]': 'none' },
+            form: { 'submission[late_policy_status]': missingOff(opts) },
             patch: { missing: false, latePolicyStatus: null },
             display: null // status only; the grade is never touched
           };
@@ -177,10 +190,17 @@
             display: null // status only; the grade text is unchanged
           };
         }
+        // An applied Late counts only seconds_late_override as its lateness,
+        // so without one Canvas deducts nothing. Canvas's own tray sends the
+        // submission's seconds_late with it; so does this.
+        var lateForm = { 'submission[late_policy_status]': 'late' };
+        if (typeof opts.secondsLate === 'number' && opts.secondsLate > 0) {
+          lateForm['submission[seconds_late_override]'] = String(Math.round(opts.secondsLate));
+        }
         return {
           kind: parsed.kind,
           summary: 'Late',
-          form: { 'submission[late_policy_status]': 'late' },
+          form: lateForm,
           patch: { late: true, missing: false, latePolicyStatus: 'late' },
           display: null // status only; the grade text is unchanged
         };
