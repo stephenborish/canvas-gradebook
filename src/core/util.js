@@ -271,7 +271,8 @@
   var MAX_SNIPPETS = 100;
   var MAX_SNIPPET_TEXT = 2000;
   var MAX_SNIPPET_ITEM_BYTES = 8000;
-  var MAX_SNIPPET_BYTES = 88000;
+  // Leaves ~14KB of sync's 100KB for every other setting and the item keys.
+  var MAX_SNIPPET_BYTES = 86000;
   // ~35 bytes each, so the whole list stays well inside the item every
   // setting but the snippets shares.
   var MAX_TIME_SHORTCUTS = 10;
@@ -407,26 +408,30 @@
   /* How settings are laid out in chrome.storage.sync, which is what carries
    * them between every computer signed in to the same Chrome profile.
    *
-   *  - 'cgp.settings': every setting except the snippets, as one object.
+   *  - 'cgp.setting.<name>': one item per setting (snippets aside).
    *  - 'cgp.snippet.<trigger>': one item per snippet, {trigger, text, pos},
    *    pos being its place in the list.
+   *  - 'cgp.snippetStore': 'keys' once the snippets live in those items.
    *
    * Sync settles a conflict per item, last write wins. Everything used to be
-   * one item, rewritten whole on every save, so a save from any computer that
-   * had not yet received the latest settings (an options page opened before
-   * sync caught up, or left open) put its stale snippets back everywhere, and
-   * the 8KB item limit capped the snippets at 15 short ones. Now a save
-   * writes only what the teacher changed in that form, on top of what is
-   * stored at that moment (plan() below), and a snippet added on one computer
-   * and another added elsewhere both survive.
+   * one item ('cgp.settings'), rewritten whole on every save, so a save from
+   * any computer that had not yet received the latest settings (an options
+   * page opened before sync caught up, or left open, or a laptop offline)
+   * put its stale values back everywhere, and the 8KB item limit capped the
+   * snippets at 15 short ones. Now a save writes only what the teacher
+   * changed in that form, each setting and snippet on its own (plan()
+   * below), so changes made on two computers to different settings, or
+   * different snippets, both survive.
    *
-   * Older versions kept the snippets inside 'cgp.settings'. That is still
-   * read until the first save that touches the snippets moves them out and
-   * sets snippetStore: 'keys' there; until then, a computer that has never
-   * stored snippets at all never writes the built-in defaults over ones a
-   * teacher saved elsewhere. Pure apart from read(): unit tested directly. */
-  var BLOB_KEY = 'cgp.settings';
-  var SNIPPET_STORE_MARKER = 'snippetStore';
+   * 'cgp.settings' from older versions is still read, for any setting with
+   * no item of its own, and for the snippets until 'cgp.snippetStore' is
+   * set. The first save moves everything in it to its own item and removes
+   * it. A computer that has never stored anything and changed nothing
+   * writes nothing, so it never puts the built-in defaults over settings a
+   * teacher saved elsewhere. Pure apart from read()/write(): unit tested. */
+  var LEGACY_KEY = 'cgp.settings';
+  var SETTING_PREFIX = 'cgp.setting.';
+  var SNIPPET_STORE_KEY = 'cgp.snippetStore';
 
   function sameJson(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 
@@ -444,35 +449,50 @@
     return items;
   }
 
+  function legacyOf(all) {
+    var v = all && all[LEGACY_KEY];
+    return v && typeof v === 'object' ? v : null;
+  }
+
   /** Every stored item -> the raw settings object sanitizeSettings expects. */
   function assemble(all) {
-    var blob = all && all[BLOB_KEY] && typeof all[BLOB_KEY] === 'object' ? all[BLOB_KEY] : {};
-    var raw = Object.assign({}, blob);
-    delete raw[SNIPPET_STORE_MARKER];
-    if (blob[SNIPPET_STORE_MARKER] === 'keys') {
+    all = all || {};
+    var raw = Object.assign({}, legacyOf(all) || {});
+    Object.keys(all).forEach(function (k) {
+      if (k.indexOf(SETTING_PREFIX) === 0) raw[k.slice(SETTING_PREFIX.length)] = all[k];
+    });
+    if (all[SNIPPET_STORE_KEY] === 'keys') {
       raw.snippets = storedSnippetItems(all).map(function (it) { return { trigger: it.trigger, text: it.text }; });
     }
     return raw;
   }
 
   /* The writes that turn `all` (everything stored right now) into what the
-   * teacher meant: the fields that differ between `base` (what their form
-   * started from) and `next` (what it holds now), and nothing else.
-   * Returns {set: {key: value}, remove: [key]}; both empty means no write. */
+   * teacher meant: the settings and snippets that differ between `base`
+   * (what their form started from, or null to replace everything) and
+   * `next` (what it holds now), and nothing else. Returns
+   * {set: {key: value}, remove: [key], problem: string|null}; a problem
+   * means nothing may be written. */
   function plan(all, base, next) {
     all = all || {};
-    var stored = all[BLOB_KEY] && typeof all[BLOB_KEY] === 'object' ? all[BLOB_KEY] : {};
-    var blob = Object.assign({}, stored);
+    var out = { set: {}, remove: [], problem: null };
+    var legacy = legacyOf(all);
+    var migrated = all[SNIPPET_STORE_KEY] === 'keys';
+
     Object.keys(CGP.DEFAULTS).forEach(function (k) {
       if (k === 'snippets') return;
-      if (!base || !sameJson(base[k], next[k])) blob[k] = next[k];
+      var key = SETTING_PREFIX + k;
+      var value;
+      if (!base || !sameJson(base[k], next[k])) value = next[k];
+      else if (Object.prototype.hasOwnProperty.call(all, key)) return;      // untouched, already its own item
+      else if (legacy && legacy[k] !== undefined) value = sanitizeSettings(assemble(all))[k];   // moved out of cgp.settings
+      else return;                                                         // never stored: the default stays implicit
+      if (!sameJson(all[key], value)) out.set[key] = value;
     });
-    var out = { set: {}, remove: [] };
-    var migrated = stored[SNIPPET_STORE_MARKER] === 'keys';
-    var snippetsChanged = !base || !sameJson(base.snippets, next.snippets);
-    var hasLegacy = Array.isArray(stored.snippets) && !migrated;
 
-    if (snippetsChanged || hasLegacy) {
+    var snippetsChanged = !base || !sameJson(base.snippets, next.snippets);
+    var legacySnippets = !migrated && legacy && Array.isArray(legacy.snippets);
+    if (snippetsChanged || legacySnippets) {
       // The snippets as stored now (the built-in ones when none ever were,
       // since that is what every computer shows), keyed by lower-cased trigger.
       var current = {};
@@ -492,27 +512,40 @@
         // A form that started from nothing stored (base null) replaces it all.
         if (!base) Object.keys(current).forEach(function (t) { if (!mine[t]) delete current[t]; });
       }
-      Object.keys(current).forEach(function (t) {
+      // Snippets saved on another computer meanwhile count too: the merged
+      // library must still fit, or the save is refused rather than leaving
+      // items stored that every reader then quietly drops.
+      var triggers = Object.keys(current);
+      var bytes = triggers.reduce(function (t, k) { return t + snippetItemBytes(current[k]); }, 0);
+      if (triggers.length > MAX_SNIPPETS || bytes > MAX_SNIPPET_BYTES) {
+        out.problem = 'Together with the snippets saved on another computer, that makes ' + triggers.length +
+          ' snippets (' + bytes + ' bytes), and at most ' + MAX_SNIPPETS + ' snippets (' + MAX_SNIPPET_BYTES +
+          ' bytes) fit in Chrome sync. Remove some snippets, then save again.';
+        out.set = {};
+        return out;
+      }
+      triggers.forEach(function (t) {
         var key = snippetKey(t);
         if (!sameJson(all[key], current[t])) out.set[key] = current[t];
       });
       Object.keys(all).forEach(function (k) {
         if (k.indexOf(SNIPPET_PREFIX) === 0 && !current[k.slice(SNIPPET_PREFIX.length)]) out.remove.push(k);
       });
-      delete blob.snippets;
-      blob[SNIPPET_STORE_MARKER] = 'keys';
+      if (!migrated) out.set[SNIPPET_STORE_KEY] = 'keys';
     }
-    // Unchanged (a computer that has never saved anything and changed
-    // nothing, say) is not written: an empty write could only race the real
-    // settings on their way from another computer.
-    if (!sameJson(blob, stored)) out.set[BLOB_KEY] = blob;
+    // Everything in the old single item now has an item of its own.
+    if (legacy) out.remove.push(LEGACY_KEY);
     return out;
   }
 
-  function isSettingsKey(k) { return k === BLOB_KEY || String(k).indexOf(SNIPPET_PREFIX) === 0; }
+  function isSettingsKey(k) {
+    k = String(k);
+    return k === LEGACY_KEY || k === SNIPPET_STORE_KEY || k.indexOf(SETTING_PREFIX) === 0 || k.indexOf(SNIPPET_PREFIX) === 0;
+  }
 
   CGP.settingsStorage = {
-    BLOB_KEY: BLOB_KEY,
+    LEGACY_KEY: LEGACY_KEY,
+    SETTING_PREFIX: SETTING_PREFIX,
     SNIPPET_PREFIX: SNIPPET_PREFIX,
     snippetKey: snippetKey,
     snippetItemBytes: snippetItemBytes,
@@ -527,13 +560,15 @@
       });
     },
     /* Write what changed between base and next on top of what is stored
-     * now. Resolves with the settings as stored afterwards. */
+     * now. Resolves with the settings as stored afterwards; rejects, having
+     * written nothing, when the result would not fit. */
     write: function (base, next) {
       var self = this;
       return chrome.storage.sync.get(null).then(function (all) {
         var p = plan(all || {}, base, next);
+        if (p.problem) throw new Error(p.problem);
         // Set before remove: the two never share a key, and a refused set
-        // must not leave the old snippets already deleted.
+        // must not leave the old values already deleted.
         var work = Promise.resolve();
         if (Object.keys(p.set).length) work = work.then(function () { return chrome.storage.sync.set(p.set); });
         if (p.remove.length) work = work.then(function () { return chrome.storage.sync.remove(p.remove); });
@@ -545,7 +580,7 @@
   CGP.settings = {
     values: sanitizeSettings({}),
     _cbs: [],
-    STORAGE_KEY: BLOB_KEY,
+    STORAGE_KEY: LEGACY_KEY,
     load: function () {
       var self = this;
       if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.sync) {

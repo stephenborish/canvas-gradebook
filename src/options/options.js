@@ -5,7 +5,6 @@
 
   var CGP = globalThis.CGP;
   var DEFAULTS = CGP.DEFAULTS;
-  var KEY = 'cgp.settings';
 
   var BOOLS = Object.keys(DEFAULTS).filter(function (k) { return typeof DEFAULTS[k] === 'boolean'; });
   var NUMS = Object.keys(DEFAULTS).filter(function (k) { return typeof DEFAULTS[k] === 'number'; });
@@ -508,18 +507,6 @@
     return CGP.sanitizeSettings(patch);
   }
 
-  /* chrome.storage.sync allows 8192 BYTES per item (key + JSON value), and
-   * counts them in UTF-8: accented letters take 2 bytes, emoji 4. Every
-   * setting but the snippets shares one item (see CGP.settingsStorage); a
-   * little headroom is left below the hard limit. */
-  var SYNC_ITEM_SAFE_BYTES = 8000;
-
-  function settingsBytes(values) {
-    var rest = Object.assign({}, values);
-    delete rest.snippets;
-    return CGP.util.byteLength(KEY + JSON.stringify(rest));
-  }
-
   function sanitizedTrigger(t) {
     // Mirrors sanitizeSettings' own trigger clean-up, for reporting only.
     return String(t || '').trim().replace(/^\//, '').replace(/[^\w-]/g, '').slice(0, 32);
@@ -619,17 +606,15 @@
 
   /* Refuses, with the reason, anything that would not round-trip intact:
    * snippets sanitizing would drop or cut (the form keeps them so nothing is
-   * lost), or a settings blob over chrome.storage.sync's per-item quota. */
+   * lost). A merged library too big for sync is refused by the write
+   * itself (CGP.settingsStorage.plan), with its own explanation. */
   function checkSavable(values, raw) {
     var losses = raw ? snippetLosses(raw) : [];
     if (losses.length) {
       return 'Not saved: ' + losses.join(' ') + ' Shorten or remove those snippets, then save again.';
     }
-    var bytes = settingsBytes(values);
-    if (bytes > SYNC_ITEM_SAFE_BYTES) {
-      return 'Not saved: these settings come to ' + bytes + ' bytes, and Chrome sync stores at most about ' +
-        SYNC_ITEM_SAFE_BYTES + '. Shorten or remove some snippets (accented letters count as 2 bytes, emoji as 4), then save again.';
-    }
+    // Every other setting is its own small sync item (CGP.settingsStorage),
+    // well inside Chrome sync's per-item quota.
     return null;
   }
 
@@ -650,10 +635,10 @@
       status(okMessage);
     }, function (err) {
       saving = false;
-      // A rejected write (most likely the 8KB-per-item quota) used to
-      // vanish silently; nothing was saved and nothing said so.
-      status('Not saved: ' + (err && err.message ? err.message : 'Chrome storage rejected this.') +
-        ' Try shortening your snippets.', { error: true });
+      // A rejected write (a sync quota, or snippets saved elsewhere that
+      // would not fit alongside these) used to vanish silently.
+      status('Not saved: ' + (err && err.message ? err.message : 'Chrome storage rejected this. Try shortening your snippets.'),
+        { error: true });
     });
   }
 

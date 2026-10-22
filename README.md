@@ -497,12 +497,15 @@ change made on one computer shows up on the others within a minute or so. An opt
 that's already open there updates by itself, and an open gradebook uses the new snippets straight
 away.
 
-- Each snippet is saved as its own entry, so you can keep up to 100 snippets of up to 2,000
-  characters. (Earlier versions put every setting in one entry that Chrome caps at 8 KB, which
-  meant 15 short snippets.)
+- Each setting and each snippet is saved as its own entry, so you can keep up to 100 snippets of
+  up to 2,000 characters. (Earlier versions put every setting in one entry that Chrome caps at 8 KB,
+  which meant 15 short snippets.)
 - **Save** writes only what you changed on that page. Earlier versions rewrote everything on every
-  save, so saving on a computer that hadn't caught up with sync yet put its old snippets back on
-  every computer. Snippets added on two different computers are now both kept.
+  save, so saving on a computer that hadn't caught up with sync yet (or a laptop that was offline)
+  put its old settings back on every computer. Now different settings changed on two computers,
+  and snippets added on both, are all kept. If snippets added on two computers come to more than
+  100 together, the second save is refused with a message saying so, instead of some of them
+  quietly disappearing.
 - A computer that has never saved anything writes nothing, so a fresh install can't overwrite the
   settings that are on their way to it.
 
