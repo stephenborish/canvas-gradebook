@@ -367,9 +367,9 @@ and assignment search, filters, Sync, Import, Export, View Options) is collapsed
 along with the empty wrappers it leaves behind, and the grid takes the full height of the window.
 Canvas's own gradebook-settings gear collapses with the rest of the strip, and a **gear** appears
 in the breadcrumb instead, right after **Find student**. Clicking it opens Canvas's own Gradebook
-Settings, on its **View Options** tab, where **Arrange By** sorts the assignment columns by due date,
-name, points or module (or keeps your own drag order). Late policies and the grade posting policy
-are one tab away. It doesn't copy Canvas's settings: the click goes to Canvas's own hidden gear, so
+Settings, exactly as Canvas's gear does. Its **View Options** tab holds **Arrange By**, which sorts
+the assignment columns by due date, name, points or module (or keeps your own drag order); late
+policies and the grade posting policy are there too. It doesn't copy Canvas's settings: the click goes to Canvas's own hidden gear, so
 Canvas opens its own dialog and saves your changes itself, and the utility strip stays collapsed.
 The breadcrumb gear only shows while the strip is collapsed, so there is never a second one.
 

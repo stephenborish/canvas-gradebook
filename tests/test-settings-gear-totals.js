@@ -84,7 +84,7 @@ suite('settings gear: Canvas\'s gradebook settings while the utility strip is co
     a.eq(layout.findSettingsButton(), gear);
   });
 
-  test('clicking it presses Canvas\'s hidden gear and lands on View Options, leaving the strip collapsed', async () => {
+  test('clicking it presses Canvas\'s hidden gear, opening Canvas\'s dialog as-is, and leaves the strip collapsed', async () => {
     const CGP = loadGradebookDom();
     const doc = domshim.install();
     breadcrumbs(doc, domshim.FakeElement);
@@ -98,7 +98,7 @@ suite('settings gear: Canvas\'s gradebook settings while the utility strip is co
     layout.selectViewOptionsTab = () => { tabbed++; return Promise.resolve(true); };
     a.eq(await layout.openCanvasSettings(), true);
     a.eq(clicks, 1, 'Canvas\'s gear clicked');
-    a.eq(tabbed, 1, 'View Options tab selected');
+    a.eq(tabbed, 0, 'Canvas picks the tab, not us');
     a.eq(restored, 0, 'utility strip not brought back');
     a.ok(layout.controlsHidden);
   });

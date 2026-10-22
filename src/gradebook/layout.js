@@ -137,7 +137,7 @@
    * above the grid - but that put a second "arrange" control directly over
    * the gradebook a teacher had not asked for. A teacher who wants to arrange
    * columns while the utility strip is hidden uses the breadcrumb gear
-   * (mountSettingsGear below), which opens Canvas's own dialog on that tab;
+   * (mountSettingsGear below), which opens Canvas's own settings dialog;
    * Alt+Shift+H still brings the whole strip back for the page visit. */
 
   /* Open Canvas's own gear/Settings modal and land on its View Options tab -
@@ -217,11 +217,11 @@
     return btn;
   };
 
-  /* Open Canvas's own Gradebook Settings from the breadcrumb gear, on its
-   * View Options tab - where Arrange By is, the reason a teacher most often
-   * needs it - and leave it with the teacher. Unlike openArrangeMenu() this
-   * never brings the utility strip back: a click on the hidden gear opens the
-   * dialog just the same, since the dialog is not drawn inside the strip. */
+  /* Open Canvas's own Gradebook Settings from the breadcrumb gear, exactly
+   * as Canvas's gear would (same dialog, same opening tab), and leave it with
+   * the teacher. Unlike openArrangeMenu() this never brings the utility strip
+   * back: a click on the hidden gear opens the dialog just the same, since
+   * the dialog is not drawn inside the strip. */
   P.openCanvasSettings = function () {
     var gear = this.findSettingsButton();
     if (!gear || !gear.isConnected) {
@@ -236,7 +236,7 @@
     }
     gear.click();
     CGP.diag.bump('layout.settingsGearOpened');
-    return this.selectViewOptionsTab();
+    return Promise.resolve(true);
   };
 
   /* Text this Canvas build might use for the tab; scanned the same way
