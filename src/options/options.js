@@ -25,8 +25,9 @@
 
   /* ------------------------------------------------------------- snippets */
 
-  var MAX_SNIPPETS = 15;
-  var MAX_SNIPPET_TEXT = 280;
+  var LIMITS = CGP.SETTINGS_LIMITS;
+  var MAX_SNIPPETS = LIMITS.MAX_SNIPPETS;
+  var MAX_SNIPPET_TEXT = LIMITS.MAX_SNIPPET_TEXT;
   var currentSnippets = [];
   var isRawMode = false;
 
@@ -508,14 +509,15 @@
   }
 
   /* chrome.storage.sync allows 8192 BYTES per item (key + JSON value), and
-   * counts them in UTF-8: accented letters take 2 bytes, emoji 4. A little
-   * headroom is left below the hard limit. */
+   * counts them in UTF-8: accented letters take 2 bytes, emoji 4. Every
+   * setting but the snippets shares one item (see CGP.settingsStorage); a
+   * little headroom is left below the hard limit. */
   var SYNC_ITEM_SAFE_BYTES = 8000;
 
   function settingsBytes(values) {
-    var s = KEY + JSON.stringify(values);
-    if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(s).length;
-    return unescape(encodeURIComponent(s)).length;
+    var rest = Object.assign({}, values);
+    delete rest.snippets;
+    return CGP.util.byteLength(KEY + JSON.stringify(rest));
   }
 
   function sanitizedTrigger(t) {
@@ -527,42 +529,91 @@
    * spelled out by shortcut so the teacher knows exactly what to fix. */
   function snippetLosses(raw) {
     var notes = [];
+    var seen = Object.create(null);
     var usable = (raw || []).filter(function (s) {
-      if (sanitizedTrigger(s.trigger)) return true;
-      notes.push('"' + s.trigger + '" is not a usable shortcut (letters, numbers, - and _ only).');
-      return false;
+      var t = sanitizedTrigger(s.trigger);
+      if (!t) {
+        notes.push('"' + s.trigger + '" is not a usable shortcut (letters, numbers, - and _ only).');
+        return false;
+      }
+      if (seen[t.toLowerCase()]) {
+        notes.push('/' + t + ' is used twice (shortcuts ignore capitals), and only the first one would be kept.');
+        return false;
+      }
+      seen[t.toLowerCase()] = true;
+      return true;
     });
     var label = function (s) { return '/' + sanitizedTrigger(s.trigger); };
     if (usable.length > MAX_SNIPPETS) {
       notes.push('Only ' + MAX_SNIPPETS + ' snippets fit, so ' + usable.slice(MAX_SNIPPETS).map(label).join(', ') +
         ' would be dropped.');
     }
-    var long = usable.slice(0, MAX_SNIPPETS).filter(function (s) { return String(s.text || '').length > MAX_SNIPPET_TEXT; });
+    var kept = usable.slice(0, MAX_SNIPPETS);
+    var long = kept.filter(function (s) { return String(s.text || '').length > MAX_SNIPPET_TEXT; });
     if (long.length) {
       notes.push(long.map(function (s) { return label(s) + ' (' + String(s.text).length + ' characters)'; }).join(', ') +
         ' would be cut to ' + MAX_SNIPPET_TEXT + ' characters.');
     }
-    // sanitizeSettings also caps the whole snippet list by UTF-8 bytes, so
-    // accented or emoji-heavy text can push the last ones out even when
-    // every count and length above is fine.
-    var limits = CGP.SETTINGS_LIMITS || {};
-    if (!notes.length && limits.MAX_SNIPPET_BYTES && CGP.util && CGP.util.byteLength) {
-      var kept = usable.map(function (s) { return { trigger: sanitizedTrigger(s.trigger), text: String(s.text || '') }; })
-        .filter(function (s) { return s.text; });
-      var bytes = CGP.util.byteLength(JSON.stringify(kept));
-      if (bytes > limits.MAX_SNIPPET_BYTES) {
-        notes.push('Your snippets come to ' + bytes + ' bytes and at most ' + limits.MAX_SNIPPET_BYTES +
-          ' fit (accented letters count as 2 bytes, emoji as 4), so the last ones would be dropped.');
+    // Chrome sync's quotas count UTF-8 bytes, per snippet and in total, so
+    // accented or emoji-heavy text can hit them even when every count and
+    // length above is fine.
+    if (!notes.length) {
+      var store = CGP.settingsStorage;
+      var items = kept.map(function (s) { return { trigger: sanitizedTrigger(s.trigger), text: String(s.text || '') }; });
+      var big = items.filter(function (s) { return store.snippetItemBytes(s) > LIMITS.MAX_SNIPPET_ITEM_BYTES; });
+      if (big.length) {
+        notes.push(big.map(function (s) { return '/' + s.trigger; }).join(', ') + ' would be cut: Chrome sync stores at most ' +
+          LIMITS.MAX_SNIPPET_ITEM_BYTES + ' bytes per snippet (accented letters count as 2 bytes, emoji as 4).');
+      }
+      var bytes = items.reduce(function (t, s) { return t + store.snippetItemBytes(s); }, 0);
+      if (!big.length && bytes > LIMITS.MAX_SNIPPET_BYTES) {
+        notes.push('Your snippets come to ' + bytes + ' bytes and at most ' + LIMITS.MAX_SNIPPET_BYTES +
+          ' fit in Chrome sync (accented letters count as 2 bytes, emoji as 4), so the last ones would be dropped.');
       }
     }
     return notes;
   }
 
+  /* What the form held when it was last filled from storage, read back
+   * through the form itself, so the comparison in a save only ever sees the
+   * teacher's own edits (see CGP.settingsStorage.plan). */
+  var baseline = null;
+  var shown = null;   // the stored settings the form was last filled from
+
+  function show(values) {
+    fill(values);
+    shown = JSON.stringify(values);
+    baseline = read();
+  }
+
   function load() {
-    return chrome.storage.sync.get(KEY).then(function (got) {
-      var values = CGP.sanitizeSettings(got && got[KEY]);
-      fill(values);
-      return values;
+    return CGP.settingsStorage.read().then(function (r) {
+      show(r.values);
+      return r.values;
+    });
+  }
+
+  /* Settings saved on another computer (or in another tab) arrive here
+   * through Chrome sync. An untouched form simply shows them; one with edits
+   * in progress keeps the edits, and a save then writes only those edits, on
+   * top of the new settings. */
+  function followRemoteChanges() {
+    if (!chrome.storage || !chrome.storage.onChanged) return;
+    chrome.storage.onChanged.addListener(function (changes, area) {
+      if (area !== 'sync' || !Object.keys(changes).some(CGP.settingsStorage.isSettingsKey)) return;
+      if (saving) return;
+      var untouched = baseline && JSON.stringify(read()) === JSON.stringify(baseline);
+      CGP.settingsStorage.read().then(function (r) {
+        // This page's own save (its change event can arrive after the save
+        // has finished) or nothing that changes what is shown.
+        if (JSON.stringify(r.values) === shown) return;
+        if (untouched) {
+          show(r.values);
+          status('Updated with settings saved on another computer.');
+        } else {
+          status('Settings were changed on another computer. Saving keeps your edits here and their other changes.');
+        }
+      });
     });
   }
 
@@ -582,19 +633,23 @@
     return null;
   }
 
-  function writeSettings(values, okMessage) {
-    var payload = {};
-    payload[KEY] = values;
+  /* base: what the form started from, so only the teacher's edits are
+   * written; null replaces everything (Restore defaults, Import). */
+  var saving = false;
+  function writeSettings(base, values, okMessage) {
     var done;
+    saving = true;
     try {
-      done = Promise.resolve(chrome.storage.sync.set(payload));
+      done = Promise.resolve(CGP.settingsStorage.write(base, values));
     } catch (e) {
       done = Promise.reject(e);
     }
-    return done.then(function () {
-      fill(values); // show the clamped, sanitized result back to the teacher
+    return done.then(function (stored) {
+      saving = false;
+      show(stored); // the clamped, sanitized result, merged with anything saved elsewhere
       status(okMessage);
     }, function (err) {
+      saving = false;
       // A rejected write (most likely the 8KB-per-item quota) used to
       // vanish silently; nothing was saved and nothing said so.
       status('Not saved: ' + (err && err.message ? err.message : 'Chrome storage rejected this.') +
@@ -618,7 +673,7 @@
     var values = read();
     var problem = checkSavable(values, raw);
     if (problem) { status(problem, { error: true }); return Promise.resolve(); }
-    return writeSettings(values, 'Saved. Reload the gradebook tab to see the change.');
+    return writeSettings(baseline, values, 'Saved. Reload the gradebook tab to see the change.');
   }
 
   /* ------------------------------------------------------- export / import */
@@ -676,7 +731,7 @@
     }).filter(function (s) { return s.trigger && s.text; }) : null;
     var problem = checkSavable(values, rawSnippets);
     if (problem) { status(problem.replace(/^Not saved:/, 'Not restored:'), { error: true }); return; }
-    writeSettings(values, 'Settings restored from file. Reload the gradebook tab to see the change.');
+    writeSettings(null, values, 'Settings restored from file. Reload the gradebook tab to see the change.');
   }
 
   function importSettingsFile(file) {
@@ -816,12 +871,13 @@
 
   $('reset').addEventListener('click', function () {
     if (!window.confirm('Restore every setting to its default?')) return;
-    var payload = {};
-    payload[KEY] = CGP.sanitizeSettings({});
-    chrome.storage.sync.set(payload).then(function () {
-      load();
+    saving = true;
+    CGP.settingsStorage.write(null, CGP.sanitizeSettings({})).then(function (stored) {
+      saving = false;
+      show(stored);
       status('Defaults restored.');
     }, function (err) {
+      saving = false;
       status('Defaults not restored: ' + (err && err.message ? err.message : 'Chrome storage rejected this.'), { error: true });
     });
   });
@@ -858,6 +914,7 @@
   initTimeShortcutsUI();
   initVersion();
 
+  followRemoteChanges();
   load().then(function () {
     listDomains();
     renderDiag();

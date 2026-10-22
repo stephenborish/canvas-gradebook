@@ -488,6 +488,34 @@ Transfer, Diagnostics); Save and Restore defaults stay visible in the sidebar no
 tab you're on. Every feature above can be switched off individually. Nothing is configurable
 from inside the gradebook, by design.
 
+### The same settings on every computer
+
+Settings, comment snippets included, are saved to your Chrome profile and carried by Chrome sync to
+every computer where Chrome is signed in to **the same Google account with sync turned on**,
+including **Extensions** (Chrome → Settings → You and Google → Sync → Manage what you sync). A
+change made on one computer shows up on the others within a minute or so. An options page
+that's already open there updates by itself, and an open gradebook uses the new snippets straight
+away.
+
+- Each snippet is saved as its own entry, so you can keep up to 100 snippets of up to 2,000
+  characters. (Earlier versions put every setting in one entry that Chrome caps at 8 KB, which
+  meant 15 short snippets.)
+- **Save** writes only what you changed on that page. Earlier versions rewrote everything on every
+  save, so saving on a computer that hadn't caught up with sync yet put its old snippets back on
+  every computer. Snippets added on two different computers are now both kept.
+- A computer that has never saved anything writes nothing, so a fresh install can't overwrite the
+  settings that are on their way to it.
+
+What Chrome sync can't do, whatever the extension does:
+
+- It doesn't cross Google accounts. Settings saved in a school account's Chrome profile don't reach
+  a personal account's profile, or the other way round. Use **Export** and **Import** under
+  Backup & Transfer to copy them across.
+- A school can turn Chrome sync off for its accounts (Google Admin console). Then settings stay on
+  each computer, and Export / Import is the way to move them.
+- A copy loaded with **Load unpacked** is a different extension as far as Chrome is concerned, with
+  its own settings.
+
 ## Diagnostics
 
 Turn on **Record diagnostics** in the options page, open a gradebook, then come back and press
@@ -503,7 +531,8 @@ Student names, grades and comment text are never written to the log — only cou
 - No API token, no login, no account.
 - No analytics, no telemetry, no external servers of any kind — not even web fonts; the
   extension uses your system fonts. The only network permission is your Canvas domain.
-- Settings sync through your Chrome profile (`chrome.storage.sync`); SpeedGrader drafts and the
+- Settings sync through your Chrome profile (`chrome.storage.sync`; see "The same settings on every
+  computer" above); SpeedGrader drafts and the
   diagnostics snapshot stay on the device (`chrome.storage.local`).
 - Student data is never persisted. The cross-course student search holds its rosters in memory
   for the life of the page and no longer; the only thing cached on disk from Canvas is your own

@@ -259,12 +259,25 @@ suite('settings sanitizing', (test) => {
     a.deep(CGP.sanitizeSettings({ snippets: 'oops' }).snippets, CGP.DEFAULTS.snippets);
   });
 
-  test('snippets are capped well under chrome.storage.sync’s per-item quota', () => {
+  test('snippets are capped inside chrome.storage.sync’s per-item and total quotas', () => {
+    const L = CGP.SETTINGS_LIMITS;
+    const store = CGP.settingsStorage;
     const many = [];
-    for (let i = 0; i < 100; i++) many.push({ trigger: 't' + i, text: 'x'.repeat(4000) });
+    for (let i = 0; i < 300; i++) many.push({ trigger: 't' + i, text: 'x'.repeat(4000) });
     const s = CGP.sanitizeSettings({ snippets: many });
-    a.eq(s.snippets.length <= 15, true, 'snippet count is capped');
-    a.eq(s.snippets[0].text.length <= 280, true, 'snippet text length is capped');
+    a.eq(s.snippets.length <= L.MAX_SNIPPETS, true, 'snippet count is capped');
+    a.eq(s.snippets[0].text.length <= L.MAX_SNIPPET_TEXT, true, 'snippet text length is capped');
+    const total = s.snippets.reduce((t, x) => t + store.snippetItemBytes(x), 0);
+    a.eq(total <= L.MAX_SNIPPET_BYTES, true, 'all snippets fit the overall budget');
+    // Emoji are 4 bytes each: a snippet of them is cut to fit its own item.
+    const emoji = CGP.sanitizeSettings({ snippets: [{ trigger: 'e', text: '\u{1F600}'.repeat(2000) }] }).snippets[0];
+    a.eq(store.snippetItemBytes(emoji) <= L.MAX_SNIPPET_ITEM_BYTES, true, 'one snippet fits one sync item');
+    a.ok(emoji.text.length > 0);
+  });
+
+  test('a repeated trigger keeps only its first snippet (triggers ignore capitals)', () => {
+    const s = CGP.sanitizeSettings({ snippets: [{ trigger: 'Nice', text: 'one' }, { trigger: 'nice', text: 'two' }] });
+    a.deep(s.snippets, [{ trigger: 'Nice', text: 'one' }]);
   });
 });
 

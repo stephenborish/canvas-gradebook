@@ -1,6 +1,6 @@
 /* Canvas Gradebook+ - service worker.
  *
- * Deliberately tiny. It seeds default settings, opens the options page from the
+ * Deliberately tiny. It opens the options page from the
  * toolbar icon, registers the content scripts for self-hosted Canvas
  * domains the teacher has granted, applies Web Store updates promptly
  * (self-update.js), and relays "this submission changed" announcements
@@ -11,18 +11,9 @@ import { CONTENT_JS, CONTENT_CSS } from './script-manifest.js';
 import { createSelfUpdater } from './self-update.js';
 import { createLiveRelay, LIVE_SYNC_TYPE } from './live-relay.js';
 
-const SETTINGS_KEY = 'cgp.settings';
 const DYNAMIC_ID = 'cgp-custom-domains';
 const DYNAMIC_BRIDGE_ID = 'cgp-custom-domains-bridge';
 const DYNAMIC_WATCH_ID = 'cgp-custom-domains-write-watch';
-
-async function seedDefaults() {
-  const got = await chrome.storage.sync.get(SETTINGS_KEY);
-  if (!got || !got[SETTINGS_KEY]) {
-    // An empty object is fine: the content scripts sanitize and fill defaults.
-    await chrome.storage.sync.set({ [SETTINGS_KEY]: {} });
-  }
-}
 
 function toCoursesPattern(origin) {
   // "*://canvas.school.edu/*" -> "*://canvas.school.edu/courses/*"
@@ -104,8 +95,10 @@ async function syncDynamicScripts() {
   }
 }
 
+// No settings are written here. Defaults need no storing (every reader fills
+// them in), and writing them on a fresh install raced the teacher's real
+// settings on their way in through Chrome sync.
 chrome.runtime.onInstalled.addListener(async () => {
-  await seedDefaults();
   await syncDynamicScripts();
 });
 
