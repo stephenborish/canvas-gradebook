@@ -99,9 +99,10 @@ type:
   and automatic Late only applies to work a student actually submitted after the due date.
 - A Missing somebody *applied* (with `M`, the Grade Detail Tray or SpeedGrader) stays on a graded
   submission in Canvas. With **A real grade typed over a Missing you applied takes Missing off** on
-  (the default, under Grading Input), typing or pasting a grade above zero over it hands the status
-  back to Canvas (`late_policy_status: null`), and Canvas marks the work Late only if it really was
-  submitted late. It waits for Canvas's own save of the grade to land first, so a value Canvas
+  (the default, under Grading Input), typing or pasting a grade above zero over it — or saving one in
+  the Grade Detail Tray — hands the status back to Canvas (`late_policy_status: null`), and Canvas
+  marks the work Late (applying the course's late deduction) only if it really was submitted late.
+  SpeedGrader is Canvas's own page: a grade saved there keeps an applied Missing, as in Canvas. It waits for Canvas's own save of the grade to land first, so a value Canvas
   refuses — or an edit you cancel with `Escape` — never changes anything. A `0` (or fail /
   incomplete) leaves an applied Missing on: a zero is how missing work is recorded. Turn the setting
   off and grades never touch a status at all.
@@ -110,7 +111,14 @@ Earlier versions marked the work **Late** whenever a grade was typed over any Mi
 more after Canvas's own save and without regard to the submission type; that is gone.
 
 Typing a grade and then pressing `M` (before leaving the cell) saves that grade with an applied
-Missing off and no other status — `M` is you saying "not missing", not "late".
+Missing off — `M` is you saying "not missing". Taking an applied Missing off (this, or pressing `M`
+again) never pins "no status" on work the student actually handed in: the status goes back to
+Canvas, so work submitted after its due date is Late again, with its deduction. Pinning "None"
+(which is what the Grade Detail Tray's and SpeedGrader's *None* do) switches Late off for good.
+
+`L` sends how late the work really was (`seconds_late_override`), exactly as Canvas's own tray does
+when you pick Late there. Without it Canvas counts an applied Late as 0 seconds late and deducts
+nothing.
 
 Adding a comment never touches a status: Canvas's comment write leaves it exactly where it was.
 (Earlier versions put Missing back whenever a comment's answer came back without it — which also
@@ -125,7 +133,8 @@ anything merely past its due date and not handed in, and a first `M` (or `L`) on
 still applies the status rather than flipping it.
 
 These are writes to the Canvas record, not local decoration. `M` sends
-`late_policy_status=missing` (and removing it sends `none`), so the submission reads as Missing
+`late_policy_status=missing` (removing it sends `null` for work the student handed in, so Canvas
+can mark it Late again, and `none` for work that was never handed in), so the submission reads as Missing
 everywhere — the Grade Detail Tray, SpeedGrader and the student's own grades page — not only
 here. Canvas's editor is closed without committing anything of its own first, so there is never
 a second, plain grade write racing ours. The response is then checked: if the status did not

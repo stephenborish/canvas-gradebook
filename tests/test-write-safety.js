@@ -735,6 +735,26 @@ suite('write safety: a grade never invents a status', (test) => {
     a.eq(ops().cellStatus(op.patch), 'none');
   });
 
+  test('grade typed, then M, on work the student handed in gives the status back to Canvas', () => {
+    const op = ops().operationFor(ops().parseToken('3'), { wasExplicitMissing: true, liftMissingTo: 'none', submitted: true });
+    a.form(op.form, { 'submission[posted_grade]': '3', 'submission[late_policy_status]': null });
+    a.eq(op.patch.missing, false);
+    a.lacksKey(op.patch, 'late');
+  });
+
+  test('the writer tells grade-ops whether work was handed in and how late it was', async () => {
+    stubUi();
+    const sent = [];
+    const api = { updateSubmission: (c, aid, uid, form) => { sent.push(form); return Promise.resolve({ id: '1', assignment_id: '50', user_id: '10' }); } };
+    const m = loaded({ latePolicyStatus: 'missing', missing: true, submittedAt: '2026-10-02T12:00:00Z', secondsLate: 3600 });
+    const w = new CGP.GradeWriter({ api: api, model: m, settings: { values: {} } });
+    await w.apply([{ assignmentId: '50', userId: '10', parsed: ops().parseToken('M') }]);
+    a.deep(sent[0], { 'submission[late_policy_status]': null });
+    m.patchCell('50', '10', { latePolicyStatus: null, missing: false, secondsLate: 3600 }, { silent: true });
+    await w.apply([{ assignmentId: '50', userId: '10', parsed: ops().parseToken('L') }]);
+    a.deep(sent[1], { 'submission[late_policy_status]': 'late', 'submission[seconds_late_override]': '3600' });
+  });
+
   test('LIFT_MISSING after Canvas saves a grade sends null, never Late', () => {
     const op = ops().operationFor({ kind: ops().KIND.LIFT_MISSING }, {});
     a.form(op.form, { 'submission[late_policy_status]': null });

@@ -90,14 +90,20 @@
       var pending = nativeRefresh[k];
       if (pending) clearTimeout(pending.timer);
       var totals = gradeMayChange || !!(pending && pending.totals);
+      // The cell as it was before the first save of this burst.
+      var before = pending ? pending.before : model.cell(assignmentId, userId);
+      if (!pending && before) before = Object.assign({}, before, { at: Date.now() });
       model.noteNativeWrite(assignmentId, userId);
-      nativeRefresh[k] = { totals: totals, timer: setTimeout(function () {
+      nativeRefresh[k] = { totals: totals, before: before, timer: setTimeout(function () {
         delete nativeRefresh[k];
         CGP.diag.bump('nativeWrite.refresh');
         // A grade typed in the grid has its own follow-up waiting, which
-        // re-reads the cell itself - run it now, not on its timer.
+        // re-reads the cell itself - run it now, not on its timer. A grade
+        // saved in the Grade Detail Tray gets that same follow-up, so it
+        // takes an applied Missing off just as a typed one does.
         if (!(keyboard && keyboard.canvasSaved(assignmentId, userId))) {
-          model.refreshCell(assignmentId, userId, { commentsAuthoritative: true, staleIfWrittenAfter: Date.now() });
+          if (keyboard && totals && before) keyboard.followNativeSave(assignmentId, userId, before);
+          else model.refreshCell(assignmentId, userId, { commentsAuthoritative: true, staleIfWrittenAfter: Date.now() });
         }
         // A comment edit/delete cannot move the course total.
         if (totals) model.queueTotalRefresh(userId);

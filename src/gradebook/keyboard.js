@@ -227,6 +227,21 @@
     }, RECONCILE_DELAYS[attempt]));
   };
 
+  /* A grade Canvas saved from somewhere other than the grid's editor (the
+   * Grade Detail Tray): the same follow-up as a typed grade, run now - the
+   * save has already landed, so there is nothing to retry. `before` is the
+   * cell as the model held it before that save. */
+  P.followNativeSave = function (assignmentId, userId, before) {
+    this.scheduleReconcile(assignmentId, userId, {
+      grade: before.grade,
+      enteredScore: before.enteredScore,
+      gradedAt: before.gradedAt,
+      latePolicyStatus: before.latePolicyStatus || null,
+      at: before.at
+    }, RECONCILE_DELAYS.length - 1);
+    this.canvasSaved(assignmentId, userId);
+  };
+
   /* Canvas's own save of this cell just landed: follow up now instead of on
    * the timer. Returns whether a follow-up was waiting. */
   P.canvasSaved = function (assignmentId, userId) {
@@ -564,8 +579,10 @@
       return { assignmentId: t.assignmentId, userId: t.userId, token: typedOverMissing || token };
     }));
     // One request: the typed grade with Missing off. An applied Missing is
-    // removed the way M removes it ('none'); Canvas's own Missing needs
-    // nothing, since Canvas drops it as soon as the grade is saved.
+    // removed the way M removes it (gradeOps missingOff: handed-in work goes
+    // back to Canvas, which marks it Late if it came in late); Canvas's own
+    // Missing needs nothing, since Canvas drops it as soon as the grade is
+    // saved.
     if (typedOverMissing) {
       var overRec = this.model.cell(editorInfo.assignmentId, editorInfo.studentId);
       if (overRec && overRec.latePolicyStatus === 'missing') {
