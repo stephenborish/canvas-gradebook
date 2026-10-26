@@ -140,4 +140,61 @@ suite('CourseSwitcher & assignment breadcrumb integration', (test) => {
     a.eq(anchor, a0, 'findAnchor finds course link with query params');
     a.eq(li0.style.maxWidth, 'none', 'releases li maxWidth');
   });
+  test('mounts beside the plain-text course crumb on the course home page', () => {
+    const CGP = loadGradebookDom();
+    const doc = domshim.install();
+    const FakeElement = domshim.FakeElement;
+    const prevLocation = globalThis.location;
+    globalThis.location = { pathname: '/courses/379', origin: 'https://x.instructure.com' };
+    try {
+      const nav = new FakeElement('nav');
+      nav.id = 'breadcrumbs';
+      doc.body.appendChild(nav);
+      const ol = new FakeElement('ol');
+      nav.appendChild(ol);
+      const li = new FakeElement('li');
+      const current = new FakeElement('span');
+      current.setAttribute('aria-current', 'page');
+      current.textContent = 'Integrated Science I - 4';
+      li.appendChild(current);
+      ol.appendChild(li);
+
+      const switcher = new CGP.CourseSwitcher({
+        api: {}, courseId: '379', settings: { values: { courseSwitcher: true } }, isGradebookPage: false
+      });
+      a.eq(switcher.findCrumbLink(), current, 'the current-page crumb is the anchor on course home');
+      switcher.start();
+      a.ok(li.querySelector('.cgp-crumb-toggle'), 'Switch course mounted inside the course crumb');
+
+      // Anywhere else, the current crumb is not the course name.
+      globalThis.location = { pathname: '/courses/379/assignments', origin: 'https://x.instructure.com' };
+      a.eq(switcher.findHomeCrumb(), null, 'never on a non-home page');
+    } finally {
+      globalThis.location = prevLocation;
+    }
+  });
+
+  test('course home with no aria-current falls back to the last crumb text', () => {
+    const CGP = loadGradebookDom();
+    const doc = domshim.install();
+    const FakeElement = domshim.FakeElement;
+    const prevLocation = globalThis.location;
+    globalThis.location = { pathname: '/courses/379/', origin: 'https://x.instructure.com' };
+    try {
+      const nav = new FakeElement('nav');
+      nav.id = 'breadcrumbs';
+      doc.body.appendChild(nav);
+      const li = new FakeElement('li');
+      const span = new FakeElement('span');
+      span.textContent = 'Integrated Science I - 4';
+      li.appendChild(span);
+      nav.appendChild(li);
+      const switcher = new CGP.CourseSwitcher({
+        api: {}, courseId: '379', settings: { values: { courseSwitcher: true } }, isGradebookPage: false
+      });
+      a.eq(switcher.findCrumbLink(), span);
+    } finally {
+      globalThis.location = prevLocation;
+    }
+  });
 });

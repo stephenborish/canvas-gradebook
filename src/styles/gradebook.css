@@ -2425,6 +2425,93 @@ html.cgp-on .cgp-stats__list li span { overflow: hidden; text-overflow: ellipsis
 html.cgp-on .cgp-stats__list li b { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 html.cgp-on .cgp-stats__list li i { font-style: normal; font-weight: 400; color: var(--cgp-muted); }
 
+/* "Copy Roster" panel (roster-export.js) - the score panel's shell with a
+ * couple of forms inside. */
+html.cgp-on .cgp-roster .cgp-stats__panel { width: min(560px, 100%); }
+html.cgp-on .cgp-roster__section {
+  border-top: 1px solid var(--cgp-hairline);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+html.cgp-on .cgp-roster__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 8px 0;
+}
+html.cgp-on .cgp-roster__names {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+html.cgp-on .cgp-roster__names legend {
+  font-size: 12px;
+  color: var(--cgp-muted);
+  padding: 0;
+  margin-bottom: 4px;
+}
+html.cgp-on .cgp-roster__choice,
+html.cgp-on .cgp-roster__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--cgp-ink);
+  cursor: pointer;
+  margin: 0;
+}
+html.cgp-on .cgp-roster__choice input { margin: 0; accent-color: var(--cgp-brand); }
+html.cgp-on .cgp-roster__field select {
+  font: inherit;
+  font-size: 13px;
+  padding: 3px 6px;
+  border: 1px solid var(--cgp-line);
+  border-radius: 6px;
+  background: var(--cgp-surface);
+  margin: 0;
+  height: auto;
+  width: auto;
+}
+html.cgp-on .cgp-roster__btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--cgp-line);
+  background: var(--cgp-surface);
+  color: var(--cgp-ink-strong);
+  cursor: pointer;
+}
+html.cgp-on .cgp-roster__btn:hover:not(:disabled) { background: var(--cgp-brand-wash); }
+html.cgp-on .cgp-roster__btn--primary {
+  background: var(--cgp-brand);
+  border-color: var(--cgp-brand);
+  color: #fff;
+}
+html.cgp-on .cgp-roster__btn--primary:hover:not(:disabled) { background: var(--cgp-brand-dark); }
+html.cgp-on .cgp-roster__btn:disabled { opacity: .45; cursor: default; }
+html.cgp-on .cgp-roster__btn:focus-visible { outline: none; box-shadow: var(--cgp-focus-ring); }
+html.cgp-on .cgp-roster__preview { margin-top: 10px; overflow-x: auto; }
+html.cgp-on .cgp-roster__preview table {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: 100%;
+}
+html.cgp-on .cgp-roster__preview th,
+html.cgp-on .cgp-roster__preview td {
+  text-align: left;
+  padding: 4px 10px 4px 0;
+  border-bottom: 1px solid var(--cgp-hairline);
+  white-space: nowrap;
+}
+html.cgp-on .cgp-roster__preview th { font-weight: 600; color: var(--cgp-muted); }
+html.cgp-on .cgp-roster__actions { margin-top: 12px; }
+
 /* ===================================== View Options sync (layout.js) ===== */
 
 /* While syncViewOptions() opens Canvas's Gradebook Settings tray only to
