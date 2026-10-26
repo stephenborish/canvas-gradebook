@@ -190,10 +190,18 @@
       'a1.65 1.65 0 0 0-1.51 1z"/></svg>';
 
   P.mountSettingsGear = function () {
-    var existing = document.querySelector('.cgp-settings-gear');
-    if (existing && existing.isConnected) return existing;
     var anchor = document.querySelector('#breadcrumbs .cgp-find-student, .ic-app-crumbs .cgp-find-student') ||
-      document.querySelector('#breadcrumbs .cgp-crumb-toggle, .ic-app-crumbs .cgp-crumb-toggle');
+      document.querySelector('#breadcrumbs .cgp-crumb-toggle:not(.cgp-settings-gear), ' +
+        '.ic-app-crumbs .cgp-crumb-toggle:not(.cgp-settings-gear)');
+    var existing = document.querySelector('.cgp-settings-gear');
+    if (existing && existing.isConnected) {
+      // Mounted before Switch course / Find student were (the switcher retries
+      // while Canvas is still drawing the breadcrumb), so it fell back to the
+      // last crumb, right up against "Grades". Move it beside them once
+      // they're there.
+      if (anchor && existing.previousElementSibling !== anchor) anchor.insertAdjacentElement('afterend', existing);
+      return existing;
+    }
     var crumbs = anchor ? null : document.querySelectorAll('#breadcrumbs li, .ic-app-crumbs li');
     var host = crumbs && crumbs.length ? crumbs[crumbs.length - 1] : null;
     if (!anchor && !host) return null;

@@ -70,6 +70,31 @@ suite('settings gear: Canvas\'s gradebook settings while the utility strip is co
     a.eq(btn.parentElement, last);
   });
 
+  test('mounted in the last crumb before Find student existed, it moves beside Find student once it does', () => {
+    const CGP = loadGradebookDom();
+    const doc = domshim.install();
+    const FakeElement = domshim.FakeElement;
+    const crumbs = new FakeElement('nav');
+    crumbs.id = 'breadcrumbs';
+    const course = new FakeElement('li');
+    const grades = new FakeElement('li');
+    crumbs.appendChild(course);
+    crumbs.appendChild(grades);
+    doc.body.appendChild(crumbs);
+    const layout = makeLayout(CGP, true);
+    const btn = layout.mountSettingsGear();
+    a.eq(btn.parentElement, grades, 'falls back to the last crumb');
+
+    const find = new FakeElement('button');
+    find.classList.add('cgp-crumb-toggle');
+    find.classList.add('cgp-find-student');
+    course.appendChild(find);
+    a.eq(layout.mountSettingsGear(), btn, 'the same gear, not a second one');
+    a.eq(btn.parentElement, course, 'moved out of the Grades crumb');
+    a.eq(course.children.indexOf(btn), course.children.indexOf(find) + 1, 'directly after Find student');
+    a.eq(doc.querySelectorAll('.cgp-settings-gear').length, 1);
+  });
+
   test('Canvas\'s own gear is found, never the breadcrumb stand-in that shares its label', () => {
     const CGP = loadGradebookDom();
     const doc = domshim.install();

@@ -101,6 +101,53 @@ suite('page-context SlickGrid bridge', (test) => {
     a.deep(model.map((column) => column.width), [190, 84, 124], 'sizes student, total (84px), and assignments correctly');
   });
 
+  async function moveTotalWith(model, options) {
+    const grid = {
+      getColumns: function () { return model; },
+      getOptions: function () { return options; },
+      setColumns: function (columns) { model = columns; },
+      invalidate: function () {},
+      render: function () {},
+      resizeCanvas: function () {}
+    };
+    const listeners = [];
+    const win = {
+      ENV: {},
+      location: { origin: 'https://canvas.example.edu' },
+      addEventListener: function (type, listener) { if (type === 'message') listeners.push(listener); },
+      postMessage: function (message) {
+        listeners.slice().forEach(function (listener) { listener({ source: win, data: message }); });
+      }
+    };
+    vm.runInNewContext(fs.readFileSync('src/page/env-bridge.js', 'utf8'), {
+      window: win,
+      document: { querySelector: function () { return { slickGrid: grid }; } },
+      Promise, Object, Array, String, Number, Math, isFinite,
+      setTimeout: function (fn) { fn(); }
+    });
+    win.postMessage({
+      source: 'cgp-grid-request', id: 'move-total', studentWidth: 190, assignmentWidth: 124, hideTotal: true, moveTotal: true
+    }, win.location.origin);
+    await Promise.resolve();
+    await Promise.resolve();
+    return model.map((column) => column.id);
+  }
+
+  test('Total moves to the first scrolling column, after every frozen column Canvas has (numberOfColumnsToFreeze)', async () => {
+    const ids = await moveTotalWith(
+      [{ id: 'student', width: 260 }, { id: 'custom_col_3', width: 120 }, { id: 'assignment_1', width: 140 },
+        { id: 'assignment_2', width: 140 }, { id: 'total_grade', width: 130 }],
+      { numberOfColumnsToFreeze: 2 });
+    a.deep(ids, ['student', 'custom_col_3', 'total_grade', 'assignment_1', 'assignment_2'],
+      'the frozen Notes column stays frozen; Total does not land inside the frozen block');
+  });
+
+  test('with no frozen-column option at all, Total still goes right after Student', async () => {
+    const ids = await moveTotalWith(
+      [{ id: 'student', width: 260 }, { id: 'assignment_1', width: 140 }, { id: 'total_grade', width: 130 }], {});
+    a.deep(ids, ['student', 'total_grade', 'assignment_1']);
+  });
+
   test('marks submissions posted in Canvas\'s own rows and re-renders just those rows', async () => {
     const rows = [
       { id: '1', assignment_7: { posted_at: null, has_postable_comments: true, score: 4 } },
