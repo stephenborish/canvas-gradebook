@@ -1010,6 +1010,11 @@ html.cgp-on.cgp-hide-utility button[title*="gradebook settings" i]:not(.cgp-sett
 html.cgp-on .cgp-crumb-toggle.cgp-settings-gear { display: none; }
 html.cgp-on.cgp-hide-utility .cgp-crumb-toggle.cgp-settings-gear {
   display: inline-flex;
+  /* Above the crumb that follows, so that even if Canvas's breadcrumb markup
+   * ever squeezes the course crumb again, "Grades" can't cover the gear or
+   * swallow its clicks. */
+  position: relative;
+  z-index: 1;
   padding: 2px 5px;
   color: var(--cgp-muted);
 }
@@ -1811,12 +1816,17 @@ html.cgp-on .cgp-crumb-item {
  * (calculated as 100 / numChildren %). On pages with 4+ crumbs (such as assignments, modules,
  * pages, discussions), capping the course crumb at 25% forces severe truncation of the course
  * title and causes the added "Switch course" button to overflow the <li>, crashing into and
- * overlapping adjacent crumbs (e.g. "Assignments"). We release the 25% max-width cap on the
- * course crumb item so it can naturally contain the course title and the toggle without overflowing. */
+ * overlapping adjacent crumbs (e.g. "Assignments"). We release the max-width cap on the
+ * course crumb item entirely so it always contains the course title and every control beside it.
+ * It used to be capped at min(560px, 65vw) instead, but Switch course + Find student + the
+ * settings gear (plus Canvas's own separator padding) can add up to more than that, and the
+ * overflow - the gear, last in line - was then painted over by the next crumb ("Grades"),
+ * which also took its clicks. The course title itself is what is kept bounded, by
+ * .cgp-crumb-link below. */
 html.cgp-on #breadcrumbs li.cgp-crumb-item,
 html.cgp-on .ic-app-crumbs li.cgp-crumb-item,
 html.cgp-on nav[aria-label*="crumb" i] li.cgp-crumb-item {
-  max-width: min(560px, 65vw) !important;
+  max-width: none !important;
   flex: 0 0 auto !important;
   overflow: visible !important;
 }
