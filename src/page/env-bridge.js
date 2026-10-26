@@ -432,6 +432,25 @@
    * Only runs while the frozen Total is wanted; in-memory only, so Canvas's
    * own saved column order is never rewritten. */
   var totalHome = null;   // Canvas's own index for Total, while it is moved
+
+  /* How many left-most columns the grid freezes, i.e. the index of the first
+   * scrolling column, or -1 when the grid doesn't say. Canvas's SlickGrid fork
+   * calls this numberOfColumnsToFreeze; frozenColumn (upstream SlickGrid's
+   * last-frozen-index) is only a fallback. Reading frozenColumn alone found
+   * nothing on Canvas, so Total was dropped right after Student - INSIDE the
+   * frozen block whenever a custom column (Notes, ...) was frozen beside the
+   * names. That pushed the custom column out into the scrolling pane, where it
+   * showed as an empty column-wide gap between the Total and the first
+   * assignment. */
+  function frozenCount(grid) {
+    var options = {};
+    try { options = grid.getOptions() || {}; } catch (e) { return -1; }
+    var count = Number(options.numberOfColumnsToFreeze);
+    if (isFinite(count) && count > 0) return count;
+    var last = Number(options.frozenColumn);
+    if (isFinite(last) && last >= 0) return last + 1;
+    return -1;
+  }
   function totalFirst(grid, columns) {
     if (!Array.isArray(columns)) return columns;
     if (!cgpState.active || !cgpState.hideTotal || !cgpState.moveTotal) {
@@ -453,9 +472,8 @@
       if (kind === 'student' && studentAt < 0) studentAt = i;
     }
     if (from < 0) return columns;
-    var frozen = -1;
-    try { frozen = Number((grid.getOptions() || {}).frozenColumn); } catch (e) { frozen = -1; }
-    var target = isFinite(frozen) && frozen >= 0 ? frozen + 1 : (studentAt >= 0 ? studentAt + 1 : -1);
+    var target = frozenCount(grid);
+    if (target < 0) target = studentAt >= 0 ? studentAt + 1 : -1;
     if (target < 0 || from <= target) return columns;
     totalHome = from;
     var next = columns.slice();
