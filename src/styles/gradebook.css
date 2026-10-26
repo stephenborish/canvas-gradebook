@@ -1257,6 +1257,12 @@ html.cgp-on .slick-header-column .cgp-post[disabled] {
   cursor: default;
   opacity: 0.7;
 }
+/* The button's z-index only has to beat the rest of its own header (Canvas's
+ * title and menu). Without a stacking context of its own here, it competed
+ * with everything else in the header row instead: once the column scrolled
+ * underneath the frozen Total, the button (z-index 7) was still drawn on top
+ * of the Total header (z-index 5) while the rest of its column was hidden. */
+html.cgp-on .slick-header-column.cgp-has-post { isolation: isolate; }
 html.cgp-on .slick-header-column.cgp-has-post .cgp-header-label {
   inset: 0 22px 17px 5px !important;
 }
