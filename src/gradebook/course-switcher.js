@@ -40,7 +40,9 @@
     var crumbLink = this.findCrumbLink();
     if (!crumbLink) {
       if (!this._retryCount) this._retryCount = 0;
-      if (this._retryCount < 8) {
+      // About five seconds: a course home page mounts its breadcrumb later
+      // than the gradebook does.
+      if (this._retryCount < 20) {
         this._retryCount++;
         var selfRetry = this;
         setTimeout(function () { selfRetry.start(); }, 250);
@@ -104,7 +106,29 @@
       var href = (links[i].getAttribute('href') || '').split(/[?#]/)[0];
       if (/\/courses\/\d+\/?$/.test(href)) return links[i];
     }
+    var home = this.findHomeCrumb();
+    if (home) return home;
     return links.length ? links[0] : null;
+  };
+
+  /* On the course's own home page the course name is the CURRENT crumb, and
+   * Canvas renders the current crumb as plain text (aria-current="page"), not
+   * a link - so the link search above finds nothing there. Only on that page
+   * is the last crumb the course name; anywhere else it is "Grades",
+   * "Assignments", ... and must never get the switcher. */
+  P.findHomeCrumb = function () {
+    var path = typeof location !== 'undefined' ? String(location.pathname || '') : '';
+    if (!/^\/courses\/\d+\/?$/.test(path)) return null;
+    var el = document.querySelector('#breadcrumbs [aria-current="page"], .ic-app-crumbs [aria-current="page"]');
+    if (!el) {
+      var items = document.querySelectorAll('#breadcrumbs li, .ic-app-crumbs li');
+      el = items.length ? items[items.length - 1] : null;
+    }
+    // The text inside the list item, so the button lands beside the name
+    // within the same crumb rather than as a sibling crumb of its own.
+    while (el && el.tagName === 'LI' && el.children && el.children[0]) el = el.children[0];
+    if (!el || el.tagName === 'LI' || !String(el.textContent || '').trim()) return null;
+    return el;
   };
 
   P.isOpen = function () { return !!(this.menu && this.menu.classList.contains('cgp-course-menu--on')); };

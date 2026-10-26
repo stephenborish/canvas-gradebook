@@ -211,6 +211,14 @@ Object.defineProperty(FakeElement.prototype, 'textContent', {
   set: function (v) { this._text = String(v); this.children = []; }
 });
 
+// Elements only - the fake DOM has no text nodes.
+Object.defineProperty(FakeElement.prototype, 'nextSibling', {
+  get: function () {
+    var p = this.parentElement;
+    return p ? (p.children[p.children.indexOf(this) + 1] || null) : null;
+  }
+});
+
 FakeElement.prototype.getBoundingClientRect = function () {
   var r = this._rect || { left: 0, top: 0, width: 0, height: 0 };
   return {

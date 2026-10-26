@@ -468,6 +468,16 @@
     }, { maxPages: 30 });
   };
 
+  /* The same roster with each student's email, for the Student Name column's
+   * "Copy roster" panel. In memory only, like courseStudents above. */
+  CanvasApi.prototype.courseRoster = function (courseId) {
+    return this.getAll('/api/v1/courses/' + courseId + '/users', {
+      'enrollment_type[]': ['student'],
+      'enrollment_state[]': ['active', 'invited'],
+      'include[]': ['email']
+    }, { maxPages: 30 });
+  };
+
   /* The course's Test Student (Student View) user ids. Canvas keeps that
    * pseudo-student in its own enrollment type, which the roster read above
    * deliberately leaves out. */

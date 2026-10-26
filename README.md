@@ -407,6 +407,23 @@ with the same grading-period filter, shown as percentages. Each student in the h
 lists also gets their letter grade. Students with no graded work yet are counted but not included
 in the figures, and the Test Student is never included.
 
+### Copy the class roster
+
+The **Student Name** column's `⋮` menu has a **Copy Roster** item. It opens a panel with every
+student in the course (the Test Student is never included) and lets you:
+
+- **Copy emails** - every address on one line, separated by commas (Gmail), semicolons (Outlook),
+  or one per line, ready to paste into a To: or Bcc: field.
+- **Copy table** - a table laid out the way you choose: names as *First Last*, *Last, First*,
+  separate First Name / Last Name columns, first name only, or no names; with or without an Email
+  column and a header row; sorted by last or first name. A preview shows the first few rows. It
+  pastes as a formatted table in Google Docs, Word and Gmail, and as columns in Sheets or Excel.
+- **Download CSV** - the same table as a `.csv` file.
+
+Names are split using Canvas's own "Last, First" sort name. Emails are whatever Canvas lets you
+see for each student; the panel says how many have none. Your layout choices are remembered on
+this computer; the roster itself is not.
+
 ### Which grades the student can actually see
 
 Every cell holding a grade that is still hidden gets a coloured bar down its left edge — exactly
@@ -469,8 +486,8 @@ button. Click it for a filterable list of the courses you teach and jump straigh
 gradebook. The list is cached for 30 minutes.
 
 This isn't limited to the gradebook page - the same button is on every page inside a course
-(Assignments, Modules, Discussions, a single student's Grades, wherever Canvas draws that
-course's breadcrumb), so switching courses never means going back to the gradebook first.
+(the course Home page, Assignments, Modules, Discussions, a single student's Grades, wherever
+Canvas draws that course's breadcrumb), so switching courses never means going back to the gradebook first.
 
 ### SpeedGrader draft protection
 
@@ -564,8 +581,8 @@ Student names, grades and comment text are never written to the log — only cou
 - Settings sync through your Chrome profile (`chrome.storage.sync`; see "The same settings on every
   computer" above); SpeedGrader drafts and the
   diagnostics snapshot stay on the device (`chrome.storage.local`).
-- Student data is never persisted. The cross-course student search holds its rosters in memory
-  for the life of the page and no longer; the only thing cached on disk from Canvas is your own
+- Student data is never persisted. The cross-course student search and Copy Roster hold their
+  rosters in memory for the life of the page (or the open panel) and no longer; the only thing cached on disk from Canvas is your own
   list of course names and terms, for 30 minutes.
 - Keeping tabs in step passes only ids (course, assignment, student) between your own Canvas tabs,
   through the extension's background worker, and stores nothing. What is handed to Canvas's own
@@ -590,6 +607,7 @@ src/core/                         pure logic - no DOM, no chrome.* at load time
   comment-analysis.js             "did I author this comment" logic and thread analysis
   grid-map.js                     cell <-> (student_id, assignment_id) mapping maths
   totals.js                       Total formatting and row alignment
+  roster-format.js                roster -> email list / TSV / HTML table / CSV
   snippets.js                     /trigger + Tab expansion
   time-shortcuts.js               period key -> start time lookup and formatting
   model.js                        assignments, students, submissions, caches, events
@@ -610,6 +628,7 @@ src/gradebook/
   layout.js                       compaction, column widths, header decoration
   post-grades.js                  the per-column Post button and the posting job
   comment-popover.js              in-place comment thread and reply
+  roster-export.js                Copy Roster in the Student Name column's menu
   course-switcher.js              breadcrumb course dropdown + shared teaching-course list
   student-search.js               cross-course student search (rosters in memory only)
   content.js                      bootstrap (full gradebook, or just the course switcher

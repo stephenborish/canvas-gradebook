@@ -236,6 +236,8 @@
     // "Analyze Scores" in each assignment column's "..." menu (and Canvas's
     // Total column menu), plus the frozen Total header's Analyze button.
     var scoreAnalysis = new CGP.ScoreAnalysisController({ model: model, adapter: adapter, settings: settings });
+    // "Copy Roster" in the Student Name column's "..." menu.
+    var rosterExport = new CGP.RosterExportController({ api: api, courseId: courseId, adapter: adapter });
     var paste = new CGP.BulkPasteController({
       adapter: adapter, model: model, writer: writer, selection: selection,
       settings: settings, requestPaint: requestPaint
@@ -475,6 +477,7 @@
       keyboard.start();
       paste.start();
       scoreAnalysis.start();
+      rosterExport.start();
       frozen.start();
       bindScroll();
       bindDocumentScroll();
