@@ -810,6 +810,15 @@ suite('copy to sections: changes made in a copy', (test) => {
       for (const p of parts) { if (!node || typeof node !== 'object' || !(p in node)) return Promise.resolve(null); node = node[p]; }
       return Promise.resolve(JSON.parse(JSON.stringify(node)));
     };
+    api.deleteCustomData = (scope) => {
+      api.calls.push(['customDataDelete', scope]);
+      const parts = scope.split('/');
+      const last = parts.pop();
+      let node = cd;
+      for (const p of parts) { if (!node[p]) return Promise.resolve(null); node = node[p]; }
+      delete node[last];
+      return Promise.resolve(null);
+    };
     api.setCustomData = (scope, data) => {
       api.calls.push(['customData', scope, data]);
       const parts = scope.split('/');
@@ -871,6 +880,9 @@ suite('copy to sections: changes made in a copy', (test) => {
     await c.undoBack(plan);
     a.eq(api.db.items['11:assignment:5'].name, 'Lab 4');
     a.ok(api.db.items['11:assignment:5'].description.indexOf('carefully') < 0, 'undone');
+    a.eq(S().splitNote(api.db.items['11:assignment:5'].description).note, 'P2 note');
+    a.eq((await copier(api, memStore()).compare('11', { type: 'assignment', id: '5' }, '22', '705')).side, 'unknown',
+      'the copy record is put back as it was (none), so the copy is not mistaken for the earlier version');
   });
 
   test('a file that cannot be copied leaves its link and says so; the rest still updates', async () => {
@@ -880,5 +892,80 @@ suite('copy to sections: changes made in a copy', (test) => {
     a.ok(r.ok, r.error);
     a.ok(r.warnings.some((w) => /not copied/.test(w)));
     a.eq(api.db.items['11:assignment:5'].name, 'Lab 4', 'title untouched unless asked');
+  });
+});
+
+suite('copy to sections: second review fixes', (test) => {
+  const inv = S().invertMapping({ modules: { '2': '22' }, module_items: { '3': '33' }, assignments: { '5': '705' } });
+  const O = 'https://s.instructure.com';
+  test('course home, syllabus, module items through the API, module anchors', () => {
+    const t = S().translateLinks('<a href="/courses/22">home</a><a href="https://s.instructure.com/courses/22/">h2</a>' +
+      '<a href="/courses/22/assignments/syllabus">syl</a>' +
+      '<a data-api-endpoint="/api/v1/courses/22/modules/22/items/33">mi</a><a href="/courses/22/modules#module_22">anchor</a>' +
+      '<a href="/api/v1/courses/22/modules/22/items/99">gone</a>', '22', '11', inv, O);
+    a.ok(t.html.indexOf('href="/courses/11">home') >= 0, t.html);
+    a.ok(t.html.indexOf('href="/courses/11/">h2') >= 0);
+    a.ok(t.html.indexOf('/courses/11/assignments/syllabus"') >= 0);
+    a.ok(t.html.indexOf('"/api/v1/courses/11/modules/2/items/3"') >= 0);
+    a.ok(t.html.indexOf('/courses/11/modules#module_2"') >= 0);
+    a.ok(t.html.indexOf('/api/v1/courses/22/modules/22/items/99') >= 0, 'an item only the copy has is left');
+    a.deep(t.missingLinks, [{ type: 'module item', ref: '99' }]);
+  });
+
+  test('another site’s path that happens to contain /courses/N is left alone; http and https are the same Canvas', () => {
+    const t = S().translateLinks('<a href="https://example.com/x/courses/22/assignments/705">x</a>' +
+      '<a href="http://s.instructure.com/courses/22/assignments/705">y</a> see /courses/22/assignments/705 here', '22', '11', inv, O);
+    a.ok(t.html.indexOf('https://example.com/x/courses/22/assignments/705') >= 0);
+    a.ok(t.html.indexOf('href="/courses/11/assignments/5">y') >= 0);
+    a.ok(t.html.indexOf('see /courses/11/assignments/5 here') >= 0);
+  });
+
+  test('the original’s own note keeps its formatting', () => {
+    const block = '<div data-cgp-section-note="1" style="x"><p>Bring <a href="/x">the <b>sheet</b></a></p></div>';
+    a.eq(S().withNoteBlock('<div data-cgp-section-note="1"><p>old</p></div><p>Body</p>', block), block + '<p>Body</p>');
+    a.eq(S().splitNote(block + '<p>B</p>').block, block);
+  });
+
+  test('nothing is written when the original changed after the review opened', async () => {
+    const api = fakeCanvas();
+    api.db.mappings['22'] = { assignments: { '5': '705' } };
+    api.db.migrations['22'] = [{ id: '1', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '11' } }];
+    api.db.items['11:assignment:5'] = { id: '5', name: 'Lab', description: '<p>v1</p>' };
+    api.db.items['22:assignment:705'] = { id: '705', name: 'Lab', description: '<p>v1 edited</p>' };
+    const c = copier(api);
+    const plan = await c.planBack('11', { type: 'assignment', id: '5' }, '22', '705');
+    api.db.items['11:assignment:5'].description = '<p>v2 from another tab</p>';
+    const r = await c.applyBack(plan, {});
+    a.not(r.ok);
+    a.ok(/changed since this review opened/.test(r.error));
+    a.eq(api.db.items['11:assignment:5'].description, '<p>v2 from another tab</p>');
+  });
+
+  test('a failure after the write still reports the update (and keeps Undo)', async () => {
+    const api = fakeCanvas();
+    api.db.mappings['22'] = { assignments: { '5': '705' } };
+    api.db.migrations['22'] = [{ id: '1', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '11' } }];
+    api.db.items['11:assignment:5'] = { id: '5', name: 'Lab', description: '<p>v1</p>' };
+    api.db.items['22:assignment:705'] = { id: '705', name: 'Lab', description: '<p>v1 edited</p>' };
+    const store = memStore();
+    const c = copier(api, store);
+    const plan = await c.planBack('11', { type: 'assignment', id: '5' }, '22', '705');
+    const realGet = api.sectionItem;
+    let n = 0;
+    api.sectionItem = (...args) => (n++ >= 1 ? Promise.reject(new Error('blip')) : realGet(...args));
+    const r = await c.applyBack(plan, {});
+    a.ok(r.ok, r.error);
+    a.ok(r.warnings.some((w) => /confirm/.test(w)));
+    a.eq((await c.backups('11', 'assignment', '5')).length, 1);
+  });
+
+  test('backups stack, newest first, and each Undo takes one off', async () => {
+    const store = memStore();
+    const c = copier(fakeCanvas(), store);
+    const plan = { origCourse: '11', type: 'assignment', origId: '5' };
+    for (let i = 0; i < 7; i++) await c.pushBackup(plan, { title: 't' + i, html: 'h' + i, at: Date.now(), from: '22' });
+    const list = await c.backups('11', 'assignment', '5');
+    a.eq(list.length, 5);
+    a.eq(list[0].html, 'h6');
   });
 });

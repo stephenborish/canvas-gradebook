@@ -512,9 +512,16 @@
   function splitNote(html) {
     var s = String(html || '');
     var at = findNote(s);
-    if (!at) return { html: s, note: '' };
+    if (!at) return { html: s, note: '', block: '' };
     var rest = s.slice(0, at.start) + s.slice(at.end);
-    return { html: rest.replace(/^\s+/, ''), note: htmlToText(s.slice(at.innerStart, at.innerEnd), true) };
+    return { html: rest.replace(/^\s+/, ''), note: htmlToText(s.slice(at.innerStart, at.innerEnd), true), block: s.slice(at.start, at.end) };
+  }
+
+  /** html with its note replaced by an existing note block, unchanged
+   * (formatting and links the teacher gave it there included). */
+  function withNoteBlock(html, block) {
+    var base = splitNote(html).html;
+    return block ? block + base : base;
   }
 
   /** html with its section note replaced by `text` (removed when blank). */
@@ -624,14 +631,19 @@
     return out;
   }
 
-  var LINK_RE = /(https?:\/\/[^\/"'\s<>]+)?(\/api\/v1)?\/courses\/(\d+)((?:\/[^"'\s<>?#]*)?)((?:\?[^"'\s<>#]*)?)((?:#[^"'\s<>]*)?)/g;
-  var INDEX_ROUTES = /^\/(assignments|quizzes|discussion_topics|announcements|pages|wiki|modules|files|grades|syllabus|outcomes|rubrics|users|calendar_events)?\/?$/;
+  // A Canvas URL, absolute or relative, only where a URL can start (an
+  // attribute value, after a quote or "=", or text after a space): a path
+  // like "https://other.site/x/courses/5/..." is someone else's.
+  var LINK_RE = /(^|["'=\s(,>])((?:https?:)?\/\/[^\/"'\s<>]+)?(\/api\/v1)?\/courses\/(\d+)((?:\/[^"'\s<>?#]*)?)((?:\?[^"'\s<>#]*)?)((?:#[^"'\s<>]*)?)/g;
+  var INDEX_ROUTES = /^(\/(assignments|quizzes|discussion_topics|announcements|pages|wiki|modules|files|grades|syllabus|outcomes|rubrics|users|calendar_events|assignments\/syllabus))?\/?$/;
   // An LTI tool launched by its URL is found again in the other course by
   // that URL (an account-wide tool, or the same tool installed there).
   var TOOL_BY_URL = /^\/external_tools\/retrieve\/?$/;
   // Canvas's own media player for a video or audio file - the id is a file
   // of the course the recording was uploaded to.
-  var MEDIA_RE = /(https?:\/\/[^\/"'\s<>]+)?\/media_attachments_iframe\/(\d+)((?:\?[^"'\s<>#]*)?)/g;
+  var MEDIA_RE = /(^|["'=\s(,>])((?:https?:)?\/\/[^\/"'\s<>]+)?\/media_attachments_iframe\/(\d+)((?:\?[^"'\s<>#]*)?)/g;
+
+  function hostOf(u) { return String(u || '').replace(/^(https?:)?\/\//i, '').replace(/\/.*$/, '').toLowerCase(); }
 
   function safeDecode(s) { try { return decodeURIComponent(s); } catch (e) { return s; } }
 
@@ -642,18 +654,25 @@
    * the copy's course has is left pointing there, and reported. Links to
    * other courses and to other sites are left exactly as they are. */
   function translateLinks(html, fromCourse, toCourse, inv, origin) {
-    var host = String(origin || '').replace(/\/+$/, '').toLowerCase();
+    var host = hostOf(origin);
     var missingFiles = [];
     var missingLinks = [];
     var maps = inv || {};
     function lookup(key, id) { return maps[key] && maps[key][String(id)] ? maps[key][String(id)] : null; }
-    var out = String(html || '').replace(LINK_RE, function (all, h, api, course, path, query, hash) {
+    function moduleHash(hash) {
+      // "#module_22" names a module of the copy's course.
+      var hm = /^#module_(\d+)$/.exec(hash || '');
+      if (!hm) return hash || '';
+      var mm = lookup('modules', hm[1]);
+      return mm ? '#module_' + mm : hash;
+    }
+    var out = String(html || '').replace(LINK_RE, function (all, pre, h, api, course, path, query, hash) {
       if (String(course) !== String(fromCourse)) return all;
-      if (h && h.toLowerCase() !== host) return all;
+      if (h && hostOf(h) !== host) return all;
       var p = path || '';
       var m = /^\/(files|assignments|quizzes|discussion_topics|announcements|pages|wiki|modules)(\/items)?\/([^\/]+)(.*)$/.exec(p);
       var target;
-      if (m) {
+      if (m && !INDEX_ROUTES.test(p)) {
         var kind = m[1], sub = m[2] || '', ref = m[3], tail = m[4] || '';
         var mapped = null;
         if (kind === 'files') mapped = /^\d+$/.test(ref) ? lookup('files', ref) : null;
@@ -670,6 +689,15 @@
           }
         }
         if (!/^\d+$/.test(ref) && kind !== 'pages' && kind !== 'wiki') mapped = null; // "new", "edit"...
+        // A module's own item ("/modules/22/items/33", the API's form).
+        if (mapped && kind === 'modules' && !sub) {
+          var it = /^\/items\/(\d+)(.*)$/.exec(tail);
+          if (it) {
+            var mi = lookup('module_items', it[1]);
+            if (!mi) { missingLinks.push({ type: 'module item', ref: it[1] }); return all; }
+            tail = '/items/' + mi + it[2];
+          }
+        }
         if (!mapped) {
           if (kind === 'files' && /^\d+$/.test(ref)) { if (missingFiles.indexOf(ref) < 0) missingFiles.push(ref); }
           else missingLinks.push({ type: kind, ref: safeDecode(ref) });
@@ -687,19 +715,19 @@
         return kv && !/^verifier=/.test(kv);
       });
       var amp = /&amp;/.test(query || '') ? '&amp;' : '&';
-      return (api || '') + '/courses/' + toCourse + target + (q.length ? '?' + q.join(amp) : '') + (hash || '');
+      return pre + (api || '') + '/courses/' + toCourse + target + (q.length ? '?' + q.join(amp) : '') + moduleHash(hash);
     });
     // Media players carry no course in their URL, so only a file id this
     // copy's course is known to hold (or one only it has - copied over, like
     // any other file, and then found in the mapping) is moved.
-    out = out.replace(MEDIA_RE, function (all, h, id, query) {
-      if (h && h.toLowerCase() !== host) return all;
+    out = out.replace(MEDIA_RE, function (all, pre, h, id, query) {
+      if (h && hostOf(h) !== host) return all;
       var mapped = lookup('files', id);
       if (!mapped) {
         if (missingFiles.indexOf(id) < 0) missingFiles.push(id);
         return all;
       }
-      return '/media_attachments_iframe/' + mapped + (query || '');
+      return pre + '/media_attachments_iframe/' + mapped + (query || '');
     });
     return { html: out, missingFiles: missingFiles, missingLinks: missingLinks };
   }
@@ -874,6 +902,7 @@
     noteHtml: noteHtml,
     splitNote: splitNote,
     withNote: withNote,
+    withNoteBlock: withNoteBlock,
     htmlToText: htmlToText,
     fingerprint: fingerprint,
     compareCopy: compareCopy,

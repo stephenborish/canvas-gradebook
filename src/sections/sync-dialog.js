@@ -134,10 +134,14 @@
           });
           return Promise.all(checks).then(function () {
             var copiedTo = rel.to.map(function (r) { return r.courseId; });
-            var missing = sibs.filter(function (d) { return copiedTo.indexOf(String(d)) < 0; });
+            var missing = sibs.filter(function (d) { return copiedTo.indexOf(String(d)) < 0 && (rel.unreadable || []).indexOf(String(d)) < 0; });
             var fresh = item.createdAt && Date.now() - Date.parse(item.createdAt) <= NUDGE_WINDOW_MS;
             if (fresh && !rel.from.length && missing.length) notes.push({ kind: 'new', courses: missing });
-            if (notes.length) self.showNotice(item, notes);
+            return self.copier.backups(self.courseId, item.type, item.id).then(function (list) {
+              var last = list[0];
+              if (last && Date.now() - Number(last.at || 0) < 7 * 86400000) notes.push({ kind: 'undo', course: last.from, backup: last });
+              if (notes.length) self.showNotice(item, notes);
+            });
           });
         });
       }).catch(function (e) { CGP.diag.warn('sections.checkFailed', { message: String(e && e.message) }); });
@@ -150,10 +154,14 @@
     try { return new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return ''; }
   }
 
-  P.noticeLine = function (item, n) {
+  P.noticeLine = function (item, n, idx) {
     var name = esc(this.courseName(n.course));
     var thing = esc(S().TYPES[item.type].label.toLowerCase());
-    var btn = function (act, label) { return '<button type="button" class="cgp-roster__btn" data-notice="' + act + '" data-course="' + esc(n.course) + '">' + label + '</button>'; };
+    var btn = function (act, label) { return '<button type="button" class="cgp-roster__btn" data-notice="' + act + '" data-idx="' + idx + '">' + label + '</button>'; };
+    if (n.kind === 'undo') {
+      return '<div class="cgp-sections-notice__line">You brought <strong>' + name + '</strong>’s version here on ' + esc(fmtWhen(new Date(n.backup.at).toISOString())) + '. ' +
+        btn('undo', 'Undo that') + '</div>';
+    }
     if (n.kind === 'new') {
       return '<div class="cgp-sections-notice__line">This new ' + thing + ' is not in ' + n.courses.length +
         (n.courses.length === 1 ? ' of your other sections' : ' of your other sections') + ' yet. ' +
@@ -188,7 +196,8 @@
   P.showNotice = function (item, notes) {
     var self = this;
     var sig = notes.map(function (n) {
-      return n.kind + ':' + (n.course || '') + ':' + n.side + ':' + (n.cmp ? S().fingerprint(n.cmp.orig.html) + S().fingerprint(n.cmp.copy.html) : '');
+      return n.kind + ':' + (n.course || '') + ':' + (n.side || '') + ':' + (n.cmp ? S().fingerprint(n.cmp.orig.html) + S().fingerprint(n.cmp.copy.html) : '') +
+        (n.backup ? n.backup.at : '');
     }).join('|');
     var dkey = 'cgp.sections.dismissed.' + this.courseId + '.' + item.type + '.' + item.id;
     try { if (localStorage.getItem(dkey) === sig) return; } catch (e) { /* ignore */ }
@@ -199,7 +208,7 @@
     box.setAttribute('role', 'status');
     box.innerHTML = '<div class="cgp-sections-notice__head"><strong>Your sections</strong>' +
       '<button type="button" class="cgp-sections__x" data-notice="dismiss" aria-label="Hide until something changes" title="Hide until something changes">×</button></div>' +
-      notes.map(function (n) { return self.noticeLine(item, n); }).join('');
+      notes.map(function (n, i) { return self.noticeLine(item, n, i); }).join('');
     var host = document.querySelector('#content') || document.querySelector('main') || document.body;
     host.insertBefore(box, host.firstChild);
     if (this.button) this.button.classList.add('cgp-sections-toggle--new');
@@ -207,14 +216,24 @@
       var b = e.target.closest && e.target.closest('[data-notice]');
       if (!b) return;
       var act = b.getAttribute('data-notice');
-      var course = b.getAttribute('data-course');
-      var n = notes.filter(function (x) { return String(x.course) === String(course); })[0];
+      var n = notes[Number(b.getAttribute('data-idx'))] || {};
+      var course = n.course;
       if (act === 'dismiss') {
         try { localStorage.setItem(dkey, sig); } catch (er) { /* ignore */ }
         box.remove();
         return;
       }
       if (act === 'copy-new') return self.open({ items: [item] });
+      if (act === 'undo') {
+        b.disabled = true;
+        return self.copier.undoBack({ origCourse: self.courseId, type: item.type, origId: item.id }).then(function () {
+          CGP.ui.toast('Undone. Reloading to show the earlier version…');
+          setTimeout(function () { location.reload(); }, 1200);
+        }, function (err) {
+          b.disabled = false;
+          CGP.ui.error('Couldn’t undo: ' + CGP.util.describeApiError(err, { fallback: String(err && err.message) }));
+        });
+      }
       if (act === 'forward-to') return self.open({ items: [item], dests: [course] });
       if (act === 'back-to') return self.openBack({ origCourse: self.courseId, origRef: item, copyCourse: course, copyId: n.destId });
       if (act === 'back-from') return self.openBack({ origCourse: course, origRef: { type: item.type, id: n.srcId }, copyCourse: self.courseId, copyId: item.id });
@@ -233,7 +252,7 @@
   P.openBack = function (ctx) {
     var self = this;
     this.close();
-    var st = this.state = { view: 'back', back: { ctx: ctx, plan: null, error: null, running: false, result: null, step: '', title: true }, courses: null };
+    var st = this.state = { view: 'back', back: { ctx: ctx, plan: null, error: null, running: false, result: null, step: '', title: false }, courses: null };
     var root = document.createElement('div');
     root.className = 'cgp-stats cgp-sections';
     root.innerHTML =
@@ -453,8 +472,7 @@
 
   P.requestClose = function () {
     if (this.state && this.state.back && this.state.back.running) {
-      CGP.ui.toast('Still updating — this closes when Canvas is done.');
-      return;
+      CGP.ui.toast('Still updating in the background — stay on this page until the message saying it is done.');
     }
     if (this.state && this.state.running) {
       CGP.ui.toast('Copying carries on in the background — stay on this page until the message saying it is done.');

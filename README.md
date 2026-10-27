@@ -613,8 +613,11 @@ original's, whichever you are looking at.
   a file only Period 4 has is copied into Period 2 (Canvas's own copy of just that file). It says
   which links point to something Period 2 does not have, and that the title can come too.
   **Update Period 2** writes Period 4's instructions onto the original. Period 2 keeps its own
-  section note, and Period 4's note does not come along. A backup of Period 2's version is kept on
-  this computer, and **Undo** puts it back. Then **Copy it to your other sections…** carries the
+  section note, and Period 4's note does not come along. Just before writing, Period 2 is read
+  again: if it changed since the review opened (another tab, a co-teacher), nothing is written. A
+  backup of Period 2's version (the last five, for thirty days) is kept on this computer. **Undo**
+  puts it back, from the review or, for a week afterwards, from the notice on Period 2's page. Undo
+  also restores the record of Period 4's copy, so it still counts as changed there. Then **Copy it to your other sections…** carries the
   fix on to the rest. They show as having the earlier version, so they are updated by default.
 - *Period 4 changed its copy of this assignment.* The same review, seen from the original.
 - *Period 2, where this was copied from, has a newer version* / *Period 6 still has the earlier
@@ -795,7 +798,7 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-547 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
+554 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
 again → not Missing, `L` → Late and `L` again → not Late, both leaving the grade untouched either
 way, `E` → Excused, a grade never adding a status (and lifting an applied Missing only when asked),
 statuses read exactly as Canvas computes them, the hand-off to Canvas's own store (and never

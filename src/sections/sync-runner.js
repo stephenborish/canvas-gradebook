@@ -298,9 +298,14 @@
     var key = srcCourseId + '|' + item.type + ':' + item.id;
     if (memo[key]) return memo[key];
     var canvas = this.api && this.api.customData
-      ? this.api.customData(recordScope(srcCourseId, item)).catch(function () { return null; })
+      ? this.api.customData(recordScope(srcCourseId, item))
       : Promise.resolve(null);
-    memo[key] = canvas.then(function (remote) { return remote && typeof remote === 'object' ? remote : {}; });
+    memo[key] = canvas.then(function (remote) {
+      return { ok: true, recs: remote && typeof remote === 'object' ? remote : {} };
+    }, function () {
+      delete memo[key]; // a failed read is asked again next time
+      return { ok: false, recs: {} };
+    });
     return memo[key];
   };
 
@@ -309,8 +314,11 @@
     var local = this.store.get(k).then(function (r) { return (r && r[k]) || null; }, function () { return null; });
     return Promise.all([local, this.records(srcCourseId, item)]).then(function (r) {
       var mine = r[0];
-      var theirs = r[1][String(destCourseId)] || null;
-      if (theirs && (!mine || Number(theirs.at || 0) >= Number(mine.at || 0))) return theirs;
+      var theirs = r[1].recs[String(destCourseId)];
+      // Canvas's record is the shared one, whatever each computer's clock
+      // says; this computer's stands in only where Canvas has none, or
+      // could not be asked, or never received this computer's last write.
+      if (theirs !== undefined && !(mine && mine.unshared)) return theirs || null;
       return mine;
     });
   };
@@ -323,17 +331,28 @@
     var self = this;
     var k = this.trackKey(srcCourseId, item, destCourseId);
     var rec = { fp: S().fingerprint(html || ''), destId: String(destId), at: this.now() };
-    var v = {};
-    v[k] = rec;
+    return this.putRecord(srcCourseId, item, destCourseId, rec);
+  };
+
+  /* Write (or, with rec null, clear) one copy record in both places. A
+   * Canvas write that fails leaves this computer's record marked unshared,
+   * so it keeps counting here until a later write reaches Canvas. */
+  P.putRecord = function (srcCourseId, item, destCourseId, rec) {
+    var self = this;
+    var k = this.trackKey(srcCourseId, item, destCourseId);
     if (this._records) delete this._records[srcCourseId + '|' + item.type + ':' + item.id];
-    var local = this.store.set(v).catch(function () { return null; });
-    var canvas = this.api && this.api.setCustomData
-      ? this.api.setCustomData(recordScope(srcCourseId, item, destCourseId), rec).catch(function () {
+    var scope = recordScope(srcCourseId, item, destCourseId);
+    var canvas = !this.api || !this.api.setCustomData || (!rec && !this.api.deleteCustomData) ? Promise.resolve(false)
+      : (rec ? this.api.setCustomData(scope, rec) : this.api.deleteCustomData(scope)).then(function () { return true; }, function () {
         CGP.diag.warn('sections.recordNotShared');
-        return null;
-      })
-      : Promise.resolve();
-    return Promise.all([local, canvas]).then(function () { return rec; });
+        return false;
+      });
+    return canvas.then(function (shared) {
+      if (!rec) return self.store.remove(k).catch(function () { return null; });
+      var v = {};
+      v[k] = shared ? rec : Object.assign({ unshared: true }, rec);
+      return self.store.set(v).catch(function () { return null; });
+    }).then(function () { return rec; });
   };
 
   /* ---------------------------------------------------------------- run */
@@ -378,6 +397,7 @@
         return result;
       }
       var job = self.jobFor(task, mig.id);
+      self.forgetCopies(task.destCourseId);
       return self.saveJob(job).then(function () { return self.continueJob(job, result, onStep); });
     }, function (err) {
       result.error = describe(err, 'Canvas refused to start the copy');
@@ -695,20 +715,54 @@
   /* asset_id_mapping for the newest completed copy from srcCourseId into
    * destCourseId (null when there never was one). A mapping is remembered
    * for the page session under its migration id: a later copy is a new id. */
+  /* Both are kept on this computer for a few minutes (ids only), because a
+   * page view in a linked course asks them of every linked section and
+   * Canvas computes a mapping afresh each time. A copy made from this
+   * computer forgets them for its destination (forgetCopies). */
+  var MIGS_TTL_MS = 5 * 60 * 1000;
+  var MAP_TTL_MS = 10 * 60 * 1000;
+  var CACHE_PREFIX = 'cgp.sections.cache.';
+
+  P.cached = function (key, ttl, fetch) {
+    var self = this;
+    var k = CACHE_PREFIX + this.origin + '|' + key;
+    return this.store.get(k).then(function (r) { return r && r[k]; }, function () { return null; }).then(function (hit) {
+      if (hit && self.now() - hit.at < ttl) return hit.v;
+      return fetch().then(function (v) {
+        var o = {};
+        o[k] = { at: self.now(), v: v };
+        self.store.set(o).catch(function () { return null; });
+        return v;
+      });
+    });
+  };
+
+  P.forgetCopies = function (destCourseId) {
+    var k = CACHE_PREFIX + this.origin + '|migs.' + destCourseId;
+    return this.store.remove(k).catch(function () { return null; });
+  };
+
+  P.migrationsOf = function (courseId) {
+    var self = this;
+    return this.cached('migs.' + courseId, MIGS_TTL_MS, function () {
+      return self.api.contentMigrations(courseId).then(function (list) {
+        // Only what latestCopyFrom reads, so the cache stays small.
+        return (list || []).map(function (m) {
+          return { id: m.id, migration_type: m.migration_type, workflow_state: m.workflow_state,
+            settings: m.settings ? { source_course_id: m.settings.source_course_id } : null };
+        });
+      });
+    });
+  };
+
   P.mappingFor = function (destCourseId, srcCourseId, migrations) {
     var self = this;
-    var list = migrations ? Promise.resolve(migrations) : this.api.contentMigrations(destCourseId);
+    var list = migrations ? Promise.resolve(migrations) : this.migrationsOf(destCourseId);
     return list.then(function (migs) {
       var last = S().latestCopyFrom(migs, srcCourseId);
       if (!last) return null;
-      var key = 'cgp.sections.map.' + destCourseId + '.' + last.id;
-      try {
-        var hit = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(key) : null;
-        if (hit) return JSON.parse(hit);
-      } catch (e) { /* no session storage */ }
-      return self.api.assetIdMapping(destCourseId, last.id).then(function (m) {
-        try { if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(key, JSON.stringify(m || {})); } catch (e) { /* full */ }
-        return m || {};
+      return self.cached('map.' + destCourseId + '.' + last.id, MAP_TTL_MS, function () {
+        return self.api.assetIdMapping(destCourseId, last.id).then(function (m) { return m || {}; });
       });
     });
   };
@@ -720,7 +774,8 @@
     var self = this;
     var sync = S();
     var out = { from: [], to: [] };
-    var mine = this.api.contentMigrations(courseId).catch(function () { return []; });
+    var mine = this.migrationsOf(courseId).catch(function () { return []; });
+    out.unreadable = [];
     return Promise.all(siblings.map(function (sib) {
       var from = mine.then(function (migs) { return self.mappingFor(courseId, sib, migs); }).then(function (m) {
         var srcId = sync.srcIdFor(m, item.type, item.id);
@@ -729,7 +784,7 @@
       var to = self.mappingFor(sib, courseId).then(function (m) {
         var destId = sync.destIdFor(m, item.type, item.id);
         if (destId) out.to.push({ courseId: String(sib), destId: String(destId) });
-      }).catch(function () { /* likewise */ });
+      }).catch(function () { out.unreadable.push(String(sib)); });
       return Promise.all([from, to]);
     })).then(function () { return out; });
   };
@@ -748,6 +803,7 @@
       if (!r[0] || !r[1] || r[1].workflow_state === 'deleted') return { side: null };
       var orig = sync.toItem(t, r[0]);
       var copy = sync.toItem(t, r[1]);
+      if (!orig || !copy) return { side: null };
       orig.updatedAt = r[0].updated_at || null;
       copy.updatedAt = r[1].updated_at || null;
       orig.pointsPossible = r[0].points_possible;
@@ -787,6 +843,7 @@
         orig: cmp.orig, copy: cmp.copy, side: cmp.side, hasRecord: cmp.hasRecord,
         inv: inv, copyBody: copyBody, html: tr.html, missingFiles: tr.missingFiles, missingLinks: tr.missingLinks,
         origNote: sync.splitNote(cmp.orig.html || '').note,
+        origNoteBlock: sync.splitNote(cmp.orig.html || '').block,
         titleDiffers: String(cmp.orig.title || '') !== String(cmp.copy.title || ''),
         pointsDiffer: cmp.orig.pointsPossible !== undefined && cmp.copy.pointsPossible !== undefined &&
           Number(cmp.orig.pointsPossible) !== Number(cmp.copy.pointsPossible)
@@ -835,29 +892,45 @@
       });
     }
 
+    var origRef = { type: plan.type, id: plan.origId };
+    var written = false;
     return files.then(function () {
-      onStep('Saving a backup');
-      var bk = {};
-      bk[BACKUP_PREFIX + sync.trackKey(self.origin, plan.origCourse, plan.type, plan.origId, 'self')] =
-        { title: plan.orig.title, html: plan.orig.html, at: self.now() };
-      return self.store.set(bk);
-    }).then(function () {
-      onStep('Updating the original');
-      var next = sync.withNote(html, plan.origNote || '');
-      return self.api.setItemHtml(plan.origCourse, plan.type, plan.origId, next).then(function () {
-        if (!opts.title || !plan.titleDiffers) return null;
-        return self.api.updateSectionItem(plan.origCourse, plan.type, plan.origId, sync.titleBody(plan.type, plan.copy.title)).then(null, function (err) {
-          result.warnings.push('The title was not changed. ' + describe(err, 'Canvas refused'));
-        });
+      // The original as it is NOW - not as it was when the review opened -
+      // is what is backed up, and if it changed meanwhile (another tab, a
+      // co-teacher), nothing is written: the review would be out of date.
+      onStep('Checking the original');
+      return self.api.sectionItem(plan.origCourse, plan.type, plan.origId);
+    }).then(function (o) {
+      var now = sync.toItem(plan.type === 'announcement' ? 'discussion' : plan.type, o) || {};
+      if (sync.fingerprint(now.html || '') !== sync.fingerprint(plan.orig.html || '') || String(now.title || '') !== String(plan.orig.title || '')) {
+        result.error = 'The original was changed since this review opened. Nothing was written. Close this and review again.';
+        return result;
+      }
+      return self.record(plan.origCourse, origRef, plan.copyCourse).then(function (prevRec) {
+        onStep('Saving a backup');
+        return self.pushBackup(plan, { title: now.title, html: now.html, at: self.now(), from: plan.copyCourse, record: prevRec || null });
       }).then(function () {
-        return self.api.sectionItem(plan.origCourse, plan.type, plan.origId);
-      }).then(function (o) {
-        var back = sync.toItem(plan.type === 'announcement' ? 'discussion' : plan.type, o) || {};
-        if (sync.fingerprint(back.html || '') !== sync.fingerprint(next)) {
-          result.warnings.push('Canvas saved the instructions with differences. Check them.');
-        }
-        // The copy now matches its original again: that is its new record.
-        return self.remember(plan.origCourse, { type: plan.type, id: plan.origId }, plan.copyCourse, plan.copyId, plan.copy.html);
+        onStep('Updating the original');
+        var next = sync.withNoteBlock(html, plan.origNoteBlock || '');
+        return self.api.setItemHtml(plan.origCourse, plan.type, plan.origId, next).then(function () {
+          written = true;
+          if (!opts.title || !plan.titleDiffers) return null;
+          return self.api.updateSectionItem(plan.origCourse, plan.type, plan.origId, sync.titleBody(plan.type, plan.copy.title)).then(null, function (err) {
+            result.warnings.push('The title was not changed. ' + describe(err, 'Canvas refused'));
+          });
+        }).then(function () {
+          return self.api.sectionItem(plan.origCourse, plan.type, plan.origId).then(function (o2) {
+            var back = sync.toItem(plan.type === 'announcement' ? 'discussion' : plan.type, o2) || {};
+            if (sync.fingerprint(back.html || '') !== sync.fingerprint(next)) {
+              result.warnings.push('Canvas saved the instructions with differences. Check them.');
+            }
+          }, function () {
+            result.warnings.push('Saved, but Canvas could not be asked to confirm it. Check the original.');
+          });
+        }).then(function () {
+          // The copy now matches its original again: that is its new record.
+          return self.remember(plan.origCourse, origRef, plan.copyCourse, plan.copyId, plan.copy.html);
+        });
       }).then(function () {
         plan.missingLinks.forEach(function (l) {
           result.warnings.push('A link to ' + (l.type === 'pages' ? 'the page “' + l.ref + '”'
@@ -866,28 +939,68 @@
         });
         result.ok = true;
         return result;
-      }, function (err) {
-        result.error = describe(err, 'Canvas refused the update');
-        return result;
       });
     }).then(null, function (err) {
-      result.error = result.error || describe(err, 'Something went wrong');
+      if (written) {
+        // The original WAS changed: say so, and keep Undo available.
+        result.ok = true;
+        result.warnings.push('Updated, but a later step failed: ' + describe(err, 'Canvas refused') + ' Check the original.');
+        return result;
+      }
+      result.error = result.error || describe(err, 'Canvas refused the update');
       return result;
     });
   };
 
-  /* Put the original back as it was before applyBack. */
-  P.undoBack = function (plan) {
+  /* Backups of an original, newest first, kept on this computer: up to five,
+   * for thirty days. Each holds the title and instructions it had before a
+   * bring-back, and the copy record as it was, so Undo restores both. */
+  var MAX_BACKUPS = 5;
+  var BACKUP_DAYS = 30;
+
+  P.backupKey = function (origCourse, type, origId) {
+    return BACKUP_PREFIX + S().trackKey(this.origin, origCourse, type, origId, 'self');
+  };
+
+  P.backups = function (origCourse, type, origId) {
+    var self = this;
+    var k = this.backupKey(origCourse, type, origId);
+    return this.store.get(k).then(function (r) {
+      var list = (r && Array.isArray(r[k])) ? r[k] : (r && r[k] ? [r[k]] : []);
+      return list.filter(function (b) { return b && self.now() - Number(b.at || 0) < BACKUP_DAYS * 86400000; });
+    }, function () { return []; });
+  };
+
+  P.pushBackup = function (plan, bk) {
+    var self = this;
+    var k = this.backupKey(plan.origCourse, plan.type, plan.origId);
+    return this.backups(plan.origCourse, plan.type, plan.origId).then(function (list) {
+      var v = {};
+      v[k] = [bk].concat(list).slice(0, MAX_BACKUPS);
+      // A bring-back is never written without its backup in place.
+      return self.store.set(v);
+    });
+  };
+
+  /* Put the original back as it was before the latest bring-back, and the
+   * copy's record with it (so the copy counts as changed again, not as
+   * the "earlier version"). Rejects with the reason when it cannot. */
+  P.undoBack = function (ref) {
     var self = this;
     var sync = S();
-    var k = BACKUP_PREFIX + sync.trackKey(self.origin, plan.origCourse, plan.type, plan.origId, 'self');
-    return this.store.get(k).then(function (r) {
-      var bk = r && r[k];
+    var k = this.backupKey(ref.origCourse, ref.type, ref.origId);
+    return this.backups(ref.origCourse, ref.type, ref.origId).then(function (list) {
+      var bk = list[0];
       if (!bk) throw new Error('No backup of the original was found on this computer.');
-      return self.api.setItemHtml(plan.origCourse, plan.type, plan.origId, bk.html).then(function () {
-        if (!plan.titleDiffers) return null;
-        return self.api.updateSectionItem(plan.origCourse, plan.type, plan.origId, sync.titleBody(plan.type, bk.title));
-      });
+      return self.api.setItemHtml(ref.origCourse, ref.type, ref.origId, bk.html).then(function () {
+        return self.api.updateSectionItem(ref.origCourse, ref.type, ref.origId, sync.titleBody(ref.type, bk.title));
+      }).then(function () {
+        return self.putRecord(ref.origCourse, { type: ref.type, id: ref.origId }, bk.from, bk.record || null);
+      }).then(function () {
+        var v = {};
+        v[k] = list.slice(1);
+        return self.store.set(v);
+      }).then(function () { return bk; });
     });
   };
 

@@ -662,6 +662,15 @@
     }).then(function (r) { return r.data; });
   };
 
+  CanvasApi.prototype.deleteCustomData = function (scope) {
+    return this.request('/api/v1/users/self/custom_data/' + scope, {
+      method: 'DELETE', params: { ns: CUSTOM_NS }, retries: 1
+    }).then(function (r) { return r.data; }, function (err) {
+      if (err && (err.status === 400 || err.status === 404)) return null;
+      throw err;
+    });
+  };
+
   CanvasApi.prototype.assignmentGroups = function (courseId) {
     return this.getAll(cpath(courseId) + '/assignment_groups', {}, { maxPages: 3 });
   };
