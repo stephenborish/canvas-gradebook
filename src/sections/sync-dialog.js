@@ -161,7 +161,7 @@
     this.close();
     this.state = {
       items: [], dests: [], courses: null, tz: null, survey: null, surveying: false, surveyError: null,
-      cells: {}, notes: {}, include: {}, replace: {}, adjust: {},
+      cells: {}, seed: {}, notes: {}, include: {}, replace: {}, adjust: {},
       publish: 'match', placeInModules: true, view: 'main', picker: { type: 'assignment', q: '', lists: {}, chosen: {} },
       running: false, results: null
     };
@@ -209,8 +209,7 @@
 
   P.requestClose = function () {
     if (this.state && this.state.running) {
-      CGP.ui.toast('Still copying — the dialog will stay open until Canvas is done.');
-      return;
+      CGP.ui.toast('Copying carries on in the background — stay on this page until the message saying it is done.');
     }
     this.close();
   };
@@ -315,12 +314,28 @@
         dated(it).forEach(function (row) {
           var rk = k + '|' + itemKey(row);
           if (st.cells[rk]) return;
+          st.seed[rk] = seedDates(it, row, info);
           st.cells[rk] = {};
-          sync.dateFields(row).forEach(function (f) { st.cells[rk][f] = sync.isoToLocal((row.dates || {})[f], st.tz); });
+          sync.dateFields(row).forEach(function (f) { st.cells[rk][f] = sync.isoToLocal(st.seed[rk][f], st.tz); });
         });
       });
     });
   };
+
+  /* The dates a section's boxes start from: what its copy has now, when it
+   * has one (updating a copy must not quietly reset that section's own
+   * dates to this section's), else this section's. */
+  function seedDates(it, row, info) {
+    var existing = info && info.destId && info.status !== 'restore';
+    var have = null;
+    if (existing) have = row === it ? info.destDates : (info.childDates || {})[itemKey(row)];
+    var src = row.dates || {};
+    var out = {};
+    S().dateFields(row).forEach(function (f) {
+      out[f] = have && have[f] !== undefined ? have[f] : (src[f] || null);
+    });
+    return out;
+  }
 
   function destOf(st, d) {
     var list = (st.survey && st.survey.dests) || [];
@@ -343,14 +358,39 @@
 
   /* -------------------------------------------------------------- render */
 
+  /* Redraws the body, keeping the scroll positions and the focused control
+   * (a ticked box in a long list must not throw the list back to the top). */
+  var FOCUS_KEYS = ['data-link', 'data-pick', 'data-include', 'data-replace', 'data-pick-type', 'data-act', 'data-role'];
+
   P.render = function () {
     if (!this.root || !this.state) return;
     var body = this.root.querySelector('.cgp-sections__body');
+    var panel = this.root.querySelector('.cgp-stats__panel');
+    var list = body.querySelector('.cgp-sections__courses');
+    var keep = { panel: panel ? panel.scrollTop : 0, list: list ? list.scrollTop : 0, focus: null };
+    var active = document.activeElement;
+    if (active && body.contains(active)) {
+      for (var i = 0; i < FOCUS_KEYS.length; i++) {
+        if (active.hasAttribute(FOCUS_KEYS[i])) {
+          keep.focus = '[' + FOCUS_KEYS[i] + '="' + String(active.getAttribute(FOCUS_KEYS[i])).replace(/["\\]/g, '\\$&') + '"]' +
+            (active.type === 'radio' ? '[value="' + active.value + '"]' : '');
+          break;
+        }
+      }
+    }
     var st = this.state;
-    if (!st.courses) { body.innerHTML = '<p class="cgp-stats__note">Loading your courses…</p>'; return; }
-    if (st.view === 'link') { body.innerHTML = this.renderLink(); return; }
-    if (st.view === 'pick') { body.innerHTML = this.renderPicker(); return; }
-    body.innerHTML = this.renderMain();
+    if (!st.courses) body.innerHTML = '<p class="cgp-stats__note">Loading your courses…</p>';
+    else if (st.view === 'link') body.innerHTML = this.renderLink();
+    else if (st.view === 'pick') body.innerHTML = this.renderPicker();
+    else body.innerHTML = this.renderMain();
+    var list2 = body.querySelector('.cgp-sections__courses');
+    if (list2) list2.scrollTop = keep.list;
+    if (panel) panel.scrollTop = keep.panel;
+    if (keep.focus) {
+      var el = null;
+      try { el = body.querySelector(keep.focus); } catch (e) { el = null; }
+      if (el) { try { el.focus({ preventScroll: true }); } catch (e2) { el.focus(); } }
+    }
   };
 
   P.renderLink = function () {
@@ -504,10 +544,10 @@
       return '<div class="cgp-sections__adjust"><strong>' + esc(this.courseName(d)) + '</strong> <span class="cgp-sections__err">' + esc(dest.error) + '</span></div>';
     }
     return '<div class="cgp-sections__adjust" data-dest="' + esc(d) + '"><strong>' + esc(this.courseName(d)) + '</strong>' +
-      '<label>Shift <input type="number" step="1" class="cgp-sections__days" data-adjust="days" value="' + esc(a.days || '') + '" placeholder="0"> days</label>' +
+      '<label>Shift <input type="number" step="1" class="cgp-sections__days" data-adjust="days" value="' + esc(a.days || '') + '" placeholder="0"> days from this section’s</label>' +
       '<label>Due time <input type="text" class="cgp-sections__time" data-adjust="time" value="' + esc(a.time || '') + '" placeholder="e.g. 3 or 1:45 pm"></label>' +
       '<button type="button" class="cgp-roster__btn" data-act="adjust" data-dest="' + esc(d) + '">Apply</button>' +
-      '<button type="button" class="cgp-roster__btn" data-act="reset" data-dest="' + esc(d) + '">Reset</button></div>';
+      '<button type="button" class="cgp-roster__btn" data-act="reset" data-dest="' + esc(d) + '" title="Back to the dates the boxes started with">Reset</button></div>';
   };
 
   var STATUS_TEXT = {
@@ -533,6 +573,7 @@
       var existing = info.destId && info.status !== 'restore';
       var status = STATUS_TEXT[info.status || 'new'] || '';
       if (!on && (info.status || 'new') === 'new') status = 'Not in this section yet.';
+      if (existing && dated(it).length) status += ' Its dates below are the ones it has there now.';
       if (it.type === 'module' && info.changedChildren && info.changedChildren.length) {
         status = 'Already there. Copying the module again also replaces everything in it, and these were changed in this section: ' +
           info.changedChildren.join(', ') + '.';
@@ -584,6 +625,8 @@
     if (it.newQuiz) extra.push('A New Quiz: Canvas copies its questions in a second step, so it can take a few minutes.');
     if (it.type === 'module') extra.push('Copies the module and everything in it. Dates for the module’s items can be set for each section below.');
     if (it.type === 'page' && !dated(it).length) extra.push('Pages have no dates to set.');
+    if (it.type === 'announcement') extra.push('Announcements are not published or unpublished; each section’s copy posts at its own Post at date (blank: as soon as it is copied).');
+    if (it.type === 'module' && st.publish !== 'match') extra.push('Publishing or unpublishing the module does the same to its items, as on the Modules page.');
     return '<section class="cgp-roster__section cgp-sections__item"><h3>' + esc(t.label) + ': ' + esc(it.title || '(untitled)') + '</h3>' +
       (extra.length ? '<p class="cgp-stats__note">' + esc(extra.join(' ')) + '</p>' : '') + rows + '</section>';
   };
@@ -637,7 +680,7 @@
     if (a === 'reset') return this.resetDest(act.getAttribute('data-dest'));
     if (a === 'run') return this.runAll();
     if (a === 'close') return this.close();
-    if (a === 'again') { st.results = null; st.items = []; st.survey = null; st.cells = {}; st.include = {}; st.replace = {}; st.notes = {}; this.render(); return; }
+    if (a === 'again') { st.results = null; st.items = []; st.survey = null; st.cells = {}; st.seed = {}; st.include = {}; st.replace = {}; st.notes = {}; this.render(); return; }
   };
 
   P.onChange = function (e) {
@@ -720,9 +763,12 @@
     this.settings.save({ sectionGroups: next }).then(function () {
       if (self.state !== st) return;
       st.dests = self.siblings();
+      if (ids.length >= 2 && !st.dests.length) {
+        CGP.ui.error('Those sections could not be saved: the list of linked sections is full. Unlink old ones in the options page.');
+      }
       st.linkDraft = null;
       st.view = st.dests.length ? 'main' : 'link';
-      st.cells = {}; st.include = {}; st.replace = {}; st.notes = {};
+      st.cells = {}; st.seed = {}; st.include = {}; st.replace = {}; st.notes = {};
       self.render();
       self.resurvey();
     }, function (err) {
@@ -775,7 +821,7 @@
       dated(it).forEach(function (row) {
         var rk = cellKey(it, d) + '|' + itemKey(row);
         st.cells[rk] = {};
-        sync.dateFields(row).forEach(function (f) { st.cells[rk][f] = sync.isoToLocal((row.dates || {})[f], st.tz); });
+        sync.dateFields(row).forEach(function (f) { st.cells[rk][f] = sync.isoToLocal((st.seed[rk] || {})[f], st.tz); });
       });
     });
     this.render();
@@ -806,7 +852,13 @@
           var check = sync.checkDates(vals, st.tz);
           if (check.errors.length) errors.push(self.courseName(d) + ', “' + (row.title || '') + '”: ' + check.errors[0] + '.');
           var iso = {};
-          sync.dateFields(row).forEach(function (f) { iso[f] = check.iso[f] === undefined ? null : check.iso[f]; });
+          var seed = st.seed[k + '|' + itemKey(row)] || {};
+          sync.dateFields(row).forEach(function (f) {
+            if (check.iso[f] === undefined || check.iso[f] === null) { iso[f] = null; return; }
+            var kept = sync.localToIsoKeeping(vals[f], st.tz, seed[f]);
+            if (kept === check.iso[f]) kept = sync.localToIsoKeeping(vals[f], st.tz, (row.dates || {})[f]);
+            iso[f] = kept;
+          });
           if (row === it) dates = iso;
           else children.push({ type: row.type, id: row.id, title: row.title, graded: !!row.graded, dates: iso });
         });
@@ -817,7 +869,9 @@
           note: st.notes[k] || '', publish: st.publish,
           module: fresh && st.placeInModules ? info.module : null,
           assignmentGroupId: fresh ? info.assignmentGroupId : null,
-          destId: info.destId || null
+          destId: info.destId || null,
+          mapping: (dest && dest.mapping) || {},
+          childNotes: info.childNotes || {}
         });
       });
     });
@@ -855,12 +909,20 @@
             return self.copier.run(r.task, function (step) { r.step = step; repaint(); }).then(function (res) {
               r.result = res;
               repaint();
+            }, function (err) {
+              r.result = { ok: false, warnings: [], error: 'Something went wrong: ' + String(err && err.message) };
+              repaint();
             });
           });
         }, Promise.resolve());
       });
-    })).then(function () {
+    })).then(null, function (err) {
+      CGP.diag.error('sections.runFailed', { message: String(err && err.message) });
+    }).then(function () {
       st.running = false;
+      st.results.forEach(function (r) {
+        if (!r.result) r.result = { ok: false, warnings: [], error: 'Not done (something went wrong before it started).' };
+      });
       if (self.state === st) self.render();
       var ok = st.results.filter(function (r) { return r.result && r.result.ok; }).length;
       var bad = st.results.length - ok;

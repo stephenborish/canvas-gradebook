@@ -209,10 +209,19 @@
       info.destTitle = d.title;
       info.destDates = d.dates || {};
       info.destPublished = d.published;
-      if (!sync.TYPES[item.type].body) { info.status = 'same'; return info; }
+      // The copy's dates as Canvas's Assign To has them - the same place
+      // they are written - so updating it starts from that section's own.
+      var pageDates = sync.TYPES[item.type].datesVia === 'details' && sync.dateFields(item).length
+        ? self.api.dateDetails(destCourseId, item.type, destId).then(function (dd) {
+          var got = {};
+          sync.dateFields(item).forEach(function (f) { got[f] = (dd && dd[f]) || null; });
+          info.destDates = got;
+        }, function () { if (item.type === 'page') info.destDates = null; })
+        : Promise.resolve();
+      if (!sync.TYPES[item.type].body) { info.status = 'same'; return pageDates.then(function () { return info; }); }
       var split = sync.splitNote(d.html || '');
       info.note = split.note;
-      return self.baseline(srcCourseId, item, destCourseId).then(function (fp) {
+      return pageDates.then(function () { return self.baseline(srcCourseId, item, destCourseId); }).then(function (fp) {
         info.status = sync.compareCopy(item.html || '', d.html || '', fp);
         return info;
       });
@@ -237,7 +246,16 @@
         if (!cid) return null;
         return self.api.sectionItem(destCourseId, c.type, cid).then(function (co) {
           var d = sync.toItem(c.type, co) || {};
-          return self.baseline(srcCourseId, c, destCourseId).then(function (fp) {
+          info.childDates = info.childDates || {};
+          info.childDates[c.type + ':' + c.id] = d.dates || {};
+          var dates = self.api.dateDetails(destCourseId, c.type, cid).then(function (dd) {
+            var got = {};
+            sync.dateFields(d.type ? d : c).forEach(function (f) { got[f] = (dd && dd[f]) || null; });
+            info.childDates[c.type + ':' + c.id] = got;
+          }, function () { /* the item's own fields stand */ });
+          var note = sync.splitNote(d.html || '').note;
+          if (note) (info.childNotes = info.childNotes || {})[c.type + ':' + c.id] = note;
+          return dates.then(function () { return self.baseline(srcCourseId, c, destCourseId); }).then(function (fp) {
             var st = sync.compareCopy(c.html || '', d.html || '', fp);
             return (st === 'edited' || st === 'differs') ? { title: c.title, status: st } : null;
           });
@@ -294,7 +312,11 @@
     if (task.mode === 'keep') {
       if (!task.destId) { result.error = 'There is no copy in this section to update.'; return Promise.resolve(result); }
       onStep('Updating dates');
-      return this.finish(task, task.destId, {}, result, onStep).then(function () { return result; });
+      return this.finish(task, task.destId, task.mapping || {}, result, onStep).then(function () { return result; }, function (err) {
+        result.ok = false;
+        result.error = 'Something went wrong: ' + String(err && err.message);
+        return result;
+      });
     }
 
     var body;
@@ -306,11 +328,19 @@
 
     onStep('Starting Canvas’s copy');
     return this.api.startCourseCopy(task.destCourseId, body).then(function (mig) {
-      if (!mig || !mig.id) throw new CGP.CanvasApiError('Canvas did not start the copy', {});
+      if (!mig || !mig.id) {
+        result.error = 'Canvas did not start the copy.';
+        return result;
+      }
       var job = self.jobFor(task, mig.id);
       return self.saveJob(job).then(function () { return self.continueJob(job, result, onStep); });
     }, function (err) {
       result.error = describe(err, 'Canvas refused to start the copy');
+      return result;
+    }).then(null, function (err) {
+      // Never reached by design; a bug here must still not leave a caller waiting.
+      result.ok = false;
+      result.error = result.error || ('Something went wrong: ' + String(err && err.message));
       return result;
     });
   };
@@ -325,14 +355,17 @@
         srcCourseId: String(task.srcCourseId), destCourseId: String(task.destCourseId),
         destName: task.destName || '', mode: 'copy',
         item: { type: task.item.type, id: String(task.item.id), title: task.item.title || '', graded: !!task.item.graded,
-          published: !!task.item.published, html: task.item.html || '' },
-        dates: task.dates || {}, children: task.children || [], note: task.note || '',
-        publish: task.publish || 'match'
+          published: !!task.item.published, html: task.item.html || '', noDates: !!task.item.noDates,
+          newQuiz: !!task.item.newQuiz, url: task.item.url || '' },
+        dates: task.dates || {}, children: task.children || [], childNotes: task.childNotes || {},
+        note: task.note || '', publish: task.publish || 'match'
       }
     };
   };
 
   P.saveJob = function (job) {
+    job.claimedBy = this.tabId;
+    job.claimedAt = this.now();
     var v = {};
     v[JOB_PREFIX + job.id] = job;
     return this.store.set(v).catch(function () { return null; });
@@ -348,7 +381,7 @@
     var task = job.task;
     opts = opts || {};
     onStep('Canvas is copying');
-    return this.waitFor(task.destCourseId, job.migrationId, opts.maxWaitMs || this.maxWaitMs).then(function (mig) {
+    return this.waitFor(task.destCourseId, job.migrationId, opts.maxWaitMs || this.maxWaitMs, job).then(function (mig) {
       var state = S().migrationState(mig);
       if (state === 'running') {
         result.pending = true;
@@ -368,24 +401,65 @@
           result.error = 'Canvas finished, but did not report where the copy is. Check this section before copying again.';
           return self.dropJob(job).then(function () { return result; });
         }
-        return self.issues(task.destCourseId, job.migrationId).then(function (issues) {
-          issues.forEach(function (t) { result.warnings.push('Canvas: ' + t); });
-          return self.finish(task, destId, mapping, result, onStep);
-        }).then(function () { return self.dropJob(job); }).then(function () { return result; });
+        return self.settled(task, destId, opts.maxWaitMs || self.maxWaitMs).then(function (ready) {
+          if (ready === 'failed') {
+            result.error = 'Canvas could not finish importing the copy (its New Quizzes step failed). Check this section.';
+            return self.dropJob(job).then(function () { return result; });
+          }
+          if (ready !== 'ready') {
+            result.pending = true;
+            result.error = 'Canvas is still importing this copy. Gradebook+ will finish setting its dates the next time you open a Canvas course page.';
+            return result;
+          }
+          return self.issues(task.destCourseId, job.migrationId).then(function (issues) {
+            issues.forEach(function (t) { result.warnings.push('Canvas: ' + t); });
+            return self.finish(task, destId, mapping, result, onStep);
+          }).then(function () { return self.dropJob(job); }).then(function () { return result; });
+        });
       });
-    }, function (err) {
-      // Could not even read the job's state: it stays saved to try again.
+    }).then(null, function (err) {
+      // Canvas could not be asked (a network failure, a throttle, the job's
+      // state or mapping refused): the job stays saved to try again later.
+      result.ok = false;
       result.pending = true;
       result.error = describe(err, 'Lost track of Canvas’s copy job') + ' Gradebook+ will check on it again later.';
       return result;
     });
   };
 
-  P.waitFor = function (courseId, migrationId, maxWaitMs) {
+  /* A New Quiz (an assignment) is still being filled in by Canvas's quiz
+   * service after the course copy itself reports completed: the copy sits
+   * in "importing" until then, and a publish sent meanwhile would show
+   * students an empty quiz. Wait for it. 'ready' | 'failed' | 'waiting'. */
+  var BUSY_STATES = ['importing', 'duplicating', 'migrating', 'outcome_alignment_cloning'];
+  var FAILED_STATES = ['fail_to_import', 'failed_to_duplicate', 'failed_to_migrate', 'failed_to_clone_outcome_alignment'];
+  P.settled = function (task, destId, maxWaitMs) {
     var self = this;
+    if (task.item.type !== 'assignment') return Promise.resolve('ready');
     var started = this.now();
     var n = 0;
     function check() {
+      return self.api.sectionItem(task.destCourseId, 'assignment', destId).then(function (o) {
+        var st = String((o && o.workflow_state) || '');
+        if (FAILED_STATES.indexOf(st) >= 0) return 'failed';
+        if (BUSY_STATES.indexOf(st) < 0) return 'ready';
+        if (self.now() - started >= maxWaitMs) return 'waiting';
+        n++;
+        return self.sleep(Math.min(6000, self.pollMs + n * 250)).then(check);
+      });
+    }
+    return check();
+  };
+
+  P.waitFor = function (courseId, migrationId, maxWaitMs, job) {
+    var self = this;
+    var started = this.now();
+    var claimed = started;
+    var n = 0;
+    function check() {
+      // Keep this tab's claim on the job fresh, so another tab opened
+      // meanwhile does not start finishing it too.
+      if (job && self.now() - claimed > CLAIM_MS / 2) { claimed = self.now(); self.saveJob(job); }
       return self.api.contentMigration(courseId, migrationId).then(function (m) {
         var state = S().migrationState(m);
         if (state === 'completed' || state === 'failed' || state === 'stuck') return m;
@@ -431,8 +505,7 @@
         });
       }, Promise.resolve());
     }).then(function () {
-      // Modules have no instructions, and Canvas's copy already gave the
-      // module the source's published state.
+      if (item.type === 'module') return self.publishModule(task, destId, result);
       if (!sync.TYPES[item.type].body) return null;
       onStep('Section note');
       return self.applyNoteAndPublish(task, destId, result);
@@ -447,14 +520,22 @@
     var type = sync.TYPES[item.type];
     var label = '“' + (item.title || type.label) + '”';
     var self = this;
+    if (!sync.dateFields(item).length) return Promise.resolve();
     var read = type.datesVia === 'details'
-      ? this.api.dateDetails(courseId, item.type, destId).catch(function () { return null; })
+      ? this.api.dateDetails(courseId, item.type, destId)
       : this.api.sectionItem(courseId, item.type, destId).then(function (o) {
         var out = {};
         sync.dateFields(item).forEach(function (f) { out[f] = o ? (o[f] || null) : null; });
         return out;
-      }, function () { return null; });
-    return read.then(function (details) {
+      });
+    return read.then(null, function (err) {
+      // Without knowing who the copy is assigned to, no dates are written:
+      // a base date sent blind can assign it to everyone in that section.
+      result.warnings.push(label + ': dates not set, because Canvas did not say how it is assigned there. ' +
+        describe(err, 'Canvas refused') + ' Set them in that section.');
+      return false;
+    }).then(function (details) {
+      if (details === false) return null;
       var w = sync.datesWrite(item, isoDates, details);
       if (w.skip) { result.warnings.push(label + ': dates left as copied, because ' + w.skip + '.'); return null; }
       if (w.unchanged) return null;
@@ -463,16 +544,19 @@
         : self.api.updateSectionItem(courseId, item.type, destId, w.body);
       return write.then(function () {
         // Read back: what Canvas stored, not what was asked for.
-        return w.via === 'details' ? self.api.dateDetails(courseId, item.type, destId) : self.api.sectionItem(courseId, item.type, destId);
-      }).then(function (stored) {
-        var wrong = sync.dateFields(item).filter(function (f) {
-          var want = isoDates[f] === undefined ? null : isoDates[f];
-          return stored && stored[f] !== undefined && !sync.sameInstant(stored[f], want);
+        var back = w.via === 'details' ? self.api.dateDetails(courseId, item.type, destId) : self.api.sectionItem(courseId, item.type, destId);
+        return back.then(function (stored) {
+          var wrong = sync.dateFields(item).filter(function (f) {
+            var want = isoDates[f] === undefined ? null : isoDates[f];
+            return stored && stored[f] !== undefined && !sync.sameInstant(stored[f], want);
+          });
+          if (wrong.length) {
+            result.warnings.push(label + ': Canvas did not keep the ' + wrong.map(function (f) { return (sync.DATE_LABELS[f] || f).toLowerCase(); }).join(', ') +
+              ' date asked for. Check it in this section.');
+          }
+        }, function () {
+          result.warnings.push(label + ': dates saved, but Canvas could not be asked to confirm them.');
         });
-        if (wrong.length) {
-          result.warnings.push(label + ': Canvas did not keep the ' + wrong.map(function (f) { return (sync.DATE_LABELS[f] || f).toLowerCase(); }).join(', ') +
-            ' date asked for. Check it in this section.');
-        }
       }, function (err) {
         if (err && err.status === 403) {
           result.warnings.push(label + ': Canvas would not change its dates (' +
@@ -485,6 +569,23 @@
     });
   };
 
+  /* Canvas's copy gives a module this section's published state, which is
+   * "Same as this section". Otherwise the module is (un)published, and
+   * Canvas (un)publishes its items with it, as the Modules page does. */
+  P.publishModule = function (task, destId, result) {
+    var self = this;
+    if ((task.publish || 'match') === 'match') return Promise.resolve();
+    var want = task.publish === 'published';
+    return this.api.sectionItem(task.destCourseId, 'module', destId).then(function (o) {
+      if (!o || o.published === undefined || !!o.published === want) return null;
+      return self.api.updateSectionItem(task.destCourseId, 'module', destId, { module: { published: want } }).then(null, function (err) {
+        result.warnings.push('The module is ' + (want ? 'not published' : 'still published') + ' in this section. ' + describe(err, 'Canvas refused'));
+      });
+    }, function (err) {
+      result.warnings.push('Could not read the module back to set its publishing. ' + describe(err, 'Canvas refused'));
+    });
+  };
+
   /* A module's item after the module was copied: a note the source section
    * had on it came along and is removed (notes belong to one section), and
    * the copy is remembered so a later look can tell whether it changed. */
@@ -493,7 +594,7 @@
     var sync = S();
     return this.api.sectionItem(task.destCourseId, child.type, destId).then(function (o) {
       var html = (sync.toItem(child.type, o) || {}).html || '';
-      var next = sync.withNote(html, '');
+      var next = sync.withNote(html, (task.childNotes || {})[child.type + ':' + child.id] || '');
       var write = next === html ? Promise.resolve() : self.api.setItemHtml(task.destCourseId, child.type, destId, next).then(null, function (err) {
         result.warnings.push('“' + (child.title || '') + '”: the other section’s note could not be removed. ' + describe(err, 'Canvas refused'));
       });
@@ -524,7 +625,10 @@
           return self.remember(task.srcCourseId, item, task.destCourseId, destId, html);
         });
       }
-      if (item.type !== 'announcement') {
+      // "Same as this section" on a copy kept as that section's own leaves
+      // its publishing alone too; only an explicit choice changes it.
+      var keepState = task.mode === 'keep' && (task.publish || 'match') === 'match';
+      if (item.type !== 'announcement' && !keepState) {
         var want = task.publish === 'published' ? true : (task.publish === 'unpublished' ? false : !!item.published);
         if (d.published !== undefined && !!d.published !== want) {
           steps = steps.then(function () {
@@ -557,8 +661,6 @@
       return Promise.all(stale.map(function (j) { return self.dropJob(j); })).then(function () {
         return mine.filter(function (j) { return stale.indexOf(j) < 0; }).reduce(function (p, job) {
           return p.then(function (done) {
-            job.claimedAt = self.now();
-            job.claimedBy = self.tabId;
             return self.saveJob(job).then(function () {
               var result = { ok: false, destId: null, url: null, warnings: [], pending: false, error: null };
               return self.continueJob(job, result, function () {}, { maxWaitMs: 1 }).then(function (r) {

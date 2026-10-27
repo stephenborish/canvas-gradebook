@@ -734,6 +734,9 @@
       status('That file does not look like a Gradebook+ settings file.');
       return;
     }
+    // A backup from before linked sections existed has none: the ones this
+    // computer has are kept rather than wiped.
+    if (!Array.isArray(raw.sectionGroups)) raw = Object.assign({}, raw, { sectionGroups: currentGroups });
     var values = CGP.sanitizeSettings(raw);
     var rawSnippets = Array.isArray(raw.snippets) ? raw.snippets.map(function (s) {
       return { trigger: String((s && s.trigger) || '').replace(/^\/+/, '').trim(), text: String((s && s.text) || '') };
@@ -879,9 +882,9 @@
   $('save').addEventListener('click', save);
 
   $('reset').addEventListener('click', function () {
-    if (!window.confirm('Restore every setting to its default?')) return;
+    if (!window.confirm('Restore every setting to its default? Your linked sections are kept (unlink them below).')) return;
     saving = true;
-    CGP.settingsStorage.write(null, CGP.sanitizeSettings({})).then(function (stored) {
+    CGP.settingsStorage.write(null, CGP.sanitizeSettings({ sectionGroups: currentGroups })).then(function (stored) {
       saving = false;
       show(stored);
       status('Defaults restored.');

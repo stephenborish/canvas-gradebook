@@ -550,10 +550,13 @@ happen there:
   give it a second one.
 - **Deleted in that section** — copying brings it back.
 
-**Dates for each section.** Every section starts with this section's dates, in your Canvas time
-zone (your profile's), exactly as Canvas shows them. Edit any box, or move a whole section at
-once: **Shift** by a number of days and/or set its **Due time**, which accepts a time (`1:45 pm`,
-`13:45`) or one of your period shortcuts from the Time Shortcuts tab (`4`). Due, Available from
+**Dates for each section.** A section that doesn't have the item yet starts with this section's
+dates; one that already has a copy starts with the dates that copy has there now, so updating a
+copy never quietly resets that section's own dates. Dates are in your Canvas time zone (your
+profile's), exactly as Canvas shows them. Edit any box, or move a whole section at once: **Shift**
+it a number of days from this section's dates and/or set its **Due time**, which accepts a time
+(`1:45 pm`, `13:45`) or one of your period shortcuts from the Time Shortcuts tab (`4`). A due time
+of 11:59:59 PM keeps its seconds. Due, Available from
 and Until are set for assignments, quizzes and graded discussions; Available from/Until for
 ungraded discussions and pages (when Canvas allows dates on pages); Post at/Until for
 announcements; Unlock at for modules. A copied module's assignments, quizzes and discussions each
@@ -570,7 +573,9 @@ others. For anything more than a note, edit that section's copy in Canvas direct
 copy goes into that section's copy of the same module (or the one module there with the same
 name), at the same position. A first copy also goes into the assignment group with the same name,
 rather than Canvas's "Imported Assignments". Copies follow this section's published state, or you
-can leave them unpublished or publish them.
+can leave them unpublished or publish them (a module's items follow the module, as on the Modules
+page). A copy you chose to keep as that section's own keeps its publishing too, unless you pick
+one of those two. Announcements post at each section's own *Post at* date.
 
 **How it is done, and why it is reliable.**
 
@@ -588,8 +593,12 @@ can leave them unpublished or publish them.
 - A section Canvas refuses something for gets that reason shown against that section. Typical
   reasons are a closed grading period, a Blueprint lock, a role without rights, or unpublishing
   work students have submitted. The other sections carry on.
-- Canvas runs copies into one course one after another. Each copy is saved on this computer as
-  soon as Canvas accepts it. If the tab closes before Canvas finishes, the dates, note and
+- A New Quiz is only dated and published once Canvas has finished importing its questions.
+- An item that is open only to particular sections in that course (an older section-specific
+  discussion) is not given dates either, since that would open it to everyone.
+- Canvas runs copies into one course one after another. You can close the dialog while it works:
+  copying carries on as long as the page stays open, and a message says when it is done. Each copy
+  is saved on this computer as soon as Canvas accepts it. If the tab closes before Canvas finishes, the dates, note and
   publishing are applied the next time you open any page of that Canvas, and you are told.
 - Nothing is copied until you press Copy. On a newly created item's page (made in the last three
   hours) in a linked course, the button gets a dot, and a message says when the item is not in your
@@ -755,7 +764,7 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-530 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
+542 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
 again → not Missing, `L` → Late and `L` again → not Late, both leaving the grade untouched either
 way, `E` → Excused, a grade never adding a status (and lifting an applied Missing only when asked),
 statuses read exactly as Canvas computes them, the hand-off to Canvas's own store (and never

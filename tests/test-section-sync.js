@@ -244,7 +244,7 @@ suite('copy to sections: linked sections and modules', (test) => {
     a.deep(S().siblings(g, O, '2'), ['1', '3']);
     a.deep(S().siblings(g, 'https://other.instructure.com', '2'), [], 'another Canvas is another world');
     g = S().setGroup(g, O, ['3', '4']);
-    a.deep(g.map((x) => x.courseIds), [['1', '2'], ['3', '4']]);
+    a.deep(g.map((x) => x.courseIds), [['3', '4'], ['1', '2']], 'newest first');
     g = S().setGroup(g, O, ['2']);
     a.deep(g.map((x) => x.courseIds), [['3', '4']], 'a group left with one course goes away');
   });
@@ -480,6 +480,8 @@ suite('copy to sections: the copy runner', (test) => {
     // Later, on another page: Canvas has finished.
     api.db.pollsUntilDone = 0;
     const later = copier(api, store);
+    a.eq((await later.resumePending()).length, 0, 'the first tab’s claim is still fresh');
+    later.now = () => Date.now() + 3 * 60 * 1000;
     const done = await later.resumePending();
     a.eq(done.length, 1);
     a.ok(done[0].result.ok, done[0].result.error);
@@ -598,5 +600,146 @@ suite('copy to sections: looking before copying', (test) => {
     api.contentMigrations = () => Promise.reject(Object.assign(new globalThis.CGP.CanvasApiError('x', {}), { status: 401, canvasStatus: 'unauthorized' }));
     const out = await copier(api).survey('11', [Object.assign({}, ASSIGNMENT, { htmlLoaded: true })], ['22'], {});
     a.ok(/can’t add content/.test(out.dests[0].error));
+  });
+});
+
+suite('copy to sections: review fixes', (test) => {
+  test('a time a DST change skips moves forward by the gap, in every zone', () => {
+    a.eq(S().isoToLocal(S().localToIso('2026-03-08T02:30', TZ), TZ), '2026-03-08T03:30');
+    a.eq(S().isoToLocal(S().localToIso('2026-03-29T01:30', 'Europe/London'), 'Europe/London'), '2026-03-29T02:30');
+    a.eq(S().isoToLocal(S().localToIso('2026-10-04T02:15', 'Australia/Lord_Howe'), 'Australia/Lord_Howe'), '2026-10-04T02:45', 'a 30-minute gap');
+    a.eq(S().localToIso('2026-11-01T01:30', TZ), '2026-11-01T05:30:00.000Z', 'a repeated time is its first occurrence');
+    a.eq(S().localToIso('2026-07-01T09:00', 'Asia/Kolkata'), '2026-07-01T03:30:00.000Z');
+  });
+
+  test('an 11:59:59 PM deadline keeps its seconds when moved to another day', () => {
+    a.eq(S().localToIsoKeeping('2026-03-04T23:59', TZ, '2026-03-04T04:59:59Z'), '2026-03-05T04:59:59.000Z');
+    a.eq(S().localToIsoKeeping('2026-03-04T22:00', TZ, '2026-03-04T04:59:59Z'), '2026-03-05T03:00:00.000Z', 'another time: whole minutes');
+    a.eq(S().localToIsoKeeping('', TZ, '2026-03-04T04:59:59Z'), null);
+  });
+
+  test('an older section-specific discussion is not given dates (that would open it to everyone)', () => {
+    const w = S().datesWrite({ type: 'discussion', graded: false }, { unlock_at: 'u', lock_at: null },
+      { unlock_at: null, lock_at: null, visible_to_everyone: false, only_visible_to_overrides: false });
+    a.ok(w.skip && /particular sections/.test(w.skip));
+  });
+
+  test('linked sections stay inside one sync item: names go first, then the oldest groups', () => {
+    const O = 'https://school.instructure.com';
+    const long = 'x'.repeat(80);
+    const groups = [];
+    for (let g = 0; g < 30; g++) {
+      const ids = []; const names = {};
+      for (let c = 0; c < 12; c++) { const id = String(g * 100 + c + 1); ids.push(id); names[id] = long; }
+      groups.push({ origin: O, courseIds: ids, names });
+    }
+    const out = globalThis.CGP.cleanSectionGroups(groups);
+    a.ok(globalThis.CGP.util.byteLength(JSON.stringify(out)) <= 6500);
+    a.ok(out.length >= 10, 'ids alone fit many groups');
+    a.eq(Object.keys(out[0].names).length, 12, 'the newest group keeps its names');
+    a.eq(Object.keys(out[out.length - 1].names).length, 0);
+  });
+
+  test('a Canvas call failing mid-run resolves with the job kept, never rejects', async () => {
+    let api;
+    api = fakeCanvas({ onComplete: (dest) => landCopy(api, dest, '705', '<p>x</p>') });
+    api.assetIdMapping = () => Promise.reject(Object.assign(new globalThis.CGP.CanvasApiError('x', {}), { status: 400 }));
+    const store = memStore();
+    const r = await copier(api, store).run({ srcCourseId: '11', destCourseId: '22', item: ASSIGNMENT, mode: 'copy', dates: {}, publish: 'match' });
+    a.not(r.ok);
+    a.ok(r.pending);
+    a.eq(Object.keys(store.mem).filter((k) => k.indexOf('cgp.sections.job.') === 0).length, 1);
+  });
+
+  test('no dates are written when the copy’s assignment can’t be read', async () => {
+    let api;
+    api = fakeCanvas({ onComplete: (dest) => landCopy(api, dest, '705', '<p>x</p>') });
+    api.dateDetails = () => Promise.reject(Object.assign(new globalThis.CGP.CanvasApiError('x', {}), { status: 503 }));
+    const r = await copier(api).run({ srcCourseId: '11', destCourseId: '22', item: ASSIGNMENT, mode: 'copy',
+      dates: { due_at: '2026-03-04T13:00:00.000Z', unlock_at: null, lock_at: null }, publish: 'match' });
+    a.ok(r.ok);
+    a.not(api.calls.some((x) => x[0] === 'putDates'));
+    a.ok(r.warnings.some((w) => /did not say how it is assigned/.test(w)));
+  });
+
+  test('keeping a section’s version leaves its publishing alone on “Same as this section”', async () => {
+    const api = fakeCanvas();
+    landCopy(api, '22', '705', '<p>Mine</p>');
+    api.db.items['22:assignment:705'].published = false;
+    await copier(api).run({ srcCourseId: '11', destCourseId: '22', item: ASSIGNMENT, mode: 'keep', destId: '705', dates: {}, note: '', publish: 'match' });
+    a.not(api.calls.some((x) => x[0] === 'publish'));
+    await copier(api).run({ srcCourseId: '11', destCourseId: '22', item: ASSIGNMENT, mode: 'keep', destId: '705', dates: {}, note: '', publish: 'published' });
+    a.ok(api.calls.some((x) => x[0] === 'publish' && x[4] === true), 'an explicit choice still applies');
+  });
+
+  test('keeping a module dates its items through the mapping the survey found', async () => {
+    const api = fakeCanvas();
+    api.db.items['22:module:303'] = { id: '303', name: 'Unit 1', unlock_at: null, published: true };
+    landCopy(api, '22', '705', '<p>x</p>');
+    const r = await copier(api).run({ srcCourseId: '11', destCourseId: '22', mode: 'keep', destId: '303',
+      item: { type: 'module', id: '3', title: 'Unit 1' }, dates: { unlock_at: null }, publish: 'match',
+      mapping: { modules: { '3': '303' }, assignments: { '5': '705' } },
+      children: [{ type: 'assignment', id: '5', title: 'Lab 4', dates: { due_at: '2026-03-09T13:00:00.000Z', unlock_at: null, lock_at: null } }] });
+    a.ok(r.ok, r.error);
+    a.eq(r.warnings.length, 0, r.warnings.join(' | '));
+    a.eq(api.calls.find((x) => x[0] === 'putDates')[3], '705');
+  });
+
+  test('“Leave copies unpublished” unpublishes a copied module', async () => {
+    let api;
+    api = fakeCanvas({ onComplete: (dest) => {
+      api.db.mappings[dest] = { modules: { '3': '303' } };
+      api.db.items[`${dest}:module:303`] = { id: '303', name: 'Unit 1', unlock_at: null, published: true };
+    } });
+    const r = await copier(api).run({ srcCourseId: '11', destCourseId: '22', mode: 'copy', item: { type: 'module', id: '3', title: 'Unit 1', published: true },
+      dates: { unlock_at: null }, publish: 'unpublished', children: [] });
+    a.ok(r.ok, r.error);
+    a.deep(api.calls.filter((x) => x[0] === 'put').pop()[4], { module: { published: false } });
+  });
+
+  test('a New Quiz copy is waited for until Canvas has finished importing it', async () => {
+    let api;
+    let gets = 0;
+    api = fakeCanvas({ onComplete: (dest) => landCopy(api, dest, '705', '<p>x</p>') });
+    const realGet = api.sectionItem;
+    api.sectionItem = (c, t, id) => realGet(c, t, id).then((o) => {
+      if (t === 'assignment' && gets++ < 2) o.workflow_state = 'importing';
+      return o;
+    });
+    const r = await copier(api).run({ srcCourseId: '11', destCourseId: '22', item: Object.assign({}, ASSIGNMENT, { newQuiz: true }), mode: 'copy',
+      dates: { due_at: '2026-03-04T13:00:00.000Z', unlock_at: null, lock_at: null }, publish: 'match' });
+    a.ok(r.ok, r.error);
+    const firstWrite = api.calls.findIndex((x) => x[0] === 'putDates');
+    a.ok(gets >= 3 && firstWrite > 0, 'dates only after it left "importing"');
+  });
+
+  test('a module copy puts back the notes that section had on its items', async () => {
+    let api;
+    api = fakeCanvas({ onComplete: (dest) => {
+      api.db.mappings[dest] = { modules: { '3': '303' }, assignments: { '5': '705' } };
+      api.db.items[`${dest}:module:303`] = { id: '303', name: 'Unit 1', unlock_at: null, published: true };
+      landCopy(api, dest, '705', S().noteHtml('Source section note') + '<p>Do the lab.</p>', { mapping: { modules: { '3': '303' } } });
+    } });
+    const r = await copier(api).run({ srcCourseId: '11', destCourseId: '22', mode: 'copy', item: { type: 'module', id: '3', title: 'Unit 1', published: true },
+      dates: { unlock_at: null }, publish: 'match', childNotes: { 'assignment:5': 'P4 note' },
+      children: [{ type: 'assignment', id: '5', title: 'Lab 4', dates: { due_at: null, unlock_at: null, lock_at: null } }] });
+    a.ok(r.ok, r.error);
+    a.eq(S().splitNote(api.db.items['22:assignment:705'].description).note, 'P4 note');
+  });
+
+  test('the survey reads an existing copy’s own dates and its items’ notes', async () => {
+    const api = fakeCanvas();
+    api.db.migrations['22'] = [{ id: '1', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '11' } }];
+    landCopy(api, '22', '705', S().noteHtml('P4 note') + '<p>Do the lab.</p>', { mapping: { modules: { '3': '303' } } });
+    api.db.details['22:assignment:705'].due_at = '2026-03-10T13:00:00Z';
+    api.db.items['22:module:303'] = { id: '303', name: 'Unit 1' };
+    const mod = { type: 'module', id: '3', title: 'Unit 1', children: [{ type: 'assignment', id: '5', title: 'Lab 4', html: '<p>Do the lab.</p>' }] };
+    const out = await copier(api).survey('11', [Object.assign({}, ASSIGNMENT, { htmlLoaded: true }), mod], ['22'], {});
+    const asg = out.dests[0].items['assignment:5'];
+    a.eq(asg.destDates.due_at, '2026-03-10T13:00:00Z');
+    const m = out.dests[0].items['module:3'];
+    a.eq(m.childNotes['assignment:5'], 'P4 note');
+    a.eq(m.childDates['assignment:5'].due_at, '2026-03-10T13:00:00Z');
+    a.eq(m.status, 'same', 'a note is not a change');
   });
 });

@@ -108,7 +108,8 @@
 
   /** Groups after making `courseIds` (which include the current course) one
    * group: each of them leaves whatever group it was in, and a group left
-   * with fewer than two courses goes away. Fewer than two ids unlinks. */
+   * with fewer than two courses goes away. Fewer than two ids unlinks. The
+   * new group goes first: it is the last one a full list would give up. */
   function setGroup(groups, origin, courseIds, names) {
     var o = normOrigin(origin);
     var ids = [];
@@ -120,7 +121,7 @@
       if (normOrigin(g.origin) !== o) return g;
       return { origin: g.origin, names: g.names, courseIds: (g.courseIds || []).map(String).filter(function (id) { return ids.indexOf(id) < 0; }) };
     }).filter(function (g) { return g.courseIds.length >= 2; });
-    if (ids.length >= 2) out.push({ origin: o, courseIds: ids, names: names || {} });
+    if (ids.length >= 2) out.unshift({ origin: o, courseIds: ids, names: names || {} });
     return cleanGroups(out);
   }
 
@@ -274,7 +275,7 @@
 
   /** "YYYY-MM-DDTHH:MM" wall time in tz -> ISO instant (null for blank,
    * undefined for something that is not a date). A wall time that a DST
-   * change skips is moved forward, as Canvas's own date picker does. */
+   * change skips is moved forward by the length of the gap. */
   function localToIso(local, tz) {
     var s = String(local == null ? '' : local).trim();
     if (!s) return null;
@@ -286,14 +287,38 @@
     var check = new Date(wall);
     if (check.getUTCDate() !== d) return undefined; // Feb 30th and friends
     if (!validZone(tz)) return new Date(y, mo - 1, d, h, mi).toISOString();
-    // Two passes find the offset in force at that wall time.
-    var guess = wall;
-    for (var i = 0; i < 3; i++) {
-      var p = zoneParts(guess, tz);
-      var asWall = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute);
-      guess += wall - asWall;
+    // The zone's offset a little before and after that wall time. Read with
+    // the earlier one first, an ambiguous (repeated) time is its first
+    // occurrence; a time a DST change skips matches neither and is read
+    // with the earlier offset, which lands the same distance past the gap.
+    var before = offsetAt(wall - 12 * 3600000, tz);
+    var after = offsetAt(wall + 12 * 3600000, tz);
+    var tries = [wall - before, wall - after];
+    for (var i = 0; i < tries.length; i++) {
+      var p = zoneParts(tries[i], tz);
+      if (Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute) === wall) return new Date(tries[i]).toISOString();
     }
-    return new Date(Math.round(guess / 60000) * 60000).toISOString();
+    return new Date(wall - before).toISOString();
+  }
+
+  /** The zone's UTC offset at an instant, in ms (east positive). */
+  function offsetAt(ms, tz) {
+    var p = zoneParts(ms, tz);
+    var asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second || 0);
+    return asUtc - Math.floor(ms / 1000) * 1000;
+  }
+
+  /** localToIso, keeping the seconds of `base` (the date the box started
+   * from) when the clock time is the same: an 11:59:59 PM deadline moved
+   * to another day stays 11:59:59, not 11:59:00. */
+  function localToIsoKeeping(local, tz, base) {
+    var iso = localToIso(local, tz);
+    if (!iso || !base) return iso;
+    var b = Date.parse(base);
+    if (!isFinite(b) || isoToLocal(base, tz).slice(11) !== String(local).trim().slice(11)) return iso;
+    var sec = new Date(b).getUTCSeconds();
+    if (!sec) return iso;
+    return new Date(Date.parse(iso) + sec * 1000).toISOString();
   }
 
   /** Move a wall time by whole days, keeping its clock time. */
@@ -369,6 +394,11 @@
     if (t.datesVia === 'details' && destDetails) {
       if (destDetails.checkpoints && destDetails.checkpoints.length) {
         return { skip: 'it has checkpoint due dates (reply to topic / required replies), which Gradebook+ leaves to Canvas' };
+      }
+      if (destDetails.visible_to_everyone === false && !destDetails.only_visible_to_overrides) {
+        // An older section-specific discussion: any date_details write would
+        // clear its section restriction (update_ungraded_object).
+        return { skip: 'it is open only to particular sections there, so its dates are set in its Assign To' };
       }
       if (destDetails.only_visible_to_overrides) {
         // Base dates do not apply to anyone then, and sending due_at alone
@@ -684,6 +714,7 @@
     itemHtmlPath: itemHtmlPath,
     isoToLocal: isoToLocal,
     localToIso: localToIso,
+    localToIsoKeeping: localToIsoKeeping,
     shiftLocal: shiftLocal,
     withTime: withTime,
     parseClock: parseClock,

@@ -411,11 +411,14 @@
   CGP.sanitizeSettings = sanitizeSettings;
 
   /* Linked sections: groups of courses (on one Canvas) that are the same
-   * course taught to different sections. Ids only - ~30 bytes a course, so
-   * the whole list stays a small sync item. A course is in at most one
-   * group, and a group of fewer than two courses is no group. */
+   * course taught to different sections - course ids, plus their names for
+   * the options page. A course is in at most one group, and a group of
+   * fewer than two courses is no group. Newest group first. The list is one
+   * sync item (8KB per item): past the budget, the oldest groups lose their
+   * names first, then the oldest groups go. */
   var MAX_SECTION_GROUPS = 30;
   var MAX_SECTION_GROUP_COURSES = 12;
+  var MAX_SECTION_GROUP_BYTES = 6500;
 
   function cleanSectionGroups(v) {
     if (!Array.isArray(v)) return [];
@@ -440,6 +443,9 @@
       ids.forEach(function (id) { if (given[id]) names[id] = String(given[id]).slice(0, 80); });
       out.push({ origin: origin, courseIds: ids, names: names });
     });
+    var size = function () { return util.byteLength(JSON.stringify(out)); };
+    for (var i = out.length - 1; i >= 0 && size() > MAX_SECTION_GROUP_BYTES; i--) out[i].names = {};
+    while (out.length && size() > MAX_SECTION_GROUP_BYTES) out.pop();
     return out;
   }
   CGP.cleanSectionGroups = cleanSectionGroups;
