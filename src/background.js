@@ -5,7 +5,7 @@
  * domains the teacher has granted, applies Web Store updates promptly
  * (self-update.js), relays "this submission changed" announcements
  * between the open tabs of one course (live-sync.js) - ids only, never
- * stored - and records when each setting changed (settings-times.js). It
+ * stored - and checks this computer in through Chrome sync (settings-times.js). It
  * never reads or stores Canvas data itself. */
 
 import { CONTENT_JS, CONTENT_CSS } from './script-manifest.js';
@@ -112,8 +112,7 @@ if (chrome.permissions && chrome.permissions.onAdded) {
 }
 
 createSelfUpdater(chrome).start();
-// When each setting last changed here, for merging with the copy kept in the
-// teacher's Canvas account; and this computer's Chrome sync check-in.
+// This computer's Chrome sync check-in (shown on the options page).
 const settingsTimes = createSettingsTimes(chrome);
 settingsTimes.start();
 const liveRelay = createLiveRelay(chrome);

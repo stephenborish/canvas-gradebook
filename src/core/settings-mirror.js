@@ -6,171 +6,246 @@
  * with Chrome sync on, and with Extensions among what it syncs. A school can
  * turn Chrome sync off for its accounts, and then nothing reaches the
  * teacher's other computers. So every Canvas page also merges the settings
- * with a copy in the teacher's Canvas user data (Canvas's custom_data API,
- * private to that user): any computer where the teacher opens Canvas ends
- * up with the same settings, Chrome sync or not.
+ * with a copy in the teacher's Canvas user data (Canvas's custom_data API):
+ * any computer where the teacher opens Canvas ends up with the same
+ * settings, Chrome sync or not.
  *
- * The merge is item by item, exactly the items chrome.storage.sync holds
- * (one per setting, one per snippet - see CGP.settingsStorage), and the
- * newer change wins for each: so a snippet added on one computer and a
- * setting changed on another both survive. "When" is the time each item
- * last changed on a computer (settings-times.js keeps it, in the service
- * worker), or 0 for an item stored before this existed - which any real
- * change beats, and which on a tie gives way to the copy in Canvas, so two
- * computers that never synced end up the same. A removed snippet is kept
- * in Canvas as removed, with its time, so it does not come back. Canvas
- * layout: custom_data "settings/<sync key>" = {at, v} or {at, del: true}. */
+ * The merge is item by item - exactly the items chrome.storage.sync holds,
+ * one per setting and one per snippet (CGP.settingsStorage) - and for each,
+ * the newer change wins. Every item's time is stored beside it in
+ * chrome.storage.sync ('cgp.t.*', CGP.settingsTimes), written in the same
+ * write as the item, on Canvas's clock: so the time travels with the change
+ * whichever way it goes, and computers whose clocks disagree compare
+ * fairly. Rules:
+ *  - An item stored before times were kept, a default, or one moved out of
+ *    the old single 'cgp.settings' item has time 0: any real change wins.
+ *  - Two computers that both have a different value at time 0 (upgraded,
+ *    never synced) are not decided here: the options page asks the teacher.
+ *  - A value that changed without its time (written by an older version of
+ *    the extension, say) waits two minutes - Chrome sync may still be
+ *    delivering its time - and then counts as a change made when it was
+ *    first seen.
+ *  - A removed snippet keeps its time (a tombstone), so it is not brought
+ *    back by a computer that still has it.
+ *  - A merge never leaves more snippets than Chrome sync can hold: what
+ *    does not fit is left in Canvas and reported, not dropped silently.
+ * Canvas layout: custom_data "settings/<item key, dots as ~>" = {at, v} or
+ * {at, del: true}. */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.settingsMirror) return;
 
-  var TIME_PREFIX = 'cgp.st.';
   var STATUS_KEY = 'cgp.mirror.status';
+  var PENDING_KEY = 'cgp.mirror.pending';
+  var OFFSET_KEY = 'cgp.clockOffset';
   var MIN_GAP_MS = 60 * 1000;
-  var ITEM_BYTES = 8000;          // chrome.storage.sync per-item limit, with room
-  var TOTAL_BYTES = 100000;       // and the whole of it
+  var UNTIMED_WAIT_MS = 2 * 60 * 1000;
+  var ITEM_BYTES = 8000;
+  var TOTAL_BYTES = 100000;
 
-  /** Same hash as settings-times.js valueHash. */
-  function valueHash(v) {
-    var s = v === undefined ? 'u' : JSON.stringify(v);
-    var h = 0x811c9dc5;
-    for (var i = 0; i < s.length; i++) {
-      h ^= s.charCodeAt(i);
-      h = Math.imul(h, 0x01000193) >>> 0;
-    }
-    return h.toString(16);
-  }
+  function T() { return CGP.settingsTimes; }
+  function hash(v) { return CGP.util.valueHash(v); }
+  function same(a, b) { return CGP.util.stableStringify(a) === CGP.util.stableStringify(b); }
 
   function isMirrored(k) {
     k = String(k);
     return k === 'cgp.snippetStore' || k.indexOf('cgp.setting.') === 0 || k.indexOf('cgp.snippet.') === 0;
   }
+  function isSnippet(k) { return String(k).indexOf('cgp.snippet.') === 0; }
 
-  function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+  // A dot ends a Canvas API path's format (".json"), so none go in a scope.
+  function remoteKey(k) { return String(k).replace(/\./g, '~'); }
+  function itemKey(rk) { return String(rk).replace(/~/g, '.'); }
 
-  /* What to change where. local: every chrome.storage.sync item; times:
-   * {key: {at, h, del}} in this computer's clock; remote: the Canvas copy
-   * ({key: {at, v|del}}, in Canvas's clock), or null when there is none
-   * yet; offset: ms from this computer's clock to Canvas's. Returns
-   *   {set: {key: value}, remove: [key], times: {key: rec},   (this computer)
-   *    push: {key: {at, v|del}}}                             (Canvas)
-   * Pure; unit tested. */
-  function plan(local, times, remote, offset) {
-    offset = Number(offset) || 0;
-    local = local || {};
-    times = times || {};
-    remote = remote && typeof remote === 'object' ? remote : {};
-    var out = { set: {}, remove: [], times: {}, push: {} };
+  /* What to change where.
+   *   all:     everything in chrome.storage.sync (items and their times)
+   *   remote:  the Canvas copy, keys as stored there, or null
+   *   pending: {key: {h, at}} untimed changes seen on earlier runs
+   *   now:     Canvas's clock now
+   * Returns {set, remove, push: {key: rec}, pending, conflicts: [key],
+   * waiting: [key]}. Pure; unit tested. */
+  function plan(all, remote, pending, now) {
+    all = all || {};
+    pending = pending || {};
+    var rem = {};
+    Object.keys(remote && typeof remote === 'object' ? remote : {}).forEach(function (rk) {
+      var k = itemKey(rk);
+      var r = remote[rk];
+      if (isMirrored(k) && r && typeof r === 'object' && isFinite(Number(r.at))) rem[k] = r;
+    });
+    var out = { set: {}, remove: [], push: {}, pending: {}, conflicts: [], waiting: [] };
     var keys = {};
-    Object.keys(local).forEach(function (k) { if (isMirrored(k)) keys[k] = 1; });
-    Object.keys(times).forEach(function (k) { if (isMirrored(k)) keys[k] = 1; });
-    Object.keys(remote).forEach(function (k) { if (isMirrored(k)) keys[k] = 1; });
+    Object.keys(all).forEach(function (k) {
+      if (isMirrored(k)) keys[k] = 1;
+      else if (k.indexOf(T().PREFIX) === 0 && isMirrored(T().itemFor(k))) keys[T().itemFor(k)] = 1;
+    });
+    Object.keys(rem).forEach(function (k) { keys[k] = 1; });
+
     Object.keys(keys).forEach(function (k) {
-      var has = Object.prototype.hasOwnProperty.call(local, k);
-      var t = times[k];
-      // Times recorded here are moved to Canvas's clock; 0 (stored before
-      // times were kept) and -1 (never here) mean what they say in any clock.
-      var lat = t ? (Number(t.at) > 0 ? Number(t.at) + offset : 0) : (has ? 0 : -1);
-      var ldel = !has && !!(t && t.del);
-      if (!has && !ldel) lat = -1;          // never here, never removed here
-      var r = remote[k];
-      var rat = r && isFinite(Number(r.at)) ? Number(r.at) : -1;
-      if (rat > lat || (rat === lat && rat >= 0 && !(r.del ? !has : (has && same(local[k], r.v))))) {
-        // Canvas has the newer change (or, on a tie, the one everyone agrees on).
+      var has = Object.prototype.hasOwnProperty.call(all, k);
+      var t = T().decode(all[T().keyFor(k)]);
+      var r = rem[k] || null;
+      var rat = r ? Number(r.at) : -1;
+      var lat, ldel = false;
+      if (has) {
+        var h = hash(all[k]);
+        if (!t) lat = 0;                                   // stored before times were kept
+        else if (!t.d && t.h === h) lat = t.a;
+        else {
+          // Changed without its time. Wait for Chrome sync to deliver it;
+          // past that, it is a change made when it was first seen.
+          var p = pending[k];
+          if (p && p.h === h && now - p.at >= UNTIMED_WAIT_MS) lat = p.at;
+          else {
+            out.pending[k] = p && p.h === h ? p : { h: h, at: now };
+            out.waiting.push(k);
+            return;
+          }
+        }
+      } else if (t && t.d) {
+        lat = t.a;
+        ldel = true;
+      } else {
+        lat = -1;                                          // never here
+      }
+
+      var agree = r && (r.del ? !has : (has && same(all[k], r.v)));
+      if (r && agree) return;
+      if (r && lat === 0 && rat === 0 && has && !r.del) {
+        out.conflicts.push(k);                             // the teacher decides
+        return;
+      }
+      if (r && rat >= lat) {
         if (r.del) {
           if (has) out.remove.push(k);
-          out.times[k] = { at: rat > 0 ? rat - offset : rat, h: 'deleted', del: true };
+          out.set[T().keyFor(k)] = T().encode({ a: rat, d: true });
         } else {
-          if (!has || !same(local[k], r.v)) out.set[k] = r.v;
-          out.times[k] = { at: rat > 0 ? rat - offset : rat, h: valueHash(r.v) };
+          out.set[k] = r.v;
+          out.set[T().keyFor(k)] = T().encode({ a: rat, h: hash(r.v) });
         }
-      } else if (lat > rat) {
-        out.push[k] = ldel ? { at: lat, del: true } : { at: lat, v: local[k] };
+      } else if (lat > rat || (!r && lat >= 0)) {
+        out.push[k] = ldel ? { at: lat, del: true } : { at: lat, v: all[k] };
       }
     });
     return out;
   }
 
-  /* The changes from Canvas that may be applied: only settings items, each
-   * small enough for one chrome.storage.sync item, all of them together
-   * within its quota. Anything else is left out, and said so. */
-  function fit(local, p) {
-    var problems = [];
-    var size = function (k, v) { return CGP.util.byteLength(k + JSON.stringify(v)); };
-    Object.keys(p.set).forEach(function (k) {
-      if (size(k, p.set[k]) > ITEM_BYTES) { problems.push(k); delete p.set[k]; delete p.times[k]; }
-    });
-    var after = Object.assign({}, local, p.set);
-    p.remove.forEach(function (k) { delete after[k]; });
-    var total = Object.keys(after).reduce(function (n, k) { return n + size(k, after[k]); }, 0);
-    if (total > TOTAL_BYTES) {
-      problems.push('total');
-      p.set = {};
-      p.remove = [];
-      Object.keys(p.times).forEach(function (k) { delete p.times[k]; });
+  function bytes(k, v) { return CGP.util.byteLength(k + JSON.stringify(v)); }
+
+  /* Keeps what is pulled within what chrome.storage.sync holds: no item
+   * over its per-item size, at most the snippet count and bytes the
+   * settings allow (the newest pulled snippets first), and the whole within
+   * quota. Changes p in place; returns what was left out. */
+  function fit(all, p) {
+    var left = [];
+    function drop(k) {
+      delete p.set[k];
+      delete p.set[T().keyFor(k)];
+      left.push(k);
     }
-    return problems;
+    Object.keys(p.set).forEach(function (k) {
+      if (isMirrored(k) && bytes(k, p.set[k]) > ITEM_BYTES) drop(k);
+    });
+    var L = CGP.SETTINGS_LIMITS;
+    var after = Object.assign({}, all, p.set);
+    p.remove.forEach(function (k) { delete after[k]; });
+    var snippets = Object.keys(after).filter(isSnippet);
+    var snipBytes = function () { return snippets.reduce(function (n, k) { return n + bytes(k, after[k]); }, 0); };
+    // New snippets from Canvas, oldest change first, are what gives way.
+    var incoming = Object.keys(p.set).filter(function (k) { return isSnippet(k) && !Object.prototype.hasOwnProperty.call(all, k); })
+      .sort(function (a, b) {
+        var ta = T().decode(p.set[T().keyFor(a)]) || { a: 0 }, tb = T().decode(p.set[T().keyFor(b)]) || { a: 0 };
+        return ta.a - tb.a;
+      });
+    while (incoming.length && (snippets.length > L.MAX_SNIPPETS || snipBytes() > L.MAX_SNIPPET_BYTES)) {
+      var k = incoming.shift();
+      drop(k);
+      delete after[k];
+      snippets = snippets.filter(function (x) { return x !== k; });
+    }
+    var total = function () { return Object.keys(after).reduce(function (n, x) { return n + bytes(x, after[x]); }, 0); };
+    incoming = incoming.filter(function (k) { return p.set[k] !== undefined; });
+    while (incoming.length && total() > TOTAL_BYTES) {
+      var k2 = incoming.shift();
+      drop(k2);
+      delete after[k2];
+    }
+    return left;
   }
 
-  /* One merge: read both sides, apply Canvas's newer items here, send this
-   * computer's newer items to Canvas. Resolves a status object (also kept
-   * in chrome.storage.local for the options page); never rejects. */
   function SettingsMirror(opts) {
     this.api = opts.api;
     this.origin = opts.origin || (typeof location !== 'undefined' ? location.origin : '');
     this.chrome = opts.chrome || (typeof chrome !== 'undefined' ? chrome : null);
     this.now = opts.now || function () { return Date.now(); };
     this.running = null;
+    this.again = false;
   }
 
+  /* One merge. At most once a minute unless forced (a setting changed); a
+   * change made while one runs gets a run of its own right after. Resolves
+   * a status (also kept for the options page); never rejects. */
   SettingsMirror.prototype.run = function (force) {
     var self = this;
-    if (this.running) return this.running;
+    if (this.running) {
+      if (force) this.again = true;
+      return this.running;
+    }
     var c = this.chrome;
     if (!c || !c.storage || !c.storage.sync || !c.storage.local || !this.api || !this.api.customDataTimed) {
       return Promise.resolve({ ok: false, skipped: 'no storage' });
     }
     var statusKey = STATUS_KEY + '.' + this.origin;
-    this.running = c.storage.local.get(statusKey).then(function (r) {
+    this.running = c.storage.local.get([statusKey, PENDING_KEY]).then(function (r) {
       var last = r && r[statusKey];
-      if (!force && last && last.ok && self.now() - Number(last.at || 0) < MIN_GAP_MS) return { ok: true, skipped: 'recent' };
-      return Promise.all([
-        c.storage.sync.get(null),
-        c.storage.local.get(null),
-        self.api.customDataTimed('settings')
-      ]).then(function (got) {
-        var local = got[0] || {};
-        var times = {};
-        Object.keys(got[1] || {}).forEach(function (k) {
-          if (k.indexOf(TIME_PREFIX) === 0) times[k.slice(TIME_PREFIX.length)] = got[1][k];
+      if (!force && last && self.now() - Number(last.tried || last.at || 0) < MIN_GAP_MS) return { skipped: 'recent' };
+      var pending = (r && r[PENDING_KEY]) || {};
+      return self.migrateLegacy().then(function () {
+        return Promise.all([c.storage.sync.get(null), self.api.customDataTimed('settings')]);
+      }).then(function (got) {
+        var all = got[0] || {};
+        var offset = Number(got[1].offset) || 0;
+        var remote = got[1].data && typeof got[1].data === 'object' ? got[1].data : null;
+        var now = self.now() + offset;
+        var p = plan(all, remote, pending, now);
+        var left = fit(all, p);
+        var conflicts = p.conflicts.map(function (k) {
+          return { key: k, mine: all[k], theirs: (remote[remoteKey(k)] || {}).v };
         });
-        var remote = got[2].data && typeof got[2].data === 'object' ? got[2].data : null;
-        var p = plan(local, times, remote, got[2].offset);
-        var problems = fit(local, p);
-        var status = { at: self.now(), ok: true, pulled: Object.keys(p.set).length + p.remove.length, pushed: Object.keys(p.push).length,
-          problems: problems.length ? problems : null, hadCopy: !!remote };
-        // Times first: the change that follows must read as already known
-        // (settings-times.js compares hashes), not as a new change here.
-        var t = {};
-        Object.keys(p.times).forEach(function (k) { t[TIME_PREFIX + k] = p.times[k]; });
-        var apply = Promise.resolve()
-          .then(function () { return Object.keys(t).length ? c.storage.local.set(t) : null; })
-          .then(function () { return Object.keys(p.set).length ? c.storage.sync.set(p.set) : null; })
-          .then(function () { return p.remove.length ? c.storage.sync.remove(p.remove) : null; });
-        return apply.then(function () {
+        var status = {
+          at: self.now(), tried: self.now(), ok: true,
+          pulled: Object.keys(p.set).filter(isMirrored).length + p.remove.length,
+          pushed: Object.keys(p.push).length,
+          leftOut: left.length ? left : null,
+          conflicts: conflicts.length ? conflicts : null,
+          waiting: p.waiting.length || 0
+        };
+        var keep = {};
+        keep[OFFSET_KEY] = offset;
+        keep[PENDING_KEY] = p.pending;
+        // Items and their times in one write, so neither lands alone.
+        return c.storage.local.set(keep).then(function () {
+          return Object.keys(p.set).length ? c.storage.sync.set(p.set) : null;
+        }).then(function () {
+          return p.remove.length ? c.storage.sync.remove(p.remove) : null;
+        }).then(function () {
           var keys = Object.keys(p.push);
           if (!keys.length) return null;
-          // A first copy goes up in one request; after that, one item at a
+          // A first copy goes up in one request; after that one item at a
           // time, so two computers writing different items never collide.
-          if (!remote) return self.api.setCustomData('settings', p.push);
+          if (!remote) {
+            var whole = {};
+            keys.forEach(function (k) { whole[remoteKey(k)] = p.push[k]; });
+            return self.api.setCustomData('settings', whole);
+          }
           return keys.reduce(function (chain, k) {
-            return chain.then(function () { return self.api.setCustomData('settings/' + encodeURIComponent(k), p.push[k]); });
+            return chain.then(function () { return self.api.setCustomData('settings/' + remoteKey(k), p.push[k]); });
           }, Promise.resolve());
         }).then(function () { return status; });
       });
     }).then(null, function (err) {
-      return { at: self.now(), ok: false, error: CGP.util.describeApiError(err, { fallback: 'Canvas did not answer' }) };
+      return { at: null, tried: self.now(), ok: false, error: CGP.util.describeApiError(err, { fallback: 'Canvas did not answer' }) };
     }).then(function (status) {
       self.running = null;
       if (status && !status.skipped) {
@@ -179,11 +254,42 @@
         c.storage.local.set(o).catch(function () { return null; });
         if (status.ok && (status.pulled || status.pushed)) CGP.diag.log('settingsMirror', { pulled: status.pulled, pushed: status.pushed });
       }
+      if (self.again) { self.again = false; return self.run(true); }
       return status;
     });
     return this.running;
   };
 
-  CGP.settingsMirror = { plan: plan, fit: fit, valueHash: valueHash, isMirrored: isMirrored, STATUS_KEY: STATUS_KEY, TIME_PREFIX: TIME_PREFIX };
+  /* The old single 'cgp.settings' item is moved into one item per setting
+   * and snippet first (times 0: a move is no change), so nothing in it is
+   * hidden by items arriving from Canvas. */
+  SettingsMirror.prototype.migrateLegacy = function () {
+    var S = CGP.settingsStorage;
+    var c = this.chrome;
+    return c.storage.sync.get(S.LEGACY_KEY).then(function (r) {
+      if (!r || !r[S.LEGACY_KEY]) return null;
+      return S.read().then(function (cur) { return S.write(cur.values, cur.values); });
+    });
+  };
+
+  /* The options page's answer to a conflict: keep this computer's values
+   * (they become this computer's changes, now) or take Canvas's (stored
+   * here at time 0, which then agrees with Canvas). */
+  function resolve(chromeApi, conflicts, keepMine, now) {
+    var set = {};
+    (conflicts || []).forEach(function (cf) {
+      if (keepMine) set[T().keyFor(cf.key)] = T().encode({ a: now, h: hash(cf.mine) });
+      else {
+        set[cf.key] = cf.theirs;
+        set[T().keyFor(cf.key)] = T().encode({ a: 0, h: hash(cf.theirs) });
+      }
+    });
+    return Object.keys(set).length ? chromeApi.storage.sync.set(set) : Promise.resolve();
+  }
+
+  CGP.settingsMirror = {
+    plan: plan, fit: fit, resolve: resolve, isMirrored: isMirrored, remoteKey: remoteKey, itemKey: itemKey,
+    STATUS_KEY: STATUS_KEY, PENDING_KEY: PENDING_KEY, OFFSET_KEY: OFFSET_KEY
+  };
   CGP.SettingsMirror = SettingsMirror;
 })();

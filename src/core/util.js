@@ -505,7 +505,58 @@
   var SETTING_PREFIX = 'cgp.setting.';
   var SNIPPET_STORE_KEY = 'cgp.snippetStore';
 
-  function sameJson(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+  /** JSON with object keys in sorted order: the same value always gives the
+   * same text, whatever order its keys were stored in (Canvas's database
+   * hands objects back with their keys reordered). */
+  function stableStringify(v) {
+    if (v === undefined) return 'undefined';
+    if (v === null || typeof v !== 'object') return JSON.stringify(v);
+    if (Array.isArray(v)) return '[' + v.map(function (x) { return x === undefined ? 'null' : stableStringify(x); }).join(',') + ']';
+    return '{' + Object.keys(v).sort().filter(function (k) { return v[k] !== undefined; }).map(function (k) {
+      return JSON.stringify(k) + ':' + stableStringify(v[k]);
+    }).join(',') + '}';
+  }
+  util.stableStringify = stableStringify;
+
+  /** FNV-1a of a value's stable JSON. */
+  util.valueHash = function (v) {
+    var str = stableStringify(v);
+    var h = 0x811c9dc5;
+    for (var i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return ('0000000' + h.toString(16)).slice(-8);
+  };
+
+  function sameJson(a, b) { return stableStringify(a) === stableStringify(b); }
+
+  /* When each settings item last changed, kept in chrome.storage.sync beside
+   * the item itself - 'cgp.t.<item key without "cgp.">' - so whichever way a
+   * change travels (Chrome sync, or the copy in the teacher's Canvas account,
+   * core/settings-mirror.js) its real time travels with it. Value: "<time in
+   * base 36>|<hash of the value>", or "<time>|-" once the item was removed
+   * (so a removal is not undone by a computer that still has it). Times are
+   * on Canvas's clock when this computer has learned how far its own is off
+   * ('cgp.clockOffset' in chrome.storage.local), and 0 for an item written
+   * only because it was a default or moved out of the old single item: any
+   * real change anywhere beats those. */
+  var TIME_PREFIX = 'cgp.t.';
+  CGP.settingsTimes = {
+    PREFIX: TIME_PREFIX,
+    keyFor: function (itemKey) { return TIME_PREFIX + String(itemKey).replace(/^cgp\./, ''); },
+    itemFor: function (timeKey) { return 'cgp.' + String(timeKey).slice(TIME_PREFIX.length); },
+    encode: function (rec) {
+      return Math.max(0, Math.round(Number(rec.a) || 0)).toString(36) + '|' + (rec.d ? '-' : String(rec.h || ''));
+    },
+    decode: function (v) {
+      var m = /^([0-9a-z]+)\|(.*)$/.exec(String(v == null ? '' : v));
+      if (!m) return null;
+      var a = parseInt(m[1], 36);
+      if (!isFinite(a)) return null;
+      return m[2] === '-' ? { a: a, d: true } : { a: a, h: m[2] };
+    }
+  };
 
   function storedSnippetItems(all) {
     var items = [];
@@ -547,19 +598,28 @@
    * means nothing may be written. */
   function plan(all, base, next) {
     all = all || {};
-    var out = { set: {}, remove: [], problem: null };
+    // stamps: why each item is written - 'edit' (the teacher changed it, or
+    // replaced everything) or 'keep' (a default written out, a move, a
+    // place shifted by another snippet's removal: no change of the
+    // teacher's, so the item keeps the time it had, or 0);
+    // removed: items the teacher removed.
+    var out = { set: {}, remove: [], problem: null, stamps: {}, removed: [] };
     var legacy = legacyOf(all);
     var migrated = all[SNIPPET_STORE_KEY] === 'keys';
 
     Object.keys(CGP.DEFAULTS).forEach(function (k) {
       if (k === 'snippets') return;
       var key = SETTING_PREFIX + k;
-      var value;
-      if (!base || !sameJson(base[k], next[k])) value = next[k];
+      var value, stamp;
+      if (!base || !sameJson(base[k], next[k])) { value = next[k]; stamp = 'edit'; }
       else if (Object.prototype.hasOwnProperty.call(all, key)) return;      // untouched, already its own item
-      else if (legacy && legacy[k] !== undefined) value = sanitizeSettings(assemble(all))[k];   // moved out of cgp.settings
+      else if (legacy && legacy[k] !== undefined) { value = sanitizeSettings(assemble(all))[k]; stamp = 'keep'; }   // moved out of cgp.settings
       else return;                                                         // never stored: the default stays implicit
       if (!sameJson(all[key], value)) out.set[key] = value;
+      // Replacing everything (Restore defaults, Import) is a change to every
+      // setting, even one that already had this value: it must win over a
+      // different value elsewhere.
+      if (out.set[key] !== undefined || (!base && stamp === 'edit')) out.stamps[key] = stamp;
     });
 
     var snippetsChanged = !base || !sameJson(base.snippets, next.snippets);
@@ -596,14 +656,40 @@
         out.set = {};
         return out;
       }
+      // The teacher's own snippet changes: new, retitled or rewritten - and
+      // moved, but only when they really reordered them (a removal or an
+      // addition shifts every later snippet's place without that being a
+      // change to those snippets).
+      var editedSnip = {};
+      if (snippetsChanged) {
+        var common = function (list, other) { return list.filter(function (t) { return other[t]; }); };
+        var orderBefore = common((base ? base.snippets : []).map(function (x) { return x.trigger.toLowerCase(); }), mine);
+        var orderNow = common((next.snippets || []).map(function (x) { return x.trigger.toLowerCase(); }), before);
+        var reordered = orderBefore.join('\n') !== orderNow.join('\n');
+        Object.keys(mine).forEach(function (t) {
+          var b = before[t], m = mine[t];
+          if (!base || !b || b.trigger !== m.trigger || b.text !== m.text || (reordered && b.pos !== m.pos)) editedSnip[t] = 1;
+        });
+      }
       triggers.forEach(function (t) {
         var key = snippetKey(t);
-        if (!sameJson(all[key], current[t])) out.set[key] = current[t];
+        var changed = !sameJson(all[key], current[t]);
+        if (changed) out.set[key] = current[t];
+        // A snippet written only because it was a built-in default (or moved
+        // out of the old single item) is no change of the teacher's.
+        if (changed || (!base && editedSnip[t])) out.stamps[key] = editedSnip[t] ? 'edit' : 'keep';
       });
       Object.keys(all).forEach(function (k) {
-        if (k.indexOf(SNIPPET_PREFIX) === 0 && !current[k.slice(SNIPPET_PREFIX.length)]) out.remove.push(k);
+        if (k.indexOf(SNIPPET_PREFIX) === 0 && !current[k.slice(SNIPPET_PREFIX.length)]) { out.remove.push(k); out.removed.push(k); }
       });
-      if (!migrated) out.set[SNIPPET_STORE_KEY] = 'keys';
+      // The teacher removed one that was never stored here (a built-in
+      // default): still a removal, so another computer's copy goes too.
+      if (snippetsChanged) {
+        Object.keys(before).forEach(function (t) {
+          if (!mine[t] && out.removed.indexOf(snippetKey(t)) < 0) out.removed.push(snippetKey(t));
+        });
+      }
+      if (!migrated) { out.set[SNIPPET_STORE_KEY] = 'keys'; out.stamps[SNIPPET_STORE_KEY] = 'keep'; }
     }
     // Everything in the old single item now has an item of its own.
     if (legacy) out.remove.push(LEGACY_KEY);
@@ -636,9 +722,22 @@
      * written nothing, when the result would not fit. */
     write: function (base, next) {
       var self = this;
-      return chrome.storage.sync.get(null).then(function (all) {
+      var offset = (chrome.storage.local && chrome.storage.local.get)
+        ? chrome.storage.local.get('cgp.clockOffset').then(function (r) { return Number(r && r['cgp.clockOffset']) || 0; }, function () { return 0; })
+        : Promise.resolve(0);
+      return Promise.all([chrome.storage.sync.get(null), offset]).then(function (got) {
+        var all = got[0];
         var p = plan(all || {}, base, next);
         if (p.problem) throw new Error(p.problem);
+        // Each written item's time goes in the same write as the item.
+        var now = Date.now() + got[1];
+        var T = CGP.settingsTimes;
+        Object.keys(p.stamps).forEach(function (k) {
+          var v = Object.prototype.hasOwnProperty.call(p.set, k) ? p.set[k] : (all || {})[k];
+          var had = T.decode((all || {})[T.keyFor(k)]);
+          p.set[T.keyFor(k)] = T.encode({ a: p.stamps[k] === 'edit' ? now : (had && !had.d ? had.a : 0), h: util.valueHash(v) });
+        });
+        p.removed.forEach(function (k) { p.set[T.keyFor(k)] = T.encode({ a: now, d: true }); });
         // Set before remove: the two never share a key, and a refused set
         // must not leave the old values already deleted.
         var work = Promise.resolve();

@@ -56,7 +56,8 @@ suite('settings sync: how settings are stored', (test) => {
   test('a computer that has stored nothing and changed nothing writes nothing', () => {
     const base = settingsWith({});
     const p = CGP().settingsStorage.plan({}, base, base);
-    a.deep(p, { set: {}, remove: [], problem: null });
+    a.deep({ set: p.set, remove: p.remove, problem: p.problem, stamps: p.stamps, removed: p.removed },
+      { set: {}, remove: [], problem: null, stamps: {}, removed: [] });
   });
 
   test('changing one setting on a computer with nothing stored writes only that setting, never the default snippets', () => {

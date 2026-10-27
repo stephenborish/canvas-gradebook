@@ -960,8 +960,14 @@
         var where = escapeHtml(k.slice('cgp.mirror.status.'.length).replace(/^https?:\/\//, ''));
         if (st.ok) {
           lines.push('<p class="sync-status__ok"><strong>Canvas copy (' + where + '):</strong> in step ' + ago(st.at) +
-            (st.pulled ? ', ' + st.pulled + ' change(s) brought here' : '') + (st.pushed ? ', ' + st.pushed + ' change(s) saved to Canvas' : '') + '.' +
-            (st.problems ? ' Some settings from Canvas did not fit in Chrome’s storage and were left out.' : '') + '</p>');
+            (st.pulled ? ', ' + st.pulled + ' change(s) brought here' : '') + (st.pushed ? ', ' + st.pushed + ' change(s) saved to Canvas' : '') + '.</p>');
+          if (st.leftOut) {
+            lines.push('<p class="sync-status__warn">' + st.leftOut.length + ' snippet(s) from your other computers do not fit here: Chrome holds at most ' +
+              CGP.SETTINGS_LIMITS.MAX_SNIPPETS + ' snippets. Remove some you no longer use (on any computer), and they will come through: ' +
+              st.leftOut.map(function (k) { return escapeHtml('/' + k.replace(/^cgp\.snippet\./, '')); }).join(', ') + '.</p>');
+          }
+          if (st.waiting) lines.push('<p class="hint">' + st.waiting + ' change(s) are waiting for Chrome sync to finish delivering them.</p>');
+          if (st.conflicts) lines.push(conflictHtml(k, st.conflicts));
         } else {
           lines.push('<p class="sync-status__warn"><strong>Canvas copy (' + where + '):</strong> last try ' + ago(st.at || Date.now()) +
             ' did not work. ' + escapeHtml(st.error || '') + '</p>');
@@ -969,6 +975,55 @@
       });
       box.innerHTML = lines.join('');
     }, function () { box.innerHTML = '<p class="hint">Sync status is not available.</p>'; });
+  }
+
+  /* Two computers that never synced, with different values for the same
+   * setting or snippet and no record of which is newer: the teacher picks. */
+  function label(key) {
+    if (key.indexOf('cgp.snippet.') === 0) return 'snippet /' + key.slice('cgp.snippet.'.length);
+    var name = key.replace(/^cgp\.setting\./, '');
+    var el = document.getElementById(name);
+    var lab = el && document.querySelector('label[for="' + name + '"]');
+    return lab ? String(lab.firstChild && lab.firstChild.textContent || name).trim() : name;
+  }
+
+  function shortValue(v) {
+    if (v && typeof v === 'object' && v.text !== undefined) v = v.text;
+    var t = typeof v === 'string' ? v : JSON.stringify(v);
+    return t.length > 60 ? t.slice(0, 57) + '…' : t;
+  }
+
+  function conflictHtml(statusKey, conflicts) {
+    return '<div class="sync-conflict" data-status="' + escapeHtml(statusKey) + '"><p><strong>Your computers disagree on ' + conflicts.length +
+      (conflicts.length === 1 ? ' setting' : ' settings') + '</strong>, and neither was changed since this extension started keeping times, ' +
+      'so it can’t tell which is newer:</p><ul>' + conflicts.map(function (c) {
+        return '<li>' + escapeHtml(label(c.key)) + ': this computer <code>' + escapeHtml(shortValue(c.mine)) + '</code>, other computer <code>' +
+          escapeHtml(shortValue(c.theirs)) + '</code></li>';
+      }).join('') + '</ul><div class="action-row"><button type="button" class="btn btn--primary" data-resolve="mine">Keep this computer’s</button>' +
+      '<button type="button" class="btn" data-resolve="theirs">Use the other computer’s</button></div></div>';
+  }
+
+  var statusBox = $('syncStatus');
+  if (statusBox) {
+    statusBox.addEventListener('click', function (e) {
+      var b = e.target.closest && e.target.closest('[data-resolve]');
+      if (!b) return;
+      var box = b.closest('[data-status]');
+      var key = box.getAttribute('data-status');
+      chrome.storage.local.get([key, 'cgp.clockOffset']).then(function (r) {
+        var st = r[key] || {};
+        var now = Date.now() + (Number(r['cgp.clockOffset']) || 0);
+        return CGP.settingsMirror.resolve(chrome, st.conflicts || [], b.getAttribute('data-resolve') === 'mine', now).then(function () {
+          st.conflicts = null;
+          var o = {};
+          o[key] = st;
+          return chrome.storage.local.set(o);
+        });
+      }).then(function () {
+        status('Done. Your other computers get it the next time Canvas is opened there.');
+        renderSyncStatus();
+      }, function (err) { status('Not done: ' + String(err && err.message), { error: true }); });
+    });
   }
 
   if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
