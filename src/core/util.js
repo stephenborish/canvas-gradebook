@@ -558,18 +558,22 @@
       if (String(itemKey).indexOf(SNIPPET_PREFIX) !== 0) return TIMES_PREFIX + 's';
       return TIMES_PREFIX + (parseInt(util.valueHash(String(itemKey)), 16) % TIME_SHARDS);
     },
+    // "<time>|<hash or ->|<flags>|<computer id>": the id says which
+    // computer's own clock a "u" time was taken by - the only one that can
+    // put it on Canvas's clock.
     encode: function (rec) {
       var s = Math.max(0, Math.round(Number(rec.a) || 0)).toString(36) + '|' + (rec.d ? '-' : String(rec.h || ''));
       var f = (rec.u ? 'u' : '') + (rec.def ? 'd' : '');
-      return f ? s + '|' + f : s;
+      if (!f) return s;
+      return s + '|' + f + (rec.u && typeof rec.u === 'string' ? '|' + rec.u.replace(/[^0-9a-z]/g, '') : '');
     },
     decode: function (v) {
-      var m = /^([0-9a-z]+)\|([^|]*)(?:\|([a-z]*))?$/.exec(String(v == null ? '' : v));
+      var m = /^([0-9a-z]+)\|([^|]*)(?:\|([a-z]*)(?:\|([0-9a-z]*))?)?$/.exec(String(v == null ? '' : v));
       if (!m) return null;
       var a = parseInt(m[1], 36);
       if (!isFinite(a)) return null;
       var rec = m[2] === '-' ? { a: a, d: true } : { a: a, h: m[2] };
-      if (m[3] && m[3].indexOf('u') >= 0) rec.u = true;
+      if (m[3] && m[3].indexOf('u') >= 0) rec.u = m[4] || true;
       if (m[3] && m[3].indexOf('d') >= 0) rec.def = true;
       return rec;
     },
@@ -605,6 +609,11 @@
           var rec = self.decode(cur[sk]);
           if (rec && rec.d && !rec.u && now - rec.a > TOMBSTONE_DAYS * 86400000) delete cur[sk];
         });
+        // Chrome sync's per-item limit: past it, the oldest tombstones go
+        // first (a removal that old has long reached every computer).
+        var tombs = Object.keys(cur).filter(function (sk) { var r = self.decode(cur[sk]); return r && r.d; })
+          .sort(function (x, y) { return self.decode(cur[x]).a - self.decode(cur[y]).a; });
+        while (tombs.length && util.byteLength(shard + JSON.stringify(cur)) > 7000) delete cur[tombs.shift()];
         out[shard] = cur;
       });
       return out;
@@ -736,11 +745,14 @@
           var b = before[t], m = mine[t];
           if (!base || !b || b.trigger !== m.trigger || b.text !== m.text) editedSnip[t] = 1;
         });
-        // A real reorder is one change: the order item.
-        if (reordered || (!base && (next.snippets || []).length)) {
-          var order = (next.snippets || []).map(function (x) { return x.trigger.toLowerCase(); });
+        // The order is its own item, written whenever it differs from the
+        // stored one - a change of the teacher's, unless it is just the
+        // built-in snippets' order written out by a computer that never had
+        // any stored (that gives way to a real order elsewhere).
+        var order = (next.snippets || []).map(function (x) { return x.trigger.toLowerCase(); });
+        if (!sameJson(all[SNIPPET_ORDER_KEY], order) || !base) {
           if (!sameJson(all[SNIPPET_ORDER_KEY], order)) out.set[SNIPPET_ORDER_KEY] = order;
-          out.stamps[SNIPPET_ORDER_KEY] = 'edit';
+          out.stamps[SNIPPET_ORDER_KEY] = (reordered || !base || migrated || legacySnippets) ? 'edit' : 'default';
         }
       }
       triggers.forEach(function (t) {
@@ -798,10 +810,12 @@
     write: function (base, next) {
       var self = this;
       var offset = (chrome.storage.local && chrome.storage.local.get)
-        ? chrome.storage.local.get('cgp.clockOffset').then(function (r) {
+        ? chrome.storage.local.get(['cgp.clockOffset', 'cgp.deviceId']).then(function (r) {
+          deviceId = (r && r['cgp.deviceId']) || null;
           return r && r['cgp.clockOffset'] !== undefined && isFinite(Number(r['cgp.clockOffset'])) ? Number(r['cgp.clockOffset']) : null;
         }, function () { return null; })
         : Promise.resolve(null);
+      var deviceId = null;
       return Promise.all([chrome.storage.sync.get(null), offset]).then(function (got) {
         var all = got[0];
         var p = plan(all || {}, base, next);
@@ -818,11 +832,11 @@
           var v = Object.prototype.hasOwnProperty.call(p.set, k) ? p.set[k] : (all || {})[k];
           var had = times[k];
           var st = p.stamps[k];
-          if (st === 'edit') changes[k] = { a: now, h: util.valueHash(v), u: !known };
+          if (st === 'edit') changes[k] = { a: now, h: util.valueHash(v), u: known ? false : (deviceId || true) };
           else if (st === 'default') changes[k] = { a: 0, h: util.valueHash(v), def: true };
           else changes[k] = had && !had.d ? { a: had.a, h: util.valueHash(v), u: had.u, def: had.def } : { a: 0, h: util.valueHash(v) };
         });
-        p.removed.forEach(function (k) { changes[k] = { a: now, d: true, u: !known }; });
+        p.removed.forEach(function (k) { changes[k] = { a: now, d: true, u: known ? false : (deviceId || true) }; });
         Object.assign(p.set, T.shardWrites(all || {}, changes, now));
         // Set before remove: the two never share a key, and a refused set
         // must not leave the old values already deleted.

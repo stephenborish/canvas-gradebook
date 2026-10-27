@@ -75,7 +75,9 @@
     return same(a, b);
   }
 
-  function plan(all, remote, pending, now, offset) {
+  var FOREIGN_CLOCK_WAIT_MS = 7 * 86400000;
+
+  function plan(all, remote, pending, now, offset, deviceId) {
     all = all || {};
     pending = pending || {};
     offset = Number(offset) || 0;
@@ -108,11 +110,22 @@
       var t = times[k] || null;
       var r = rem[k] || null;
       var lat, ldel = false;
-      // Settle a time taken by this computer's own clock before it knew
-      // how far off that is.
+      // A time taken by a computer's own clock before it knew how far off
+      // that is: only that computer can put it on Canvas's clock. Another
+      // computer leaves the item alone meanwhile - for a week at most, then
+      // takes the time as it is.
       if (t && t.u) {
-        t = Object.assign({}, t, { a: Math.max(0, t.a + offset), u: false });
-        out.times[k] = t;
+        var mine = t.u === true || (deviceId && t.u === deviceId);
+        if (mine) {
+          t = Object.assign({}, t, { a: Math.max(0, t.a + offset), u: false });
+          out.times[k] = t;
+        } else if (now - t.a < FOREIGN_CLOCK_WAIT_MS) {
+          out.waiting.push(k);
+          return;
+        } else {
+          t = Object.assign({}, t, { u: false });
+          out.times[k] = t;
+        }
       }
       if (has) {
         var h = hash(all[k]);
@@ -224,7 +237,9 @@
       return Promise.resolve({ ok: false, skipped: 'no storage' });
     }
     var statusKey = STATUS_KEY + '.' + this.origin;
-    this.running = c.storage.local.get([statusKey, PENDING_KEY]).then(function (r) {
+    var deviceId = null;
+    this.running = c.storage.local.get([statusKey, PENDING_KEY, 'cgp.deviceId']).then(function (r) {
+      deviceId = (r && r['cgp.deviceId']) || null;
       var last = r && r[statusKey];
       if (!force && last && self.now() - Number(last.tried || last.at || 0) < MIN_GAP_MS) return { skipped: 'recent' };
       var pending = (r && r[PENDING_KEY]) || {};
@@ -235,7 +250,7 @@
         var offset = Number(got[1].offset) || 0;
         var remote = got[1].data && typeof got[1].data === 'object' ? got[1].data : null;
         var now = self.now() + offset;
-        var p = plan(all, remote, pending, now, offset);
+        var p = plan(all, remote, pending, now, offset, deviceId);
         var left = fit(all, p);
         // The items' times, in the same write as the items.
         if (Object.keys(p.times).length) Object.assign(p.set, T().shardWrites(all, p.times, now));

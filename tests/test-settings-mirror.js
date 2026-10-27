@@ -440,3 +440,56 @@ suite('settings everywhere: second re-review', (test) => {
     a.ok(Object.keys(A.sync.data).length < 200, String(Object.keys(A.sync.data).length));
   });
 });
+
+suite('settings everywhere: third re-review', (test) => {
+  test('a wrong-clock computer’s first change is put on Canvas’s clock by that computer only', async () => {
+    let t = 1.7e12;
+    const clock = () => t;
+    const canvas = fakeCanvas(clock);
+    const F = computer('F (a day fast, never at Canvas)', clock, 86400000);
+    const W = computer('W', clock, 0);
+    const D = computer('D', clock, 0);
+    F.local.data['cgp.deviceId'] = 'f1';
+    W.local.data['cgp.deviceId'] = 'w1';
+    D.local.data['cgp.deviceId'] = 'd1';
+    await mirror(D, canvas);                        // D knows Canvas's clock
+    await save(F, { rosterPrefs: { nameFormat: 'last-first' } });
+    await chromeSync(F, W);
+    t += 61000;
+    await mirror(W, canvas);                        // W must not settle (or push) F's time
+    a.lacksKey(canvas.store, 'cgp~setting~rosterPrefs');
+    t += 3600000;
+    await save(D, { rosterPrefs: { nameFormat: 'split' } });
+    await mirror(D, canvas);
+    t += 61000;
+    await mirror(F, canvas);                        // F's first Canvas visit: its time was really an hour before D's
+    await mirror(W, canvas);
+    for (const comp of [F, D]) a.eq((await values(comp)).rosterPrefs.nameFormat, 'split', comp.name);
+    a.eq(canvas.store['cgp~setting~rosterPrefs'].v.nameFormat, 'split');
+  });
+
+  test('adding a snippet at the top gives every computer the same order', async () => {
+    let t = 1.7e12;
+    const clock = () => t;
+    const canvas = fakeCanvas(clock);
+    const A = computer('A', clock, 0);
+    const D = computer('D', clock, 0);
+    const v = await values(A);
+    await save(A, { snippets: v.snippets.slice() });
+    await save(A, { snippets: [{ trigger: 'new', text: 'New' }].concat((await values(A)).snippets) });
+    await mirror(A, canvas);
+    t += 61000;
+    await mirror(D, canvas);
+    a.deep((await values(D)).snippets.map((s) => s.trigger), (await values(A)).snippets.map((s) => s.trigger));
+    a.eq((await values(D)).snippets[0].trigger, 'new');
+  });
+
+  test('a time shard never outgrows Chrome sync’s per-item limit: the oldest tombstones go first', () => {
+    const T = C().settingsTimes;
+    const now = 1e12;
+    const changes = {};
+    for (let i = 0; i < 2000; i++) changes['cgp.snippet.' + 'x'.repeat(28) + i] = { a: now - i * 1000, d: true };
+    const out = T.shardWrites({}, changes, now);
+    Object.keys(out).forEach((k) => a.ok(C().util.byteLength(k + JSON.stringify(out[k])) <= 7000, k));
+  });
+});
