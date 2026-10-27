@@ -686,6 +686,9 @@ on one computer stays deleted.
 - **When it can't tell which change is newer, it asks you.** This happens when two computers that
   never synced have different values and neither has a recorded time. Sync & Backup lists those, and
   you choose *Keep this computer's* or *Use the other computer's*. Nothing is guessed.
+- **It only ever pairs with you.** The Canvas copy belongs to the first Canvas account this Chrome
+  profile merged with. If someone else signs in to Canvas on your Chrome (a co-teacher, a student at
+  your desk), nothing is merged either way, and Sync & Backup says so.
 - **Nothing is lost to the 100-snippet limit.** If merging two computers' snippets would go over the
   limit Chrome allows, the extras stay in your Canvas copy and are listed there, rather than being
   dropped.
@@ -821,7 +824,7 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-582 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
+583 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
 again → not Missing, `L` → Late and `L` again → not Late, both leaving the grade untouched either
 way, `E` → Excused, a grade never adding a status (and lifting an applied Missing only when asked),
 statuses read exactly as Canvas computes them, the hand-off to Canvas's own store (and never

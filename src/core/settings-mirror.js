@@ -243,50 +243,11 @@
       var last = r && r[statusKey];
       if (!force && last && self.now() - Number(last.tried || last.at || 0) < MIN_GAP_MS) return { skipped: 'recent' };
       var pending = (r && r[PENDING_KEY]) || {};
-      return self.migrateLegacy().then(function () {
-        return Promise.all([c.storage.sync.get(null), self.api.customDataTimed('settings')]);
-      }).then(function (got) {
-        var all = got[0] || {};
-        var offset = Number(got[1].offset) || 0;
-        var remote = got[1].data && typeof got[1].data === 'object' ? got[1].data : null;
-        var now = self.now() + offset;
-        var p = plan(all, remote, pending, now, offset, deviceId);
-        var left = fit(all, p);
-        // The items' times, in the same write as the items.
-        if (Object.keys(p.times).length) Object.assign(p.set, T().shardWrites(all, p.times, now));
-        var conflicts = p.conflicts.map(function (k) {
-          return { key: k, mine: all[k], theirs: (remote[remoteKey(k)] || {}).v };
-        });
-        var status = {
-          at: self.now(), tried: self.now(), ok: true,
-          pulled: Object.keys(p.set).filter(isMirrored).length + p.remove.length,
-          pushed: Object.keys(p.push).length,
-          leftOut: left.length ? left : null,
-          conflicts: conflicts.length ? conflicts : null,
-          waiting: p.waiting.length || 0
-        };
-        var keep = {};
-        keep[OFFSET_KEY] = offset;
-        keep[PENDING_KEY] = p.pending;
-        // Items and their times in one write, so neither lands alone.
-        return c.storage.local.set(keep).then(function () {
-          return Object.keys(p.set).length ? c.storage.sync.set(p.set) : null;
-        }).then(function () {
-          return p.remove.length ? c.storage.sync.remove(p.remove) : null;
-        }).then(function () {
-          var keys = Object.keys(p.push);
-          if (!keys.length) return null;
-          // A first copy goes up in one request; after that one item at a
-          // time, so two computers writing different items never collide.
-          if (!remote) {
-            var whole = {};
-            keys.forEach(function (k) { whole[remoteKey(k)] = p.push[k]; });
-            return self.api.setCustomData('settings', whole);
-          }
-          return keys.reduce(function (chain, k) {
-            return chain.then(function () { return self.api.setCustomData('settings/' + remoteKey(k), p.push[k]); });
-          }, Promise.resolve());
-        }).then(function () { return status; });
+      return self.sameUser().then(function (who) {
+        if (!who.ok) return { at: null, tried: self.now(), ok: false, otherUser: true, error: who.reason };
+        return self.migrateLegacy().then(function () {
+          return Promise.all([c.storage.sync.get(null), self.api.customDataTimed('settings')]);
+        }).then(function (got) { return self.merge(got, pending, deviceId); });
       });
     }).then(null, function (err) {
       return { at: null, tried: self.now(), ok: false, error: CGP.util.describeApiError(err, { fallback: 'Canvas did not answer' }) };
@@ -302,6 +263,80 @@
       return status;
     });
     return this.running;
+  };
+
+  /* These settings belong to one Canvas person: the first this Chrome
+   * profile merged with, on this Canvas. Anyone else signed in to Canvas
+   * here - a co-teacher, a student at the teacher's desk - gets no merge at
+   * all: their Canvas account neither receives this profile's settings nor
+   * hands this profile theirs. */
+  var USER_KEY = 'cgp.mirror.user';
+  SettingsMirror.prototype.sameUser = function () {
+    var self = this;
+    var c = this.chrome;
+    var key = USER_KEY + '.' + this.origin;
+    if (!this.api.currentUser) return Promise.resolve({ ok: true });
+    if (!this._who) this._who = this.api.currentUser().then(function (u) { return u && u.id ? String(u.id) : null; });
+    return Promise.all([this._who, c.storage.local.get(key)]).then(function (r) {
+      var id = r[0];
+      var bound = r[1] && r[1][key];
+      if (!id) throw new Error('Canvas did not say who is signed in');
+      if (!bound) {
+        var o = {};
+        o[key] = { id: id, at: self.now() };
+        return c.storage.local.set(o).then(function () { return { ok: true }; });
+      }
+      if (String(bound.id) === id) return { ok: true };
+      return { ok: false, reason: 'Someone else is signed in to Canvas here, so their Canvas account and these settings are kept apart.' };
+    });
+  };
+
+  SettingsMirror.prototype.merge = function (got, pending, deviceId) {
+    var self = this;
+    var c = this.chrome;
+    return Promise.resolve().then(function () {
+      var all = got[0] || {};
+      var offset = Number(got[1].offset) || 0;
+      var remote = got[1].data && typeof got[1].data === 'object' ? got[1].data : null;
+      var now = self.now() + offset;
+      var p = plan(all, remote, pending, now, offset, deviceId);
+      var left = fit(all, p);
+      // The items' times, in the same write as the items.
+      if (Object.keys(p.times).length) Object.assign(p.set, T().shardWrites(all, p.times, now));
+      var conflicts = p.conflicts.map(function (k) {
+        return { key: k, mine: all[k], theirs: (remote[remoteKey(k)] || {}).v };
+      });
+      var status = {
+        at: self.now(), tried: self.now(), ok: true,
+        pulled: Object.keys(p.set).filter(isMirrored).length + p.remove.length,
+        pushed: Object.keys(p.push).length,
+        leftOut: left.length ? left : null,
+        conflicts: conflicts.length ? conflicts : null,
+        waiting: p.waiting.length || 0
+      };
+      var keep = {};
+      keep[OFFSET_KEY] = offset;
+      keep[PENDING_KEY] = p.pending;
+      // Items and their times in one write, so neither lands alone.
+      return c.storage.local.set(keep).then(function () {
+        return Object.keys(p.set).length ? c.storage.sync.set(p.set) : null;
+      }).then(function () {
+        return p.remove.length ? c.storage.sync.remove(p.remove) : null;
+      }).then(function () {
+        var keys = Object.keys(p.push);
+        if (!keys.length) return null;
+        // A first copy goes up in one request; after that one item at a
+        // time, so two computers writing different items never collide.
+        if (!remote) {
+          var whole = {};
+          keys.forEach(function (k) { whole[remoteKey(k)] = p.push[k]; });
+          return self.api.setCustomData('settings', whole);
+        }
+        return keys.reduce(function (chain, k) {
+          return chain.then(function () { return self.api.setCustomData('settings/' + remoteKey(k), p.push[k]); });
+        }, Promise.resolve());
+      }).then(function () { return status; });
+    });
   };
 
   /* The old single 'cgp.settings' item is moved into one item per setting

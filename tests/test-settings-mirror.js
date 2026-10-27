@@ -493,3 +493,25 @@ suite('settings everywhere: third re-review', (test) => {
     Object.keys(out).forEach((k) => a.ok(C().util.byteLength(k + JSON.stringify(out[k])) <= 7000, k));
   });
 });
+
+suite('settings everywhere: one Canvas person', (test) => {
+  test('someone else signed in to Canvas on this Chrome gets no merge either way', async () => {
+    const t = 1.7e12;
+    const canvas = fakeCanvas(() => t);
+    const A = computer('A', () => t, 0);
+    await save(A, { gradeFontSize: 19 });
+    let who = '101';
+    canvas.currentUser = async () => ({ id: who });
+    canvas.localNow = A.now;
+    const run = () => on(A, () => new (C().SettingsMirror)({ api: canvas, chrome: A.chrome, origin: 'https://s.instructure.com', now: A.now }).run(true));
+    a.ok((await run()).ok);
+    const puts = canvas.puts;
+    who = '202';
+    canvas.store['cgp~setting~gradeFontSize'] = { at: t + 5000, v: 11 };  // the other person's own settings
+    const st = await run();
+    a.not(st.ok);
+    a.ok(st.otherUser);
+    a.eq(canvas.puts, puts, 'nothing sent to their account');
+    a.eq((await values(A)).gradeFontSize, 19, 'nothing taken from it');
+  });
+});
