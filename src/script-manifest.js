@@ -6,6 +6,7 @@
 export const CONTENT_JS = [
   'src/core/util.js',
   'src/core/canvas-api.js',
+  'src/core/settings-mirror.js',
   'src/core/grade-ops.js',
   'src/core/post-ops.js',
   'src/core/clipboard-matrix.js',

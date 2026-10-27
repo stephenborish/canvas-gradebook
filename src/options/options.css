@@ -715,3 +715,7 @@ input.switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2p
   border-bottom: 1px solid #e6e9ec;
 }
 .section-group:last-child { border-bottom: 0; }
+
+.sync-status p { margin: 6px 0 10px; line-height: 1.5; }
+.sync-status__ok { color: #0b5e37; }
+.sync-status__warn { color: #8a4b00; }

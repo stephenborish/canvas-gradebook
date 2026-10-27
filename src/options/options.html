@@ -44,7 +44,7 @@
         </button>
         <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-backup" id="tab-backup" data-tab="backup">
           <svg class="tab__icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v9.7M6.2 8.5 10 12.3l3.8-3.8"/><path d="M3 13.7v1.8A1.5 1.5 0 0 0 4.5 17h11a1.5 1.5 0 0 0 1.5-1.5v-1.8"/></svg>
-          <span class="tab__label">Backup &amp; Transfer</span>
+          <span class="tab__label">Sync &amp; Backup</span>
         </button>
         <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-diagnostics" id="tab-diagnostics" data-tab="diagnostics">
           <svg class="tab__icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M2.3 10.8h3.1l1.8-5.6 3 11 2.2-9 1.2 3.6h3.1"/></svg>
@@ -502,10 +502,26 @@
 
         <section class="panel" id="panel-backup" role="tabpanel" aria-labelledby="tab-backup" data-panel="backup" hidden>
           <header class="panel__head">
-            <h1>Backup &amp; Transfer</h1>
-            <p>Carry your settings to another computer: download a file here, then use &ldquo;Restore from
-              file&hellip;&rdquo; on the other one.</p>
+            <h1>Sync &amp; Backup</h1>
+            <p>Your settings and snippets follow you to every computer where you use Chrome or Canvas.</p>
           </header>
+
+          <h2 class="panel__group">Your other computers</h2>
+          <div id="syncStatus" class="sync-status" aria-live="polite"><p class="hint">Checking&hellip;</p></div>
+          <div class="setting">
+            <label class="setting__label" for="settingsInCanvas">Also keep my settings in my Canvas account
+              <span class="hint">Chrome sync carries settings between computers signed in to the same Google account, but only
+                with Chrome sync on (and a school can turn it off). With this on, every Canvas page also keeps your
+                settings and snippets in step with a copy in your own Canvas account (Canvas's private per-user data), so
+                any computer where you open Canvas gets them, whatever Chrome sync is doing. Changes reach another
+                computer the next time Canvas is opened there.</span>
+            </label>
+            <input id="settingsInCanvas" type="checkbox" class="switch">
+          </div>
+
+          <h2 class="panel__group">Backup file</h2>
+          <p class="hint">Carry your settings by hand: download a file here, then use &ldquo;Restore from
+            file&hellip;&rdquo; on the other computer.</p>
           <p class="hint">The file holds your preferences, layout and snippets only &ndash; never grades, comments or
             student names.</p>
           <div class="action-row">

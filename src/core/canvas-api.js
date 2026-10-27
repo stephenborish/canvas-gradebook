@@ -151,7 +151,8 @@
               });
             }
             CGP.diag.bump('api.requests');
-            return { data: parseBody(text), link: res.headers.get('Link') || res.headers.get('link') };
+            return { data: parseBody(text), link: res.headers.get('Link') || res.headers.get('link'),
+              date: res.headers.get('Date') || res.headers.get('date') || null };
           });
         }, function (e) {
           throw new CanvasApiError('Network error on ' + method + ' ' + u.pathname, {
@@ -652,6 +653,22 @@
       return r && r.data !== undefined ? r.data : null;
     }, function (err) {
       if (err && (err.status === 400 || err.status === 404)) return null;
+      throw err;
+    });
+  };
+
+  /* The same read, plus how far this computer's clock is from Canvas's
+   * (ms to add to a local time to get Canvas's), from the response's Date
+   * header - so times from computers whose clocks disagree compare fairly.
+   * {data, offset}; offset 0 when Canvas sent no usable Date. */
+  CanvasApi.prototype.customDataTimed = function (scope) {
+    var sent = Date.now();
+    return this.request('/api/v1/users/self/custom_data/' + scope, { params: { ns: CUSTOM_NS } }).then(function (r) {
+      var mid = (sent + Date.now()) / 2;
+      var server = r.date ? Date.parse(r.date) : NaN;
+      return { data: r.data && r.data.data !== undefined ? r.data.data : null, offset: isFinite(server) ? Math.round(server - mid) : 0 };
+    }, function (err) {
+      if (err && (err.status === 400 || err.status === 404)) return { data: null, offset: 0, missing: true };
       throw err;
     });
   };

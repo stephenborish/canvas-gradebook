@@ -104,6 +104,12 @@
     // sections yet.
     sectionCopyNudge: true,
     sectionGroups: [],
+    // Copy Roster's layout choices (Student Name column menu).
+    rosterPrefs: { nameFormat: 'first-last', email: true, header: true, sortBy: 'last', separator: 'comma' },
+    // Also keep these settings in the teacher's own Canvas account, so they
+    // reach every computer where the teacher opens Canvas even when Chrome
+    // sync is off (core/settings-mirror.js).
+    settingsInCanvas: true,
     diagnostics: false
   };
 
@@ -365,6 +371,19 @@
       }
       if (k === 'sectionGroups') {
         out[k] = cleanSectionGroups(v);
+        return;
+      }
+      if (k === 'rosterPrefs') {
+        var rp = {};
+        var given = v && typeof v === 'object' ? v : {};
+        var choices = { nameFormat: ['first-last', 'last-first', 'split', 'first', 'none'], sortBy: ['last', 'first'], separator: ['comma', 'semicolon', 'newline'] };
+        Object.keys(d[k]).forEach(function (f) {
+          var dv = d[k][f];
+          var gv = given[f];
+          if (typeof dv === 'boolean') rp[f] = typeof gv === 'boolean' ? gv : dv;
+          else rp[f] = choices[f] && choices[f].indexOf(gv) >= 0 ? gv : dv;
+        });
+        out[k] = rp;
         return;
       }
       if (k === 'snippets') {

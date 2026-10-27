@@ -650,41 +650,47 @@ Limits worth knowing:
 
 Everything is in the options page — click the toolbar icon, or `chrome://extensions` →
 Canvas Gradebook+ → Details → Extension options. It opens to a sidebar of tabs (Layout &
-Display, Cell Indicators, Grading Input, Comment Snippets, Time Shortcuts, Course & Domains, Backup &
-Transfer, Diagnostics); Save and Restore defaults stay visible in the sidebar no matter which
+Display, Cell Indicators, Grading Input, Comment Snippets, Time Shortcuts, Course & Domains, Sync &
+Backup, Diagnostics); Save and Restore defaults stay visible in the sidebar no matter which
 tab you're on. Every feature above can be switched off individually. Nothing is configurable
 from inside the gradebook, by design.
 
 ### The same settings on every computer
 
-Settings, comment snippets included, are saved to your Chrome profile and carried by Chrome sync to
-every computer where Chrome is signed in to **the same Google account with sync turned on**,
-including **Extensions** (Chrome → Settings → You and Google → Sync → Manage what you sync). A
-change made on one computer shows up on the others within a minute or so. An options page
-that's already open there updates by itself, and an open gradebook uses the new snippets straight
-away.
+Settings and snippets travel two ways, and either one is enough:
+
+1. **Your Google account (Chrome sync).** Everything is saved to `chrome.storage.sync`, which Chrome
+   carries to every computer where Chrome is signed in to **the same Google account with sync turned
+   on**, including **Extensions** (Chrome → Settings → You and Google → Sync and Google services →
+   Manage what you sync). A change shows up on the others within a minute or so.
+2. **Your Canvas account.** With *Also keep my settings in my Canvas account* on (the default, under
+   Sync & Backup), every Canvas course page also keeps the settings in step with a copy in your own
+   Canvas user data (Canvas's private per-user `custom_data`, readable only by you). Any computer
+   where you open Canvas picks them up within about a minute, even when Chrome sync is off, is
+   signed in to a different Google account, or has been turned off by your school, which many
+   schools do for their accounts.
+
+The two are merged one setting and one snippet at a time, and for each the newer change wins. So a
+snippet added on one computer and a setting changed on another both survive, and a snippet deleted
+on one computer stays deleted. "Newer" is measured against Canvas's own clock, so a computer whose
+clock is wrong can't win with an old change. When the extension is installed on a new computer, it
+takes your settings from Chrome sync or Canvas, whichever reaches it first, and writes nothing over
+them.
+
+**Is it working?** Options → **Sync & Backup** → *Your other computers* says whether Chrome sync is
+reaching your other computers (each computer checks in through it every few hours, and lists them
+with when each was last seen). It also says when the Canvas copy was last in step, and how many
+changes went each way. If no other computer shows up through Chrome sync, the panel says what to
+check. The Canvas copy keeps working regardless.
 
 - Each setting and each snippet is saved as its own entry, so you can keep up to 100 snippets of
-  up to 2,000 characters. (Earlier versions put every setting in one entry that Chrome caps at 8 KB,
-  which meant 15 short snippets.)
-- **Save** writes only what you changed on that page. Earlier versions rewrote everything on every
-  save, so saving on a computer that hadn't caught up with sync yet (or a laptop that was offline)
-  put its old settings back on every computer. Now different settings changed on two computers,
-  and snippets added on both, are all kept. If snippets added on two computers come to more than
-  100 together, the second save is refused with a message saying so, instead of some of them
-  quietly disappearing.
-- A computer that has never saved anything writes nothing, so a fresh install can't overwrite the
-  settings that are on their way to it.
-
-What Chrome sync can't do, whatever the extension does:
-
-- It doesn't cross Google accounts. Settings saved in a school account's Chrome profile don't reach
-  a personal account's profile, or the other way round. Use **Export** and **Import** under
-  Backup & Transfer to copy them across.
-- A school can turn Chrome sync off for its accounts (Google Admin console). Then settings stay on
-  each computer, and Export / Import is the way to move them.
+  up to 2,000 characters.
+- **Save** writes only what you changed on that page, so saving on a computer that hadn't caught up
+  yet doesn't put its old settings back everywhere.
+- The Copy Roster layout (names, email, header, sort) is a setting too, and travels the same way.
 - A copy loaded with **Load unpacked** is a different extension as far as Chrome is concerned, with
-  its own settings.
+  its own Chrome-sync settings; the Canvas copy is shared between it and the store version.
+- **Export** / **Import** under Sync & Backup still carry settings by hand.
 
 ## Diagnostics
 
@@ -701,8 +707,10 @@ Student names, grades and comment text are never written to the log — only cou
 - No API token, no login, no account.
 - No analytics, no telemetry, no external servers of any kind — not even web fonts; the
   extension uses your system fonts. The only network permission is your Canvas domain.
-- Settings sync through your Chrome profile (`chrome.storage.sync`; see "The same settings on every
-  computer" above); SpeedGrader drafts and the
+- Settings sync through your Chrome profile (`chrome.storage.sync`) and, unless turned off, a copy in
+  your own Canvas account's private user data (see "The same settings on every computer" above). That
+  copy holds settings and snippets only. Each computer's check-in through Chrome sync holds a random id,
+  the kind of computer (Mac, Windows, Chromebook) and a time. SpeedGrader drafts and the
   diagnostics snapshot stay on the device (`chrome.storage.local`).
 - Student data is never persisted. The cross-course student search and Copy Roster hold their
   rosters in memory for the life of the page (or the open panel) and no longer; the only thing cached on disk from Canvas is your own
@@ -725,11 +733,13 @@ Student names, grades and comment text are never written to the log — only cou
 ```
 manifest.json                     MV3 manifest; one content-script entry, ordered
 src/background.js                 service worker: defaults, options, custom-domain registration
+src/settings-times.js             service worker: when each setting changed; Chrome sync check-ins
 src/script-manifest.js            the ordered file list (mirror of the manifest entry)
 
 src/core/                         pure logic - no DOM, no chrome.* at load time
   util.js                         settings, defaults, sanitizing, diagnostics, small helpers
   canvas-api.js                   same-origin Canvas REST client (CSRF, pagination, retry, pooling)
+  settings-mirror.js              settings merged with the copy in the teacher's Canvas account
   grade-ops.js                    token -> Canvas form params + optimistic patch (M / E / L / 0 ...)
   post-ops.js                     which grades are still hidden from their students
   clipboard-matrix.js             TSV / column / spaced-column clipboard parsing
@@ -798,7 +808,7 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-554 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
+565 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
 again → not Missing, `L` → Late and `L` again → not Late, both leaving the grade untouched either
 way, `E` → Excused, a grade never adding a status (and lifting an applied Missing only when asked),
 statuses read exactly as Canvas computes them, the hand-off to Canvas's own store (and never

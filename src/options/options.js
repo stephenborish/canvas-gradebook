@@ -485,7 +485,11 @@
     $('snippets').value = snippetsToText(snips);
     renderTimeShortcuts(values.timeShortcuts);
     renderSectionGroups(values.sectionGroups);
+    currentRosterPrefs = values.rosterPrefs;
   }
+
+  // Chosen in the gradebook's Copy Roster panel, not here; carried as is.
+  var currentRosterPrefs = null;
 
   /* Linked sections are edited from Copy to sections in Canvas, where the
    * course list is; here they are listed, and can be unlinked. They are not
@@ -528,6 +532,7 @@
     patch.timeShortcuts = readRawTimeShortcuts();
     patch.gradingScale = CGP.totals.textToScale($('gradingScale').value);
     patch.sectionGroups = currentGroups;
+    if (currentRosterPrefs) patch.rosterPrefs = currentRosterPrefs;
     return CGP.sanitizeSettings(patch);
   }
 
@@ -906,6 +911,75 @@
       var i = Number(btn.getAttribute('data-unlink'));
       var next = Object.assign({}, baseline, { sectionGroups: currentGroups.filter(function (g, j) { return j !== i; }) });
       writeSettings(baseline, next, 'Unlinked. Those courses no longer copy to each other.');
+    });
+  }
+
+  /* ------------------------------------------------------- sync status */
+
+  /* Whether Chrome sync is carrying anything between this teacher's
+   * computers: each computer checks in through it (settings-times.js), so
+   * another computer's check-in arriving here is the proof. Plus how the
+   * copy in Canvas last went, per Canvas this computer has been used on. */
+  function ago(t) {
+    var m = Math.round((Date.now() - t) / 60000);
+    if (m < 2) return 'just now';
+    if (m < 90) return m + ' minutes ago';
+    var h = Math.round(m / 60);
+    if (h < 36) return h + ' hours ago';
+    return Math.round(h / 24) + ' days ago';
+  }
+
+  function renderSyncStatus() {
+    var box = $('syncStatus');
+    if (!box || typeof chrome === 'undefined' || !chrome.storage) return;
+    Promise.all([chrome.storage.sync.get(null), chrome.storage.local.get(null)]).then(function (r) {
+      var sync = r[0] || {}, local = r[1] || {};
+      var me = local['cgp.deviceId'];
+      var others = Object.keys(sync).filter(function (k) {
+        return k.indexOf('cgp.device.') === 0 && k !== 'cgp.device.' + me;
+      }).map(function (k) { return sync[k]; }).sort(function (a, b) { return b.at - a.at; });
+      var lines = [];
+      if (others.length) {
+        lines.push('<p class="sync-status__ok"><strong>Chrome sync is working.</strong> It is carrying your settings to ' + others.length +
+          (others.length === 1 ? ' other computer' : ' other computers') + ': ' + others.map(function (d) {
+            return escapeHtml(d.label || 'Computer') + ' (last seen ' + ago(d.at) + ')';
+          }).join(', ') + '.</p>');
+      } else {
+        lines.push('<p class="sync-status__warn"><strong>No other computer has been seen through Chrome sync yet.</strong> ' +
+          'If you use this extension on another computer and it has not shown up here within an hour of opening Chrome there, ' +
+          'Chrome sync is not carrying it: in Chrome, open Settings &rarr; You and Google &rarr; Sync and Google services &rarr; Manage what you sync, ' +
+          'and make sure sync is on and <em>Extensions</em> is included, on both computers. If your school has turned Chrome sync off, ' +
+          'the copy in your Canvas account below keeps your settings in step instead.</p>');
+      }
+      var mirrors = Object.keys(local).filter(function (k) { return k.indexOf('cgp.mirror.status.') === 0; });
+      if (!mirrors.length) {
+        lines.push('<p class="hint">Canvas copy: not used on this computer yet (it runs when you open a Canvas course page).</p>');
+      }
+      mirrors.forEach(function (k) {
+        var st = local[k] || {};
+        var where = escapeHtml(k.slice('cgp.mirror.status.'.length).replace(/^https?:\/\//, ''));
+        if (st.ok) {
+          lines.push('<p class="sync-status__ok"><strong>Canvas copy (' + where + '):</strong> in step ' + ago(st.at) +
+            (st.pulled ? ', ' + st.pulled + ' change(s) brought here' : '') + (st.pushed ? ', ' + st.pushed + ' change(s) saved to Canvas' : '') + '.' +
+            (st.problems ? ' Some settings from Canvas did not fit in Chrome’s storage and were left out.' : '') + '</p>');
+        } else {
+          lines.push('<p class="sync-status__warn"><strong>Canvas copy (' + where + '):</strong> last try ' + ago(st.at || Date.now()) +
+            ' did not work. ' + escapeHtml(st.error || '') + '</p>');
+        }
+      });
+      box.innerHTML = lines.join('');
+    }, function () { box.innerHTML = '<p class="hint">Sync status is not available.</p>'; });
+  }
+
+  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+    try {
+      chrome.runtime.sendMessage({ type: 'cgp.checkIn' }, function () { void chrome.runtime.lastError; renderSyncStatus(); });
+    } catch (e) { renderSyncStatus(); }
+  }
+  renderSyncStatus();
+  if (chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener(function (changes) {
+      if (Object.keys(changes).some(function (k) { return k.indexOf('cgp.device.') === 0 || k.indexOf('cgp.mirror.status.') === 0; })) renderSyncStatus();
     });
   }
 
