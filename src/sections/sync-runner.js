@@ -275,20 +275,65 @@
 
   /* ---------------------------------------------------- copy fingerprints */
 
+  /* The record of each copy - a fingerprint of its instructions as copied -
+   * is kept in two places: this computer (chrome.storage.local), and the
+   * teacher's own Canvas user data (custom_data), so a copy made on one
+   * computer is recognised on every other. Canvas's is the one that counts
+   * when both exist and differ (the newer of the two wins); a computer that
+   * cannot reach it still has its own. Scope: fp/<src>/<type>_<id>/<dest>. */
   P.trackKey = function (srcCourseId, item, destCourseId) {
     return FP_PREFIX + S().trackKey(this.origin, srcCourseId, item.type, item.id, destCourseId);
   };
 
-  P.baseline = function (srcCourseId, item, destCourseId) {
+  function recordScope(srcCourseId, item, destCourseId) {
+    return 'fp/' + encodeURIComponent(String(srcCourseId)) + '/' + item.type + '_' + encodeURIComponent(String(item.id)) +
+      (destCourseId === undefined ? '' : '/' + encodeURIComponent(String(destCourseId)));
+  }
+
+  /* Every record of one source item, all destinations: {destCourseId: rec}.
+   * One Canvas read per item per page, shared by every look at it. */
+  P.records = function (srcCourseId, item) {
+    var self = this;
+    var memo = this._records || (this._records = {});
+    var key = srcCourseId + '|' + item.type + ':' + item.id;
+    if (memo[key]) return memo[key];
+    var canvas = this.api && this.api.customData
+      ? this.api.customData(recordScope(srcCourseId, item)).catch(function () { return null; })
+      : Promise.resolve(null);
+    memo[key] = canvas.then(function (remote) { return remote && typeof remote === 'object' ? remote : {}; });
+    return memo[key];
+  };
+
+  P.record = function (srcCourseId, item, destCourseId) {
     var k = this.trackKey(srcCourseId, item, destCourseId);
-    return this.store.get(k).then(function (r) { return (r && r[k] && r[k].fp) || null; }, function () { return null; });
+    var local = this.store.get(k).then(function (r) { return (r && r[k]) || null; }, function () { return null; });
+    return Promise.all([local, this.records(srcCourseId, item)]).then(function (r) {
+      var mine = r[0];
+      var theirs = r[1][String(destCourseId)] || null;
+      if (theirs && (!mine || Number(theirs.at || 0) >= Number(mine.at || 0))) return theirs;
+      return mine;
+    });
+  };
+
+  P.baseline = function (srcCourseId, item, destCourseId) {
+    return this.record(srcCourseId, item, destCourseId).then(function (rec) { return (rec && rec.fp) || null; });
   };
 
   P.remember = function (srcCourseId, item, destCourseId, destId, html) {
+    var self = this;
     var k = this.trackKey(srcCourseId, item, destCourseId);
+    var rec = { fp: S().fingerprint(html || ''), destId: String(destId), at: this.now() };
     var v = {};
-    v[k] = { fp: S().fingerprint(html || ''), destId: String(destId), at: this.now() };
-    return this.store.set(v).catch(function () { return null; });
+    v[k] = rec;
+    if (this._records) delete this._records[srcCourseId + '|' + item.type + ':' + item.id];
+    var local = this.store.set(v).catch(function () { return null; });
+    var canvas = this.api && this.api.setCustomData
+      ? this.api.setCustomData(recordScope(srcCourseId, item, destCourseId), rec).catch(function () {
+        CGP.diag.warn('sections.recordNotShared');
+        return null;
+      })
+      : Promise.resolve();
+    return Promise.all([local, canvas]).then(function () { return rec; });
   };
 
   /* ---------------------------------------------------------------- run */
@@ -645,6 +690,206 @@
     });
   };
 
+  /* ------------------------------------------- copies, in both directions */
+
+  /* asset_id_mapping for the newest completed copy from srcCourseId into
+   * destCourseId (null when there never was one). A mapping is remembered
+   * for the page session under its migration id: a later copy is a new id. */
+  P.mappingFor = function (destCourseId, srcCourseId, migrations) {
+    var self = this;
+    var list = migrations ? Promise.resolve(migrations) : this.api.contentMigrations(destCourseId);
+    return list.then(function (migs) {
+      var last = S().latestCopyFrom(migs, srcCourseId);
+      if (!last) return null;
+      var key = 'cgp.sections.map.' + destCourseId + '.' + last.id;
+      try {
+        var hit = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(key) : null;
+        if (hit) return JSON.parse(hit);
+      } catch (e) { /* no session storage */ }
+      return self.api.assetIdMapping(destCourseId, last.id).then(function (m) {
+        try { if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(key, JSON.stringify(m || {})); } catch (e) { /* full */ }
+        return m || {};
+      });
+    });
+  };
+
+  /* For one item: the linked courses it was copied FROM (it is their copy)
+   * and the ones it was copied TO (they hold copies of it).
+   * {from: [{courseId, srcId}], to: [{courseId, destId}]}. Read only. */
+  P.relations = function (courseId, item, siblings) {
+    var self = this;
+    var sync = S();
+    var out = { from: [], to: [] };
+    var mine = this.api.contentMigrations(courseId).catch(function () { return []; });
+    return Promise.all(siblings.map(function (sib) {
+      var from = mine.then(function (migs) { return self.mappingFor(courseId, sib, migs); }).then(function (m) {
+        var srcId = sync.srcIdFor(m, item.type, item.id);
+        if (srcId) out.from.push({ courseId: String(sib), srcId: String(srcId) });
+      }).catch(function () { /* that section cannot be read: nothing to say about it */ });
+      var to = self.mappingFor(sib, courseId).then(function (m) {
+        var destId = sync.destIdFor(m, item.type, item.id);
+        if (destId) out.to.push({ courseId: String(sib), destId: String(destId) });
+      }).catch(function () { /* likewise */ });
+      return Promise.all([from, to]);
+    })).then(function () { return out; });
+  };
+
+  /* An original (in origCourse) and its copy (in copyCourse): which side
+   * changed since the copy. {side, orig, copy} with both items read in full
+   * (null side when either could not be read, or the copy was deleted). */
+  P.compare = function (origCourse, origRef, copyCourse, copyId) {
+    var self = this;
+    var sync = S();
+    var t = origRef.type === 'announcement' ? 'discussion' : origRef.type;
+    return Promise.all([
+      this.api.sectionItem(origCourse, origRef.type, origRef.id),
+      this.api.sectionItem(copyCourse, origRef.type, copyId)
+    ]).then(function (r) {
+      if (!r[0] || !r[1] || r[1].workflow_state === 'deleted') return { side: null };
+      var orig = sync.toItem(t, r[0]);
+      var copy = sync.toItem(t, r[1]);
+      orig.updatedAt = r[0].updated_at || null;
+      copy.updatedAt = r[1].updated_at || null;
+      orig.pointsPossible = r[0].points_possible;
+      copy.pointsPossible = r[1].points_possible;
+      return self.baseline(origCourse, origRef, copyCourse).then(function (base) {
+        return {
+          side: sync.changeSide(sync.fingerprint(orig.html), sync.fingerprint(copy.html), base),
+          orig: orig, copy: copy, hasRecord: !!base
+        };
+      });
+    }, function () { return { side: null }; });
+  };
+
+  /* ------------------------------------------- bringing a change back */
+
+  var BACKUP_PREFIX = 'cgp.sections.backup.';
+
+  /* What writing the copy's version onto the original would do, without
+   * doing it: the original's new instructions (links turned into the
+   * original course's), files only the copy has, links that cannot be
+   * turned, whether the titles or points differ. */
+  P.planBack = function (origCourse, origRef, copyCourse, copyId) {
+    var self = this;
+    var sync = S();
+    return Promise.all([
+      this.compare(origCourse, origRef, copyCourse, copyId),
+      this.mappingFor(copyCourse, origCourse)
+    ]).then(function (r) {
+      var cmp = r[0];
+      if (!cmp.side) throw new CGP.CanvasApiError('Could not read both versions from Canvas', {});
+      var inv = sync.invertMapping(r[1] || {});
+      var copyBody = sync.splitNote(cmp.copy.html || '').html;
+      var tr = sync.translateLinks(copyBody, copyCourse, origCourse, inv, self.origin);
+      return {
+        origCourse: String(origCourse), copyCourse: String(copyCourse), type: origRef.type,
+        origId: String(origRef.id), copyId: String(copyId),
+        orig: cmp.orig, copy: cmp.copy, side: cmp.side, hasRecord: cmp.hasRecord,
+        inv: inv, copyBody: copyBody, html: tr.html, missingFiles: tr.missingFiles, missingLinks: tr.missingLinks,
+        origNote: sync.splitNote(cmp.orig.html || '').note,
+        titleDiffers: String(cmp.orig.title || '') !== String(cmp.copy.title || ''),
+        pointsDiffer: cmp.orig.pointsPossible !== undefined && cmp.copy.pointsPossible !== undefined &&
+          Number(cmp.orig.pointsPossible) !== Number(cmp.copy.pointsPossible)
+      };
+    });
+  };
+
+  /* Write the copy's version onto the original. opts.title: the title too.
+   * Files only the copy's course has are copied over first (Canvas's own
+   * course copy of just those files), and their links pointed at the new
+   * files. The original as it was is kept on this computer for undoBack.
+   * Resolves {ok, error, warnings, url}; never rejects. */
+  P.applyBack = function (plan, opts, onStep) {
+    var self = this;
+    var sync = S();
+    opts = opts || {};
+    onStep = onStep || function () {};
+    var result = { ok: false, error: null, warnings: [], url: sync.itemHtmlPath(plan.origCourse, plan.type, plan.origId) };
+    var html = plan.html;
+
+    var files = Promise.resolve();
+    if (plan.missingFiles.length) {
+      onStep('Copying ' + plan.missingFiles.length + (plan.missingFiles.length === 1 ? ' file' : ' files'));
+      files = this.api.startCourseCopy(plan.origCourse, {
+        migration_type: 'course_copy_importer',
+        select: { files: plan.missingFiles.slice() },
+        settings: { source_course_id: plan.copyCourse }
+      }).then(function (mig) {
+        return self.waitFor(plan.origCourse, mig.id, self.maxWaitMs).then(function (m) {
+          if (sync.migrationState(m) !== 'completed') throw new CGP.CanvasApiError('Canvas did not finish copying the files', {});
+          return self.api.assetIdMapping(plan.origCourse, mig.id);
+        });
+      }).then(function (m) {
+        var inv = Object.assign({}, plan.inv);
+        inv.files = Object.assign({}, plan.inv.files || {});
+        Object.keys((m && m.files) || {}).forEach(function (src) {
+          var v = m.files[src];
+          if (typeof v === 'string' || typeof v === 'number') inv.files[String(src)] = String(v);
+        });
+        var tr = sync.translateLinks(plan.copyBody, plan.copyCourse, plan.origCourse, inv, self.origin);
+        html = tr.html;
+        if (tr.missingFiles.length) result.warnings.push(tr.missingFiles.length + ' file link(s) still point to the other section.');
+      }, function (err) {
+        result.warnings.push('The files only that section has were not copied (' + describe(err, 'Canvas refused') +
+          '), so their links still point there.');
+      });
+    }
+
+    return files.then(function () {
+      onStep('Saving a backup');
+      var bk = {};
+      bk[BACKUP_PREFIX + sync.trackKey(self.origin, plan.origCourse, plan.type, plan.origId, 'self')] =
+        { title: plan.orig.title, html: plan.orig.html, at: self.now() };
+      return self.store.set(bk);
+    }).then(function () {
+      onStep('Updating the original');
+      var next = sync.withNote(html, plan.origNote || '');
+      return self.api.setItemHtml(plan.origCourse, plan.type, plan.origId, next).then(function () {
+        if (!opts.title || !plan.titleDiffers) return null;
+        return self.api.updateSectionItem(plan.origCourse, plan.type, plan.origId, sync.titleBody(plan.type, plan.copy.title)).then(null, function (err) {
+          result.warnings.push('The title was not changed. ' + describe(err, 'Canvas refused'));
+        });
+      }).then(function () {
+        return self.api.sectionItem(plan.origCourse, plan.type, plan.origId);
+      }).then(function (o) {
+        var back = sync.toItem(plan.type === 'announcement' ? 'discussion' : plan.type, o) || {};
+        if (sync.fingerprint(back.html || '') !== sync.fingerprint(next)) {
+          result.warnings.push('Canvas saved the instructions with differences. Check them.');
+        }
+        // The copy now matches its original again: that is its new record.
+        return self.remember(plan.origCourse, { type: plan.type, id: plan.origId }, plan.copyCourse, plan.copyId, plan.copy.html);
+      }).then(function () {
+        plan.missingLinks.forEach(function (l) {
+          result.warnings.push('A link to ' + (l.type === 'pages' ? 'the page “' + l.ref + '”' : 'a ' + l.type.replace(/_/g, ' ').replace(/s$/, '') + ' (' + l.ref + ')') +
+            ' still points to the other section: it is not in this one.');
+        });
+        result.ok = true;
+        return result;
+      }, function (err) {
+        result.error = describe(err, 'Canvas refused the update');
+        return result;
+      });
+    }).then(null, function (err) {
+      result.error = result.error || describe(err, 'Something went wrong');
+      return result;
+    });
+  };
+
+  /* Put the original back as it was before applyBack. */
+  P.undoBack = function (plan) {
+    var self = this;
+    var sync = S();
+    var k = BACKUP_PREFIX + sync.trackKey(self.origin, plan.origCourse, plan.type, plan.origId, 'self');
+    return this.store.get(k).then(function (r) {
+      var bk = r && r[k];
+      if (!bk) throw new Error('No backup of the original was found on this computer.');
+      return self.api.setItemHtml(plan.origCourse, plan.type, plan.origId, bk.html).then(function () {
+        if (!plan.titleDiffers) return null;
+        return self.api.updateSectionItem(plan.origCourse, plan.type, plan.origId, sync.titleBody(plan.type, bk.title));
+      });
+    });
+  };
+
   /* --------------------------------------------------------- pending jobs */
 
   /* Jobs a closed tab left behind on this Canvas: finish them. Resolves the
@@ -677,4 +922,5 @@
   CGP.SectionCopier = SectionCopier;
   CGP.SectionCopier.JOB_PREFIX = JOB_PREFIX;
   CGP.SectionCopier.FP_PREFIX = FP_PREFIX;
+  CGP.SectionCopier.BACKUP_PREFIX = BACKUP_PREFIX;
 })();

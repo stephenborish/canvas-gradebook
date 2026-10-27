@@ -218,6 +218,20 @@
     return null;
   }
 
+  /** The reverse: which source item a destination object is the copy of. */
+  function srcIdFor(mapping, type, destId) {
+    var t = TYPES[type];
+    if (!t || !mapping) return null;
+    var box = mapping[t.map];
+    if (!box || typeof box !== 'object') return null;
+    var keys = Object.keys(box);
+    for (var i = 0; i < keys.length; i++) {
+      var v = box[keys[i]];
+      if ((typeof v === 'string' || typeof v === 'number') && String(v) === String(destId)) return keys[i];
+    }
+    return null;
+  }
+
   /** The URL path segment the APIs take for an item. Pages go by
    * "page_id:<id>", which every wiki lookup accepts (Wiki#find_page). */
   function itemRef(type, id) {
@@ -565,6 +579,123 @@
     return normOrigin(origin) + '|' + srcCourseId + '|' + type + ':' + srcId + '>' + destCourseId;
   }
 
+  /** What changed between an original and one of its copies, from three
+   * fingerprints: the original now, the copy now, and the copy as it was
+   * copied (null when no record of the copy exists).
+   *  'same'      - same text
+   *  'copy'      - the copy was changed (the original was not)
+   *  'original'  - the original was changed (the copy was not)
+   *  'both'      - both were changed since the copy
+   *  'unknown'   - different, and no record says which side changed */
+  function changeSide(origFp, copyFp, baseFp) {
+    if (origFp === copyFp) return 'same';
+    if (!baseFp) return 'unknown';
+    if (copyFp === baseFp) return 'original';
+    if (origFp === baseFp) return 'copy';
+    return 'both';
+  }
+
+  /* ---------------------------------------------- bringing a change back */
+
+  /* Canvas's course copy only goes one way: copying a section's copy back
+   * into the course it came from creates a NEW item there (Canvas matches a
+   * copy by the item it was copied from, and the original was not copied
+   * from the copy). So a change made in a copy is brought back by writing
+   * the copy's title and instructions onto the original itself - with every
+   * link that points inside the copy's course turned into the matching link
+   * in the original's course. These functions are that translation. */
+
+  /** asset_id_mapping of a copy (original course -> copy's course), turned
+   * around: copy's ids -> original's ids, plus page urls copy -> original. */
+  function invertMapping(mapping) {
+    var out = { pageUrls: {} };
+    Object.keys(mapping || {}).forEach(function (key) {
+      var box = mapping[key];
+      if (!box || typeof box !== 'object' || key === 'verifiers') return;
+      out[key] = out[key] || {};
+      Object.keys(box).forEach(function (k) {
+        var v = box[k];
+        if (typeof v === 'string' || typeof v === 'number') out[key][String(v)] = String(k);
+        else if (v && v.source && v.destination && key === 'pages') {
+          if (v.destination.url && v.source.url) out.pageUrls[String(v.destination.url)] = String(v.source.url);
+        }
+      });
+    });
+    return out;
+  }
+
+  var LINK_RE = /(https?:\/\/[^\/"'\s<>]+)?(\/api\/v1)?\/courses\/(\d+)((?:\/[^"'\s<>?#]*)?)((?:\?[^"'\s<>#]*)?)((?:#[^"'\s<>]*)?)/g;
+  var INDEX_ROUTES = /^\/(assignments|quizzes|discussion_topics|announcements|pages|wiki|modules|files|grades|syllabus|outcomes|rubrics|users|calendar_events)?\/?$/;
+
+  function safeDecode(s) { try { return decodeURIComponent(s); } catch (e) { return s; } }
+
+  /** html from the copy's course -> html for the original's course.
+   * Returns {html, missingFiles: [copy file id], missingLinks: [{type, ref}]}:
+   * a file only the copy's course has must be copied over first (and the
+   * call repeated with it in the mapping); any other link to something only
+   * the copy's course has is left pointing there, and reported. Links to
+   * other courses and to other sites are left exactly as they are. */
+  function translateLinks(html, fromCourse, toCourse, inv, origin) {
+    var host = String(origin || '').replace(/\/+$/, '').toLowerCase();
+    var missingFiles = [];
+    var missingLinks = [];
+    var maps = inv || {};
+    function lookup(key, id) { return maps[key] && maps[key][String(id)] ? maps[key][String(id)] : null; }
+    var out = String(html || '').replace(LINK_RE, function (all, h, api, course, path, query, hash) {
+      if (String(course) !== String(fromCourse)) return all;
+      if (h && h.toLowerCase() !== host) return all;
+      var p = path || '';
+      var m = /^\/(files|assignments|quizzes|discussion_topics|announcements|pages|wiki|modules)(\/items)?\/([^\/]+)(.*)$/.exec(p);
+      var target;
+      if (m) {
+        var kind = m[1], sub = m[2] || '', ref = m[3], tail = m[4] || '';
+        var mapped = null;
+        if (kind === 'files') mapped = /^\d+$/.test(ref) ? lookup('files', ref) : null;
+        else if (kind === 'assignments') mapped = lookup('assignments', ref);
+        else if (kind === 'quizzes') mapped = lookup('quizzes', ref);
+        else if (kind === 'discussion_topics' || kind === 'announcements') mapped = lookup('discussion_topics', ref) || lookup('announcements', ref);
+        else if (kind === 'modules') mapped = sub ? lookup('module_items', ref) : lookup('modules', ref);
+        else if (kind === 'pages' || kind === 'wiki') {
+          var pid = /^page_id:(\d+)$/.exec(safeDecode(ref));
+          if (pid) mapped = lookup('pages', pid[1]) ? 'page_id:' + lookup('pages', pid[1]) : null;
+          else {
+            var u = maps.pageUrls && maps.pageUrls[safeDecode(ref)];
+            mapped = u ? encodeURIComponent(u) : null;
+          }
+        }
+        if (!/^\d+$/.test(ref) && kind !== 'pages' && kind !== 'wiki') mapped = null; // "new", "edit"...
+        if (!mapped) {
+          if (kind === 'files' && /^\d+$/.test(ref)) { if (missingFiles.indexOf(ref) < 0) missingFiles.push(ref); }
+          else missingLinks.push({ type: kind, ref: safeDecode(ref) });
+          return all;
+        }
+        target = '/' + kind + sub + '/' + mapped + tail;
+      } else if (INDEX_ROUTES.test(p)) {
+        target = p;
+      } else {
+        missingLinks.push({ type: 'page', ref: p });
+        return all;
+      }
+      // A file's verifier belongs to the copy's file; course members never need one.
+      var q = String(query || '').replace(/^\?/, '').split(/&amp;|&/).filter(function (kv) {
+        return kv && !/^verifier=/.test(kv);
+      });
+      var amp = /&amp;/.test(query || '') ? '&amp;' : '&';
+      return (api || '') + '/courses/' + toCourse + target + (q.length ? '?' + q.join(amp) : '') + (hash || '');
+    });
+    return { html: out, missingFiles: missingFiles, missingLinks: missingLinks };
+  }
+
+  /** The title field each type's update takes. */
+  function titleBody(type, title) {
+    if (type === 'assignment') return { assignment: { name: title } };
+    if (type === 'quiz') return { quiz: { title: title } };
+    if (type === 'page') return { wiki_page: { title: title } };
+    if (type === 'discussion' || type === 'announcement') return { title: title };
+    if (type === 'module') return { module: { name: title } };
+    return null;
+  }
+
   /* --------------------------------------------------------- module index */
 
   /** Where each piece of content sits in a course's modules:
@@ -709,6 +840,7 @@
     migrationState: migrationState,
     latestCopyFrom: latestCopyFrom,
     destIdFor: destIdFor,
+    srcIdFor: srcIdFor,
     itemRef: itemRef,
     itemApiPath: itemApiPath,
     itemHtmlPath: itemHtmlPath,
@@ -728,6 +860,10 @@
     fingerprint: fingerprint,
     compareCopy: compareCopy,
     defaultReplace: defaultReplace,
+    changeSide: changeSide,
+    invertMapping: invertMapping,
+    translateLinks: translateLinks,
+    titleBody: titleBody,
     lookalike: lookalike,
     trackKey: trackKey,
     moduleIndex: moduleIndex,

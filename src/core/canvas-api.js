@@ -641,6 +641,27 @@
     });
   };
 
+  /* The teacher's own Canvas user data (Canvas's custom_data API: per user,
+   * per namespace, readable and writable by that user only). Used to keep
+   * the record of what was copied where, so every computer the teacher uses
+   * sees it. A scope never written answers 400/404: that is "nothing". */
+  var CUSTOM_NS = 'com.canvas-gradebook-plus.sections';
+
+  CanvasApi.prototype.customData = function (scope) {
+    return this.get('/api/v1/users/self/custom_data/' + scope, { ns: CUSTOM_NS }).then(function (r) {
+      return r && r.data !== undefined ? r.data : null;
+    }, function (err) {
+      if (err && (err.status === 400 || err.status === 404)) return null;
+      throw err;
+    });
+  };
+
+  CanvasApi.prototype.setCustomData = function (scope, data) {
+    return this.request('/api/v1/users/self/custom_data/' + scope, {
+      method: 'PUT', json: { ns: CUSTOM_NS, data: data }, retries: 1
+    }).then(function (r) { return r.data; });
+  };
+
   CanvasApi.prototype.assignmentGroups = function (courseId) {
     return this.getAll(cpath(courseId) + '/assignment_groups', {}, { maxPages: 3 });
   };

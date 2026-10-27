@@ -354,7 +354,7 @@ function fakeCanvas(opts) {
     },
     updateSectionItem(c, t, id, body) {
       calls.push(['put', c, t, id, body]);
-      Object.assign(db.items[key(c, t, id)], body.module || body);
+      Object.assign(db.items[key(c, t, id)], body.module || body.assignment || body.quiz || body.wiki_page || body);
       return Promise.resolve(db.items[key(c, t, id)]);
     },
     setItemHtml(c, t, id, html) {
@@ -741,5 +741,127 @@ suite('copy to sections: review fixes', (test) => {
     a.eq(m.childNotes['assignment:5'], 'P4 note');
     a.eq(m.childDates['assignment:5'].due_at, '2026-03-10T13:00:00Z');
     a.eq(m.status, 'same', 'a note is not a change');
+  });
+});
+
+suite('copy to sections: changes made in a copy', (test) => {
+  test('which side changed, from the record of the copy', () => {
+    a.eq(S().changeSide('x', 'x', null), 'same');
+    a.eq(S().changeSide('a', 'b', null), 'unknown');
+    a.eq(S().changeSide('a', 'b', 'a'), 'copy');
+    a.eq(S().changeSide('a', 'b', 'b'), 'original');
+    a.eq(S().changeSide('a', 'b', 'c'), 'both');
+    a.eq(S().srcIdFor({ assignments: { '5': '705', g1: { source: {}, destination: { id: '705' } } } }, 'assignment', '705'), '5');
+    a.eq(S().srcIdFor({ assignments: { '5': '705' } }, 'assignment', '9'), null);
+  });
+
+  test('links in the copy are turned into the original course’s; unknown ones are reported', () => {
+    const inv = S().invertMapping({ files: { '10': '210' }, assignments: { '5': '705' }, modules: { '3': '303' },
+      pages: { '7': '807', gx: { source: { id: '7', url: 'intro' }, destination: { id: '807', url: 'intro-2' } } } });
+    const src = '<img src="https://s.instructure.com/courses/22/files/210/preview?verifier=V&amp;wrap=1" data-api-endpoint="https://s.instructure.com/api/v1/courses/22/files/210">' +
+      '<a href="/courses/22/assignments/705">a</a><a href="/courses/22/pages/intro-2#t">p</a><a href="/courses/22/modules/303">m</a>' +
+      '<a href="/courses/22/files/999/download">new</a><a href="/courses/22/pages/only-here">x</a><a href="/courses/22/assignments">all</a>' +
+      '<a href="https://evil.example/courses/22/files/210">o</a><a href="/courses/33/files/1">c</a>';
+    const t = S().translateLinks(src, '22', '11', inv, 'https://s.instructure.com');
+    a.ok(t.html.indexOf('src="/courses/11/files/10/preview?wrap=1"') >= 0, 'file, verifier dropped');
+    a.ok(t.html.indexOf('data-api-endpoint="/api/v1/courses/11/files/10"') >= 0);
+    a.ok(t.html.indexOf('/courses/11/assignments/5"') >= 0);
+    a.ok(t.html.indexOf('/courses/11/pages/intro#t"') >= 0, 'pages by url');
+    a.ok(t.html.indexOf('/courses/11/modules/3"') >= 0);
+    a.ok(t.html.indexOf('/courses/11/assignments"') >= 0, 'index routes move');
+    a.ok(t.html.indexOf('https://evil.example/courses/22/files/210') >= 0, 'another site untouched');
+    a.ok(t.html.indexOf('/courses/33/files/1') >= 0, 'another course untouched');
+    a.deep(t.missingFiles, ['999']);
+    a.deep(t.missingLinks, [{ type: 'pages', ref: 'only-here' }]);
+  });
+
+  function linked(api) {
+    // 11 = Period 2 (original), 22 = Period 4 (copy of assignment 5 as 705).
+    api.db.migrations['22'] = [{ id: '1', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '11' } }];
+    api.db.mappings['22'] = { assignments: { '5': '705' }, files: { '10': '210' } };
+    api.db.items['11:assignment:5'] = { id: '5', name: 'Lab 4', description: S().noteHtml('P2 note') + '<p>Do the lab. <a href="/courses/11/files/10/download">Sheet</a></p>', published: true, points_possible: 10, updated_at: '2026-03-01T10:00:00Z' };
+    api.db.items['22:assignment:705'] = { id: '705', name: 'Lab 4 (fixed)', description: S().noteHtml('P4 note') +
+      '<p>Do the lab carefully. <a href="https://school.instructure.com/courses/22/files/210/download?verifier=abc">Sheet</a> <img src="/courses/22/files/333/preview"></p>',
+      published: true, points_possible: 12, updated_at: '2026-03-05T10:00:00Z' };
+  }
+
+  function withCustomData(api) {
+    const cd = {};
+    api.customData = (scope) => {
+      const parts = scope.split('/');
+      let node = cd;
+      for (const p of parts) { if (!node || typeof node !== 'object' || !(p in node)) return Promise.resolve(null); node = node[p]; }
+      return Promise.resolve(JSON.parse(JSON.stringify(node)));
+    };
+    api.setCustomData = (scope, data) => {
+      api.calls.push(['customData', scope, data]);
+      const parts = scope.split('/');
+      const last = parts.pop();
+      let node = cd;
+      for (const p of parts) node = node[p] = node[p] || {};
+      node[last] = data;
+      return Promise.resolve({ data });
+    };
+    return cd;
+  }
+
+  test('copies are found both ways, and a record shared through Canvas tells which side changed', async () => {
+    const api = fakeCanvas();
+    linked(api);
+    withCustomData(api);
+    const c = copier(api);
+    const asCopy = await c.relations('22', { type: 'assignment', id: '705' }, ['11', '33']);
+    a.deep(asCopy.from, [{ courseId: '11', srcId: '5' }]);
+    a.deep(asCopy.to, []);
+    const asOrig = await c.relations('11', { type: 'assignment', id: '5' }, ['22']);
+    a.deep(asOrig.to, [{ courseId: '22', destId: '705' }]);
+    // No record yet: unknown. Record the copy as it was copied: the copy changed.
+    a.eq((await c.compare('11', { type: 'assignment', id: '5' }, '22', '705')).side, 'unknown');
+    await c.remember('11', { type: 'assignment', id: '5' }, '22', '705', '<p>Do the lab. <a>Sheet</a></p>');
+    const other = copier(api, memStore()); // another computer: only Canvas's record
+    a.eq((await other.compare('11', { type: 'assignment', id: '5' }, '22', '705')).side, 'copy');
+    a.ok(api.calls.some((x) => x[0] === 'customData' && x[1] === 'fp/11/assignment_5/22'));
+  });
+
+  test('bringing a change back: links and a new file are moved over, notes stay put, backup and undo', async () => {
+    let api;
+    api = fakeCanvas({ onComplete: (dest, m) => {
+      // Canvas copying the file only Period 4 has (333) into Period 2.
+      api.db.mappings[dest] = { files: { '333': '444' } };
+    } });
+    linked(api);
+    withCustomData(api);
+    const store = memStore();
+    const c = copier(api, store);
+    const plan = await c.planBack('11', { type: 'assignment', id: '5' }, '22', '705');
+    a.deep(plan.missingFiles, ['333']);
+    a.ok(plan.titleDiffers && plan.pointsDiffer);
+    a.eq(plan.origNote, 'P2 note');
+    const r = await c.applyBack(plan, { title: true });
+    a.ok(r.ok, r.error);
+    const fileCopy = api.calls.find((x) => x[0] === 'copy');
+    a.deep(fileCopy.slice(1), ['11', { migration_type: 'course_copy_importer', select: { files: ['333'] }, settings: { source_course_id: '22' } }]);
+    const html = api.db.items['11:assignment:5'].description;
+    a.eq(S().splitNote(html).note, 'P2 note', 'the original keeps its own note');
+    a.ok(html.indexOf('P4 note') < 0, 'the copy’s note does not come along');
+    a.ok(html.indexOf('carefully') > 0);
+    a.ok(html.indexOf('/courses/11/files/10/download"') > 0, 'existing file mapped back');
+    a.ok(html.indexOf('/courses/11/files/444/preview') > 0, 'new file copied and linked');
+    a.ok(html.indexOf('/courses/22/') < 0, 'nothing points at Period 4 any more');
+    a.eq(api.db.items['11:assignment:5'].name, 'Lab 4 (fixed)');
+    a.eq(api.db.items['11:assignment:5'].points_possible, 10, 'points are never changed');
+    a.eq((await copier(api, memStore()).compare('11', { type: 'assignment', id: '5' }, '22', '705')).side, 'same', 'in step again');
+    await c.undoBack(plan);
+    a.eq(api.db.items['11:assignment:5'].name, 'Lab 4');
+    a.ok(api.db.items['11:assignment:5'].description.indexOf('carefully') < 0, 'undone');
+  });
+
+  test('a file that cannot be copied leaves its link and says so; the rest still updates', async () => {
+    const api = fakeCanvas({ failCopy: true });
+    linked(api);
+    const r = await copier(api).applyBack(await copier(api).planBack('11', { type: 'assignment', id: '5' }, '22', '705'), {});
+    a.ok(r.ok, r.error);
+    a.ok(r.warnings.some((w) => /not copied/.test(w)));
+    a.eq(api.db.items['11:assignment:5'].name, 'Lab 4', 'title untouched unless asked');
   });
 });

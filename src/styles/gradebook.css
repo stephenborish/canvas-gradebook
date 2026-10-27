@@ -2769,3 +2769,40 @@ html.cgp-on .cgp-sections__result.is-ok .cgp-sections__icon { background: #e7f5e
 html.cgp-on .cgp-sections__result.is-warn .cgp-sections__icon { background: #fff4e0; color: #8a4b00; }
 html.cgp-on .cgp-sections__result.is-err .cgp-sections__icon { background: #fde8e7; color: #b42318; }
 html.cgp-on .cgp-sections__busy { margin-top: 12px; }
+
+/* The notice on an item's page about its copies in the other sections. */
+html.cgp-on .cgp-sections-notice {
+  font-family: var(--cgp-font);
+  color: var(--cgp-ink);
+  background: #fff8eb;
+  border: 1px solid #f0c36d;
+  border-left: 4px solid #d97706;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 0 0 14px 0;
+  font-size: 14px;
+}
+html.cgp-on .cgp-sections-notice__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+html.cgp-on .cgp-sections-notice__line { margin: 6px 0; line-height: 1.5; }
+html.cgp-on .cgp-sections-notice__line .cgp-roster__btn { margin: 2px 4px 2px 0; }
+html.cgp-on .cgp-sections-notice__when { color: var(--cgp-muted); font-size: 12px; }
+html.cgp-on .cgp-sections__compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 10px 0; }
+html.cgp-on .cgp-sections__compare-head { font-size: 12px; font-weight: 600; color: var(--cgp-muted); margin-bottom: 4px; }
+html.cgp-on .cgp-sections__compare-text {
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.45;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--cgp-hairline);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #fbfcfd;
+}
+html.cgp-on .cgp-sections__infolist,
+html.cgp-on .cgp-sections__warnlist { margin: 8px 0 8px 18px; padding: 0; font-size: 13px; }
+html.cgp-on .cgp-sections__warnlist { color: #8a4b00; }
+html.cgp-on .cgp-sections__back { align-self: flex-start; margin-top: 4px; }
+@media (max-width: 640px) {
+  html.cgp-on .cgp-sections__compare { grid-template-columns: 1fr; }
+}

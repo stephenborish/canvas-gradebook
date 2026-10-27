@@ -600,9 +600,36 @@ one of those two. Announcements post at each section's own *Post at* date.
   copying carries on as long as the page stays open, and a message says when it is done. Each copy
   is saved on this computer as soon as Canvas accepts it. If the tab closes before Canvas finishes, the dates, note and
   publishing are applied the next time you open any page of that Canvas, and you are told.
-- Nothing is copied until you press Copy. On a newly created item's page (made in the last three
-  hours) in a linked course, the button gets a dot, and a message says when the item is not in your
-  other sections yet. Turn that off under *Point out a new item…*.
+- Nothing is copied until you press Copy.
+
+**When a copy is edited in its own section.** Copies are independent in Canvas: fixing a typo in
+Period 4's copy does not change Period 2's original, or any other section's copy. So the item's own
+page says so, in a notice at the top. These notices are shown on the copy's page and on the
+original's, whichever you are looking at.
+
+- *You changed this assignment here after it was copied from Period 2, which still has the earlier
+  version.* **Review and update Period 2…** opens a review with both versions side by side. It also
+  lists what will happen: links to files, pages and other items are changed to Period 2's own, and
+  a file only Period 4 has is copied into Period 2 (Canvas's own copy of just that file). It says
+  which links point to something Period 2 does not have, and that the title can come too.
+  **Update Period 2** writes Period 4's instructions onto the original. Period 2 keeps its own
+  section note, and Period 4's note does not come along. A backup of Period 2's version is kept on
+  this computer, and **Undo** puts it back. Then **Copy it to your other sections…** carries the
+  fix on to the rest. They show as having the earlier version, so they are updated by default.
+- *Period 4 changed its copy of this assignment.* The same review, seen from the original.
+- *Period 2, where this was copied from, has a newer version* / *Period 6 still has the earlier
+  version* offer the ordinary copy, already set up.
+- When both changed, or there is no record of which one did, both choices are offered with each
+  version's last-changed time.
+- A new item (made in the last three hours) that is in no other section yet is pointed out too.
+
+The notice can be hidden (×) until something changes again. Turn notices off under *Show a notice
+on an item's page…*. Only the title and instructions are brought back. Points, settings, the
+rubric, quiz questions and module contents changed in a copy are not; change those in the
+original and copy it again. The record of what was copied is a fingerprint of each copy's text. It
+is kept in your own Canvas account's user data (Canvas's custom data, visible only to you) and on
+this computer, so a copy made on one computer is recognised on every other. A title-only change is
+not noticed.
 
 Limits worth knowing:
 
@@ -677,9 +704,12 @@ Student names, grades and comment text are never written to the log — only cou
 - Student data is never persisted. The cross-course student search and Copy Roster hold their
   rosters in memory for the life of the page (or the open panel) and no longer; the only thing cached on disk from Canvas is your own
   list of course names and terms, for 30 minutes.
-- Copy to sections keeps on this computer, in `chrome.storage.local`, a fingerprint of the text of each
-  copy it made, so it can tell later whether that copy was changed. It also keeps, until it is done, each
-  copy Canvas is still working on: course and item ids, the dates and the section note. No student data.
+- Copy to sections keeps a fingerprint of the text of each copy it made, so it can tell later whether
+  that copy was changed. Fingerprints are stored in `chrome.storage.local` and in your own Canvas account's
+  user data (Canvas's custom data API, readable only by you), with course and item ids. It also keeps on
+  this computer, until it is done, each copy Canvas is still working on: course and item ids, the dates
+  and the section note. When a copy's changes are brought back to the original, the original's previous
+  title and instructions are kept on this computer for Undo. No student data.
 - Keeping tabs in step passes only ids (course, assignment, student) between your own Canvas tabs,
   through the extension's background worker, and stores nothing. What is handed to Canvas's own
   page is the grading fields of a submission Canvas itself just returned — never comments, names or
@@ -732,8 +762,9 @@ src/gradebook/
 
 src/assignments/time-shortcuts.js period keys in Assign To time boxes (Tab/Enter/blur)
 src/core/section-sync.js          Copy to sections: requests, dates, notes, change tracking (pure)
-src/sections/sync-runner.js       Copy to sections: survey each section, copy, apply dates/note
-src/sections/sync-dialog.js       Copy to sections: breadcrumb button and dialog
+src/sections/sync-runner.js       Copy to sections: survey each section, copy, apply dates/note,
+                                   find copies both ways, bring a copy's changes back
+src/sections/sync-dialog.js       Copy to sections: breadcrumb button, dialog, page notice, review
 src/speedgrader/content.js        comment draft autosave; live sync with the gradebook
 src/page/env-bridge.js            page context: ENV ids, column widths, Canvas's store and tray
 src/page/write-watch.js           page context: reports Canvas's own submission writes (ids only)
@@ -764,7 +795,7 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-542 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
+547 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
 again → not Missing, `L` → Late and `L` again → not Late, both leaving the grade untouched either
 way, `E` → Excused, a grade never adding a status (and lifting an applied Missing only when asked),
 statuses read exactly as Canvas computes them, the hand-off to Canvas's own store (and never
