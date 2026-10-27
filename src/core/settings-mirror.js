@@ -50,7 +50,7 @@
 
   function isMirrored(k) {
     k = String(k);
-    return k === 'cgp.snippetStore' || k.indexOf('cgp.setting.') === 0 || k.indexOf('cgp.snippet.') === 0;
+    return k === 'cgp.snippetStore' || k === 'cgp.snippetOrder' || k.indexOf('cgp.setting.') === 0 || k.indexOf('cgp.snippet.') === 0;
   }
   function isSnippet(k) { return String(k).indexOf('cgp.snippet.') === 0; }
 
@@ -62,55 +62,83 @@
    *   all:     everything in chrome.storage.sync (items and their times)
    *   remote:  the Canvas copy, keys as stored there, or null
    *   pending: {key: {h, at}} untimed changes seen on earlier runs
-   *   now:     Canvas's clock now
-   * Returns {set, remove, push: {key: rec}, pending, conflicts: [key],
-   * waiting: [key]}. Pure; unit tested. */
-  function plan(all, remote, pending, now) {
+   *   now:     Canvas's clock now; offset: this computer's clock to Canvas's
+   * Returns {set, remove, times: {key: rec}, push: {key: rec}, pending,
+   * conflicts: [key], waiting: [key]}. Pure; unit tested. */
+  var DEFAULT_AT = -0.5;   // a built-in default: below any real change, even 0
+
+  function looseSame(k, a, b) {
+    // A snippet's place is the order item's business, not the snippet's.
+    if (isSnippet(k) && a && b && typeof a === 'object' && typeof b === 'object') {
+      return same({ trigger: a.trigger, text: a.text }, { trigger: b.trigger, text: b.text });
+    }
+    return same(a, b);
+  }
+
+  function plan(all, remote, pending, now, offset) {
     all = all || {};
     pending = pending || {};
+    offset = Number(offset) || 0;
     var rem = {};
     Object.keys(remote && typeof remote === 'object' ? remote : {}).forEach(function (rk) {
       var k = itemKey(rk);
       var r = remote[rk];
       if (isMirrored(k) && r && typeof r === 'object' && isFinite(Number(r.at))) rem[k] = r;
     });
-    var out = { set: {}, remove: [], push: {}, pending: {}, conflicts: [], waiting: [] };
+    var times = T().readAll(all);
+    var out = { set: {}, remove: [], times: {}, push: {}, pending: {}, conflicts: [], waiting: [] };
     var keys = {};
-    Object.keys(all).forEach(function (k) {
-      if (isMirrored(k)) keys[k] = 1;
-      else if (k.indexOf(T().PREFIX) === 0 && isMirrored(T().itemFor(k))) keys[T().itemFor(k)] = 1;
-    });
+    Object.keys(all).forEach(function (k) { if (isMirrored(k)) keys[k] = 1; });
+    Object.keys(times).forEach(function (k) { if (isMirrored(k)) keys[k] = 1; });
     Object.keys(rem).forEach(function (k) { keys[k] = 1; });
+
+    function waitOrTake(k, h) {
+      // Changed (or removed) without its time. Chrome sync may still be
+      // delivering the time: wait; past that, the change is timed from when
+      // it was first seen here - and that time is written, once.
+      var p = pending[k];
+      if (p && p.h === h && now - p.at >= UNTIMED_WAIT_MS) return p.at;
+      out.pending[k] = p && p.h === h ? p : { h: h, at: now };
+      out.waiting.push(k);
+      return null;
+    }
 
     Object.keys(keys).forEach(function (k) {
       var has = Object.prototype.hasOwnProperty.call(all, k);
-      var t = T().decode(all[T().keyFor(k)]);
+      var t = times[k] || null;
       var r = rem[k] || null;
-      var rat = r ? Number(r.at) : -1;
       var lat, ldel = false;
+      // Settle a time taken by this computer's own clock before it knew
+      // how far off that is.
+      if (t && t.u) {
+        t = Object.assign({}, t, { a: Math.max(0, t.a + offset), u: false });
+        out.times[k] = t;
+      }
       if (has) {
         var h = hash(all[k]);
         if (!t) lat = 0;                                   // stored before times were kept
-        else if (!t.d && t.h === h) lat = t.a;
+        else if (!t.d && t.h === h) lat = t.def ? DEFAULT_AT : t.a;
         else {
-          // Changed without its time. Wait for Chrome sync to deliver it;
-          // past that, it is a change made when it was first seen.
-          var p = pending[k];
-          if (p && p.h === h && now - p.at >= UNTIMED_WAIT_MS) lat = p.at;
-          else {
-            out.pending[k] = p && p.h === h ? p : { h: h, at: now };
-            out.waiting.push(k);
-            return;
-          }
+          var at = waitOrTake(k, h);
+          if (at === null) { delete out.times[k]; return; }
+          lat = at;
+          out.times[k] = { a: at, h: h };
         }
       } else if (t && t.d) {
         lat = t.a;
         ldel = true;
+      } else if (t) {
+        var at2 = waitOrTake(k, 'deleted');                // removed without a tombstone
+        if (at2 === null) { delete out.times[k]; return; }
+        lat = at2;
+        ldel = true;
+        out.times[k] = { a: at2, d: true };
       } else {
         lat = -1;                                          // never here
       }
 
-      var agree = r && (r.del ? !has : (has && same(all[k], r.v)));
+      var rat = r ? (r.def ? DEFAULT_AT : Number(r.at)) : -1;
+      var agree = r && (r.del ? !has : (has && looseSame(k, all[k], r.v)));
       if (r && agree) return;
       if (r && lat === 0 && rat === 0 && has && !r.del) {
         out.conflicts.push(k);                             // the teacher decides
@@ -119,13 +147,15 @@
       if (r && rat >= lat) {
         if (r.del) {
           if (has) out.remove.push(k);
-          out.set[T().keyFor(k)] = T().encode({ a: rat, d: true });
+          out.times[k] = { a: Number(r.at), d: true };
         } else {
           out.set[k] = r.v;
-          out.set[T().keyFor(k)] = T().encode({ a: rat, h: hash(r.v) });
+          out.times[k] = r.def ? { a: 0, h: hash(r.v), def: true } : { a: Number(r.at), h: hash(r.v) };
         }
-      } else if (lat > rat || (!r && lat >= 0)) {
-        out.push[k] = ldel ? { at: lat, del: true } : { at: lat, v: all[k] };
+      } else if (lat > rat) {
+        if (ldel) out.push[k] = { at: lat, del: true };
+        else if (lat === DEFAULT_AT) out.push[k] = { at: 0, v: all[k], def: true };
+        else out.push[k] = { at: lat, v: all[k] };
       }
     });
     return out;
@@ -141,7 +171,7 @@
     var left = [];
     function drop(k) {
       delete p.set[k];
-      delete p.set[T().keyFor(k)];
+      delete p.times[k];
       left.push(k);
     }
     Object.keys(p.set).forEach(function (k) {
@@ -154,10 +184,7 @@
     var snipBytes = function () { return snippets.reduce(function (n, k) { return n + bytes(k, after[k]); }, 0); };
     // New snippets from Canvas, oldest change first, are what gives way.
     var incoming = Object.keys(p.set).filter(function (k) { return isSnippet(k) && !Object.prototype.hasOwnProperty.call(all, k); })
-      .sort(function (a, b) {
-        var ta = T().decode(p.set[T().keyFor(a)]) || { a: 0 }, tb = T().decode(p.set[T().keyFor(b)]) || { a: 0 };
-        return ta.a - tb.a;
-      });
+      .sort(function (a, b) { return ((p.times[a] || {}).a || 0) - ((p.times[b] || {}).a || 0); });
     while (incoming.length && (snippets.length > L.MAX_SNIPPETS || snipBytes() > L.MAX_SNIPPET_BYTES)) {
       var k = incoming.shift();
       drop(k);
@@ -208,8 +235,10 @@
         var offset = Number(got[1].offset) || 0;
         var remote = got[1].data && typeof got[1].data === 'object' ? got[1].data : null;
         var now = self.now() + offset;
-        var p = plan(all, remote, pending, now);
+        var p = plan(all, remote, pending, now, offset);
         var left = fit(all, p);
+        // The items' times, in the same write as the items.
+        if (Object.keys(p.times).length) Object.assign(p.set, T().shardWrites(all, p.times, now));
         var conflicts = p.conflicts.map(function (k) {
           return { key: k, mine: all[k], theirs: (remote[remoteKey(k)] || {}).v };
         });
@@ -276,15 +305,22 @@
    * (they become this computer's changes, now) or take Canvas's (stored
    * here at time 0, which then agrees with Canvas). */
   function resolve(chromeApi, conflicts, keepMine, now) {
-    var set = {};
-    (conflicts || []).forEach(function (cf) {
-      if (keepMine) set[T().keyFor(cf.key)] = T().encode({ a: now, h: hash(cf.mine) });
-      else {
-        set[cf.key] = cf.theirs;
-        set[T().keyFor(cf.key)] = T().encode({ a: 0, h: hash(cf.theirs) });
-      }
+    return chromeApi.storage.sync.get(null).then(function (all) {
+      var set = {};
+      var changes = {};
+      (conflicts || []).forEach(function (cf) {
+        if (keepMine) {
+          // This computer's value as it is NOW (not as the conflict saw it).
+          if (!Object.prototype.hasOwnProperty.call(all, cf.key)) return;
+          changes[cf.key] = { a: now, h: hash(all[cf.key]) };
+        } else {
+          set[cf.key] = cf.theirs;
+          changes[cf.key] = { a: 0, h: hash(cf.theirs) };
+        }
+      });
+      Object.assign(set, T().shardWrites(all, changes, now));
+      return Object.keys(set).length ? chromeApi.storage.sync.set(set) : null;
     });
-    return Object.keys(set).length ? chromeApi.storage.sync.set(set) : Promise.resolve();
   }
 
   CGP.settingsMirror = {

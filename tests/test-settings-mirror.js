@@ -106,10 +106,12 @@ suite('settings everywhere: times beside the settings', (test) => {
     let t = 1e12;
     const A = computer('A', () => t, 0);
     await save(A, { enableM: false });
-    const rec = C().settingsTimes.decode(A.sync.data['cgp.t.setting.enableM']);
-    a.eq(rec.a, 1e12);
-    a.eq(rec.h, C().util.valueHash(false));
-    a.lacksKey(A.sync.data, 'cgp.t.setting.enableE', 'an untouched setting gets no time');
+    const times = C().settingsTimes.readAll(A.sync.data);
+    a.eq(times['cgp.setting.enableM'].a, 1e12);
+    a.ok(times['cgp.setting.enableM'].u, 'not yet on Canvas’s clock: this computer has not been to Canvas');
+    a.eq(times['cgp.setting.enableM'].h, C().util.valueHash(false));
+    a.lacksKey(times, 'cgp.setting.enableE', 'an untouched setting gets no time');
+    a.ok(Object.keys(A.sync.data).every((k) => k.indexOf('cgp.t.') !== 0), 'times are packed, not one item each');
   });
 
   test('a removed snippet leaves a tombstone; default snippets written for the first time get time 0', async () => {
@@ -117,9 +119,10 @@ suite('settings everywhere: times beside the settings', (test) => {
     const A = computer('A', () => t, 0);
     const v = await values(A);
     await save(A, { snippets: v.snippets.filter((s) => s.trigger !== 'evidence').concat([{ trigger: 'mine', text: 'Mine' }]) });
-    a.eq(C().settingsTimes.decode(A.sync.data['cgp.t.snippet.evidence']).d, true);
-    a.eq(C().settingsTimes.decode(A.sync.data['cgp.t.snippet.mine']).a, 1e12);
-    a.eq(C().settingsTimes.decode(A.sync.data['cgp.t.snippet.units']).a, 0, 'a built-in written out is no change');
+    const times = C().settingsTimes.readAll(A.sync.data);
+    a.eq(times['cgp.snippet.evidence'].d, true);
+    a.eq(times['cgp.snippet.mine'].a, 1e12);
+    a.ok(times['cgp.snippet.units'].def, 'a built-in written out is no change: a default');
   });
 
   test('stable JSON: key order never makes a difference', () => {
@@ -136,13 +139,14 @@ suite('settings everywhere: times beside the settings', (test) => {
 suite('settings everywhere: the merge rules', (test) => {
   const T = () => C().settingsTimes;
   const h = (v) => C().util.valueHash(v);
+  const withTimes = (items, times) => Object.assign({}, items, T().shardWrites(items, times, 1e12));
   test('newer wins both ways, item by item', () => {
-    const all = { 'cgp.setting.enableM': true, 'cgp.t.setting.enableM': T().encode({ a: 100, h: h(true) }),
-      'cgp.setting.enableE': false, 'cgp.t.setting.enableE': T().encode({ a: 900, h: h(false) }) };
+    const all = withTimes({ 'cgp.setting.enableM': true, 'cgp.setting.enableE': false },
+      { 'cgp.setting.enableM': { a: 100, h: h(true) }, 'cgp.setting.enableE': { a: 900, h: h(false) } });
     const remote = { 'cgp~setting~enableM': { at: 800, v: false }, 'cgp~setting~enableE': { at: 300, v: true } };
     const p = M().plan(all, remote, {}, 1000);
     a.eq(p.set['cgp.setting.enableM'], false);
-    a.eq(T().decode(p.set['cgp.t.setting.enableM']).a, 800, 'pulled with its own time, as received');
+    a.eq(p.times['cgp.setting.enableM'].a, 800, 'pulled with its own time, as received');
     a.deep(p.push, { 'cgp.setting.enableE': { at: 900, v: false } });
   });
 
@@ -154,7 +158,7 @@ suite('settings everywhere: the merge rules', (test) => {
   });
 
   test('a value changed without its time waits two minutes, then counts from when it was first seen', () => {
-    const all = { 'cgp.setting.enableM': false, 'cgp.t.setting.enableM': T().encode({ a: 100, h: h(true) }) };
+    const all = withTimes({ 'cgp.setting.enableM': false }, { 'cgp.setting.enableM': { a: 100, h: h(true) } });
     const remote = { 'cgp~setting~enableM': { at: 100, v: true } };
     let p = M().plan(all, remote, {}, 10000);
     a.deep(p.waiting, ['cgp.setting.enableM']);
@@ -162,6 +166,7 @@ suite('settings everywhere: the merge rules', (test) => {
     a.deep(p.set, {});
     p = M().plan(all, remote, p.pending, 10000 + 3 * 60000);
     a.deep(p.push, { 'cgp.setting.enableM': { at: 10000, v: false } });
+    a.deep(p.times['cgp.setting.enableM'], { a: 10000, h: h(false) }, 'and its time is written, so it is settled for good');
   });
 
   test('pulls that would overflow Chrome sync’s snippet limit are left in Canvas and reported', () => {
@@ -325,5 +330,113 @@ suite('settings everywhere: Chrome sync check-ins', (test) => {
     const v = C().sanitizeSettings({ rosterPrefs: { nameFormat: 'split', email: false, sortBy: 'bogus', extra: 1 } });
     a.deep(v.rosterPrefs, { nameFormat: 'split', email: false, header: true, sortBy: 'last', separator: 'comma' });
     a.eq(C().sanitizeSettings({}).settingsInCanvas, true);
+  });
+});
+
+suite('settings everywhere: second re-review', (test) => {
+  const T = () => C().settingsTimes;
+  const h = (v) => C().util.valueHash(v);
+
+  test('a built-in default gives way to a value stored before times existed: no false conflict', () => {
+    const all = Object.assign({ 'cgp.snippet.units': { trigger: 'units', text: 'Default', pos: 1 } },
+      T().shardWrites({}, { 'cgp.snippet.units': { a: 0, h: h({ trigger: 'units', text: 'Default', pos: 1 }), def: true } }, 1));
+    const p = M().plan(all, { 'cgp~snippet~units': { at: 0, v: { trigger: 'units', text: 'Edited long ago', pos: 1 } } }, {}, 5, 0);
+    a.deep(p.conflicts, []);
+    a.eq(p.set['cgp.snippet.units'].text, 'Edited long ago');
+  });
+
+  test('a snippet that differs only in its place is no conflict and no change', () => {
+    const p = M().plan({ 'cgp.snippet.nice': { trigger: 'nice', text: 'Hi', pos: 2 } }, { 'cgp~snippet~nice': { at: 0, v: { trigger: 'nice', text: 'Hi', pos: 1 } } }, {}, 5, 0);
+    a.deep(p.conflicts, []);
+    a.deep(p.set, {});
+    a.deep(p.push, {});
+  });
+
+  test('a snippet removed without a tombstone (older version) waits, then is removed everywhere', () => {
+    const all = T().shardWrites({}, { 'cgp.snippet.gone': { a: 100, h: 'x' } }, 1);
+    const remote = { 'cgp~snippet~gone': { at: 100, v: { trigger: 'gone', text: 'x' } } };
+    let p = M().plan(all, remote, {}, 10000, 0);
+    a.deep(p.set, {}, 'not pulled back');
+    p = M().plan(all, remote, p.pending, 10000 + 3 * 60000, 0);
+    a.deep(p.push, { 'cgp.snippet.gone': { at: 10000, del: true } });
+  });
+
+  test('a time taken before this computer knew its clock is settled on Canvas’s clock', () => {
+    const all = Object.assign({ 'cgp.setting.enableM': false }, T().shardWrites({}, { 'cgp.setting.enableM': { a: 5000, h: h(false), u: true } }, 1));
+    const p = M().plan(all, { 'cgp~setting~enableM': { at: 4000, v: true } }, {}, 9000, -2000);
+    a.eq(p.set['cgp.setting.enableM'], true, 'its 5000 is Canvas’s 3000: older than 4000');
+    const q = M().plan(all, { 'cgp~setting~enableM': { at: 2500, v: true } }, {}, 9000, -2000);
+    a.deep(q.push, { 'cgp.setting.enableM': { at: 3000, v: false } });
+    a.eq(q.times['cgp.setting.enableM'].u, false);
+  });
+
+  test('tombstones expire after 90 days; times stay in a few items however many snippets there are', () => {
+    const now = 200 * 86400000;
+    const out = T().shardWrites({}, { 'cgp.snippet.old': { a: now - 100 * 86400000, d: true }, 'cgp.snippet.recent': { a: now - 86400000, d: true } }, now);
+    const recs = T().readAll(out);
+    a.lacksKey(recs, 'cgp.snippet.old');
+    a.ok(recs['cgp.snippet.recent']);
+    const many = {};
+    for (let i = 0; i < 300; i++) many['cgp.snippet.s' + i] = { a: now, h: 'x' };
+    a.ok(Object.keys(T().shardWrites({}, many, now)).length <= 8);
+  });
+
+  test('reordering is one change to the order item, never a change to another computer’s text edit', async () => {
+    let t = 1.7e12;
+    const clock = () => t;
+    const canvas = fakeCanvas(clock);
+    const A = computer('A', clock, 0);
+    const B = computer('B', clock, 0);
+    const v = await values(A);
+    await save(A, { snippets: v.snippets.concat([{ trigger: 'q', text: 'Question' }]) });
+    await mirror(A, canvas);
+    t += 61000;
+    await mirror(B, canvas);
+    t += 61000;
+    const vb = await values(B);
+    await save(B, { snippets: vb.snippets.map((s) => (s.trigger === 'q' ? { trigger: 'q', text: 'Edited on B' } : s)) });
+    await mirror(B, canvas);
+    t += 1000;
+    const va = await values(A);                      // A has not pulled B's edit
+    const before = canvas.puts;
+    await save(A, { snippets: va.snippets.slice().reverse() });
+    await mirror(A, canvas);
+    a.ok(canvas.puts - before <= 2, 'a reorder sends one item (plus nothing else), not every snippet');
+    t += 61000;
+    await mirror(B, canvas);
+    await mirror(A, canvas);
+    for (const comp of [A, B]) {
+      const s = (await values(comp)).snippets;
+      a.eq(s.find((x) => x.trigger === 'q').text, 'Edited on B', comp.name + ' keeps B’s edit');
+      a.eq(s[0].trigger, 'q', comp.name + ' has A’s order');
+    }
+  });
+
+  test('an old version’s untimed edit is settled once, not re-pushed forever', async () => {
+    let t = 1.7e12;
+    const clock = () => t;
+    const canvas = fakeCanvas(clock);
+    const N = computer('N', clock, 0);
+    await save(N, { gradeFontSize: 17 });
+    await mirror(N, canvas);
+    N.sync.data['cgp.setting.gradeFontSize'] = 23;    // an older version wrote it, no time
+    t += 61000; await mirror(N, canvas);
+    t += 3 * 60000; await mirror(N, canvas);
+    const settled = canvas.puts;
+    for (let i = 0; i < 4; i++) { t += 61000; await mirror(N, canvas); }
+    a.eq(canvas.puts, settled, 'no more pushes after it was settled');
+    a.eq(canvas.store['cgp~setting~gradeFontSize'].v, 23);
+  });
+
+  test('settings stay far inside Chrome sync’s 512-item limit', async () => {
+    const t = 1.7e12;
+    const A = computer('A', () => t, 0);
+    const v = await values(A);
+    const many = Array.from({ length: 100 }, (_, i) => ({ trigger: 'p' + i, text: 'S' + i }));
+    await save(A, { snippets: many });
+    for (let r = 0; r < 3; r++) await on(A, () => C().settingsStorage.write(null, C().sanitizeSettings(Object.assign({}, v, { snippets: many.map((s) => ({ trigger: s.trigger + 'r' + r, text: s.text })) }))));
+    // 100 snippets + every setting + a handful of time items: tombstones of
+    // the 300 removed snippets take no items of their own.
+    a.ok(Object.keys(A.sync.data).length < 200, String(Object.keys(A.sync.data).length));
   });
 });
