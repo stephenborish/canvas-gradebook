@@ -626,6 +626,12 @@
 
   var LINK_RE = /(https?:\/\/[^\/"'\s<>]+)?(\/api\/v1)?\/courses\/(\d+)((?:\/[^"'\s<>?#]*)?)((?:\?[^"'\s<>#]*)?)((?:#[^"'\s<>]*)?)/g;
   var INDEX_ROUTES = /^\/(assignments|quizzes|discussion_topics|announcements|pages|wiki|modules|files|grades|syllabus|outcomes|rubrics|users|calendar_events)?\/?$/;
+  // An LTI tool launched by its URL is found again in the other course by
+  // that URL (an account-wide tool, or the same tool installed there).
+  var TOOL_BY_URL = /^\/external_tools\/retrieve\/?$/;
+  // Canvas's own media player for a video or audio file - the id is a file
+  // of the course the recording was uploaded to.
+  var MEDIA_RE = /(https?:\/\/[^\/"'\s<>]+)?\/media_attachments_iframe\/(\d+)((?:\?[^"'\s<>#]*)?)/g;
 
   function safeDecode(s) { try { return decodeURIComponent(s); } catch (e) { return s; } }
 
@@ -670,10 +676,10 @@
           return all;
         }
         target = '/' + kind + sub + '/' + mapped + tail;
-      } else if (INDEX_ROUTES.test(p)) {
+      } else if (INDEX_ROUTES.test(p) || TOOL_BY_URL.test(p)) {
         target = p;
       } else {
-        missingLinks.push({ type: 'page', ref: p });
+        missingLinks.push({ type: 'link', ref: p });
         return all;
       }
       // A file's verifier belongs to the copy's file; course members never need one.
@@ -682,6 +688,18 @@
       });
       var amp = /&amp;/.test(query || '') ? '&amp;' : '&';
       return (api || '') + '/courses/' + toCourse + target + (q.length ? '?' + q.join(amp) : '') + (hash || '');
+    });
+    // Media players carry no course in their URL, so only a file id this
+    // copy's course is known to hold (or one only it has - copied over, like
+    // any other file, and then found in the mapping) is moved.
+    out = out.replace(MEDIA_RE, function (all, h, id, query) {
+      if (h && h.toLowerCase() !== host) return all;
+      var mapped = lookup('files', id);
+      if (!mapped) {
+        if (missingFiles.indexOf(id) < 0) missingFiles.push(id);
+        return all;
+      }
+      return '/media_attachments_iframe/' + mapped + (query || '');
     });
     return { html: out, missingFiles: missingFiles, missingLinks: missingLinks };
   }

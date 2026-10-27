@@ -860,7 +860,8 @@
         return self.remember(plan.origCourse, { type: plan.type, id: plan.origId }, plan.copyCourse, plan.copyId, plan.copy.html);
       }).then(function () {
         plan.missingLinks.forEach(function (l) {
-          result.warnings.push('A link to ' + (l.type === 'pages' ? 'the page “' + l.ref + '”' : 'a ' + l.type.replace(/_/g, ' ').replace(/s$/, '') + ' (' + l.ref + ')') +
+          result.warnings.push('A link to ' + (l.type === 'pages' ? 'the page “' + l.ref + '”'
+            : (l.type === 'link' ? '“' + l.ref + '”' : 'a ' + l.type.replace(/_/g, ' ').replace(/s$/, '') + ' (' + l.ref + ')')) +
             ' still points to the other section: it is not in this one.');
         });
         result.ok = true;

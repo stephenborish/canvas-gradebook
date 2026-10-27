@@ -775,6 +775,23 @@ suite('copy to sections: changes made in a copy', (test) => {
     a.deep(t.missingLinks, [{ type: 'pages', ref: 'only-here' }]);
   });
 
+  test('embedded Canvas media and LTI tools come back pointing at the original course', () => {
+    const inv = S().invertMapping({ files: { '10': '210' } });
+    const src = '<iframe src="https://s.instructure.com/media_attachments_iframe/210?type=video&amp;embedded=true" data-media-id="m-abc"></iframe>' +
+      '<iframe src="/media_attachments_iframe/555?type=audio"></iframe>' +
+      '<iframe src="https://s.instructure.com/courses/22/external_tools/retrieve?display=borderless&amp;url=https%3A%2F%2Ftool.example%2Flaunch"></iframe>' +
+      '<a href="/courses/22/external_tools/77">tool by id</a>' +
+      '<iframe src="https://www.youtube.com/embed/xyz"></iframe>';
+    const t = S().translateLinks(src, '22', '11', inv, 'https://s.instructure.com');
+    a.ok(t.html.indexOf('src="/media_attachments_iframe/10?type=video&amp;embedded=true" data-media-id="m-abc"') >= 0, 'player moved to the original’s file');
+    a.deep(t.missingFiles, ['555'], 'a recording only the copy has is copied over');
+    a.ok(t.html.indexOf('/courses/11/external_tools/retrieve?display=borderless&amp;url=https%3A%2F%2Ftool.example%2Flaunch') >= 0);
+    a.deep(t.missingLinks, [{ type: 'link', ref: '/external_tools/77' }], 'a course tool by id cannot be matched');
+    a.ok(t.html.indexOf('https://www.youtube.com/embed/xyz') >= 0, 'outside embeds untouched');
+    const again = S().translateLinks(src, '22', '11', S().invertMapping({ files: { '10': '210', '666': '555' } }), 'https://s.instructure.com');
+    a.ok(again.html.indexOf('/media_attachments_iframe/666?type=audio') >= 0, 'after the copy, its player points at the new file');
+  });
+
   function linked(api) {
     // 11 = Period 2 (original), 22 = Period 4 (copy of assignment 5 as 705).
     api.db.migrations['22'] = [{ id: '1', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '11' } }];
