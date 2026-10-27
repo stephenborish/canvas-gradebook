@@ -704,3 +704,14 @@ input.switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2p
   border-radius: 6px;
 }
 .time-shortcut-row__delete:hover { color: #b91c1c; background: var(--bg); }
+
+.section-group {
+  flex: 1 0 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid #e6e9ec;
+}
+.section-group:last-child { border-bottom: 0; }

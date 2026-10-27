@@ -7,7 +7,7 @@
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.util) return;
 
-  CGP.VERSION = '1.19.0';
+  CGP.VERSION = '1.20.0';
 
   /* Default letter-grade scale: the lowest rounded percentage (to 0.1) that
    * earns each letter. The last entry is the floor and always has min 0. */
@@ -96,6 +96,14 @@
       { trigger: 'nice', text: 'Nicely done. Your reasoning here is clear and well supported.' }
     ],
     prefetchAllAssignments: true,
+    // Copy to sections: a "Copy to sections" button in the breadcrumb of
+    // every course page, for courses linked as sections of the same course
+    // (sectionGroups: [{origin, courseIds}], edited from that button).
+    sectionCopy: true,
+    // On a new item's own page, point out that it is not in the linked
+    // sections yet.
+    sectionCopyNudge: true,
+    sectionGroups: [],
     diagnostics: false
   };
 
@@ -355,6 +363,10 @@
         }).slice(0, MAX_TIME_SHORTCUTS);
         return;
       }
+      if (k === 'sectionGroups') {
+        out[k] = cleanSectionGroups(v);
+        return;
+      }
       if (k === 'snippets') {
         // Unlike every other field above, an unusable stored value here used
         // to be silently coerced to an EMPTY array rather than falling back
@@ -397,10 +409,45 @@
     return out;
   }
   CGP.sanitizeSettings = sanitizeSettings;
+
+  /* Linked sections: groups of courses (on one Canvas) that are the same
+   * course taught to different sections. Ids only - ~30 bytes a course, so
+   * the whole list stays a small sync item. A course is in at most one
+   * group, and a group of fewer than two courses is no group. */
+  var MAX_SECTION_GROUPS = 30;
+  var MAX_SECTION_GROUP_COURSES = 12;
+
+  function cleanSectionGroups(v) {
+    if (!Array.isArray(v)) return [];
+    var seen = Object.create(null);
+    var out = [];
+    v.forEach(function (g) {
+      if (!g || typeof g !== 'object') return;
+      var origin = String(g.origin || '').trim().toLowerCase().replace(/\/+$/, '');
+      if (!/^https?:\/\/[a-z0-9.-]+(:\d+)?$/.test(origin)) return;
+      var ids = [];
+      (Array.isArray(g.courseIds) ? g.courseIds : []).forEach(function (id) {
+        var s = String(id == null ? '' : id).trim();
+        if (!/^\d+$/.test(s) || seen[origin + '|' + s]) return;
+        if (ids.length >= MAX_SECTION_GROUP_COURSES) return;
+        seen[origin + '|' + s] = true;
+        ids.push(s);
+      });
+      if (ids.length < 2 || out.length >= MAX_SECTION_GROUPS) return;
+      // Course names, only so the options page can say what is linked.
+      var names = {};
+      var given = g.names && typeof g.names === 'object' ? g.names : {};
+      ids.forEach(function (id) { if (given[id]) names[id] = String(given[id]).slice(0, 80); });
+      out.push({ origin: origin, courseIds: ids, names: names });
+    });
+    return out;
+  }
+  CGP.cleanSectionGroups = cleanSectionGroups;
   CGP.SETTINGS_LIMITS = {
     MAX_SNIPPETS: MAX_SNIPPETS, MAX_SNIPPET_TEXT: MAX_SNIPPET_TEXT, MAX_SNIPPET_BYTES: MAX_SNIPPET_BYTES,
     MAX_SNIPPET_ITEM_BYTES: MAX_SNIPPET_ITEM_BYTES,
-    MAX_TIME_SHORTCUTS: MAX_TIME_SHORTCUTS, MAX_TIME_SHORTCUT_KEY: MAX_TIME_SHORTCUT_KEY
+    MAX_TIME_SHORTCUTS: MAX_TIME_SHORTCUTS, MAX_TIME_SHORTCUT_KEY: MAX_TIME_SHORTCUT_KEY,
+    MAX_SECTION_GROUPS: MAX_SECTION_GROUPS, MAX_SECTION_GROUP_COURSES: MAX_SECTION_GROUP_COURSES
   };
   CGP.normalizeClock = normalizeClock;
   CGP.normalizeTimeKey = normalizeTimeKey;

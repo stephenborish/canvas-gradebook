@@ -38,6 +38,7 @@ require('./test-roster-format');
 require('./test-settings-sync');
 require('./test-settings-gear-totals');
 require('./test-self-update');
+require('./test-section-sync');
 
 // run() awaits each case, so the process must not exit before it settles.
 harness.run().then((okAll) => {

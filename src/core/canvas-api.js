@@ -515,6 +515,136 @@
     });
   };
 
+  /* ------------------------------------------------ copying to sections */
+
+  function cpath(courseId) { return '/api/v1/courses/' + encodeURIComponent(String(courseId)); }
+
+  /* The teacher's Canvas time zone (their profile's, else the account's),
+   * as an IANA name - the zone Canvas itself shows every date in. */
+  CanvasApi.prototype.profileTimeZone = function () {
+    return this.get('/api/v1/users/self/profile').then(function (p) {
+      return (p && p.time_zone) ? String(p.time_zone) : null;
+    });
+  };
+
+  /* Start Canvas's own selective course copy into destCourseId (the request
+   * Canvas's "Copy To..." tray sends). Not retried after a lost response:
+   * the copy may already have started, and a second one would only repeat
+   * it - but it would still be a second job in the teacher's import list. */
+  CanvasApi.prototype.startCourseCopy = function (destCourseId, body) {
+    return this.request(cpath(destCourseId) + '/content_migrations', {
+      method: 'POST', json: body, retries: 1, idempotent: false
+    }).then(function (r) { return r.data; });
+  };
+
+  CanvasApi.prototype.contentMigration = function (courseId, migrationId) {
+    return this.get(cpath(courseId) + '/content_migrations/' + encodeURIComponent(String(migrationId)));
+  };
+
+  /* Newest first (Canvas orders them by id, descending). Three pages is
+   * well past the last copy from a sibling course in any real course. */
+  CanvasApi.prototype.contentMigrations = function (courseId) {
+    return this.getAll(cpath(courseId) + '/content_migrations', {}, { maxPages: 3 });
+  };
+
+  CanvasApi.prototype.assetIdMapping = function (courseId, migrationId) {
+    return this.get(cpath(courseId) + '/content_migrations/' + encodeURIComponent(String(migrationId)) + '/asset_id_mapping');
+  };
+
+  CanvasApi.prototype.migrationIssues = function (courseId, migrationId) {
+    return this.getAll(cpath(courseId) + '/content_migrations/' + encodeURIComponent(String(migrationId)) + '/migration_issues',
+      {}, { maxPages: 2 });
+  };
+
+  /* Canvas's Assign To data for one item: base dates, whether it is only
+   * for its overrides, and the overrides themselves. */
+  CanvasApi.prototype.dateDetails = function (courseId, type, id) {
+    return this.get(CGP.sectionSync.itemApiPath(courseId, type, id) + '/date_details');
+  };
+
+  /* 204 on success. Idempotent: the same dates sent twice are the same
+   * dates. The body never carries assignment_overrides, so Canvas leaves
+   * every override as it is. */
+  CanvasApi.prototype.putDateDetails = function (courseId, type, id, body) {
+    return this.request(CGP.sectionSync.itemApiPath(courseId, type, id) + '/date_details', {
+      method: 'PUT', json: body, retries: 1
+    }).then(function (r) { return r.data; });
+  };
+
+  CanvasApi.prototype.sectionItem = function (courseId, type, id) {
+    return this.get(CGP.sectionSync.itemApiPath(courseId, type, id));
+  };
+
+  /* The page behind a /pages/<slug> URL. */
+  CanvasApi.prototype.pageBySlug = function (courseId, slug) {
+    return this.get(cpath(courseId) + '/pages/' + encodeURIComponent(String(slug)));
+  };
+
+  function bodyFor(type, html) {
+    if (type === 'assignment') return { assignment: { description: html } };
+    if (type === 'quiz') return { quiz: { description: html } };
+    if (type === 'page') return { wiki_page: { body: html } };
+    if (type === 'discussion' || type === 'announcement') return { message: html };
+    return null;
+  }
+
+  function publishBodyFor(type, on) {
+    if (type === 'assignment') return { assignment: { published: !!on } };
+    if (type === 'quiz') return { quiz: { published: !!on } };
+    if (type === 'page') return { wiki_page: { published: !!on } };
+    if (type === 'discussion' || type === 'announcement') return { published: !!on };
+    return null;
+  }
+
+  CanvasApi.prototype.updateSectionItem = function (courseId, type, id, body) {
+    return this.request(CGP.sectionSync.itemApiPath(courseId, type, id), {
+      method: 'PUT', json: body, retries: 1
+    }).then(function (r) { return r.data; });
+  };
+
+  CanvasApi.prototype.setItemHtml = function (courseId, type, id, html) {
+    var body = bodyFor(type, html);
+    if (!body) return Promise.reject(new CanvasApiError('This kind of item has no instructions', {}));
+    return this.updateSectionItem(courseId, type, id, body);
+  };
+
+  CanvasApi.prototype.setItemPublished = function (courseId, type, id, on) {
+    var body = publishBodyFor(type, on);
+    if (!body) return Promise.reject(new CanvasApiError('This kind of item cannot be published here', {}));
+    return this.updateSectionItem(courseId, type, id, body);
+  };
+
+  /* Every item of one kind in a course, for the item picker and for the
+   * same-title check in each section. */
+  CanvasApi.prototype.courseItems = function (courseId, type) {
+    var base = cpath(courseId);
+    if (type === 'assignment') return this.getAll(base + '/assignments', { order_by: 'position' }, { maxPages: 20 });
+    if (type === 'quiz') return this.getAll(base + '/quizzes', {}, { maxPages: 20 });
+    if (type === 'discussion') return this.getAll(base + '/discussion_topics', { 'include[]': ['all_dates'] }, { maxPages: 20 });
+    if (type === 'announcement') return this.getAll(base + '/discussion_topics', { only_announcements: true }, { maxPages: 3 });
+    if (type === 'page') return this.getAll(base + '/pages', { sort: 'title', order: 'asc' }, { maxPages: 20 });
+    if (type === 'module') return this.getAll(base + '/modules', {}, { maxPages: 10 });
+    return Promise.resolve([]);
+  };
+
+  /* Every module with its items. Canvas leaves `items` out of the list for
+   * a module with too many of them; those are read on their own. */
+  CanvasApi.prototype.modulesWithItems = function (courseId) {
+    var self = this;
+    var base = cpath(courseId);
+    return this.getAll(base + '/modules', { 'include[]': ['items'] }, { maxPages: 10 }).then(function (mods) {
+      return Promise.all((mods || []).map(function (m) {
+        if (Array.isArray(m.items) && (m.items_count === undefined || m.items.length >= m.items_count)) return m;
+        return self.getAll(base + '/modules/' + encodeURIComponent(String(m.id)) + '/items', {}, { maxPages: 10 })
+          .then(function (items) { m.items = items || []; return m; });
+      }));
+    });
+  };
+
+  CanvasApi.prototype.assignmentGroups = function (courseId) {
+    return this.getAll(cpath(courseId) + '/assignment_groups', {}, { maxPages: 3 });
+  };
+
   CGP.CanvasApi = CanvasApi;
   CGP.CanvasApiError = CanvasApiError;
   CGP.apiInternals = { parseBody: parseBody, nextLink: nextLink, isThrottled: isThrottled, retryAfterMs: retryAfterMs, formToJson: formToJson };

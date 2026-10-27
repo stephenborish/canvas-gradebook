@@ -484,6 +484,29 @@
     renderSnippetCards(snips);
     $('snippets').value = snippetsToText(snips);
     renderTimeShortcuts(values.timeShortcuts);
+    renderSectionGroups(values.sectionGroups);
+  }
+
+  /* Linked sections are edited from Copy to sections in Canvas, where the
+   * course list is; here they are listed, and can be unlinked. They are not
+   * a form field: the list shown is what is stored. */
+  var currentGroups = [];
+
+  function renderSectionGroups(groups) {
+    currentGroups = Array.isArray(groups) ? groups : [];
+    var box = $('sectionGroupsList');
+    if (!box) return;
+    if (!currentGroups.length) {
+      box.innerHTML = '<p class="hint">No linked sections yet. In Canvas, open a course and press Copy to sections.</p>';
+      return;
+    }
+    box.innerHTML = currentGroups.map(function (g, i) {
+      var names = g.courseIds.map(function (id) {
+        return escapeHtml((g.names && g.names[id]) || ('Course ' + id));
+      }).join(' &middot; ');
+      return '<div class="section-group"><span>' + names + ' <span class="hint">(' + escapeHtml(g.origin.replace(/^https?:\/\//, '')) + ')</span></span>' +
+        '<button type="button" class="btn" data-unlink="' + i + '">Unlink</button></div>';
+    }).join('');
   }
 
   /** The snippets exactly as the teacher entered them, before sanitizing. */
@@ -504,6 +527,7 @@
     patch.snippets = readRawSnippets();
     patch.timeShortcuts = readRawTimeShortcuts();
     patch.gradingScale = CGP.totals.textToScale($('gradingScale').value);
+    patch.sectionGroups = currentGroups;
     return CGP.sanitizeSettings(patch);
   }
 
@@ -867,6 +891,21 @@
     });
   });
 
+  var groupsBox = $('sectionGroupsList');
+  if (groupsBox) {
+    groupsBox.addEventListener('click', function (e) {
+      var btn = e.target.closest && e.target.closest('[data-unlink]');
+      if (!btn) return;
+      if (JSON.stringify(read()) !== JSON.stringify(baseline)) {
+        status('Save (or reload to discard) your other changes first, then unlink.', { error: true });
+        return;
+      }
+      var i = Number(btn.getAttribute('data-unlink'));
+      var next = Object.assign({}, baseline, { sectionGroups: currentGroups.filter(function (g, j) { return j !== i; }) });
+      writeSettings(baseline, next, 'Unlinked. Those courses no longer copy to each other.');
+    });
+  }
+
   $('exportSettings').addEventListener('click', exportSettings);
   $('importSettingsButton').addEventListener('click', function () { $('importSettingsFile').click(); });
   $('importSettingsFile').addEventListener('change', function () {
@@ -890,7 +929,7 @@
   function initVersion() {
     var el = $('extensionVersion');
     if (!el) return;
-    var ver = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest && chrome.runtime.getManifest().version) || CGP.VERSION || '1.19.0';
+    var ver = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest && chrome.runtime.getManifest().version) || CGP.VERSION || '1.20.0';
     el.textContent = ver;
   }
 

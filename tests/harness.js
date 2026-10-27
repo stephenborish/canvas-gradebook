@@ -27,6 +27,7 @@ const CORE_FILES = [
   'src/core/roster-format.js',
   'src/core/snippets.js',
   'src/core/time-shortcuts.js',
+  'src/core/section-sync.js',
   'src/core/model.js'
 ];
 

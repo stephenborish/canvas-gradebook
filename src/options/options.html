@@ -53,7 +53,7 @@
       </nav>
 
       <div class="sidebar__foot">
-        <div class="sidebar__version">Version <span id="extensionVersion">1.19.0</span></div>
+        <div class="sidebar__version">Version <span id="extensionVersion">1.20.0</span></div>
         <div class="sidebar__actions">
           <button id="save" type="button" class="btn btn--primary">Save changes</button>
           <button id="reset" type="button" class="btn btn--quiet">Restore defaults</button>
@@ -447,6 +447,32 @@
             </label>
             <input id="studentSearch" type="checkbox" class="switch">
           </div>
+          <h2 class="panel__group">Copy to sections</h2>
+          <div class="setting">
+            <label class="setting__label" for="sectionCopy">Add "Copy to sections" to the breadcrumb of every course page
+              <span class="hint">For a course you teach to several sections as separate Canvas courses (not cross-listed):
+                copy assignments, quizzes, discussions, announcements, pages and modules to the other sections in one go,
+                with each section's own dates and an optional note for one section. It uses Canvas's own course copy,
+                so rubrics, linked files and quiz questions come along, and copying again updates the copy instead of
+                adding a second one. Courses are linked from that button.</span>
+            </label>
+            <input id="sectionCopy" type="checkbox" class="switch">
+          </div>
+          <div class="setting">
+            <label class="setting__label" for="sectionCopyNudge">Point out a new item that is not in the linked sections yet
+              <span class="hint">On the page of an item created in the last three hours, in a linked course. Nothing is copied
+                until you press Copy.</span>
+            </label>
+            <input id="sectionCopyNudge" type="checkbox" class="switch">
+          </div>
+          <div class="setting setting--field">
+            <label class="setting__label">Linked sections
+              <span class="hint">Change these from Copy to sections in Canvas; unlink here.</span>
+            </label>
+            <div id="sectionGroupsList" class="setting__control setting__control--wide"></div>
+          </div>
+
+          <h2 class="panel__group">SpeedGrader</h2>
           <div class="setting">
             <label class="setting__label" for="speedgraderDrafts">Protect unsent SpeedGrader comment drafts</label>
             <input id="speedgraderDrafts" type="checkbox" class="switch">

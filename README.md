@@ -521,6 +521,90 @@ holding nothing but a shortcut is touched, so `12:30` or `1 pm` still mean what 
 edit or remove shortcuts (any short key, e.g. `lunch` → 11:30 AM) on the **Time Shortcuts** tab of
 the options page; the same Assign To card on quizzes, discussions and modules is covered too.
 
+### Copy to sections
+
+For a course you teach to several sections that are **separate Canvas courses** (not cross-listed):
+build an assignment, quiz, discussion, announcement, page or module once, then put it in every
+other section in one step, each with its own dates.
+
+**Link the sections once.** Every course page has **Copy to sections** in the breadcrumb. The first
+time, it asks which of your courses are other sections of this one. It pre-ticks courses with the
+same name in the same term once "Period 2", "(P4)", "Section 7", "Block 3" and the like are set aside.
+"Algebra 1" and "Algebra 2" stay different courses. Linked courses can copy to each other from
+any of them. Only course ids (and their names, for the options page) are saved, in your Chrome
+settings, so the links follow you to other computers.
+
+**Copy.** On an item's own page that item is already chosen; **Add items…** picks more from the
+course. Before anything is written, each linked section is checked and the dialog says what will
+happen there:
+
+- **Not in this section yet** — it will be copied.
+- **Already there** — copying again updates that copy instead of adding a second one. This is
+  Canvas's own rule for course copies: it recognises its earlier copy of the same item.
+- **Changed in that section since it was copied** — left alone by default. You choose between
+  *Replace with this section's version* and *Keep that section's own version*, which changes
+  only its dates (and note). If this computer has no record of the copy (it was copied from another
+  computer, say), any difference counts as a change and is kept by default.
+- **That section already has an item with the same title that was not copied from here**
+  (typically both came from last year's course) — that section is unticked, because copying would
+  give it a second one.
+- **Deleted in that section** — copying brings it back.
+
+**Dates for each section.** Every section starts with this section's dates, in your Canvas time
+zone (your profile's), exactly as Canvas shows them. Edit any box, or move a whole section at
+once: **Shift** by a number of days and/or set its **Due time**, which accepts a time (`1:45 pm`,
+`13:45`) or one of your period shortcuts from the Time Shortcuts tab (`4`). Due, Available from
+and Until are set for assignments, quizzes and graded discussions; Available from/Until for
+ungraded discussions and pages (when Canvas allows dates on pages); Post at/Until for
+announcements; Unlock at for modules. A copied module's assignments, quizzes and discussions each
+get their own row. Dates are checked before anything is copied (available from ≤ due ≤ until).
+
+**A note for one section.** Rarely, one section needs something the others don't ("Period 4: we
+start this in class Thursday"). Open *Note for this section only* under that section. The note is
+shown at the top of that section's instructions in a highlighted box, and only there. Updating
+the copy later keeps it. A note written into the section you copy *from* is never carried to the
+others. For anything more than a note, edit that section's copy in Canvas directly; it is then
+"changed in that section" and won't be overwritten unless you say so.
+
+**Where the copy goes.** With *Put new copies in the matching module* on (the default), a first
+copy goes into that section's copy of the same module (or the one module there with the same
+name), at the same position. A first copy also goes into the assignment group with the same name,
+rather than Canvas's "Imported Assignments". Copies follow this section's published state, or you
+can leave them unpublished or publish them.
+
+**How it is done, and why it is reliable.**
+
+- The copy is **Canvas's own selective course copy**, the request Canvas's "Copy To…" sends. That
+  copy brings rubrics, files linked from the instructions, quiz questions (New Quizzes included)
+  and a module's contents along, and rewrites links to point inside each section.
+- The copy is found afterwards through Canvas's own record of what it copied where
+  (`asset_id_mapping`), never by guessing from a title.
+- Dates are written through the same `date_details` call Canvas's Assign To tray uses. Overrides
+  already in a section (a student's extension, say) are left exactly as they are. Then the dates
+  are read back to confirm Canvas kept them.
+- An item that is assigned only to particular students or sections there is not given base dates.
+  That would assign it to everyone. Neither is a discussion with checkpoint due dates. Both are
+  reported.
+- A section Canvas refuses something for gets that reason shown against that section. Typical
+  reasons are a closed grading period, a Blueprint lock, a role without rights, or unpublishing
+  work students have submitted. The other sections carry on.
+- Canvas runs copies into one course one after another. Each copy is saved on this computer as
+  soon as Canvas accepts it. If the tab closes before Canvas finishes, the dates, note and
+  publishing are applied the next time you open any page of that Canvas, and you are told.
+- Nothing is copied until you press Copy. On a newly created item's page (made in the last three
+  hours) in a linked course, the button gets a dot, and a message says when the item is not in your
+  other sections yet. Turn that off under *Point out a new item…*.
+
+Limits worth knowing:
+
+- Each section's copy gets base ("everyone") dates. Section-specific dates *inside* one course
+  (Canvas sections within a single course) are Canvas's own Assign To.
+- Copying one item does not copy other items it links to. Copy those too, or Canvas leaves the
+  link pointing nowhere and lists it as an issue, which is shown in the results.
+- An item copied on its own into a module, and later copied again as part of the whole module, can
+  appear twice in that module. Canvas treats the two placements as different.
+- Pages' scheduled publishing (*Publish at*) is not set per section.
+
 ---
 
 ## Settings
@@ -584,6 +668,9 @@ Student names, grades and comment text are never written to the log — only cou
 - Student data is never persisted. The cross-course student search and Copy Roster hold their
   rosters in memory for the life of the page (or the open panel) and no longer; the only thing cached on disk from Canvas is your own
   list of course names and terms, for 30 minutes.
+- Copy to sections keeps on this computer, in `chrome.storage.local`, a fingerprint of the text of each
+  copy it made, so it can tell later whether that copy was changed. It also keeps, until it is done, each
+  copy Canvas is still working on: course and item ids, the dates and the section note. No student data.
 - Keeping tabs in step passes only ids (course, assignment, student) between your own Canvas tabs,
   through the extension's background worker, and stores nothing. What is handed to Canvas's own
   page is the grading fields of a submission Canvas itself just returned — never comments, names or
@@ -635,6 +722,9 @@ src/gradebook/
                                    elsewhere in the course), single rAF paint pass, observers
 
 src/assignments/time-shortcuts.js period keys in Assign To time boxes (Tab/Enter/blur)
+src/core/section-sync.js          Copy to sections: requests, dates, notes, change tracking (pure)
+src/sections/sync-runner.js       Copy to sections: survey each section, copy, apply dates/note
+src/sections/sync-dialog.js       Copy to sections: breadcrumb button and dialog
 src/speedgrader/content.js        comment draft autosave; live sync with the gradebook
 src/page/env-bridge.js            page context: ENV ids, column widths, Canvas's store and tray
 src/page/write-watch.js           page context: reports Canvas's own submission writes (ids only)
@@ -665,7 +755,7 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-456 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
+530 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
 again → not Missing, `L` → Late and `L` again → not Late, both leaving the grade untouched either
 way, `E` → Excused, a grade never adding a status (and lifting an applied Missing only when asked),
 statuses read exactly as Canvas computes them, the hand-off to Canvas's own store (and never
