@@ -630,7 +630,7 @@ The notice can be hidden (×) until something changes again. Turn notices off un
 on an item's page…*. Only the title and instructions are brought back. Points, settings, the
 rubric, quiz questions and module contents changed in a copy are not; change those in the
 original and copy it again. The record of what was copied is a fingerprint of each copy's text. It
-is kept in your own Canvas account's user data (Canvas's custom data, visible only to you) and on
+is kept in your own Canvas account's user data (Canvas's custom data; private to your account, though Canvas admins with the right permissions can see user data) and on
 this computer, so a copy made on one computer is recognised on every other. A title-only change is
 not noticed.
 
@@ -665,17 +665,30 @@ Settings and snippets travel two ways, and either one is enough:
    Manage what you sync). A change shows up on the others within a minute or so.
 2. **Your Canvas account.** With *Also keep my settings in my Canvas account* on (the default, under
    Sync & Backup), every Canvas course page also keeps the settings in step with a copy in your own
-   Canvas user data (Canvas's private per-user `custom_data`, readable only by you). Any computer
+   Canvas user data (Canvas's per-user `custom_data`: private to your account, though Canvas admins with the right permissions can see user data). Any computer
    where you open Canvas picks them up within about a minute, even when Chrome sync is off, is
    signed in to a different Google account, or has been turned off by your school, which many
    schools do for their accounts.
 
 The two are merged one setting and one snippet at a time, and for each the newer change wins. So a
 snippet added on one computer and a setting changed on another both survive, and a snippet deleted
-on one computer stays deleted. "Newer" is measured against Canvas's own clock, so a computer whose
-clock is wrong can't win with an old change. When the extension is installed on a new computer, it
-takes your settings from Chrome sync or Canvas, whichever reaches it first, and writes nothing over
-them.
+on one computer stays deleted.
+
+- **Each change's time travels with it.** It is stored next to the setting in Chrome sync and in the
+  Canvas copy, so a change that arrives late by one route never beats a newer one that came by the
+  other.
+- **Times are on Canvas's clock.** Once a computer has opened Canvas, its changes are timed on Canvas's
+  clock, so a computer whose own clock is wrong can't win with an old change.
+- **A new computer doesn't overwrite your settings.** Built-in defaults written out by a new install
+  count as no change at all, so they never undo a snippet you deleted or edited elsewhere.
+- **Older versions are handled.** Settings stored by an older version of the extension are moved over
+  first, so nothing in them is lost.
+- **When it can't tell which change is newer, it asks you.** This happens when two computers that
+  never synced have different values and neither has a recorded time. Sync & Backup lists those, and
+  you choose *Keep this computer's* or *Use the other computer's*. Nothing is guessed.
+- **Nothing is lost to the 100-snippet limit.** If merging two computers' snippets would go over the
+  limit Chrome allows, the extras stay in your Canvas copy and are listed there, rather than being
+  dropped.
 
 **Is it working?** Options → **Sync & Backup** → *Your other computers* says whether Chrome sync is
 reaching your other computers (each computer checks in through it every few hours, and lists them
@@ -717,7 +730,7 @@ Student names, grades and comment text are never written to the log — only cou
   list of course names and terms, for 30 minutes.
 - Copy to sections keeps a fingerprint of the text of each copy it made, so it can tell later whether
   that copy was changed. Fingerprints are stored in `chrome.storage.local` and in your own Canvas account's
-  user data (Canvas's custom data API, readable only by you), with course and item ids. It also keeps on
+  user data (Canvas's custom data API; private to your account, though Canvas admins with the right permissions can see user data), with course and item ids. It also keeps on
   this computer, until it is done, each copy Canvas is still working on: course and item ids, the dates
   and the section note. When a copy's changes are brought back to the original, the original's previous
   title and instructions are kept on this computer for Undo. No student data.
@@ -733,7 +746,7 @@ Student names, grades and comment text are never written to the log — only cou
 ```
 manifest.json                     MV3 manifest; one content-script entry, ordered
 src/background.js                 service worker: defaults, options, custom-domain registration
-src/settings-times.js             service worker: when each setting changed; Chrome sync check-ins
+src/settings-times.js             service worker: this computer's Chrome sync check-in
 src/script-manifest.js            the ordered file list (mirror of the manifest entry)
 
 src/core/                         pure logic - no DOM, no chrome.* at load time
@@ -808,7 +821,7 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-565 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
+570 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
 again → not Missing, `L` → Late and `L` again → not Late, both leaving the grade untouched either
 way, `E` → Excused, a grade never adding a status (and lifting an applied Missing only when asked),
 statuses read exactly as Canvas computes them, the hand-off to Canvas's own store (and never
