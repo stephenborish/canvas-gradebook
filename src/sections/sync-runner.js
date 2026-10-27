@@ -460,13 +460,16 @@
         });
       }
       onStep('Finding the copy');
+      // A migration list read while this copy was still running (an item
+      // page in another tab, say) must not hide the finished copy.
+      self.forgetCopies(task.destCourseId);
       return self.api.assetIdMapping(task.destCourseId, job.migrationId).then(function (mapping) {
         var destId = S().destIdFor(mapping, task.item.type, task.item.id);
         if (!destId) {
           result.error = 'Canvas finished, but did not report where the copy is. Check this section before copying again.';
           return self.dropJob(job).then(function () { return result; });
         }
-        return self.settled(task, destId, opts.maxWaitMs || self.maxWaitMs).then(function (ready) {
+        return self.settled(task, destId, opts.maxWaitMs || self.maxWaitMs, job).then(function (ready) {
           if (ready === 'failed') {
             result.error = 'Canvas could not finish importing the copy (its New Quizzes step failed). Check this section.';
             return self.dropJob(job).then(function () { return result; });
@@ -498,12 +501,16 @@
    * students an empty quiz. Wait for it. 'ready' | 'failed' | 'waiting'. */
   var BUSY_STATES = ['importing', 'duplicating', 'migrating', 'outcome_alignment_cloning'];
   var FAILED_STATES = ['fail_to_import', 'failed_to_duplicate', 'failed_to_migrate', 'failed_to_clone_outcome_alignment'];
-  P.settled = function (task, destId, maxWaitMs) {
+  P.settled = function (task, destId, maxWaitMs, job) {
     var self = this;
     if (task.item.type !== 'assignment') return Promise.resolve('ready');
     var started = this.now();
+    var claimed = started;
     var n = 0;
     function check() {
+      // As in waitFor: a New Quiz can import for minutes, and the claim must
+      // stay fresh meanwhile or another tab starts finishing the job too.
+      if (job && self.now() - claimed > CLAIM_MS / 2) { claimed = self.now(); self.saveJob(job); }
       return self.api.sectionItem(task.destCourseId, 'assignment', destId).then(function (o) {
         var st = String((o && o.workflow_state) || '');
         if (FAILED_STATES.indexOf(st) >= 0) return 'failed';
@@ -677,6 +684,11 @@
       // Always rewritten after a copy: the source's own note (if it has one
       // for its section) came along with its instructions and belongs to it.
       var next = sync.withNote(html, task.note || '');
+      // A copy kept as that section's own, with its note unchanged: the note
+      // block stays exactly as it is there (formatting or links the teacher
+      // gave it in Canvas), rather than being rebuilt from its text.
+      var split = sync.splitNote(html);
+      if (task.mode === 'keep' && split.block && split.note === String(task.note || '').replace(/\r\n?/g, '\n').trim()) next = html;
       var steps = Promise.resolve();
       if (next !== html) {
         steps = steps.then(function () {
@@ -906,12 +918,15 @@
         result.error = 'The original was changed since this review opened. Nothing was written. Close this and review again.';
         return result;
       }
+      var next = sync.withNoteBlock(html, plan.origNoteBlock || '');
       return self.record(plan.origCourse, origRef, plan.copyCourse).then(function (prevRec) {
         onStep('Saving a backup');
-        return self.pushBackup(plan, { title: now.title, html: now.html, at: self.now(), from: plan.copyCourse, record: prevRec || null });
+        // `after`: what this writes, so Undo can tell whether the original
+        // was edited again since (and then refuse rather than discard that).
+        return self.pushBackup(plan, { title: now.title, html: now.html, at: self.now(), from: plan.copyCourse, record: prevRec || null,
+          after: sync.fingerprint(next) });
       }).then(function () {
         onStep('Updating the original');
-        var next = sync.withNoteBlock(html, plan.origNoteBlock || '');
         return self.api.setItemHtml(plan.origCourse, plan.type, plan.origId, next).then(function () {
           written = true;
           if (!opts.title || !plan.titleDiffers) return null;
@@ -923,6 +938,14 @@
             var back = sync.toItem(plan.type === 'announcement' ? 'discussion' : plan.type, o2) || {};
             if (sync.fingerprint(back.html || '') !== sync.fingerprint(next)) {
               result.warnings.push('Canvas saved the instructions with differences. Check them.');
+              // Undo compares against what Canvas actually stored.
+              return self.backups(plan.origCourse, plan.type, plan.origId).then(function (list) {
+                if (!list[0]) return null;
+                list[0].after = sync.fingerprint(back.html || '');
+                var v = {};
+                v[self.backupKey(plan.origCourse, plan.type, plan.origId)] = list;
+                return self.store.set(v);
+              });
             }
           }, function () {
             result.warnings.push('Saved, but Canvas could not be asked to confirm it. Check the original.');
@@ -992,7 +1015,15 @@
     return this.backups(ref.origCourse, ref.type, ref.origId).then(function (list) {
       var bk = list[0];
       if (!bk) throw new Error('No backup of the original was found on this computer.');
-      return self.api.setItemHtml(ref.origCourse, ref.type, ref.origId, bk.html).then(function () {
+      // Only over what the bring-back wrote: an edit made to the original
+      // since then would otherwise be silently thrown away.
+      var check = !bk.after ? Promise.resolve() : self.api.sectionItem(ref.origCourse, ref.type, ref.origId).then(function (o) {
+        var cur = sync.toItem(ref.type === 'announcement' ? 'discussion' : ref.type, o) || {};
+        if (sync.fingerprint(cur.html || '') !== bk.after) {
+          throw new Error('The original was changed again after that update, so Undo would throw those changes away. Nothing was changed.');
+        }
+      });
+      return check.then(function () { return self.api.setItemHtml(ref.origCourse, ref.type, ref.origId, bk.html); }).then(function () {
         return self.api.updateSectionItem(ref.origCourse, ref.type, ref.origId, sync.titleBody(ref.type, bk.title));
       }).then(function () {
         return self.putRecord(ref.origCourse, { type: ref.type, id: ref.origId }, bk.from, bk.record || null);
@@ -1017,6 +1048,14 @@
         return j && j.task && String(j.origin) === String(self.origin) && !(j.claimedAt && now - j.claimedAt < CLAIM_MS && j.claimedBy !== self.tabId);
       });
       var stale = jobs.filter(function (j) { return j && now - (j.startedAt || 0) > JOB_MAX_AGE_MS; });
+      // Cached migration lists and mappings past their time are never read
+      // again (a mapping is cached under its migration id, so every new copy
+      // adds a key): cleared here, or they would fill chrome.storage.local.
+      var expired = Object.keys(all || {}).filter(function (k) {
+        var v = all[k];
+        return k.indexOf(CACHE_PREFIX) === 0 && !(v && now - Number(v.at || 0) < MAP_TTL_MS);
+      });
+      if (expired.length) self.store.remove(expired).catch(function () { return null; });
       return Promise.all(stale.map(function (j) { return self.dropJob(j); })).then(function () {
         return mine.filter(function (j) { return stale.indexOf(j) < 0; }).reduce(function (p, job) {
           return p.then(function (done) {

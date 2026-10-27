@@ -885,6 +885,22 @@ suite('copy to sections: changes made in a copy', (test) => {
       'the copy record is put back as it was (none), so the copy is not mistaken for the earlier version');
   });
 
+  test('undo refuses, writing nothing, when the original was edited again after the bring-back', async () => {
+    let api;
+    api = fakeCanvas({ onComplete: (dest) => { api.db.mappings[dest] = { files: { '333': '444' } }; } });
+    linked(api);
+    withCustomData(api);
+    const c = copier(api, memStore());
+    const r = await c.applyBack(await c.planBack('11', { type: 'assignment', id: '5' }, '22', '705'), { title: true });
+    a.ok(r.ok, r.error);
+    const edited = api.db.items['11:assignment:5'].description + '<p>Added later.</p>';
+    api.db.items['11:assignment:5'].description = edited;
+    let err = null;
+    try { await c.undoBack({ origCourse: '11', type: 'assignment', origId: '5' }); } catch (e) { err = e; }
+    a.ok(err && /changed again/.test(err.message), 'refused');
+    a.eq(api.db.items['11:assignment:5'].description, edited, 'the later edit is kept');
+  });
+
   test('a file that cannot be copied leaves its link and says so; the rest still updates', async () => {
     const api = fakeCanvas({ failCopy: true });
     linked(api);

@@ -104,7 +104,9 @@ chrome.runtime.onInstalled.addListener(async () => {
   await syncDynamicScripts();
 });
 
-chrome.runtime.onStartup.addListener(() => { syncDynamicScripts(); settingsTimes.checkIn(false).catch(() => 0); });
+// The check-in needs no listener of its own: settingsTimes.start() below runs
+// on every service-worker start, browser startup included.
+chrome.runtime.onStartup.addListener(() => { syncDynamicScripts(); });
 
 if (chrome.permissions && chrome.permissions.onAdded) {
   chrome.permissions.onAdded.addListener(() => { syncDynamicScripts(); });

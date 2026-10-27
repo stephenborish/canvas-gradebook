@@ -129,6 +129,9 @@
     function attempt(n) {
       return self.gate(function () {
         if (!self.fetchImpl) return Promise.reject(new CanvasApiError('fetch unavailable', { path: u.pathname }));
+        // When this attempt actually went out (after any wait for the pool
+        // or a retry's backoff), for reading Canvas's clock off its Date.
+        var sentAt = Date.now();
         return self.fetchImpl(u.toString(), {
           method: method, headers: headers, body: body,
           credentials: 'same-origin', redirect: 'follow', cache: 'no-store'
@@ -152,7 +155,7 @@
             }
             CGP.diag.bump('api.requests');
             return { data: parseBody(text), link: res.headers.get('Link') || res.headers.get('link'),
-              date: res.headers.get('Date') || res.headers.get('date') || null };
+              date: res.headers.get('Date') || res.headers.get('date') || null, sentAt: sentAt };
           });
         }, function (e) {
           throw new CanvasApiError('Network error on ' + method + ' ' + u.pathname, {
@@ -662,9 +665,11 @@
    * header - so times from computers whose clocks disagree compare fairly.
    * {data, offset}; offset 0 when Canvas sent no usable Date. */
   CanvasApi.prototype.customDataTimed = function (scope) {
-    var sent = Date.now();
+    var queued = Date.now();
     return this.request('/api/v1/users/self/custom_data/' + scope, { params: { ns: CUSTOM_NS } }).then(function (r) {
-      var mid = (sent + Date.now()) / 2;
+      // From the attempt that answered, not from when it was queued: time
+      // spent waiting for the pool or a retry would skew the offset.
+      var mid = ((r.sentAt || queued) + Date.now()) / 2;
       var server = r.date ? Date.parse(r.date) : NaN;
       return { data: r.data && r.data.data !== undefined ? r.data.data : null, offset: isFinite(server) ? Math.round(server - mid) : 0 };
     }, function (err) {
