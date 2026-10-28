@@ -985,3 +985,53 @@ suite('copy to sections: second review fixes', (test) => {
     a.eq(list[0].html, 'h6');
   });
 });
+
+suite('copy to sections: PR review (Codex)', (test) => {
+  function linkedPair(api) {
+    api.db.mappings['22'] = { assignments: { '5': '705' } };
+    api.db.migrations['22'] = [{ id: '1', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '11' } }];
+    api.db.items['11:assignment:5'] = { id: '5', name: 'Lab', description: S().noteHtml('P2 note') + '<p>v1</p>' };
+    api.db.items['22:assignment:705'] = { id: '705', name: 'Lab', description: '<p>v1 edited</p>' };
+  }
+
+  test('a module already in a section starts from that section’s own unlock date', async () => {
+    const api = fakeCanvas();
+    api.db.migrations['22'] = [{ id: '1', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '11' } }];
+    api.db.mappings['22'] = { modules: { '3': '303' } };
+    api.db.items['22:module:303'] = { id: '303', name: 'Unit 1', unlock_at: '2026-03-09T13:00:00Z' };
+    const out = await copier(api).survey('11', [{ type: 'module', id: '3', title: 'Unit 1', children: [], dates: { unlock_at: '2026-03-02T13:00:00Z' } }], ['22'], {});
+    a.eq(out.dests[0].items['module:3'].destDates.unlock_at, '2026-03-09T13:00:00Z');
+  });
+
+  test('a change to only the original’s section note after the review opened stops the write', async () => {
+    const api = fakeCanvas();
+    linkedPair(api);
+    const c = copier(api);
+    const plan = await c.planBack('11', { type: 'assignment', id: '5' }, '22', '705');
+    api.db.items['11:assignment:5'].description = S().noteHtml('P2 note, updated meanwhile') + '<p>v1</p>';
+    const r = await c.applyBack(plan, {});
+    a.not(r.ok);
+    a.ok(S().splitNote(api.db.items['11:assignment:5'].description).note.indexOf('updated meanwhile') >= 0, 'the newer note survives');
+  });
+
+  test('Undo leaves a title it did not change alone, and refuses over a later title edit', async () => {
+    const api = fakeCanvas();
+    linkedPair(api);
+    const store = memStore();
+    const c = copier(api, store);
+    let plan = await c.planBack('11', { type: 'assignment', id: '5' }, '22', '705');
+    a.ok((await c.applyBack(plan, {})).ok);
+    const puts = api.calls.filter((x) => x[0] === 'put').length;
+    await c.undoBack(plan);
+    a.eq(api.calls.filter((x) => x[0] === 'put').length, puts, 'no title write: the bring-back did not change it');
+    // Again, then the teacher renames the original before undoing.
+    api.db.items['22:assignment:705'].description = '<p>v1 edited again</p>';
+    plan = await c.planBack('11', { type: 'assignment', id: '5' }, '22', '705');
+    a.ok((await c.applyBack(plan, {})).ok);
+    api.db.items['11:assignment:5'].name = 'Lab (renamed later)';
+    let refused = null;
+    await c.undoBack(plan).catch((e) => { refused = e; });
+    a.ok(refused && /changed again/.test(refused.message));
+    a.eq(api.db.items['11:assignment:5'].name, 'Lab (renamed later)');
+  });
+});

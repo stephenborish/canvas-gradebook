@@ -824,7 +824,7 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-583 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
+586 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
 again → not Missing, `L` → Late and `L` again → not Late, both leaving the grade untouched either
 way, `E` → Excused, a grade never adding a status (and lifting an applied Missing only when asked),
 statuses read exactly as Canvas computes them, the hand-off to Canvas's own store (and never

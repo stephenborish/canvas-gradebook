@@ -240,6 +240,9 @@
     return this.api.sectionItem(destCourseId, 'module', destId).then(function (o) {
       if (!o || o.workflow_state === 'deleted') { info.status = 'restore'; return info; }
       info.destTitle = o.name;
+      // The module's own unlock date in that section, so updating the copy
+      // starts from it (seedDates) instead of resetting it to this one's.
+      info.destDates = { unlock_at: o.unlock_at || null };
       var kids = (item.children || []).filter(function (c) { return sync.TYPES[c.type].body; });
       return Promise.all(kids.map(function (c) {
         var cid = sync.destIdFor(mapping, c.type, c.id);
@@ -906,6 +909,7 @@
 
     var origRef = { type: plan.type, id: plan.origId };
     var written = false;
+    var titleWritten = false;
     return files.then(function () {
       // The original as it is NOW - not as it was when the review opened -
       // is what is backed up, and if it changed meanwhile (another tab, a
@@ -914,7 +918,9 @@
       return self.api.sectionItem(plan.origCourse, plan.type, plan.origId);
     }).then(function (o) {
       var now = sync.toItem(plan.type === 'announcement' ? 'discussion' : plan.type, o) || {};
-      if (sync.fingerprint(now.html || '') !== sync.fingerprint(plan.orig.html || '') || String(now.title || '') !== String(plan.orig.title || '')) {
+      // The same item read twice: compared exactly - its section note, a
+      // link's target or an image changing all count, not only its text.
+      if (String(now.html || '') !== String(plan.orig.html || '') || String(now.title || '') !== String(plan.orig.title || '')) {
         result.error = 'The original was changed since this review opened. Nothing was written. Close this and review again.';
         return result;
       }
@@ -930,7 +936,9 @@
         return self.api.setItemHtml(plan.origCourse, plan.type, plan.origId, next).then(function () {
           written = true;
           if (!opts.title || !plan.titleDiffers) return null;
-          return self.api.updateSectionItem(plan.origCourse, plan.type, plan.origId, sync.titleBody(plan.type, plan.copy.title)).then(null, function (err) {
+          return self.api.updateSectionItem(plan.origCourse, plan.type, plan.origId, sync.titleBody(plan.type, plan.copy.title)).then(function () {
+            titleWritten = true;
+          }, function (err) {
             result.warnings.push('The title was not changed. ' + describe(err, 'Canvas refused'));
           });
         }).then(function () {
@@ -938,17 +946,29 @@
             var back = sync.toItem(plan.type === 'announcement' ? 'discussion' : plan.type, o2) || {};
             if (sync.fingerprint(back.html || '') !== sync.fingerprint(next)) {
               result.warnings.push('Canvas saved the instructions with differences. Check them.');
-              // Undo compares against what Canvas actually stored.
-              return self.backups(plan.origCourse, plan.type, plan.origId).then(function (list) {
-                if (!list[0]) return null;
-                list[0].after = sync.fingerprint(back.html || '');
-                var v = {};
-                v[self.backupKey(plan.origCourse, plan.type, plan.origId)] = list;
-                return self.store.set(v);
-              });
             }
+            // Undo compares against exactly what Canvas stored - note, links
+            // and title included - and restores the title only if this
+            // changed it.
+            return self.backups(plan.origCourse, plan.type, plan.origId).then(function (list) {
+              if (!list[0]) return null;
+              list[0].after = sync.fingerprint(back.html || '');
+              list[0].afterHtml = String(back.html || '');
+              list[0].afterTitle = String(back.title || '');
+              list[0].titleWritten = titleWritten;
+              var v = {};
+              v[self.backupKey(plan.origCourse, plan.type, plan.origId)] = list;
+              return self.store.set(v);
+            });
           }, function () {
             result.warnings.push('Saved, but Canvas could not be asked to confirm it. Check the original.');
+            return self.backups(plan.origCourse, plan.type, plan.origId).then(function (list) {
+              if (!list[0]) return null;
+              list[0].titleWritten = titleWritten;
+              var v = {};
+              v[self.backupKey(plan.origCourse, plan.type, plan.origId)] = list;
+              return self.store.set(v);
+            });
           });
         }).then(function () {
           // The copy now matches its original again: that is its new record.
@@ -1017,13 +1037,20 @@
       if (!bk) throw new Error('No backup of the original was found on this computer.');
       // Only over what the bring-back wrote: an edit made to the original
       // since then would otherwise be silently thrown away.
+      var changedSince = new Error('The original was changed again after that update, so Undo would throw those changes away. Nothing was changed.');
       var check = !bk.after ? Promise.resolve() : self.api.sectionItem(ref.origCourse, ref.type, ref.origId).then(function (o) {
         var cur = sync.toItem(ref.type === 'announcement' ? 'discussion' : ref.type, o) || {};
-        if (sync.fingerprint(cur.html || '') !== bk.after) {
-          throw new Error('The original was changed again after that update, so Undo would throw those changes away. Nothing was changed.');
+        if (bk.afterHtml !== undefined) {
+          if (String(cur.html || '') !== bk.afterHtml || String(cur.title || '') !== bk.afterTitle) throw changedSince;
+        } else if (sync.fingerprint(cur.html || '') !== bk.after) {
+          throw changedSince;
         }
       });
+      // The title goes back only when the bring-back changed it (older
+      // backups do not say, and keep the earlier behaviour).
+      var restoreTitle = bk.titleWritten !== undefined ? !!bk.titleWritten : true;
       return check.then(function () { return self.api.setItemHtml(ref.origCourse, ref.type, ref.origId, bk.html); }).then(function () {
+        if (!restoreTitle) return null;
         return self.api.updateSectionItem(ref.origCourse, ref.type, ref.origId, sync.titleBody(ref.type, bk.title));
       }).then(function () {
         return self.putRecord(ref.origCourse, { type: ref.type, id: ref.origId }, bk.from, bk.record || null);
