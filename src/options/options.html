@@ -447,28 +447,29 @@
             </label>
             <input id="studentSearch" type="checkbox" class="switch">
           </div>
-          <h2 class="panel__group">Copy to sections</h2>
+          <h2 class="panel__group">Copy to other classes</h2>
           <div class="setting">
-            <label class="setting__label" for="sectionCopy">Add "Copy to sections" to the breadcrumb of every course page
-              <span class="hint">For a course you teach to several sections as separate Canvas courses (not cross-listed):
-                copy assignments, quizzes, discussions, announcements, pages and modules to the other sections in one go,
-                with each section's own dates and an optional note for one section. It uses Canvas's own course copy,
+            <label class="setting__label" for="sectionCopy">Show "Copy to other classes" next to Edit on assignments, quizzes, discussions, announcements and pages, on the Modules page and in the course home sidebar
+              <span class="hint">For a course you teach to several classes as separate Canvas courses (not cross-listed):
+                copy assignments, quizzes, discussions, announcements, pages and modules to the other classes in one go,
+                with each class's own dates and an optional note for one class. It uses Canvas's own course copy,
                 so rubrics, linked files and quiz questions come along, and copying again updates the copy instead of
-                adding a second one. Courses are linked from that button.</span>
+                adding a second one. It never copies students, grades or submissions. The first time, it asks which
+                classes are the same course.</span>
             </label>
             <input id="sectionCopy" type="checkbox" class="switch">
           </div>
           <div class="setting">
             <label class="setting__label" for="sectionCopyNudge">Show a notice on an item's page when its copies have changed
-              <span class="hint">In a linked course: when a section's copy was edited there (with the option to bring the change
-                back to the original), when a section still has an earlier version, or when a new item is not in the other
-                sections yet. Nothing changes until you press a button in the notice.</span>
+              <span class="hint">When another class's copy was edited there (with the option to bring the change
+                back to the original), when a class still has an earlier version, or when a new item is not in your other
+                classes yet. Nothing changes until you press a button in the notice.</span>
             </label>
             <input id="sectionCopyNudge" type="checkbox" class="switch">
           </div>
           <div class="setting setting--field">
-            <label class="setting__label">Linked sections
-              <span class="hint">Change these from Copy to sections in Canvas; unlink here.</span>
+            <label class="setting__label">Classes that share a course
+              <span class="hint">Change these from Copy to other classes in Canvas; remove a group here.</span>
             </label>
             <div id="sectionGroupsList" class="setting__control setting__control--wide"></div>
           </div>

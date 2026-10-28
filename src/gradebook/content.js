@@ -671,8 +671,9 @@
    * this file runs here - no model, no grid, no writes - so this costs
    * nothing beyond the one API call the switcher itself only makes once its
    * menu is actually opened. */
-  /* "Copy to sections" in the breadcrumb (sections/sync-dialog.js), on
-   * every course page; plus finishing any copy a closed tab left half done.
+  /* "Copy to other classes" (sections/sync-dialog.js): beside an item's
+   * Edit, in the course home sidebar and on the Modules page; plus finishing
+   * any copy a closed tab left half done.
    * Nothing is read from Canvas until the button is used, unless the page is
    * a just-created item in a linked course (the nudge). */
   function startSectionCopy(api, courseId) {

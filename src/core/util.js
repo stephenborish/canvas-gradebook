@@ -96,8 +96,9 @@
       { trigger: 'nice', text: 'Nicely done. Your reasoning here is clear and well supported.' }
     ],
     prefetchAllAssignments: true,
-    // Copy to sections: a "Copy to sections" button in the breadcrumb of
-    // every course page, for courses linked as sections of the same course
+    // Copy to other classes: a button beside an item's Edit, in the course
+    // home sidebar and on the Modules page, for courses linked as classes
+    // (sections) of the same course
     // (sectionGroups: [{origin, courseIds}], edited from that button).
     sectionCopy: true,
     // On a new item's own page, point out that it is not in the linked
