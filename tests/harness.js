@@ -17,6 +17,7 @@ const ROOT = path.resolve(__dirname, '..');
 const CORE_FILES = [
   'src/core/util.js',
   'src/core/canvas-api.js',
+  'src/core/settings-mirror.js',
   'src/core/grade-ops.js',
   'src/core/post-ops.js',
   'src/core/clipboard-matrix.js',
@@ -27,6 +28,7 @@ const CORE_FILES = [
   'src/core/roster-format.js',
   'src/core/snippets.js',
   'src/core/time-shortcuts.js',
+  'src/core/section-sync.js',
   'src/core/model.js'
 ];
 

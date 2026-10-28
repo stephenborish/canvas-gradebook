@@ -7,7 +7,7 @@
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.util) return;
 
-  CGP.VERSION = '1.19.0';
+  CGP.VERSION = '1.20.0';
 
   /* Default letter-grade scale: the lowest rounded percentage (to 0.1) that
    * earns each letter. The last entry is the floor and always has min 0. */
@@ -96,6 +96,20 @@
       { trigger: 'nice', text: 'Nicely done. Your reasoning here is clear and well supported.' }
     ],
     prefetchAllAssignments: true,
+    // Copy to sections: a "Copy to sections" button in the breadcrumb of
+    // every course page, for courses linked as sections of the same course
+    // (sectionGroups: [{origin, courseIds}], edited from that button).
+    sectionCopy: true,
+    // On a new item's own page, point out that it is not in the linked
+    // sections yet.
+    sectionCopyNudge: true,
+    sectionGroups: [],
+    // Copy Roster's layout choices (Student Name column menu).
+    rosterPrefs: { nameFormat: 'first-last', email: true, header: true, sortBy: 'last', separator: 'comma' },
+    // Also keep these settings in the teacher's own Canvas account, so they
+    // reach every computer where the teacher opens Canvas even when Chrome
+    // sync is off (core/settings-mirror.js).
+    settingsInCanvas: true,
     diagnostics: false
   };
 
@@ -355,6 +369,23 @@
         }).slice(0, MAX_TIME_SHORTCUTS);
         return;
       }
+      if (k === 'sectionGroups') {
+        out[k] = cleanSectionGroups(v);
+        return;
+      }
+      if (k === 'rosterPrefs') {
+        var rp = {};
+        var given = v && typeof v === 'object' ? v : {};
+        var choices = { nameFormat: ['first-last', 'last-first', 'split', 'first', 'none'], sortBy: ['last', 'first'], separator: ['comma', 'semicolon', 'newline'] };
+        Object.keys(d[k]).forEach(function (f) {
+          var dv = d[k][f];
+          var gv = given[f];
+          if (typeof dv === 'boolean') rp[f] = typeof gv === 'boolean' ? gv : dv;
+          else rp[f] = choices[f] && choices[f].indexOf(gv) >= 0 ? gv : dv;
+        });
+        out[k] = rp;
+        return;
+      }
       if (k === 'snippets') {
         // Unlike every other field above, an unusable stored value here used
         // to be silently coerced to an EMPTY array rather than falling back
@@ -397,10 +428,51 @@
     return out;
   }
   CGP.sanitizeSettings = sanitizeSettings;
+
+  /* Linked sections: groups of courses (on one Canvas) that are the same
+   * course taught to different sections - course ids, plus their names for
+   * the options page. A course is in at most one group, and a group of
+   * fewer than two courses is no group. Newest group first. The list is one
+   * sync item (8KB per item): past the budget, the oldest groups lose their
+   * names first, then the oldest groups go. */
+  var MAX_SECTION_GROUPS = 30;
+  var MAX_SECTION_GROUP_COURSES = 12;
+  var MAX_SECTION_GROUP_BYTES = 6500;
+
+  function cleanSectionGroups(v) {
+    if (!Array.isArray(v)) return [];
+    var seen = Object.create(null);
+    var out = [];
+    v.forEach(function (g) {
+      if (!g || typeof g !== 'object') return;
+      var origin = String(g.origin || '').trim().toLowerCase().replace(/\/+$/, '');
+      if (!/^https?:\/\/[a-z0-9.-]+(:\d+)?$/.test(origin)) return;
+      var ids = [];
+      (Array.isArray(g.courseIds) ? g.courseIds : []).forEach(function (id) {
+        var s = String(id == null ? '' : id).trim();
+        if (!/^\d+$/.test(s) || seen[origin + '|' + s]) return;
+        if (ids.length >= MAX_SECTION_GROUP_COURSES) return;
+        seen[origin + '|' + s] = true;
+        ids.push(s);
+      });
+      if (ids.length < 2 || out.length >= MAX_SECTION_GROUPS) return;
+      // Course names, only so the options page can say what is linked.
+      var names = {};
+      var given = g.names && typeof g.names === 'object' ? g.names : {};
+      ids.forEach(function (id) { if (given[id]) names[id] = String(given[id]).slice(0, 80); });
+      out.push({ origin: origin, courseIds: ids, names: names });
+    });
+    var size = function () { return util.byteLength(JSON.stringify(out)); };
+    for (var i = out.length - 1; i >= 0 && size() > MAX_SECTION_GROUP_BYTES; i--) out[i].names = {};
+    while (out.length && size() > MAX_SECTION_GROUP_BYTES) out.pop();
+    return out;
+  }
+  CGP.cleanSectionGroups = cleanSectionGroups;
   CGP.SETTINGS_LIMITS = {
     MAX_SNIPPETS: MAX_SNIPPETS, MAX_SNIPPET_TEXT: MAX_SNIPPET_TEXT, MAX_SNIPPET_BYTES: MAX_SNIPPET_BYTES,
     MAX_SNIPPET_ITEM_BYTES: MAX_SNIPPET_ITEM_BYTES,
-    MAX_TIME_SHORTCUTS: MAX_TIME_SHORTCUTS, MAX_TIME_SHORTCUT_KEY: MAX_TIME_SHORTCUT_KEY
+    MAX_TIME_SHORTCUTS: MAX_TIME_SHORTCUTS, MAX_TIME_SHORTCUT_KEY: MAX_TIME_SHORTCUT_KEY,
+    MAX_SECTION_GROUPS: MAX_SECTION_GROUPS, MAX_SECTION_GROUP_COURSES: MAX_SECTION_GROUP_COURSES
   };
   CGP.normalizeClock = normalizeClock;
   CGP.normalizeTimeKey = normalizeTimeKey;
@@ -433,7 +505,125 @@
   var SETTING_PREFIX = 'cgp.setting.';
   var SNIPPET_STORE_KEY = 'cgp.snippetStore';
 
-  function sameJson(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+  /** JSON with object keys in sorted order: the same value always gives the
+   * same text, whatever order its keys were stored in (Canvas's database
+   * hands objects back with their keys reordered). */
+  function stableStringify(v) {
+    if (v === undefined) return 'undefined';
+    if (v === null || typeof v !== 'object') return JSON.stringify(v);
+    if (Array.isArray(v)) return '[' + v.map(function (x) { return x === undefined ? 'null' : stableStringify(x); }).join(',') + ']';
+    return '{' + Object.keys(v).sort().filter(function (k) { return v[k] !== undefined; }).map(function (k) {
+      return JSON.stringify(k) + ':' + stableStringify(v[k]);
+    }).join(',') + '}';
+  }
+  util.stableStringify = stableStringify;
+
+  /** FNV-1a of a value's stable JSON. */
+  util.valueHash = function (v) {
+    var str = stableStringify(v);
+    var h = 0x811c9dc5;
+    for (var i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return ('0000000' + h.toString(16)).slice(-8);
+  };
+
+  function sameJson(a, b) { return stableStringify(a) === stableStringify(b); }
+
+  /* When each settings item last changed, kept in chrome.storage.sync
+   * alongside the items - so whichever way a change travels (Chrome sync, or
+   * the copy in the teacher's Canvas account, core/settings-mirror.js) its
+   * real time travels with it - packed into a few items, because Chrome
+   * sync allows only 512 items in all: 'cgp.tm.s' for the settings, and
+   * 'cgp.tm.0'..'cgp.tm.7' for the snippets (by a hash of the key). Each
+   * holds {<item key without "cgp.">: "<time base 36>|<hash>[|<flags>]"},
+   * hash "-" for an item removed (a tombstone, so a computer that still has
+   * it does not bring it back; kept for 90 days).
+   * Times are on Canvas's clock. Flags: "u" - timed by this computer's own
+   * clock before it learned how far off that is (settled on its first
+   * Canvas visit); "d" - a built-in default written out, not anybody's
+   * change, which gives way to everything. 0 is a value stored before times
+   * were kept. */
+  var TIMES_PREFIX = 'cgp.tm.';
+  var TIME_SHARDS = 8;
+  var TOMBSTONE_DAYS = 90;
+
+  function shortKey(itemKey) { return String(itemKey).replace(/^cgp\./, ''); }
+
+  CGP.settingsTimes = {
+    PREFIX: TIMES_PREFIX,
+    isTimesKey: function (k) { return String(k).indexOf(TIMES_PREFIX) === 0; },
+    shardOf: function (itemKey) {
+      if (String(itemKey).indexOf(SNIPPET_PREFIX) !== 0) return TIMES_PREFIX + 's';
+      return TIMES_PREFIX + (parseInt(util.valueHash(String(itemKey)), 16) % TIME_SHARDS);
+    },
+    // "<time>|<hash or ->|<flags>|<computer id>": the id says which
+    // computer's own clock a "u" time was taken by - the only one that can
+    // put it on Canvas's clock.
+    encode: function (rec) {
+      var s = Math.max(0, Math.round(Number(rec.a) || 0)).toString(36) + '|' + (rec.d ? '-' : String(rec.h || ''));
+      var f = (rec.u ? 'u' : '') + (rec.def ? 'd' : '');
+      if (!f) return s;
+      return s + '|' + f + (rec.u && typeof rec.u === 'string' ? '|' + rec.u.replace(/[^0-9a-z]/g, '') : '');
+    },
+    decode: function (v) {
+      var m = /^([0-9a-z]+)\|([^|]*)(?:\|([a-z]*)(?:\|([0-9a-z]*))?)?$/.exec(String(v == null ? '' : v));
+      if (!m) return null;
+      var a = parseInt(m[1], 36);
+      if (!isFinite(a)) return null;
+      var rec = m[2] === '-' ? { a: a, d: true } : { a: a, h: m[2] };
+      if (m[3] && m[3].indexOf('u') >= 0) rec.u = m[4] || true;
+      if (m[3] && m[3].indexOf('d') >= 0) rec.def = true;
+      return rec;
+    },
+    /** Every item's time: {item key: rec}. */
+    readAll: function (all) {
+      var out = {};
+      var self = this;
+      Object.keys(all || {}).forEach(function (k) {
+        if (!self.isTimesKey(k) || !all[k] || typeof all[k] !== 'object') return;
+        Object.keys(all[k]).forEach(function (sk) {
+          var rec = self.decode(all[k][sk]);
+          if (rec) out['cgp.' + sk] = rec;
+        });
+      });
+      return out;
+    },
+    /** The shard items to write for these changes ({item key: rec, or
+     * null to forget it}), on top of what `all` holds; tombstones older
+     * than 90 days (on Canvas's clock `now`) are dropped as it goes. */
+    shardWrites: function (all, changes, now) {
+      var self = this;
+      var touched = {};
+      Object.keys(changes || {}).forEach(function (k) { touched[self.shardOf(k)] = 1; });
+      var out = {};
+      Object.keys(touched).forEach(function (shard) {
+        var cur = Object.assign({}, (all && all[shard] && typeof all[shard] === 'object') ? all[shard] : {});
+        Object.keys(changes).forEach(function (k) {
+          if (self.shardOf(k) !== shard) return;
+          if (changes[k] === null) delete cur[shortKey(k)];
+          else cur[shortKey(k)] = self.encode(changes[k]);
+        });
+        Object.keys(cur).forEach(function (sk) {
+          var rec = self.decode(cur[sk]);
+          if (rec && rec.d && !rec.u && now - rec.a > TOMBSTONE_DAYS * 86400000) delete cur[sk];
+        });
+        // Chrome sync's per-item limit: past it, the oldest tombstones go
+        // first (a removal that old has long reached every computer).
+        var tombs = Object.keys(cur).filter(function (sk) { var r = self.decode(cur[sk]); return r && r.d; })
+          .sort(function (x, y) { return self.decode(cur[x]).a - self.decode(cur[y]).a; });
+        while (tombs.length && util.byteLength(shard + JSON.stringify(cur)) > 7000) delete cur[tombs.shift()];
+        out[shard] = cur;
+      });
+      return out;
+    }
+  };
+
+  // The teacher's order for the snippets, as its own item, so moving one
+  // snippet changes only this - never another computer's edit to a
+  // snippet's text. (Each snippet's pos stays for older versions.)
+  var SNIPPET_ORDER_KEY = 'cgp.snippetOrder';
 
   function storedSnippetItems(all) {
     var items = [];
@@ -462,7 +652,15 @@
       if (k.indexOf(SETTING_PREFIX) === 0) raw[k.slice(SETTING_PREFIX.length)] = all[k];
     });
     if (all[SNIPPET_STORE_KEY] === 'keys') {
-      raw.snippets = storedSnippetItems(all).map(function (it) { return { trigger: it.trigger, text: it.text }; });
+      var items = storedSnippetItems(all);
+      var order = Array.isArray(all[SNIPPET_ORDER_KEY]) ? all[SNIPPET_ORDER_KEY].map(function (t) { return String(t).toLowerCase(); }) : null;
+      if (order) {
+        var at = function (it) { var i = order.indexOf(String(it.trigger).toLowerCase()); return i < 0 ? 1e6 : i; };
+        items = items.map(function (it, i) { return { it: it, i: i }; }).sort(function (x, y) {
+          return (at(x.it) - at(y.it)) || (x.i - y.i);
+        }).map(function (x) { return x.it; });
+      }
+      raw.snippets = items.map(function (it) { return { trigger: it.trigger, text: it.text }; });
     }
     return raw;
   }
@@ -475,19 +673,28 @@
    * means nothing may be written. */
   function plan(all, base, next) {
     all = all || {};
-    var out = { set: {}, remove: [], problem: null };
+    // stamps: why each item is written - 'edit' (the teacher changed it, or
+    // replaced everything) or 'keep' (a default written out, a move, a
+    // place shifted by another snippet's removal: no change of the
+    // teacher's, so the item keeps the time it had, or 0);
+    // removed: items the teacher removed.
+    var out = { set: {}, remove: [], problem: null, stamps: {}, removed: [] };
     var legacy = legacyOf(all);
     var migrated = all[SNIPPET_STORE_KEY] === 'keys';
 
     Object.keys(CGP.DEFAULTS).forEach(function (k) {
       if (k === 'snippets') return;
       var key = SETTING_PREFIX + k;
-      var value;
-      if (!base || !sameJson(base[k], next[k])) value = next[k];
+      var value, stamp;
+      if (!base || !sameJson(base[k], next[k])) { value = next[k]; stamp = 'edit'; }
       else if (Object.prototype.hasOwnProperty.call(all, key)) return;      // untouched, already its own item
-      else if (legacy && legacy[k] !== undefined) value = sanitizeSettings(assemble(all))[k];   // moved out of cgp.settings
+      else if (legacy && legacy[k] !== undefined) { value = sanitizeSettings(assemble(all))[k]; stamp = 'keep'; }   // moved out of cgp.settings
       else return;                                                         // never stored: the default stays implicit
       if (!sameJson(all[key], value)) out.set[key] = value;
+      // Replacing everything (Restore defaults, Import) is a change to every
+      // setting, even one that already had this value: it must win over a
+      // different value elsewhere.
+      if (out.set[key] !== undefined || (!base && stamp === 'edit')) out.stamps[key] = stamp;
     });
 
     var snippetsChanged = !base || !sameJson(base.snippets, next.snippets);
@@ -524,14 +731,51 @@
         out.set = {};
         return out;
       }
+      // The teacher's own snippet changes: new, retitled or rewritten - and
+      // moved, but only when they really reordered them (a removal or an
+      // addition shifts every later snippet's place without that being a
+      // change to those snippets).
+      var editedSnip = {};
+      if (snippetsChanged) {
+        var common = function (list, other) { return list.filter(function (t) { return other[t]; }); };
+        var orderBefore = common((base ? base.snippets : []).map(function (x) { return x.trigger.toLowerCase(); }), mine);
+        var orderNow = common((next.snippets || []).map(function (x) { return x.trigger.toLowerCase(); }), before);
+        var reordered = orderBefore.join('\n') !== orderNow.join('\n');
+        Object.keys(mine).forEach(function (t) {
+          var b = before[t], m = mine[t];
+          if (!base || !b || b.trigger !== m.trigger || b.text !== m.text) editedSnip[t] = 1;
+        });
+        // The order is its own item, written whenever it differs from the
+        // stored one - a change of the teacher's, unless it is just the
+        // built-in snippets' order written out by a computer that never had
+        // any stored (that gives way to a real order elsewhere).
+        var order = (next.snippets || []).map(function (x) { return x.trigger.toLowerCase(); });
+        if (!sameJson(all[SNIPPET_ORDER_KEY], order) || !base) {
+          if (!sameJson(all[SNIPPET_ORDER_KEY], order)) out.set[SNIPPET_ORDER_KEY] = order;
+          out.stamps[SNIPPET_ORDER_KEY] = (reordered || !base || migrated || legacySnippets) ? 'edit' : 'default';
+        }
+      }
       triggers.forEach(function (t) {
         var key = snippetKey(t);
-        if (!sameJson(all[key], current[t])) out.set[key] = current[t];
+        var changed = !sameJson(all[key], current[t]);
+        if (changed) out.set[key] = current[t];
+        // A snippet written only because it was a built-in default (or moved
+        // out of the old single item) is no change of the teacher's.
+        if (changed || (!base && editedSnip[t])) {
+          out.stamps[key] = editedSnip[t] ? 'edit' : (!migrated && !legacySnippets ? 'default' : 'keep');
+        }
       });
       Object.keys(all).forEach(function (k) {
-        if (k.indexOf(SNIPPET_PREFIX) === 0 && !current[k.slice(SNIPPET_PREFIX.length)]) out.remove.push(k);
+        if (k.indexOf(SNIPPET_PREFIX) === 0 && !current[k.slice(SNIPPET_PREFIX.length)]) { out.remove.push(k); out.removed.push(k); }
       });
-      if (!migrated) out.set[SNIPPET_STORE_KEY] = 'keys';
+      // The teacher removed one that was never stored here (a built-in
+      // default): still a removal, so another computer's copy goes too.
+      if (snippetsChanged) {
+        Object.keys(before).forEach(function (t) {
+          if (!mine[t] && out.removed.indexOf(snippetKey(t)) < 0) out.removed.push(snippetKey(t));
+        });
+      }
+      if (!migrated) { out.set[SNIPPET_STORE_KEY] = 'keys'; out.stamps[SNIPPET_STORE_KEY] = 'keep'; }
     }
     // Everything in the old single item now has an item of its own.
     if (legacy) out.remove.push(LEGACY_KEY);
@@ -540,13 +784,14 @@
 
   function isSettingsKey(k) {
     k = String(k);
-    return k === LEGACY_KEY || k === SNIPPET_STORE_KEY || k.indexOf(SETTING_PREFIX) === 0 || k.indexOf(SNIPPET_PREFIX) === 0;
+    return k === LEGACY_KEY || k === SNIPPET_STORE_KEY || k === SNIPPET_ORDER_KEY || k.indexOf(SETTING_PREFIX) === 0 || k.indexOf(SNIPPET_PREFIX) === 0;
   }
 
   CGP.settingsStorage = {
     LEGACY_KEY: LEGACY_KEY,
     SETTING_PREFIX: SETTING_PREFIX,
     SNIPPET_PREFIX: SNIPPET_PREFIX,
+    SNIPPET_ORDER_KEY: SNIPPET_ORDER_KEY,
     snippetKey: snippetKey,
     snippetItemBytes: snippetItemBytes,
     assemble: assemble,
@@ -564,9 +809,35 @@
      * written nothing, when the result would not fit. */
     write: function (base, next) {
       var self = this;
-      return chrome.storage.sync.get(null).then(function (all) {
+      var offset = (chrome.storage.local && chrome.storage.local.get)
+        ? chrome.storage.local.get(['cgp.clockOffset', 'cgp.deviceId']).then(function (r) {
+          deviceId = (r && r['cgp.deviceId']) || null;
+          return r && r['cgp.clockOffset'] !== undefined && isFinite(Number(r['cgp.clockOffset'])) ? Number(r['cgp.clockOffset']) : null;
+        }, function () { return null; })
+        : Promise.resolve(null);
+      var deviceId = null;
+      return Promise.all([chrome.storage.sync.get(null), offset]).then(function (got) {
+        var all = got[0];
         var p = plan(all || {}, base, next);
         if (p.problem) throw new Error(p.problem);
+        // Each written item's time goes in the same write as the item. A
+        // computer that has never been to Canvas does not know how far off
+        // its clock is yet: its times say so ("u") and are settled there.
+        var known = got[1] !== null;
+        var now = Date.now() + (got[1] || 0);
+        var T = CGP.settingsTimes;
+        var times = T.readAll(all || {});
+        var changes = {};
+        Object.keys(p.stamps).forEach(function (k) {
+          var v = Object.prototype.hasOwnProperty.call(p.set, k) ? p.set[k] : (all || {})[k];
+          var had = times[k];
+          var st = p.stamps[k];
+          if (st === 'edit') changes[k] = { a: now, h: util.valueHash(v), u: known ? false : (deviceId || true) };
+          else if (st === 'default') changes[k] = { a: 0, h: util.valueHash(v), def: true };
+          else changes[k] = had && !had.d ? { a: had.a, h: util.valueHash(v), u: had.u, def: had.def } : { a: 0, h: util.valueHash(v) };
+        });
+        p.removed.forEach(function (k) { changes[k] = { a: now, d: true, u: known ? false : (deviceId || true) }; });
+        Object.assign(p.set, T.shardWrites(all || {}, changes, now));
         // Set before remove: the two never share a key, and a refused set
         // must not leave the old values already deleted.
         var work = Promise.resolve();

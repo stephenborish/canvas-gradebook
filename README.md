@@ -521,47 +521,192 @@ holding nothing but a shortcut is touched, so `12:30` or `1 pm` still mean what 
 edit or remove shortcuts (any short key, e.g. `lunch` → 11:30 AM) on the **Time Shortcuts** tab of
 the options page; the same Assign To card on quizzes, discussions and modules is covered too.
 
+### Copy to sections
+
+For a course you teach to several sections that are **separate Canvas courses** (not cross-listed):
+build an assignment, quiz, discussion, announcement, page or module once, then put it in every
+other section in one step, each with its own dates.
+
+**Link the sections once.** Every course page has **Copy to sections** in the breadcrumb. The first
+time, it asks which of your courses are other sections of this one. It pre-ticks courses with the
+same name in the same term once "Period 2", "(P4)", "Section 7", "Block 3" and the like are set aside.
+"Algebra 1" and "Algebra 2" stay different courses. Linked courses can copy to each other from
+any of them. Only course ids (and their names, for the options page) are saved, in your Chrome
+settings, so the links follow you to other computers.
+
+**Copy.** On an item's own page that item is already chosen; **Add items…** picks more from the
+course. Before anything is written, each linked section is checked and the dialog says what will
+happen there:
+
+- **Not in this section yet** — it will be copied.
+- **Already there** — copying again updates that copy instead of adding a second one. This is
+  Canvas's own rule for course copies: it recognises its earlier copy of the same item.
+- **Changed in that section since it was copied** — left alone by default. You choose between
+  *Replace with this section's version* and *Keep that section's own version*, which changes
+  only its dates (and note). If this computer has no record of the copy (it was copied from another
+  computer, say), any difference counts as a change and is kept by default.
+- **That section already has an item with the same title that was not copied from here**
+  (typically both came from last year's course) — that section is unticked, because copying would
+  give it a second one.
+- **Deleted in that section** — copying brings it back.
+
+**Dates for each section.** A section that doesn't have the item yet starts with this section's
+dates; one that already has a copy starts with the dates that copy has there now, so updating a
+copy never quietly resets that section's own dates. Dates are in your Canvas time zone (your
+profile's), exactly as Canvas shows them. Edit any box, or move a whole section at once: **Shift**
+it a number of days from this section's dates and/or set its **Due time**, which accepts a time
+(`1:45 pm`, `13:45`) or one of your period shortcuts from the Time Shortcuts tab (`4`). A due time
+of 11:59:59 PM keeps its seconds. Due, Available from
+and Until are set for assignments, quizzes and graded discussions; Available from/Until for
+ungraded discussions and pages (when Canvas allows dates on pages); Post at/Until for
+announcements; Unlock at for modules. A copied module's assignments, quizzes and discussions each
+get their own row. Dates are checked before anything is copied (available from ≤ due ≤ until).
+
+**A note for one section.** Rarely, one section needs something the others don't ("Period 4: we
+start this in class Thursday"). Open *Note for this section only* under that section. The note is
+shown at the top of that section's instructions in a highlighted box, and only there. Updating
+the copy later keeps it. A note written into the section you copy *from* is never carried to the
+others. For anything more than a note, edit that section's copy in Canvas directly; it is then
+"changed in that section" and won't be overwritten unless you say so.
+
+**Where the copy goes.** With *Put new copies in the matching module* on (the default), a first
+copy goes into that section's copy of the same module (or the one module there with the same
+name), at the same position. A first copy also goes into the assignment group with the same name,
+rather than Canvas's "Imported Assignments". Copies follow this section's published state, or you
+can leave them unpublished or publish them (a module's items follow the module, as on the Modules
+page). A copy you chose to keep as that section's own keeps its publishing too, unless you pick
+one of those two. Announcements post at each section's own *Post at* date.
+
+**How it is done, and why it is reliable.**
+
+- The copy is **Canvas's own selective course copy**, the request Canvas's "Copy To…" sends. That
+  copy brings rubrics, files linked from the instructions, quiz questions (New Quizzes included)
+  and a module's contents along, and rewrites links to point inside each section.
+- The copy is found afterwards through Canvas's own record of what it copied where
+  (`asset_id_mapping`), never by guessing from a title.
+- Dates are written through the same `date_details` call Canvas's Assign To tray uses. Overrides
+  already in a section (a student's extension, say) are left exactly as they are. Then the dates
+  are read back to confirm Canvas kept them.
+- An item that is assigned only to particular students or sections there is not given base dates.
+  That would assign it to everyone. Neither is a discussion with checkpoint due dates. Both are
+  reported.
+- A section Canvas refuses something for gets that reason shown against that section. Typical
+  reasons are a closed grading period, a Blueprint lock, a role without rights, or unpublishing
+  work students have submitted. The other sections carry on.
+- A New Quiz is only dated and published once Canvas has finished importing its questions.
+- An item that is open only to particular sections in that course (an older section-specific
+  discussion) is not given dates either, since that would open it to everyone.
+- Canvas runs copies into one course one after another. You can close the dialog while it works:
+  copying carries on as long as the page stays open, and a message says when it is done. Each copy
+  is saved on this computer as soon as Canvas accepts it. If the tab closes before Canvas finishes, the dates, note and
+  publishing are applied the next time you open any page of that Canvas, and you are told.
+- Nothing is copied until you press Copy.
+
+**When a copy is edited in its own section.** Copies are independent in Canvas: fixing a typo in
+Period 4's copy does not change Period 2's original, or any other section's copy. So the item's own
+page says so, in a notice at the top. These notices are shown on the copy's page and on the
+original's, whichever you are looking at.
+
+- *You changed this assignment here after it was copied from Period 2, which still has the earlier
+  version.* **Review and update Period 2…** opens a review with both versions side by side. It also
+  lists what will happen: links to files, pages and other items are changed to Period 2's own, and
+  a file only Period 4 has is copied into Period 2 (Canvas's own copy of just that file). It says
+  which links point to something Period 2 does not have, and that the title can come too.
+  **Update Period 2** writes Period 4's instructions onto the original. Period 2 keeps its own
+  section note, and Period 4's note does not come along. Just before writing, Period 2 is read
+  again: if it changed since the review opened (another tab, a co-teacher), nothing is written. A
+  backup of Period 2's version (the last five, for thirty days) is kept on this computer. **Undo**
+  puts it back, from the review or, for a week afterwards, from the notice on Period 2's page. Undo
+  also restores the record of Period 4's copy, so it still counts as changed there. Then **Copy it to your other sections…** carries the
+  fix on to the rest. They show as having the earlier version, so they are updated by default.
+- *Period 4 changed its copy of this assignment.* The same review, seen from the original.
+- *Period 2, where this was copied from, has a newer version* / *Period 6 still has the earlier
+  version* offer the ordinary copy, already set up.
+- When both changed, or there is no record of which one did, both choices are offered with each
+  version's last-changed time.
+- A new item (made in the last three hours) that is in no other section yet is pointed out too.
+
+The notice can be hidden (×) until something changes again. Turn notices off under *Show a notice
+on an item's page…*. Only the title and instructions are brought back. Points, settings, the
+rubric, quiz questions and module contents changed in a copy are not; change those in the
+original and copy it again. The record of what was copied is a fingerprint of each copy's text. It
+is kept in your own Canvas account's user data (Canvas's custom data; private to your account, though Canvas admins with the right permissions can see user data) and on
+this computer, so a copy made on one computer is recognised on every other. A title-only change is
+not noticed.
+
+Limits worth knowing:
+
+- Each section's copy gets base ("everyone") dates. Section-specific dates *inside* one course
+  (Canvas sections within a single course) are Canvas's own Assign To.
+- Copying one item does not copy other items it links to. Copy those too, or Canvas leaves the
+  link pointing nowhere and lists it as an issue, which is shown in the results.
+- An item copied on its own into a module, and later copied again as part of the whole module, can
+  appear twice in that module. Canvas treats the two placements as different.
+- Pages' scheduled publishing (*Publish at*) is not set per section.
+
 ---
 
 ## Settings
 
 Everything is in the options page — click the toolbar icon, or `chrome://extensions` →
 Canvas Gradebook+ → Details → Extension options. It opens to a sidebar of tabs (Layout &
-Display, Cell Indicators, Grading Input, Comment Snippets, Time Shortcuts, Course & Domains, Backup &
-Transfer, Diagnostics); Save and Restore defaults stay visible in the sidebar no matter which
+Display, Cell Indicators, Grading Input, Comment Snippets, Time Shortcuts, Course & Domains, Sync &
+Backup, Diagnostics); Save and Restore defaults stay visible in the sidebar no matter which
 tab you're on. Every feature above can be switched off individually. Nothing is configurable
 from inside the gradebook, by design.
 
 ### The same settings on every computer
 
-Settings, comment snippets included, are saved to your Chrome profile and carried by Chrome sync to
-every computer where Chrome is signed in to **the same Google account with sync turned on**,
-including **Extensions** (Chrome → Settings → You and Google → Sync → Manage what you sync). A
-change made on one computer shows up on the others within a minute or so. An options page
-that's already open there updates by itself, and an open gradebook uses the new snippets straight
-away.
+Settings and snippets travel two ways, and either one is enough:
+
+1. **Your Google account (Chrome sync).** Everything is saved to `chrome.storage.sync`, which Chrome
+   carries to every computer where Chrome is signed in to **the same Google account with sync turned
+   on**, including **Extensions** (Chrome → Settings → You and Google → Sync and Google services →
+   Manage what you sync). A change shows up on the others within a minute or so.
+2. **Your Canvas account.** With *Also keep my settings in my Canvas account* on (the default, under
+   Sync & Backup), every Canvas course page also keeps the settings in step with a copy in your own
+   Canvas user data (Canvas's per-user `custom_data`: private to your account, though Canvas admins with the right permissions can see user data). Any computer
+   where you open Canvas picks them up within about a minute, even when Chrome sync is off, is
+   signed in to a different Google account, or has been turned off by your school, which many
+   schools do for their accounts.
+
+The two are merged one setting and one snippet at a time, and for each the newer change wins. So a
+snippet added on one computer and a setting changed on another both survive, and a snippet deleted
+on one computer stays deleted.
+
+- **Each change's time travels with it.** It is stored next to the setting in Chrome sync and in the
+  Canvas copy, so a change that arrives late by one route never beats a newer one that came by the
+  other.
+- **Times are on Canvas's clock.** Once a computer has opened Canvas, its changes are timed on Canvas's
+  clock, so a computer whose own clock is wrong can't win with an old change.
+- **A new computer doesn't overwrite your settings.** Built-in defaults written out by a new install
+  count as no change at all, so they never undo a snippet you deleted or edited elsewhere.
+- **Older versions are handled.** Settings stored by an older version of the extension are moved over
+  first, so nothing in them is lost.
+- **When it can't tell which change is newer, it asks you.** This happens when two computers that
+  never synced have different values and neither has a recorded time. Sync & Backup lists those, and
+  you choose *Keep this computer's* or *Use the other computer's*. Nothing is guessed.
+- **It only ever pairs with you.** The Canvas copy belongs to the first Canvas account this Chrome
+  profile merged with. If someone else signs in to Canvas on your Chrome (a co-teacher, a student at
+  your desk), nothing is merged either way, and Sync & Backup says so.
+- **Nothing is lost to the 100-snippet limit.** If merging two computers' snippets would go over the
+  limit Chrome allows, the extras stay in your Canvas copy and are listed there, rather than being
+  dropped.
+
+**Is it working?** Options → **Sync & Backup** → *Your other computers* says whether Chrome sync is
+reaching your other computers (each computer checks in through it every few hours, and lists them
+with when each was last seen). It also says when the Canvas copy was last in step, and how many
+changes went each way. If no other computer shows up through Chrome sync, the panel says what to
+check. The Canvas copy keeps working regardless.
 
 - Each setting and each snippet is saved as its own entry, so you can keep up to 100 snippets of
-  up to 2,000 characters. (Earlier versions put every setting in one entry that Chrome caps at 8 KB,
-  which meant 15 short snippets.)
-- **Save** writes only what you changed on that page. Earlier versions rewrote everything on every
-  save, so saving on a computer that hadn't caught up with sync yet (or a laptop that was offline)
-  put its old settings back on every computer. Now different settings changed on two computers,
-  and snippets added on both, are all kept. If snippets added on two computers come to more than
-  100 together, the second save is refused with a message saying so, instead of some of them
-  quietly disappearing.
-- A computer that has never saved anything writes nothing, so a fresh install can't overwrite the
-  settings that are on their way to it.
-
-What Chrome sync can't do, whatever the extension does:
-
-- It doesn't cross Google accounts. Settings saved in a school account's Chrome profile don't reach
-  a personal account's profile, or the other way round. Use **Export** and **Import** under
-  Backup & Transfer to copy them across.
-- A school can turn Chrome sync off for its accounts (Google Admin console). Then settings stay on
-  each computer, and Export / Import is the way to move them.
+  up to 2,000 characters.
+- **Save** writes only what you changed on that page, so saving on a computer that hadn't caught up
+  yet doesn't put its old settings back everywhere.
+- The Copy Roster layout (names, email, header, sort) is a setting too, and travels the same way.
 - A copy loaded with **Load unpacked** is a different extension as far as Chrome is concerned, with
-  its own settings.
+  its own Chrome-sync settings; the Canvas copy is shared between it and the store version.
+- **Export** / **Import** under Sync & Backup still carry settings by hand.
 
 ## Diagnostics
 
@@ -578,12 +723,20 @@ Student names, grades and comment text are never written to the log — only cou
 - No API token, no login, no account.
 - No analytics, no telemetry, no external servers of any kind — not even web fonts; the
   extension uses your system fonts. The only network permission is your Canvas domain.
-- Settings sync through your Chrome profile (`chrome.storage.sync`; see "The same settings on every
-  computer" above); SpeedGrader drafts and the
+- Settings sync through your Chrome profile (`chrome.storage.sync`) and, unless turned off, a copy in
+  your own Canvas account's private user data (see "The same settings on every computer" above). That
+  copy holds settings and snippets only. Each computer's check-in through Chrome sync holds a random id,
+  the kind of computer (Mac, Windows, Chromebook) and a time. SpeedGrader drafts and the
   diagnostics snapshot stay on the device (`chrome.storage.local`).
 - Student data is never persisted. The cross-course student search and Copy Roster hold their
   rosters in memory for the life of the page (or the open panel) and no longer; the only thing cached on disk from Canvas is your own
   list of course names and terms, for 30 minutes.
+- Copy to sections keeps a fingerprint of the text of each copy it made, so it can tell later whether
+  that copy was changed. Fingerprints are stored in `chrome.storage.local` and in your own Canvas account's
+  user data (Canvas's custom data API; private to your account, though Canvas admins with the right permissions can see user data), with course and item ids. It also keeps on
+  this computer, until it is done, each copy Canvas is still working on: course and item ids, the dates
+  and the section note. When a copy's changes are brought back to the original, the original's previous
+  title and instructions are kept on this computer for Undo. No student data.
 - Keeping tabs in step passes only ids (course, assignment, student) between your own Canvas tabs,
   through the extension's background worker, and stores nothing. What is handed to Canvas's own
   page is the grading fields of a submission Canvas itself just returned — never comments, names or
@@ -596,11 +749,13 @@ Student names, grades and comment text are never written to the log — only cou
 ```
 manifest.json                     MV3 manifest; one content-script entry, ordered
 src/background.js                 service worker: defaults, options, custom-domain registration
+src/settings-times.js             service worker: this computer's Chrome sync check-in
 src/script-manifest.js            the ordered file list (mirror of the manifest entry)
 
 src/core/                         pure logic - no DOM, no chrome.* at load time
   util.js                         settings, defaults, sanitizing, diagnostics, small helpers
   canvas-api.js                   same-origin Canvas REST client (CSRF, pagination, retry, pooling)
+  settings-mirror.js              settings merged with the copy in the teacher's Canvas account
   grade-ops.js                    token -> Canvas form params + optimistic patch (M / E / L / 0 ...)
   post-ops.js                     which grades are still hidden from their students
   clipboard-matrix.js             TSV / column / spaced-column clipboard parsing
@@ -635,6 +790,10 @@ src/gradebook/
                                    elsewhere in the course), single rAF paint pass, observers
 
 src/assignments/time-shortcuts.js period keys in Assign To time boxes (Tab/Enter/blur)
+src/core/section-sync.js          Copy to sections: requests, dates, notes, change tracking (pure)
+src/sections/sync-runner.js       Copy to sections: survey each section, copy, apply dates/note,
+                                   find copies both ways, bring a copy's changes back
+src/sections/sync-dialog.js       Copy to sections: breadcrumb button, dialog, page notice, review
 src/speedgrader/content.js        comment draft autosave; live sync with the gradebook
 src/page/env-bridge.js            page context: ENV ids, column widths, Canvas's store and tray
 src/page/write-watch.js           page context: reports Canvas's own submission writes (ids only)
@@ -665,7 +824,7 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-456 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
+586 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
 again → not Missing, `L` → Late and `L` again → not Late, both leaving the grade untouched either
 way, `E` → Excused, a grade never adding a status (and lifting an applied Missing only when asked),
 statuses read exactly as Canvas computes them, the hand-off to Canvas's own store (and never

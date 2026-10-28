@@ -71,11 +71,16 @@
 
   var P = RosterExportController.prototype;
 
+  /* The layout choices are a setting (CGP.settings rosterPrefs), so they
+   * follow the teacher to every computer like the rest. A choice made by an
+   * earlier version lives in this site's localStorage: it is taken over
+   * once, if nothing has been saved as a setting yet. */
   function loadPrefs() {
-    var prefs = Object.assign({}, DEFAULT_PREFS);
+    var prefs = Object.assign({}, DEFAULT_PREFS, (CGP.settings && CGP.settings.values.rosterPrefs) || {});
     try {
       var saved = JSON.parse(localStorage.getItem(PREFS_KEY) || 'null');
-      if (saved && typeof saved === 'object') {
+      var untouched = JSON.stringify(prefs) === JSON.stringify(DEFAULT_PREFS);
+      if (saved && typeof saved === 'object' && untouched) {
         Object.keys(DEFAULT_PREFS).forEach(function (k) {
           if (typeof saved[k] === typeof DEFAULT_PREFS[k]) prefs[k] = saved[k];
         });
@@ -85,7 +90,12 @@
   }
 
   P.savePrefs = function () {
-    try { localStorage.setItem(PREFS_KEY, JSON.stringify(this.prefs)); } catch (e) { /* ignore */ }
+    var prefs = Object.assign({}, this.prefs);
+    if (CGP.settings && CGP.settings.save) {
+      CGP.settings.save({ rosterPrefs: prefs }).then(function () {
+        try { localStorage.removeItem(PREFS_KEY); } catch (e) { /* ignore */ }
+      }, function () { /* kept for this page; reported in diagnostics */ });
+    }
   };
 
   P.start = function () {

@@ -153,6 +153,8 @@
     // Stands in for Canvas's gear while the utility strip is collapsed; after
     // the two controls above so it seats itself to the right of them.
     layout.mountSettingsGear();
+    var sectionCopy = startSectionCopy(api, courseId);
+    startSettingsMirror(api);
 
     if (CGP.CourseMenuController) {
       var courseMenu = new CGP.CourseMenuController({ api: api, courseId: courseId, settings: settings });
@@ -517,6 +519,7 @@
         layout.hideKeyboardShortcutsButton();
         // Canvas can re-render the breadcrumb (and the gear with it).
         layout.mountSettingsGear();
+        if (sectionCopy) sectionCopy.start();
         if (settings.values.narrowColumns && document.documentElement.classList.contains('cgp-column-sizing-presentation-only')) {
           reconcileColumns();
         }
@@ -668,6 +671,41 @@
    * this file runs here - no model, no grid, no writes - so this costs
    * nothing beyond the one API call the switcher itself only makes once its
    * menu is actually opened. */
+  /* "Copy to sections" in the breadcrumb (sections/sync-dialog.js), on
+   * every course page; plus finishing any copy a closed tab left half done.
+   * Nothing is read from Canvas until the button is used, unless the page is
+   * a just-created item in a linked course (the nudge). */
+  function startSectionCopy(api, courseId) {
+    if (!CGP.SectionCopyController) return null;
+    var ctl = new CGP.SectionCopyController({ api: api, courseId: courseId, settings: CGP.settings });
+    ctl.start();
+    CGP.settings.onChange(function () { ctl.start(); });
+    // After the page's own work has started; a leftover job is rare.
+    setTimeout(function () { ctl.resume().catch(function () { /* reported in diag */ }); }, 4000);
+    CGP.sectionCopy = ctl;
+    return ctl;
+  }
+
+  /* Settings kept in step with the copy in the teacher's Canvas account
+   * (core/settings-mirror.js): shortly after a Canvas page opens, soon after
+   * any setting changes, and when the tab comes back into view - at most
+   * once a minute unless something changed. */
+  var mirrorStarted = false;
+  function startSettingsMirror(api) {
+    if (mirrorStarted || !CGP.SettingsMirror) return;
+    mirrorStarted = true;
+    var mirror = new CGP.SettingsMirror({ api: api });
+    var go = function (force) {
+      if (!CGP.settings.values.settingsInCanvas) return;
+      mirror.run(force).catch(function () { /* the status records it */ });
+    };
+    setTimeout(function () { go(false); }, 2500);
+    var soon = CGP.util.debounce(function () { go(true); }, 4000);
+    CGP.settings.onChange(function () { soon(); });
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) go(false); });
+    CGP.settingsMirrorInstance = mirror;
+  }
+
   function startCourseChrome(courseId) {
     document.documentElement.classList.add('cgp-on');
     var settings = CGP.settings;
@@ -679,6 +717,8 @@
     // setting on in the options page takes effect without a reload, the same
     // way the full gradebook page already behaves on a settings change.
     CGP.settings.onChange(function () { switcher.start(); });
+    startSectionCopy(api, courseId);
+    startSettingsMirror(api);
     // Period shortcuts in Canvas's Assign To "Time" boxes. Always listening;
     // the timeShortcutsEnabled setting is read on every keystroke, so the
     // options page can flip it without a reload.

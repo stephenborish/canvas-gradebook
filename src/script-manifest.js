@@ -6,6 +6,7 @@
 export const CONTENT_JS = [
   'src/core/util.js',
   'src/core/canvas-api.js',
+  'src/core/settings-mirror.js',
   'src/core/grade-ops.js',
   'src/core/post-ops.js',
   'src/core/clipboard-matrix.js',
@@ -16,6 +17,7 @@ export const CONTENT_JS = [
   'src/core/roster-format.js',
   'src/core/snippets.js',
   'src/core/time-shortcuts.js',
+  'src/core/section-sync.js',
   'src/core/ui.js',
   'src/core/model.js',
   'src/gradebook/dom-adapter.js',
@@ -40,6 +42,8 @@ export const CONTENT_JS = [
   'src/gradebook/student-search.js',
   'src/gradebook/course-menu.js',
   'src/assignments/time-shortcuts.js',
+  'src/sections/sync-runner.js',
+  'src/sections/sync-dialog.js',
   'src/speedgrader/content.js',
   'src/gradebook/content.js'
 ];

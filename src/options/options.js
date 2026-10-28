@@ -484,6 +484,33 @@
     renderSnippetCards(snips);
     $('snippets').value = snippetsToText(snips);
     renderTimeShortcuts(values.timeShortcuts);
+    renderSectionGroups(values.sectionGroups);
+    currentRosterPrefs = values.rosterPrefs;
+  }
+
+  // Chosen in the gradebook's Copy Roster panel, not here; carried as is.
+  var currentRosterPrefs = null;
+
+  /* Linked sections are edited from Copy to sections in Canvas, where the
+   * course list is; here they are listed, and can be unlinked. They are not
+   * a form field: the list shown is what is stored. */
+  var currentGroups = [];
+
+  function renderSectionGroups(groups) {
+    currentGroups = Array.isArray(groups) ? groups : [];
+    var box = $('sectionGroupsList');
+    if (!box) return;
+    if (!currentGroups.length) {
+      box.innerHTML = '<p class="hint">No linked sections yet. In Canvas, open a course and press Copy to sections.</p>';
+      return;
+    }
+    box.innerHTML = currentGroups.map(function (g, i) {
+      var names = g.courseIds.map(function (id) {
+        return escapeHtml((g.names && g.names[id]) || ('Course ' + id));
+      }).join(' &middot; ');
+      return '<div class="section-group"><span>' + names + ' <span class="hint">(' + escapeHtml(g.origin.replace(/^https?:\/\//, '')) + ')</span></span>' +
+        '<button type="button" class="btn" data-unlink="' + i + '">Unlink</button></div>';
+    }).join('');
   }
 
   /** The snippets exactly as the teacher entered them, before sanitizing. */
@@ -504,6 +531,8 @@
     patch.snippets = readRawSnippets();
     patch.timeShortcuts = readRawTimeShortcuts();
     patch.gradingScale = CGP.totals.textToScale($('gradingScale').value);
+    patch.sectionGroups = currentGroups;
+    if (currentRosterPrefs) patch.rosterPrefs = currentRosterPrefs;
     return CGP.sanitizeSettings(patch);
   }
 
@@ -710,6 +739,9 @@
       status('That file does not look like a Gradebook+ settings file.');
       return;
     }
+    // A backup from before linked sections existed has none: the ones this
+    // computer has are kept rather than wiped.
+    if (!Array.isArray(raw.sectionGroups)) raw = Object.assign({}, raw, { sectionGroups: currentGroups });
     var values = CGP.sanitizeSettings(raw);
     var rawSnippets = Array.isArray(raw.snippets) ? raw.snippets.map(function (s) {
       return { trigger: String((s && s.trigger) || '').replace(/^\/+/, '').trim(), text: String((s && s.text) || '') };
@@ -855,9 +887,9 @@
   $('save').addEventListener('click', save);
 
   $('reset').addEventListener('click', function () {
-    if (!window.confirm('Restore every setting to its default?')) return;
+    if (!window.confirm('Restore every setting to its default? Your linked sections are kept (unlink them below).')) return;
     saving = true;
-    CGP.settingsStorage.write(null, CGP.sanitizeSettings({})).then(function (stored) {
+    CGP.settingsStorage.write(null, CGP.sanitizeSettings({ sectionGroups: currentGroups })).then(function (stored) {
       saving = false;
       show(stored);
       status('Defaults restored.');
@@ -866,6 +898,145 @@
       status('Defaults not restored: ' + (err && err.message ? err.message : 'Chrome storage rejected this.'), { error: true });
     });
   });
+
+  var groupsBox = $('sectionGroupsList');
+  if (groupsBox) {
+    groupsBox.addEventListener('click', function (e) {
+      var btn = e.target.closest && e.target.closest('[data-unlink]');
+      if (!btn) return;
+      if (JSON.stringify(read()) !== JSON.stringify(baseline)) {
+        status('Save (or reload to discard) your other changes first, then unlink.', { error: true });
+        return;
+      }
+      var i = Number(btn.getAttribute('data-unlink'));
+      var next = Object.assign({}, baseline, { sectionGroups: currentGroups.filter(function (g, j) { return j !== i; }) });
+      writeSettings(baseline, next, 'Unlinked. Those courses no longer copy to each other.');
+    });
+  }
+
+  /* ------------------------------------------------------- sync status */
+
+  /* Whether Chrome sync is carrying anything between this teacher's
+   * computers: each computer checks in through it (settings-times.js), so
+   * another computer's check-in arriving here is the proof. Plus how the
+   * copy in Canvas last went, per Canvas this computer has been used on. */
+  function ago(t) {
+    var m = Math.round((Date.now() - t) / 60000);
+    if (m < 2) return 'just now';
+    if (m < 90) return m + ' minutes ago';
+    var h = Math.round(m / 60);
+    if (h < 36) return h + ' hours ago';
+    return Math.round(h / 24) + ' days ago';
+  }
+
+  function renderSyncStatus() {
+    var box = $('syncStatus');
+    if (!box || typeof chrome === 'undefined' || !chrome.storage) return;
+    Promise.all([chrome.storage.sync.get(null), chrome.storage.local.get(null)]).then(function (r) {
+      var sync = r[0] || {}, local = r[1] || {};
+      var me = local['cgp.deviceId'];
+      var others = Object.keys(sync).filter(function (k) {
+        return k.indexOf('cgp.device.') === 0 && k !== 'cgp.device.' + me;
+      }).map(function (k) { return sync[k]; }).sort(function (a, b) { return b.at - a.at; });
+      var lines = [];
+      if (others.length) {
+        lines.push('<p class="sync-status__ok"><strong>Chrome sync is working.</strong> It is carrying your settings to ' + others.length +
+          (others.length === 1 ? ' other computer' : ' other computers') + ': ' + others.map(function (d) {
+            return escapeHtml(d.label || 'Computer') + ' (last seen ' + ago(d.at) + ')';
+          }).join(', ') + '.</p>');
+      } else {
+        lines.push('<p class="sync-status__warn"><strong>No other computer has been seen through Chrome sync yet.</strong> ' +
+          'If you use this extension on another computer and it has not shown up here within an hour of opening Chrome there, ' +
+          'Chrome sync is not carrying it: in Chrome, open Settings &rarr; You and Google &rarr; Sync and Google services &rarr; Manage what you sync, ' +
+          'and make sure sync is on and <em>Extensions</em> is included, on both computers. If your school has turned Chrome sync off, ' +
+          'the copy in your Canvas account below keeps your settings in step instead.</p>');
+      }
+      var mirrors = Object.keys(local).filter(function (k) { return k.indexOf('cgp.mirror.status.') === 0; });
+      if (!mirrors.length) {
+        lines.push('<p class="hint">Canvas copy: not used on this computer yet (it runs when you open a Canvas course page).</p>');
+      }
+      mirrors.forEach(function (k) {
+        var st = local[k] || {};
+        var where = escapeHtml(k.slice('cgp.mirror.status.'.length).replace(/^https?:\/\//, ''));
+        if (st.ok) {
+          lines.push('<p class="sync-status__ok"><strong>Canvas copy (' + where + '):</strong> in step ' + ago(st.at) +
+            (st.pulled ? ', ' + st.pulled + ' change(s) brought here' : '') + (st.pushed ? ', ' + st.pushed + ' change(s) saved to Canvas' : '') + '.</p>');
+          if (st.leftOut) {
+            lines.push('<p class="sync-status__warn">' + st.leftOut.length + ' snippet(s) from your other computers do not fit here: Chrome holds at most ' +
+              CGP.SETTINGS_LIMITS.MAX_SNIPPETS + ' snippets. Remove some you no longer use (on any computer), and they will come through: ' +
+              st.leftOut.map(function (k) { return escapeHtml('/' + k.replace(/^cgp\.snippet\./, '')); }).join(', ') + '.</p>');
+          }
+          if (st.waiting) lines.push('<p class="hint">' + st.waiting + ' change(s) are waiting for Chrome sync to finish delivering them.</p>');
+          if (st.conflicts) lines.push(conflictHtml(k, st.conflicts));
+        } else {
+          lines.push('<p class="sync-status__warn"><strong>Canvas copy (' + where + '):</strong> last try ' + ago(st.at || Date.now()) +
+            ' did not work. ' + escapeHtml(st.error || '') + '</p>');
+        }
+      });
+      box.innerHTML = lines.join('');
+    }, function () { box.innerHTML = '<p class="hint">Sync status is not available.</p>'; });
+  }
+
+  /* Two computers that never synced, with different values for the same
+   * setting or snippet and no record of which is newer: the teacher picks. */
+  function label(key) {
+    if (key.indexOf('cgp.snippet.') === 0) return 'snippet /' + key.slice('cgp.snippet.'.length);
+    var name = key.replace(/^cgp\.setting\./, '');
+    var el = document.getElementById(name);
+    var lab = el && document.querySelector('label[for="' + name + '"]');
+    return lab ? String(lab.firstChild && lab.firstChild.textContent || name).trim() : name;
+  }
+
+  function shortValue(v) {
+    if (v && typeof v === 'object' && v.text !== undefined) v = v.text;
+    var t = typeof v === 'string' ? v : JSON.stringify(v);
+    return t.length > 60 ? t.slice(0, 57) + '…' : t;
+  }
+
+  function conflictHtml(statusKey, conflicts) {
+    return '<div class="sync-conflict" data-status="' + escapeHtml(statusKey) + '"><p><strong>Your computers disagree on ' + conflicts.length +
+      (conflicts.length === 1 ? ' setting' : ' settings') + '</strong>, and neither was changed since this extension started keeping times, ' +
+      'so it can’t tell which is newer:</p><ul>' + conflicts.map(function (c) {
+        return '<li>' + escapeHtml(label(c.key)) + ': this computer <code>' + escapeHtml(shortValue(c.mine)) + '</code>, other computer <code>' +
+          escapeHtml(shortValue(c.theirs)) + '</code></li>';
+      }).join('') + '</ul><div class="action-row"><button type="button" class="btn btn--primary" data-resolve="mine">Keep this computer’s</button>' +
+      '<button type="button" class="btn" data-resolve="theirs">Use the other computer’s</button></div></div>';
+  }
+
+  var statusBox = $('syncStatus');
+  if (statusBox) {
+    statusBox.addEventListener('click', function (e) {
+      var b = e.target.closest && e.target.closest('[data-resolve]');
+      if (!b) return;
+      var box = b.closest('[data-status]');
+      var key = box.getAttribute('data-status');
+      chrome.storage.local.get([key, 'cgp.clockOffset']).then(function (r) {
+        var st = r[key] || {};
+        var now = Date.now() + (Number(r['cgp.clockOffset']) || 0);
+        return CGP.settingsMirror.resolve(chrome, st.conflicts || [], b.getAttribute('data-resolve') === 'mine', now).then(function () {
+          st.conflicts = null;
+          var o = {};
+          o[key] = st;
+          return chrome.storage.local.set(o);
+        });
+      }).then(function () {
+        status('Done. Your other computers get it the next time Canvas is opened there.');
+        renderSyncStatus();
+      }, function (err) { status('Not done: ' + String(err && err.message), { error: true }); });
+    });
+  }
+
+  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+    try {
+      chrome.runtime.sendMessage({ type: 'cgp.checkIn' }, function () { void chrome.runtime.lastError; renderSyncStatus(); });
+    } catch (e) { renderSyncStatus(); }
+  }
+  renderSyncStatus();
+  if (chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener(function (changes) {
+      if (Object.keys(changes).some(function (k) { return k.indexOf('cgp.device.') === 0 || k.indexOf('cgp.mirror.status.') === 0; })) renderSyncStatus();
+    });
+  }
 
   $('exportSettings').addEventListener('click', exportSettings);
   $('importSettingsButton').addEventListener('click', function () { $('importSettingsFile').click(); });
@@ -890,7 +1061,7 @@
   function initVersion() {
     var el = $('extensionVersion');
     if (!el) return;
-    var ver = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest && chrome.runtime.getManifest().version) || CGP.VERSION || '1.19.0';
+    var ver = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest && chrome.runtime.getManifest().version) || CGP.VERSION || '1.20.0';
     el.textContent = ver;
   }
 

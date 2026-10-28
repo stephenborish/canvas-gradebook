@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Canvas Gradebook+",
-  "version": "1.19.0",
+  "version": "1.20.0",
   "author": "stephenborish",
-  "description": "Upgrades Canvas instructor Gradebook: instructor-comment indicators, keyboard shortcuts, and instant post.",
+  "description": "Upgrades Canvas instructor Gradebook: instructor-comment indicators, keyboard shortcuts, instant post, and copying content to your other sections.",
   "minimum_chrome_version": "116",
   "permissions": [
     "storage",
@@ -69,6 +69,7 @@
       "js": [
         "src/core/util.js",
         "src/core/canvas-api.js",
+        "src/core/settings-mirror.js",
         "src/core/grade-ops.js",
         "src/core/post-ops.js",
         "src/core/clipboard-matrix.js",
@@ -79,6 +80,7 @@
         "src/core/roster-format.js",
         "src/core/snippets.js",
         "src/core/time-shortcuts.js",
+        "src/core/section-sync.js",
         "src/core/ui.js",
         "src/core/model.js",
         "src/gradebook/dom-adapter.js",
@@ -103,6 +105,8 @@
         "src/gradebook/student-search.js",
         "src/gradebook/course-menu.js",
         "src/assignments/time-shortcuts.js",
+        "src/sections/sync-runner.js",
+        "src/sections/sync-dialog.js",
         "src/speedgrader/content.js",
         "src/gradebook/content.js"
       ],

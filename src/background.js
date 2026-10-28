@@ -3,13 +3,15 @@
  * Deliberately tiny. It opens the options page from the
  * toolbar icon, registers the content scripts for self-hosted Canvas
  * domains the teacher has granted, applies Web Store updates promptly
- * (self-update.js), and relays "this submission changed" announcements
+ * (self-update.js), relays "this submission changed" announcements
  * between the open tabs of one course (live-sync.js) - ids only, never
- * stored. It never reads or stores Canvas data itself. */
+ * stored - and checks this computer in through Chrome sync (settings-times.js). It
+ * never reads or stores Canvas data itself. */
 
 import { CONTENT_JS, CONTENT_CSS } from './script-manifest.js';
 import { createSelfUpdater } from './self-update.js';
 import { createLiveRelay, LIVE_SYNC_TYPE } from './live-relay.js';
+import { createSettingsTimes } from './settings-times.js';
 
 const DYNAMIC_ID = 'cgp-custom-domains';
 const DYNAMIC_BRIDGE_ID = 'cgp-custom-domains-bridge';
@@ -102,6 +104,8 @@ chrome.runtime.onInstalled.addListener(async () => {
   await syncDynamicScripts();
 });
 
+// The check-in needs no listener of its own: settingsTimes.start() below runs
+// on every service-worker start, browser startup included.
 chrome.runtime.onStartup.addListener(() => { syncDynamicScripts(); });
 
 if (chrome.permissions && chrome.permissions.onAdded) {
@@ -110,6 +114,9 @@ if (chrome.permissions && chrome.permissions.onAdded) {
 }
 
 createSelfUpdater(chrome).start();
+// This computer's Chrome sync check-in (shown on the options page).
+const settingsTimes = createSettingsTimes(chrome);
+settingsTimes.start();
 const liveRelay = createLiveRelay(chrome);
 
 chrome.action.onClicked.addListener(() => {
@@ -120,6 +127,10 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   if (msg && msg.type === LIVE_SYNC_TYPE) {
     liveRelay.relay(msg, sender).catch(() => 0);
     return false;
+  }
+  if (msg && msg.type === 'cgp.checkIn') {
+    settingsTimes.checkIn(true).then(() => respond({ ok: true }), (e) => respond({ ok: false, error: String(e && e.message) }));
+    return true;
   }
   if (!msg || msg.type !== 'cgp.syncDynamicScripts') return false;
   syncDynamicScripts().then(respond);
