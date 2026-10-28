@@ -521,14 +521,36 @@ holding nothing but a shortcut is touched, so `12:30` or `1 pm` still mean what 
 edit or remove shortcuts (any short key, e.g. `lunch` → 11:30 AM) on the **Time Shortcuts** tab of
 the options page; the same Assign To card on quizzes, discussions and modules is covered too.
 
-### Copy to sections
+### Copy to other classes
 
-For a course you teach to several sections that are **separate Canvas courses** (not cross-listed):
-build an assignment, quiz, discussion, announcement, page or module once, then put it in every
-other section in one step, each with its own dates.
+For a course you teach to several classes (periods, blocks) that are **separate Canvas courses**
+(not cross-listed): build an assignment, quiz, discussion, announcement, page or module once, then
+put it in every other class in one step, each with its own dates. Below, each of those classes is
+called a *section*, as in the code; the buttons say *class*, so it is never mistaken for Canvas's own
+sections and Assign To.
 
-**Link the sections once.** Every course page has **Copy to sections** in the breadcrumb. The first
-time, it asks which of your courses are other sections of this one. It pre-ticks courses with the
+**Where the button is.** It sits beside what it copies, not in the breadcrumb:
+
+- On an assignment, quiz, discussion, announcement or page: **Copy to other classes**, next to
+  Canvas's **Edit**. It copies that item. (Not on edit pages: what is copied is the saved version.)
+- On the course home: **Copy to other classes** in the sidebar, under *Import Existing Content*, its
+  mirror image. It opens the item picker.
+- On the Modules page: beside **+ Module**. It opens the item picker.
+
+**What it does and doesn't** — shown in the dialog in four lines, open the first time and folded away
+after that:
+
+- ✓ Makes a copy of what you pick in each class you choose, with that class's own dates.
+- ✓ Shows what will happen in each class first. Nothing changes until you press Copy.
+- ✕ Doesn't copy students, grades or submissions, and doesn't change this class.
+- ✕ Doesn't keep copies in sync: a later edit stays in the class where you make it.
+
+The Copy button names where things go (*Copy to AP Biology (Block 6)*, *Copy to 3 classes*), and the
+line beside it says how many copies are made or updated and that the class you copy from is not
+changed.
+
+**Choose your classes once.** The first time (step 1 of 2), it asks which of your classes are the
+same course as this one. It pre-ticks courses with the
 same name in the same term once "Period 2", "(P4)", "Section 7", "Block 3" and the like are set aside.
 "Algebra 1" and "Algebra 2" stay different courses. Linked courses can copy to each other from
 any of them. Only course ids (and their names, for the options page) are saved, in your Chrome
@@ -793,7 +815,7 @@ src/assignments/time-shortcuts.js period keys in Assign To time boxes (Tab/Enter
 src/core/section-sync.js          Copy to sections: requests, dates, notes, change tracking (pure)
 src/sections/sync-runner.js       Copy to sections: survey each section, copy, apply dates/note,
                                    find copies both ways, bring a copy's changes back
-src/sections/sync-dialog.js       Copy to sections: breadcrumb button, dialog, page notice, review
+src/sections/sync-dialog.js       Copy to sections: page button, dialog, page notice, review
 src/speedgrader/content.js        comment draft autosave; live sync with the gradebook
 src/page/env-bridge.js            page context: ENV ids, column widths, Canvas's store and tray
 src/page/write-watch.js           page context: reports Canvas's own submission writes (ids only)

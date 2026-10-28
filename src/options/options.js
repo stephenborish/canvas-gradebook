@@ -501,7 +501,7 @@
     var box = $('sectionGroupsList');
     if (!box) return;
     if (!currentGroups.length) {
-      box.innerHTML = '<p class="hint">No linked sections yet. In Canvas, open a course and press Copy to sections.</p>';
+      box.innerHTML = '<p class="hint">None yet. In Canvas, open an assignment (or the course home) and press Copy to other classes.</p>';
       return;
     }
     box.innerHTML = currentGroups.map(function (g, i) {
@@ -509,7 +509,7 @@
         return escapeHtml((g.names && g.names[id]) || ('Course ' + id));
       }).join(' &middot; ');
       return '<div class="section-group"><span>' + names + ' <span class="hint">(' + escapeHtml(g.origin.replace(/^https?:\/\//, '')) + ')</span></span>' +
-        '<button type="button" class="btn" data-unlink="' + i + '">Unlink</button></div>';
+        '<button type="button" class="btn" data-unlink="' + i + '">Remove</button></div>';
     }).join('');
   }
 

@@ -160,7 +160,7 @@
     }, function (err) {
       out.error = CGP.util.isPermissionDeniedError(err)
         ? 'You can’t add content to this course in Canvas (your role there may not allow it, or the course has concluded).'
-        : describe(err, 'Couldn’t read this section from Canvas');
+        : describe(err, 'Couldn’t read this class from Canvas');
       return out;
     });
   };
@@ -377,7 +377,7 @@
     var result = { ok: false, destId: null, url: null, warnings: [], pending: false, error: null };
 
     if (task.mode === 'keep') {
-      if (!task.destId) { result.error = 'There is no copy in this section to update.'; return Promise.resolve(result); }
+      if (!task.destId) { result.error = 'There is no copy in this class to update.'; return Promise.resolve(result); }
       onStep('Updating dates');
       return this.finish(task, task.destId, task.mapping || {}, result, onStep).then(function () { return result; }, function (err) {
         result.ok = false;
@@ -469,12 +469,12 @@
       return self.api.assetIdMapping(task.destCourseId, job.migrationId).then(function (mapping) {
         var destId = S().destIdFor(mapping, task.item.type, task.item.id);
         if (!destId) {
-          result.error = 'Canvas finished, but did not report where the copy is. Check this section before copying again.';
+          result.error = 'Canvas finished, but did not report where the copy is. Check this class before copying again.';
           return self.dropJob(job).then(function () { return result; });
         }
         return self.settled(task, destId, opts.maxWaitMs || self.maxWaitMs, job).then(function (ready) {
           if (ready === 'failed') {
-            result.error = 'Canvas could not finish importing the copy (its New Quizzes step failed). Check this section.';
+            result.error = 'Canvas could not finish importing the copy (its New Quizzes step failed). Check this class.';
             return self.dropJob(job).then(function () { return result; });
           }
           if (ready !== 'ready') {
@@ -607,7 +607,7 @@
       // Without knowing who the copy is assigned to, no dates are written:
       // a base date sent blind can assign it to everyone in that section.
       result.warnings.push(label + ': dates not set, because Canvas did not say how it is assigned there. ' +
-        describe(err, 'Canvas refused') + ' Set them in that section.');
+        describe(err, 'Canvas refused') + ' Set them in that class.');
       return false;
     }).then(function (details) {
       if (details === false) return null;
@@ -627,7 +627,7 @@
           });
           if (wrong.length) {
             result.warnings.push(label + ': Canvas did not keep the ' + wrong.map(function (f) { return (sync.DATE_LABELS[f] || f).toLowerCase(); }).join(', ') +
-              ' date asked for. Check it in this section.');
+              ' date asked for. Check it in this class.');
           }
         }, function () {
           result.warnings.push(label + ': dates saved, but Canvas could not be asked to confirm them.');
@@ -654,7 +654,7 @@
     return this.api.sectionItem(task.destCourseId, 'module', destId).then(function (o) {
       if (!o || o.published === undefined || !!o.published === want) return null;
       return self.api.updateSectionItem(task.destCourseId, 'module', destId, { module: { published: want } }).then(null, function (err) {
-        result.warnings.push('The module is ' + (want ? 'not published' : 'still published') + ' in this section. ' + describe(err, 'Canvas refused'));
+        result.warnings.push('The module is ' + (want ? 'not published' : 'still published') + ' in this class. ' + describe(err, 'Canvas refused'));
       });
     }, function (err) {
       result.warnings.push('Could not read the module back to set its publishing. ' + describe(err, 'Canvas refused'));
@@ -671,7 +671,7 @@
       var html = (sync.toItem(child.type, o) || {}).html || '';
       var next = sync.withNote(html, (task.childNotes || {})[child.type + ':' + child.id] || '');
       var write = next === html ? Promise.resolve() : self.api.setItemHtml(task.destCourseId, child.type, destId, next).then(null, function (err) {
-        result.warnings.push('“' + (child.title || '') + '”: the other section’s note could not be removed. ' + describe(err, 'Canvas refused'));
+        result.warnings.push('“' + (child.title || '') + '”: the other class’s note could not be removed. ' + describe(err, 'Canvas refused'));
       });
       return write.then(function () { return self.remember(task.srcCourseId, child, task.destCourseId, destId, html); });
     }, function () { return null; });
@@ -696,7 +696,7 @@
       if (next !== html) {
         steps = steps.then(function () {
           return self.api.setItemHtml(task.destCourseId, item.type, destId, next).then(null, function (err) {
-            result.warnings.push('The section note was not saved. ' + describe(err, 'Canvas refused it'));
+            result.warnings.push('The class note was not saved. ' + describe(err, 'Canvas refused it'));
           });
         });
       }
@@ -713,7 +713,7 @@
         if (d.published !== undefined && !!d.published !== want) {
           steps = steps.then(function () {
             return self.api.setItemPublished(task.destCourseId, item.type, destId, want).then(null, function (err) {
-              result.warnings.push((want ? 'Not published' : 'Still published') + ' in this section: ' +
+              result.warnings.push((want ? 'Not published' : 'Still published') + ' in this class: ' +
                 describe(err, 'Canvas refused') + (want ? '' : ' (Canvas keeps work that students have submitted published.)'));
             });
           });
@@ -900,9 +900,9 @@
         });
         var tr = sync.translateLinks(plan.copyBody, plan.copyCourse, plan.origCourse, inv, self.origin);
         html = tr.html;
-        if (tr.missingFiles.length) result.warnings.push(tr.missingFiles.length + ' file link(s) still point to the other section.');
+        if (tr.missingFiles.length) result.warnings.push(tr.missingFiles.length + ' file link(s) still point to the other class.');
       }, function (err) {
-        result.warnings.push('The files only that section has were not copied (' + describe(err, 'Canvas refused') +
+        result.warnings.push('The files only that class has were not copied (' + describe(err, 'Canvas refused') +
           '), so their links still point there.');
       });
     }
@@ -978,7 +978,7 @@
         plan.missingLinks.forEach(function (l) {
           result.warnings.push('A link to ' + (l.type === 'pages' ? 'the page “' + l.ref + '”'
             : (l.type === 'link' ? '“' + l.ref + '”' : 'a ' + l.type.replace(/_/g, ' ').replace(/s$/, '') + ' (' + l.ref + ')')) +
-            ' still points to the other section: it is not in this one.');
+            ' still points to the other class: it is not in this one.');
         });
         result.ok = true;
         return result;

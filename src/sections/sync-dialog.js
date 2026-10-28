@@ -1,11 +1,12 @@
-/* Canvas Gradebook+ - "Copy to sections": post an item to every linked
- * section in one go.
+/* Canvas Gradebook+ - "Copy to other classes": post an item to every
+ * linked class ("section" in the code) in one go.
  *
  * A teacher with three periods of the same course (three Canvas courses, not
  * cross-listed) links them once. From then on, on any page of any of them,
- * Copy to sections in the breadcrumb copies the item on screen - or any
+ * Copy to other classes - beside the item's Edit, in the course home's
+ * sidebar, or on the Modules page - copies the item on screen, or any
  * assignments, quizzes, discussions, announcements, pages and modules picked
- * from the course - into the others, through Canvas's own course copy, with:
+ * from the course, into the others, through Canvas's own course copy, with:
  *   - each section's own dates (prefilled from this one; a day shift and a
  *     time - a period shortcut such as "3" works - apply to a whole section),
  *   - an optional note for one section only, at the top of its instructions,
@@ -43,55 +44,124 @@
 
   var P = SectionCopyController.prototype;
 
-  /* -------------------------------------------------------- breadcrumb */
+  /* ---------------------------------------------------------- the button */
+
+  /* The button sits beside the thing it copies, never in the breadcrumb
+   * (where it read as navigation and offered to copy "this course"):
+   *  - an item's own page: next to Canvas's Edit, and copies that item;
+   *  - the course home: in the sidebar, under Import Existing Content (its
+   *    mirror image), and opens the item picker;
+   *  - the Modules page: beside + Module, and opens the item picker.
+   * Other pages get no button. Edit pages neither: what would be copied is
+   * the saved version, not what is on screen. */
+  var COPY_GLYPH =
+    '<svg class="cgp-copyto__glyph" viewBox="0 0 16 16" aria-hidden="true">' +
+    '<rect x="1.5" y="4.5" width="8.5" height="10" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/>' +
+    '<path d="M6 2.5h6.4c.9 0 1.6.7 1.6 1.6v8.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
 
   P.start = function () {
     if (!this.settings.values.sectionCopy) { this.unmount(); return; }
     if (this.button && this.button.isConnected) return;
-    var anchor = this.findAnchor();
-    if (!anchor) {
-      // Some course pages mount their breadcrumb late.
-      if (this._tries++ < 20) { var self = this; setTimeout(function () { self.start(); }, 250); }
-      return;
+    var spot = this.findSpot();
+    if (!spot) return;
+    if (!spot.at) {
+      // React pages mount their header late; an item page that never shows
+      // an Edit we recognise gets the button in a bar at the top instead.
+      var self = this;
+      if (this._tries++ < 40) { setTimeout(function () { self.start(); }, 250); return; }
+      if (spot.kind !== 'item') return;
+      spot.at = this.fallbackBar();
+      spot.where = 'beforeend';
     }
-    var btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'cgp-crumb-toggle cgp-sections-toggle';
-    btn.title = 'Copy content from this course to your other sections';
-    btn.innerHTML =
-      '<svg class="cgp-sections-toggle__glyph" viewBox="0 0 16 16" aria-hidden="true">' +
-      '<rect x="1.5" y="4.5" width="8.5" height="10" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/>' +
-      '<path d="M6 2.5h6.4c.9 0 1.6.7 1.6 1.6v8.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>' +
-      '<span class="cgp-crumb-toggle__label">Copy to sections</span>';
-    anchor.insertAdjacentElement('afterend', btn);
+    var btn = document.createElement(spot.kind === 'home' ? 'a' : 'button');
+    if (spot.kind === 'home') { btn.href = '#'; btn.setAttribute('role', 'button'); } else btn.type = 'button';
+    btn.className = 'cgp-copyto cgp-copyto--' + spot.kind + (spot.kind === 'home' ? ' btn button-sidebar-wide' : '');
+    btn.title = spot.tip;
+    btn.innerHTML = COPY_GLYPH + '<span class="cgp-copyto__label">' + esc(spot.label) + '</span>';
+    spot.at.insertAdjacentElement(spot.where, btn);
     this.button = btn;
     var self2 = this;
     btn.addEventListener('click', function (e) {
       e.preventDefault();
       e.stopPropagation();
-      self2.open();
+      self2.open(spot.kind === 'item' ? null : { pick: true });
     });
-    if (this.settings.values.sectionCopyNudge) this.checkPage();
+    if (spot.kind === 'item' && this.settings.values.sectionCopyNudge) this.checkPage();
   };
 
   P.unmount = function () {
     if (this.button && this.button.parentNode) this.button.parentNode.removeChild(this.button);
+    var bar = document.querySelector('.cgp-copyto-bar');
+    if (bar) bar.remove();
     this.button = null;
   };
 
-  P.findAnchor = function () {
-    var sel = ['.cgp-settings-gear', '.cgp-find-student', '.cgp-crumb-toggle:not(.cgp-sections-toggle)'];
-    for (var i = 0; i < sel.length; i++) {
-      var el = document.querySelector('#breadcrumbs ' + sel[i] + ', .ic-app-crumbs ' + sel[i]);
-      if (el) return el;
+  /* Where this page's button goes: { kind, at, where, label, tip }, with
+   * `at` null while the page has not drawn that spot yet; null for a page
+   * that gets no button. */
+  P.findSpot = function () {
+    var path = location.pathname;
+    var base = '/courses/' + this.courseId;
+    if (path === base || path === base + '/') {
+      var side = document.querySelector('#course_show_secondary .course-options, #course_show_secondary');
+      var imp = side && side.querySelector('a[href*="/content_migrations"]');
+      return {
+        kind: 'home', label: 'Copy to other classes',
+        tip: 'Pick assignments, quizzes, pages… from this course and put a copy in your other classes of it',
+        at: imp || side, where: imp ? 'afterend' : 'afterbegin'
+      };
     }
-    var links = document.querySelectorAll('#breadcrumbs a[href*="/courses/"], .ic-app-crumbs a[href*="/courses/"]');
-    for (var j = 0; j < links.length; j++) {
-      var href = (links[j].getAttribute('href') || '').split(/[?#]/)[0];
-      if (/\/courses\/\d+\/?$/.test(href)) return links[j];
+    if (path === base + '/modules' || path === base + '/modules/') {
+      var add = document.querySelector('#content .add_module_link, #content button[aria-label="Add Module"], #content button[aria-label="Module"]');
+      return {
+        kind: 'modules', label: 'Copy to other classes',
+        tip: 'Pick modules or items from this course and put a copy in your other classes of it',
+        at: add, where: 'beforebegin'
+      };
     }
-    var cur = document.querySelector('#breadcrumbs [aria-current="page"], .ic-app-crumbs [aria-current="page"]');
-    return cur || null;
+    var here = S().itemFromPath(path);
+    if (!here || here.courseId !== this.courseId || /\/edit\/?$/.test(path)) return null;
+    var thing = S().TYPES[here.type].label.toLowerCase();
+    var edit = this.findEdit(here);
+    return {
+      kind: 'item', label: 'Copy to other classes',
+      tip: 'Put a copy of this ' + thing + ' in your other classes of this course',
+      at: edit, where: 'afterend'
+    };
+  };
+
+  /* Canvas's own Edit for this item: a link to its edit page, or a visible
+   * button labelled Edit. Returns the outermost element that wraps only it,
+   * so the button lands beside it, not inside its frame. */
+  P.findEdit = function (here) {
+    var root = document.querySelector('#content') || document.body;
+    var visible = function (el) { return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length); };
+    var found = null;
+    var links = root.querySelectorAll('a[href*="/edit"]');
+    for (var i = 0; i < links.length && !found; i++) {
+      var p = '';
+      try { p = new URL(links[i].getAttribute('href'), location.href).pathname; } catch (e) { continue; }
+      var it = /\/edit\/?$/.test(p) ? S().itemFromPath(p) : null;
+      if (it && it.type === here.type && String(it.id || it.slug) === String(here.id || here.slug) && visible(links[i])) found = links[i];
+    }
+    if (!found) {
+      var btns = root.querySelectorAll('button, a[role="button"]');
+      for (var j = 0; j < btns.length && !found; j++) {
+        if (String(btns[j].textContent || '').replace(/\s+/g, ' ').trim() === 'Edit' && visible(btns[j])) found = btns[j];
+      }
+    }
+    if (!found) return null;
+    var at = found;
+    for (var k = 0; k < 3 && at.parentElement && at.parentElement !== root && at.parentElement.children.length === 1; k++) at = at.parentElement;
+    return at;
+  };
+
+  P.fallbackBar = function () {
+    var bar = document.createElement('div');
+    bar.className = 'cgp-copyto-bar';
+    var host = document.querySelector('#content') || document.querySelector('main') || document.body;
+    host.insertBefore(bar, host.firstChild);
+    return bar;
   };
 
   P.siblings = function () {
@@ -164,8 +234,8 @@
     }
     if (n.kind === 'new') {
       return '<div class="cgp-sections-notice__line">This new ' + thing + ' is not in ' + n.courses.length +
-        (n.courses.length === 1 ? ' of your other sections' : ' of your other sections') + ' yet. ' +
-        '<button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-notice="copy-new">Copy to sections…</button></div>';
+        (n.courses.length === 1 ? ' of your other classes' : ' of your other classes') + ' yet. ' +
+        '<button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-notice="copy-new">Copy to other classes…</button></div>';
     }
     var when = n.cmp && n.cmp.orig && n.cmp.copy
       ? ' <span class="cgp-sections-notice__when">(last changed: ' + (n.kind === 'from'
@@ -176,10 +246,10 @@
       if (n.side === 'copy') return '<div class="cgp-sections-notice__line">You changed this ' + thing + ' here after it was copied from <strong>' + name +
         '</strong>, which still has the earlier version. ' + btn('back-from', 'Review and update ' + name + '…') + '</div>';
       if (n.side === 'original') return '<div class="cgp-sections-notice__line"><strong>' + name + '</strong>, where this was copied from, has a newer version. ' +
-        btn('forward-from', 'Update this section from ' + name + '…') + '</div>';
+        btn('forward-from', 'Update this one from ' + name + '…') + '</div>';
       return '<div class="cgp-sections-notice__line">This ' + thing + ' and <strong>' + name + '</strong>’s version (where it was copied from) differ' +
         (n.side === 'both' ? ': both were changed since it was copied.' : ', and there is no record of which one changed.') + when + ' ' +
-        btn('back-from', 'Compare, and update ' + name + '…') + ' ' + btn('forward-from', 'Update this section from ' + name + '…') + '</div>';
+        btn('back-from', 'Compare, and update ' + name + '…') + ' ' + btn('forward-from', 'Update this one from ' + name + '…') + '</div>';
     }
     if (n.side === 'copy') return '<div class="cgp-sections-notice__line"><strong>' + name + '</strong> changed its copy of this ' + thing + '. ' +
       btn('back-to', 'Review ' + name + '’s changes…') + '</div>';
@@ -206,12 +276,12 @@
     var box = document.createElement('div');
     box.className = 'cgp-sections-notice';
     box.setAttribute('role', 'status');
-    box.innerHTML = '<div class="cgp-sections-notice__head"><strong>Your sections</strong>' +
+    box.innerHTML = '<div class="cgp-sections-notice__head"><strong>Your other classes</strong>' +
       '<button type="button" class="cgp-sections__x" data-notice="dismiss" aria-label="Hide until something changes" title="Hide until something changes">×</button></div>' +
       notes.map(function (n, i) { return self.noticeLine(item, n, i); }).join('');
     var host = document.querySelector('#content') || document.querySelector('main') || document.body;
     host.insertBefore(box, host.firstChild);
-    if (this.button) this.button.classList.add('cgp-sections-toggle--new');
+    if (this.button) this.button.classList.add('cgp-copyto--new');
     box.addEventListener('click', function (e) {
       var b = e.target.closest && e.target.closest('[data-notice]');
       if (!b) return;
@@ -258,7 +328,7 @@
     root.innerHTML =
       '<div class="cgp-stats__backdrop"></div>' +
       '<div class="cgp-stats__panel" role="dialog" aria-modal="true" aria-labelledby="cgp-sections-title" tabindex="-1">' +
-      '<header><div><div class="cgp-stats__eyebrow">Bring a section’s changes back</div><h2 id="cgp-sections-title"></h2></div>' +
+      '<header><div><div class="cgp-stats__eyebrow">Bring a class’s changes back</div><h2 id="cgp-sections-title"></h2></div>' +
       '<button type="button" class="cgp-stats__close" aria-label="Close">×</button></header>' +
       '<div class="cgp-sections__body"></div></div>';
     root.querySelector('.cgp-stats__backdrop').addEventListener('click', function () { self.requestClose(); });
@@ -305,9 +375,9 @@
       body.innerHTML = '<section class="cgp-roster__section"><h3>' + (r.ok ? 'Updated ' + esc(to) : 'Not updated') + '</h3>' +
         (r.error ? '<p class="cgp-sections__err">' + esc(r.error) + '</p>' : '') +
         (r.warnings.length ? '<ul class="cgp-sections__warnlist">' + r.warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' : '') +
-        (r.ok ? '<p class="cgp-stats__note">' + esc(to) + ' now has ' + esc(from) + '’s version. Your other sections still have the earlier one until you copy it to them.</p>' : '') +
+        (r.ok ? '<p class="cgp-stats__note">' + esc(to) + ' now has ' + esc(from) + '’s version. Your other classes still have the earlier one until you copy it to them.</p>' : '') +
         '<div class="cgp-roster__row cgp-roster__actions">' +
-        (r.ok ? '<button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-act="back-forward">Copy it to your other sections…</button>' +
+        (r.ok ? '<button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-act="back-forward">Copy it to your other classes…</button>' +
           '<a class="cgp-roster__btn" href="' + esc(r.url) + '" target="_blank" rel="noopener">Open in ' + esc(to) + '</a>' +
           '<button type="button" class="cgp-roster__btn" data-act="back-undo">Undo</button>' : '') +
         '<button type="button" class="cgp-roster__btn" data-act="close">Close</button></div></section>';
@@ -323,7 +393,7 @@
     var info = ['Links to files, pages and other items are changed to ' + esc(to) + '’s own.'];
     if (plan.missingFiles.length) info.push(plan.missingFiles.length + (plan.missingFiles.length === 1 ? ' file' : ' files') + ' only ' + esc(from) + ' has will be copied into ' + esc(to) + '.');
     if (plan.missingLinks.length) info.push(plan.missingLinks.length + (plan.missingLinks.length === 1 ? ' link points' : ' links point') + ' to something only ' + esc(from) + ' has; ' + (plan.missingLinks.length === 1 ? 'it keeps' : 'they keep') + ' pointing there.');
-    if (plan.origNote) info.push(esc(to) + '’s own section note stays; ' + esc(from) + '’s note (if any) does not come along.');
+    if (plan.origNote) info.push(esc(to) + '’s own class note stays; ' + esc(from) + '’s note (if any) does not come along.');
     if (plan.pointsDiffer) info.push('Points differ (' + esc(plan.orig.pointsPossible) + ' in ' + esc(to) + ', ' + esc(plan.copy.pointsPossible) + ' in ' + esc(from) + '). Points are not brought back; change them in ' + esc(to) + ' if needed.');
     info.push('Only the instructions' + (plan.titleDiffers ? ' and title' : '') + ' come back. Settings, rubric and quiz questions changed in ' + esc(from) + ' are not brought back.');
     var text = function (h) { return esc(sync.htmlToText(sync.splitNote(h || '').html, true)) || '<em>(empty)</em>'; };
@@ -415,7 +485,8 @@
   /* -------------------------------------------------------------- dialog */
 
   /* opts.items: start with these instead of the page's item.
-   * opts.dests: only these linked sections. */
+   * opts.dests: only these linked sections.
+   * opts.pick: no item yet (course home, Modules): go to the picker. */
   P.open = function (opts) {
     var self = this;
     opts = opts || {};
@@ -424,14 +495,14 @@
       items: [], dests: [], courses: null, tz: null, survey: null, surveying: false, surveyError: null,
       cells: {}, seed: {}, notes: {}, include: {}, replace: {}, adjust: {},
       publish: 'match', placeInModules: true, view: 'main', picker: { type: 'assignment', q: '', lists: {}, chosen: {} },
-      running: false, results: null
+      running: false, results: null, wantPick: !!opts.pick
     };
     var root = document.createElement('div');
     root.className = 'cgp-stats cgp-sections';
     root.innerHTML =
       '<div class="cgp-stats__backdrop"></div>' +
       '<div class="cgp-stats__panel" role="dialog" aria-modal="true" aria-labelledby="cgp-sections-title" tabindex="-1">' +
-      '<header><div><div class="cgp-stats__eyebrow">Copy to sections</div><h2 id="cgp-sections-title"></h2></div>' +
+      '<header><div><div class="cgp-stats__eyebrow">Copy to other classes</div><h2 id="cgp-sections-title"></h2></div>' +
       '<button type="button" class="cgp-stats__close" aria-label="Close">×</button></header>' +
       '<div class="cgp-sections__body"></div>' +
       '</div>';
@@ -447,7 +518,7 @@
     document.body.appendChild(root);
     this.root = root;
     try { root.querySelector('.cgp-stats__panel').focus(); } catch (e) { /* ignore */ }
-    this.root.querySelector('#cgp-sections-title').textContent = this.courseName(this.courseId);
+    this.root.querySelector('#cgp-sections-title').textContent = 'From ' + this.courseName(this.courseId);
     this.render();
 
     var st = this.state;
@@ -464,7 +535,8 @@
       st.dests = self.siblings();
       if (opts.dests) st.dests = st.dests.filter(function (d) { return opts.dests.indexOf(String(d)) >= 0; });
       if (!st.dests.length) st.view = 'link';
-      self.root.querySelector('#cgp-sections-title').textContent = self.courseName(self.courseId);
+      else if (st.wantPick && !st.items.length) st.view = 'pick';
+      self.root.querySelector('#cgp-sections-title').textContent = 'From ' + self.courseName(self.courseId);
       self.render();
       self.resurvey();
     });
@@ -530,7 +602,7 @@
     }, function (err) {
       if (self.state !== st || st.surveyToken !== token) return;
       st.surveying = false;
-      st.surveyError = CGP.util.describeApiError(err, { fallback: 'Couldn’t read your sections from Canvas' });
+      st.surveyError = CGP.util.describeApiError(err, { fallback: 'Couldn’t read your other classes from Canvas' });
       self.render();
     });
   };
@@ -686,23 +758,49 @@
       var id = String(c.id);
       var on = st.linkDraft.indexOf(id) >= 0;
       var elsewhere = sync.groupFor(self.settings.values.sectionGroups, self.origin, id);
-      var note = elsewhere && linked.indexOf(id) < 0 ? '<span class="cgp-sections__tag">linked with other courses</span>' : '';
+      var note = elsewhere && linked.indexOf(id) < 0 ? '<span class="cgp-sections__tag" title="Ticking it moves it into this group">in another group</span>' : '';
       return '<label class="cgp-sections__course"><input type="checkbox" data-link="' + esc(id) + '"' + (on ? ' checked' : '') + '> ' +
         '<span class="cgp-sections__course-name">' + esc(c.name) + '</span>' +
         (suggested.indexOf(id) >= 0 ? '<span class="cgp-sections__tag cgp-sections__tag--hint">suggested</span>' : '') + note +
         (c.term && c.term.name ? '<span class="cgp-sections__term">' + esc(c.term.name) + '</span>' : '') + '</label>';
     }).join('');
-    return '<section class="cgp-roster__section">' +
-      '<h3>Which courses are other sections of this one?</h3>' +
-      '<p class="cgp-stats__note">Pick every Canvas course you teach as the same course to a different section. ' +
-      'They are linked to each other, so any of them can copy to the rest. Only course ids are saved (in your Chrome settings).</p>' +
-      '<input type="search" class="cgp-sections__filter" data-role="link-filter" placeholder="Filter courses…" value="' + esc(st.linkFilter || '') + '">' +
+    // First time: what this does (and doesn't) before any choice, and a
+    // two-step frame so the list reads as setup, not as the copy itself.
+    var first = !linked.length;
+    var n = st.linkDraft.length;
+    var go = n === 1 ? 'Continue with ' + this.courseName(st.linkDraft[0])
+      : n ? 'Continue with these ' + n + ' classes'
+        : (linked.length ? 'Stop copying between these classes' : 'Pick at least one class');
+    return (first ? this.renderAbout(true) : '') +
+      '<section class="cgp-roster__section">' +
+      (first ? '<div class="cgp-sections__step">Step 1 of 2</div>' : '') +
+      '<h3>Which of your classes are the same course as this one?</h3>' +
+      '<p class="cgp-stats__note">Usually your other periods or blocks of it. You choose once; it’s remembered for all of them.</p>' +
+      '<input type="search" class="cgp-sections__filter" data-role="link-filter" placeholder="Filter your classes…" value="' + esc(st.linkFilter || '') + '">' +
       '<div class="cgp-sections__courses">' + (rows || '<p class="cgp-stats__note">No other courses where you teach.</p>') + '</div>' +
       '<div class="cgp-roster__row cgp-roster__actions">' +
-      '<button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-act="save-link">' +
-      (st.linkDraft.length ? 'Link ' + (st.linkDraft.length + 1) + ' sections' : (linked.length ? 'Unlink this course' : 'Save')) + '</button>' +
+      '<button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-act="save-link"' + (n || linked.length ? '' : ' disabled') + '>' + esc(go) + '</button>' +
       (linked.length ? '<button type="button" class="cgp-roster__btn" data-act="cancel-link">Cancel</button>' : '') +
+      '<span class="cgp-stats__note">Nothing is copied yet.</span>' +
       '</div></section>';
+  };
+
+  /* What Copy to other classes does and does not do, in four lines a
+   * teacher can check against what they expect: shown open the first time,
+   * folded away (one click) after that. */
+  P.renderAbout = function (open) {
+    var lines = [
+      ['yes', 'Makes a copy of what you pick in each class you choose, with that class’s own dates.'],
+      ['yes', 'Shows what will happen in each class first. Nothing changes until you press Copy.'],
+      ['no', 'Doesn’t copy students, grades or submissions, and doesn’t change this class.'],
+      ['no', 'Doesn’t keep copies in sync: a later edit stays in the class where you make it.']
+    ];
+    var list = '<ul class="cgp-sections__about-list">' + lines.map(function (l) {
+      return '<li class="is-' + l[0] + '"><span class="cgp-sections__about-mark" aria-hidden="true">' + (l[0] === 'yes' ? '✓' : '✕') + '</span>' +
+        '<span><span class="cgp-sections__sr">' + (l[0] === 'yes' ? 'Does: ' : 'Does not: ') + '</span>' + esc(l[1]) + '</span></li>';
+    }).join('') + '</ul>';
+    if (open) return '<div class="cgp-sections__about">' + list + '</div>';
+    return '<details class="cgp-sections__about cgp-sections__about--folded"><summary>What this does — and doesn’t</summary>' + list + '</details>';
   };
 
   P.renderPicker = function () {
@@ -770,17 +868,19 @@
         (st.running ? '' : ' <button type="button" class="cgp-sections__x" aria-label="Remove" data-remove="' + esc(itemKey(it)) + '">×</button>') + '</span>';
     }).join('');
     var dests = st.dests.map(function (d) {
-      return '<span class="cgp-sections__chip">' + esc(self.courseName(d)) + '</span>';
+      return '<span class="cgp-sections__chip cgp-sections__chip--to">' + esc(self.courseName(d)) + '</span>';
     }).join('');
 
-    var html = '<section class="cgp-roster__section"><h3>What to copy</h3>' +
+    var html = this.renderAbout(false) +
+      '<section class="cgp-roster__section"><h3>What to copy</h3>' +
       '<div class="cgp-sections__chips">' + (items || '<span class="cgp-stats__note">Nothing chosen yet.</span>') + '</div>' +
       '<div class="cgp-roster__row"><button type="button" class="cgp-roster__btn" data-act="pick"' + (st.running ? ' disabled' : '') + '>Add items…</button></div></section>' +
-      '<section class="cgp-roster__section"><h3>Copy to</h3>' +
-      '<div class="cgp-sections__chips">' + dests + '</div>' +
-      '<div class="cgp-roster__row"><button type="button" class="cgp-roster__btn" data-act="edit-link"' + (st.running ? ' disabled' : '') + '>Change linked sections…</button>' +
+      '<section class="cgp-roster__section"><h3>Into</h3>' +
+      '<div class="cgp-sections__flow"><span class="cgp-sections__chip cgp-sections__chip--from" title="Stays as it is">' + esc(this.courseName(this.courseId)) +
+      '</span><span class="cgp-sections__arrow" aria-label="copied into">→</span><div class="cgp-sections__chips">' + dests + '</div></div>' +
+      '<div class="cgp-roster__row"><button type="button" class="cgp-roster__btn" data-act="edit-link"' + (st.running ? ' disabled' : '') + '>Change classes…</button>' +
       '<label class="cgp-roster__field">Publishing <select data-role="publish"' + (st.running ? ' disabled' : '') + '>' +
-      [['match', 'Same as this section'], ['unpublished', 'Leave copies unpublished'], ['published', 'Publish copies']].map(function (o) {
+      [['match', 'Same as here'], ['unpublished', 'Leave copies unpublished'], ['published', 'Publish copies']].map(function (o) {
         return '<option value="' + o[0] + '"' + (st.publish === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
       }).join('') + '</select></label>' +
       '<label class="cgp-roster__choice"><input type="checkbox" data-role="modules"' + (st.placeInModules ? ' checked' : '') + (st.running ? ' disabled' : '') +
@@ -791,9 +891,9 @@
     if (st.surveyError) return html + '<p class="cgp-stats__note cgp-sections__err">' + esc(st.surveyError) + ' <button type="button" class="cgp-roster__btn" data-act="resurvey">Try again</button></p>';
     if (!st.survey) return html;
 
-    html += '<section class="cgp-roster__section"><h3>Dates for each section</h3>' +
+    html += '<section class="cgp-roster__section"><h3>Dates in each class</h3>' +
       '<p class="cgp-stats__note">Times are in ' + esc(st.tz || 'your computer’s time zone') + ', as Canvas shows them. ' +
-      'Each section starts with this section’s dates. To move a whole section, shift its dates by days or set its due time ' +
+      'Each class starts with the dates this one has. To move a whole class, shift its dates by days or set its due time ' +
       '(a time, or one of your period shortcuts such as 1–4).</p>' +
       st.dests.map(function (d) { return self.renderAdjust(d); }).join('') + '</section>';
 
@@ -802,7 +902,7 @@
     var plan = this.planSummary();
     html += '<div class="cgp-roster__row cgp-roster__actions cgp-sections__go">' +
       '<button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-act="run"' + (plan.count && !plan.errors.length && !st.running ? '' : ' disabled') + '>' +
-      (plan.count ? 'Copy ' + plan.count + (plan.count === 1 ? ' item' : ' items') : 'Nothing to copy') + '</button>' +
+      esc(plan.label) + '</button>' +
       '<span class="cgp-stats__note">' + esc(plan.errors.length ? plan.errors[0] : plan.text) + '</span></div>';
     return html;
   };
@@ -814,19 +914,19 @@
       return '<div class="cgp-sections__adjust"><strong>' + esc(this.courseName(d)) + '</strong> <span class="cgp-sections__err">' + esc(dest.error) + '</span></div>';
     }
     return '<div class="cgp-sections__adjust" data-dest="' + esc(d) + '"><strong>' + esc(this.courseName(d)) + '</strong>' +
-      '<label>Shift <input type="number" step="1" class="cgp-sections__days" data-adjust="days" value="' + esc(a.days || '') + '" placeholder="0"> days from this section’s</label>' +
+      '<label>Shift <input type="number" step="1" class="cgp-sections__days" data-adjust="days" value="' + esc(a.days || '') + '" placeholder="0"> days from here</label>' +
       '<label>Due time <input type="text" class="cgp-sections__time" data-adjust="time" value="' + esc(a.time || '') + '" placeholder="e.g. 3 or 1:45 pm"></label>' +
       '<button type="button" class="cgp-roster__btn" data-act="adjust" data-dest="' + esc(d) + '">Apply</button>' +
       '<button type="button" class="cgp-roster__btn" data-act="reset" data-dest="' + esc(d) + '" title="Back to the dates the boxes started with">Reset</button></div>';
   };
 
   var STATUS_TEXT = {
-    'new': 'Not in this section yet — it will be copied.',
-    restore: 'It was deleted in this section — copying brings it back.',
-    same: 'Already there with the same instructions — copying again updates it.',
-    stale: 'Already there, from an earlier version — copying updates it.',
-    edited: 'Already there, and its instructions were changed in this section since it was copied.',
-    differs: 'Already there, with different instructions from this section’s.'
+    'new': 'Not there yet — a copy will be made.',
+    restore: 'It was deleted there — copying brings it back.',
+    same: 'Already there with the same instructions — its copy is updated, not duplicated.',
+    stale: 'Already there, from an earlier version — its copy is updated, not duplicated.',
+    edited: 'Already there, and someone changed its instructions there since it was copied.',
+    differs: 'Already there, with different instructions from the ones here.'
   };
 
   P.renderItem = function (it) {
@@ -842,10 +942,10 @@
       var on = !!st.include[k];
       var existing = info.destId && info.status !== 'restore';
       var status = STATUS_TEXT[info.status || 'new'] || '';
-      if (!on && (info.status || 'new') === 'new') status = 'Not in this section yet.';
+      if (!on && (info.status || 'new') === 'new') status = 'Not there yet. Skipped.';
       if (existing && dated(it).length) status += ' Its dates below are the ones it has there now.';
       if (it.type === 'module' && info.changedChildren && info.changedChildren.length) {
-        status = 'Already there. Copying the module again also replaces everything in it, and these were changed in this section: ' +
+        status = 'Already there. Copying the module again also replaces everything in it, and these were changed there: ' +
           info.changedChildren.join(', ') + '.';
       }
       var bits = [];
@@ -864,9 +964,9 @@
       if (existing && (info.status === 'edited' || info.status === 'differs' || info.status === 'stale')) {
         var rep = !!st.replace[k];
         choice = '<div class="cgp-sections__choice">' +
-          '<label><input type="radio" name="rep-' + esc(k) + '" data-replace="' + esc(k) + '" value="1"' + (rep ? ' checked' : '') + '> Replace with this section’s version</label>' +
-          '<label><input type="radio" name="rep-' + esc(k) + '" data-replace="' + esc(k) + '" value="0"' + (rep ? '' : ' checked') + '> Keep that section’s own version (only dates' + (t.body ? ' and note' : '') + ' change)</label>' +
-          (t.body && it.type !== 'module' && !st.running ? '<button type="button" class="cgp-roster__btn cgp-sections__back" data-act="back" data-dest="' + esc(d) + '" data-item="' + esc(itemKey(it)) + '">Bring that section’s version here instead…</button>' : '') +
+          '<label><input type="radio" name="rep-' + esc(k) + '" data-replace="' + esc(k) + '" value="1"' + (rep ? ' checked' : '') + '> Replace with the version here</label>' +
+          '<label><input type="radio" name="rep-' + esc(k) + '" data-replace="' + esc(k) + '" value="0"' + (rep ? '' : ' checked') + '> Keep that class’s own version (only dates' + (t.body ? ' and note' : '') + ' change)</label>' +
+          (t.body && it.type !== 'module' && !st.running ? '<button type="button" class="cgp-roster__btn cgp-sections__back" data-act="back" data-dest="' + esc(d) + '" data-item="' + esc(itemKey(it)) + '">Bring that class’s version here instead…</button>' : '') +
           '</div>';
       }
       var dateRows = dated(it).map(function (row) {
@@ -883,8 +983,8 @@
       var note = '';
       if (t.body) {
         var nv = st.notes[k] || '';
-        note = '<details class="cgp-sections__note"' + (nv ? ' open' : '') + '><summary>Note for this section only' + (nv ? ' (has one)' : '') + '</summary>' +
-          '<textarea rows="2" data-note="' + esc(k) + '" placeholder="Shown at the top of the instructions in this section only."' + (on ? '' : ' disabled') + '>' + esc(nv) + '</textarea></details>';
+        note = '<details class="cgp-sections__note"' + (nv ? ' open' : '') + '><summary>Note for this class only' + (nv ? ' (has one)' : '') + '</summary>' +
+          '<textarea rows="2" data-note="' + esc(k) + '" placeholder="Shown at the top of the instructions in this class only."' + (on ? '' : ' disabled') + '>' + esc(nv) + '</textarea></details>';
       }
       return '<div class="cgp-sections__dest' + (on ? '' : ' is-off') + '">' +
         '<label class="cgp-sections__dest-head"><input type="checkbox" data-include="' + esc(k) + '"' + (on ? ' checked' : '') + '> <strong>' + esc(self.courseName(d)) + '</strong></label>' +
@@ -895,9 +995,9 @@
     var extra = [];
     if (it.hasOverrides) extra.push('It has dates for particular students or sections in this course; copies get only the dates set below.');
     if (it.newQuiz) extra.push('A New Quiz: Canvas copies its questions in a second step, so it can take a few minutes.');
-    if (it.type === 'module') extra.push('Copies the module and everything in it. Dates for the module’s items can be set for each section below.');
+    if (it.type === 'module') extra.push('Copies the module and everything in it. Dates for the module’s items can be set for each class below.');
     if (it.type === 'page' && !dated(it).length) extra.push('Pages have no dates to set.');
-    if (it.type === 'announcement') extra.push('Announcements are not published or unpublished; each section’s copy posts at its own Post at date (blank: as soon as it is copied).');
+    if (it.type === 'announcement') extra.push('Announcements are not published or unpublished; each class’s copy posts at its own Post at date (blank: as soon as it is copied).');
     if (it.type === 'module' && st.publish !== 'match') extra.push('Publishing or unpublishing the module does the same to its items, as on the Modules page.');
     return '<section class="cgp-roster__section cgp-sections__item"><h3>' + esc(t.label) + ': ' + esc(it.title || '(untitled)') + '</h3>' +
       (extra.length ? '<p class="cgp-stats__note">' + esc(extra.join(' ')) + '</p>' : '') + rows + '</section>';
@@ -917,7 +1017,7 @@
         esc(self.courseName(r.task.destCourseId)) + '</strong> · ' + esc(r.task.item.title || '') + ' — ' + detail + link + warns + '</div></li>';
     }).join('');
     return '<section class="cgp-roster__section"><h3>' + (st.running ? 'Copying…' : 'Done') + '</h3>' +
-      (st.running ? '<p class="cgp-stats__note">Canvas copies one item at a time into each section; this can take a minute or two.</p>' : '') +
+      (st.running ? '<p class="cgp-stats__note">Canvas copies one item at a time into each class; this can take a minute or two.</p>' : '') +
       '<ul class="cgp-sections__results">' + lines + '</ul>' +
       (st.running ? '' : '<div class="cgp-roster__row cgp-roster__actions"><button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-act="close">Close</button>' +
         '<button type="button" class="cgp-roster__btn" data-act="again">Copy something else</button></div>') + '</section>';
@@ -1019,7 +1119,7 @@
     var btn = go.querySelector('[data-act="run"]');
     if (btn) {
       btn.disabled = !(plan.count && !plan.errors.length && !st.running);
-      btn.textContent = plan.count ? 'Copy ' + plan.count + (plan.count === 1 ? ' item' : ' items') : 'Nothing to copy';
+      btn.textContent = plan.label;
     }
     var note = go.querySelector('.cgp-stats__note');
     if (note) note.textContent = plan.errors.length ? plan.errors[0] : plan.text;
@@ -1043,15 +1143,15 @@
       if (self.state !== st) return;
       st.dests = self.siblings();
       if (ids.length >= 2 && !st.dests.length) {
-        CGP.ui.error('Those sections could not be saved: the list of linked sections is full. Unlink old ones in the options page.');
+        CGP.ui.error('Those classes could not be saved: the list of class groups is full. Remove old ones in the options page.');
       }
       st.linkDraft = null;
-      st.view = st.dests.length ? 'main' : 'link';
+      st.view = !st.dests.length ? 'link' : (st.wantPick && !st.items.length ? 'pick' : 'main');
       st.cells = {}; st.seed = {}; st.include = {}; st.replace = {}; st.notes = {};
       self.render();
       self.resurvey();
     }, function (err) {
-      CGP.ui.error('Couldn’t save the linked sections: ' + String(err && err.message));
+      CGP.ui.error('Couldn’t save your classes: ' + String(err && err.message));
     });
   };
 
@@ -1159,12 +1259,22 @@
 
   P.planSummary = function () {
     var b = this.buildTasks();
-    var copies = b.tasks.filter(function (t) { return t.mode === 'copy'; }).length;
-    var keeps = b.tasks.length - copies;
+    var made = b.tasks.filter(function (t) { return t.mode === 'copy' && !t.destId; }).length;
+    var updated = b.tasks.filter(function (t) { return t.mode === 'copy' && t.destId; }).length;
+    var keeps = b.tasks.length - made - updated;
+    var classes = {};
+    b.tasks.forEach(function (t) { classes[t.destCourseId] = true; });
+    var nc = Object.keys(classes).length;
     var parts = [];
-    if (copies) parts.push(copies + (copies === 1 ? ' copy' : ' copies'));
+    if (made) parts.push(made === 1 ? '1 new copy' : made + ' new copies');
+    if (updated) parts.push(updated === 1 ? '1 copy updated' : updated + ' copies updated');
     if (keeps) parts.push(keeps + (keeps === 1 ? ' date-only update' : ' date-only updates'));
-    return { count: b.tasks.length, errors: b.errors, text: parts.join(', ') };
+    // Says what the button will do before it is pressed, and what it won't.
+    var text = parts.length ? parts.join(', ') + '. ' + this.courseName(this.courseId) + ' itself is not changed.' : '';
+    return {
+      count: b.tasks.length, errors: b.errors, text: text,
+      label: nc ? 'Copy to ' + (nc === 1 ? this.courseName(Object.keys(classes)[0]) : nc + ' classes') : 'Nothing to copy'
+    };
   };
 
   P.runAll = function () {
@@ -1207,7 +1317,7 @@
       var bad = st.results.length - ok;
       CGP.diag.bump('sections.copied', ok);
       if (bad) CGP.ui.error(ok + ' of ' + st.results.length + ' done. See the list for what needs attention.');
-      else CGP.ui.toast('Copied to your sections (' + ok + ').');
+      else CGP.ui.toast('Copied to your other classes (' + ok + ').');
     });
   };
 
@@ -1220,11 +1330,11 @@
       var ok = done.filter(function (d) { return d.result.ok; });
       var first = done[0];
       if (ok.length === done.length) {
-        CGP.ui.toast('Finished copying ' + (done.length === 1 ? '“' + first.job.task.item.title + '” to ' + (first.job.task.destName || 'a section')
-          : done.length + ' items to your sections') + '.');
+        CGP.ui.toast('Finished copying ' + (done.length === 1 ? '“' + first.job.task.item.title + '” to ' + (first.job.task.destName || 'a class')
+          : done.length + ' items to your other classes') + '.');
       } else {
         var bad = done.filter(function (d) { return !d.result.ok; })[0];
-        CGP.ui.error('Copying “' + bad.job.task.item.title + '” to ' + (bad.job.task.destName || 'a section') + ' did not finish: ' + (bad.result.error || 'unknown error'));
+        CGP.ui.error('Copying “' + bad.job.task.item.title + '” to ' + (bad.job.task.destName || 'a class') + ' did not finish: ' + (bad.result.error || 'unknown error'));
       }
       CGP.diag.log('sections.resumed', { count: done.length, ok: ok.length });
       self.lastResumed = done;
