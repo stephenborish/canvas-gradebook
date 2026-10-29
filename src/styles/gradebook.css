@@ -2771,7 +2771,8 @@ html.cgp-on .cgp-sections__result.is-err .cgp-sections__icon { background: #fde8
 html.cgp-on .cgp-sections__busy { margin-top: 12px; }
 
 /* The notice on an item's page about its copies in the other sections. */
-html.cgp-on .cgp-sections-notice {
+html.cgp-on .cgp-sections-notice,
+html.cgp-on .cgp-inline-banner {
   font-family: var(--cgp-font);
   color: var(--cgp-ink);
   background: #fff8eb;
@@ -2782,6 +2783,7 @@ html.cgp-on .cgp-sections-notice {
   margin: 0 0 14px 0;
   font-size: 14px;
 }
+html.cgp-on .cgp-inline-banner { background: #f2f8fc; border-color: #b7d6ea; border-left-color: var(--cgp-brand); }
 html.cgp-on .cgp-sections-notice__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 html.cgp-on .cgp-sections-notice__line { margin: 6px 0; line-height: 1.5; }
 html.cgp-on .cgp-sections-notice__line .cgp-roster__btn { margin: 2px 4px 2px 0; }
@@ -2806,3 +2808,64 @@ html.cgp-on .cgp-sections__back { align-self: flex-start; margin-top: 4px; }
 @media (max-width: 640px) {
   html.cgp-on .cgp-sections__compare { grid-template-columns: 1fr; }
 }
+
+/* "Also post to your other sections" in Canvas's own editors. */
+html.cgp-on .cgp-inline {
+  font-family: var(--cgp-font);
+  color: var(--cgp-ink);
+  border: 1px solid #b7d6ea;
+  border-left: 4px solid var(--cgp-brand);
+  background: #f5fafd;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 16px 0;
+  font-size: 14px;
+}
+html.cgp-on .cgp-inline--floating {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 10000;
+  width: min(560px, calc(100vw - 32px));
+  max-height: 60vh;
+  overflow: auto;
+  box-shadow: var(--cgp-shadow);
+}
+html.cgp-on .cgp-inline__head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+html.cgp-on .cgp-inline__count { color: var(--cgp-muted); font-size: 12px; }
+html.cgp-on .cgp-inline__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px 14px;
+  padding: 8px 0;
+  border-top: 1px solid #deebf3;
+}
+html.cgp-on .cgp-inline__row.is-off { opacity: 0.6; }
+html.cgp-on .cgp-inline__name { display: flex; align-items: center; gap: 6px; font-weight: 600; min-width: 200px; margin: 0; cursor: pointer; }
+html.cgp-on .cgp-inline__date { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--cgp-muted); margin: 0; }
+html.cgp-on .cgp-inline__date span { font-weight: 600; }
+html.cgp-on .cgp-inline__date input {
+  font: inherit;
+  font-size: 13px;
+  padding: 3px 6px;
+  border: 1px solid var(--cgp-line);
+  border-radius: 5px;
+  margin: 0 4px 0 0;
+  height: auto;
+  width: auto;
+}
+html.cgp-on .cgp-inline__time { width: 110px !important; }
+html.cgp-on .cgp-inline__date { flex-direction: row; flex-wrap: wrap; align-items: center; }
+html.cgp-on .cgp-inline__date span { flex: 1 0 100%; }
+html.cgp-on .cgp-inline__more { font-size: 12px; }
+html.cgp-on .cgp-inline__more summary { cursor: pointer; color: var(--cgp-brand-dark); }
+html.cgp-on .cgp-inline__more[open] { flex: 1 0 100%; display: flex; flex-wrap: wrap; gap: 6px 14px; }
+html.cgp-on .cgp-inline__more[open] summary { flex: 1 0 100%; }
+html.cgp-on .cgp-inline__status { flex: 1 0 100%; font-size: 12px; color: var(--cgp-muted); }
+html.cgp-on .cgp-inline__err { flex: 1 0 100%; font-size: 12px; color: #b42318; }
+html.cgp-on .cgp-inline__err:empty { display: none; }
+html.cgp-on .cgp-inline__hint { font-size: 12px; color: var(--cgp-muted); margin: 6px 0 0; }
+html.cgp-on .cgp-inline--module { margin: 12px 0; }
+html.cgp-on .cgp-inline--module .cgp-inline__name { font-weight: 400; margin: 4px 0; }
+html.cgp-on .cgp-inline-banner__icon { display: inline-block; width: 1.2em; font-weight: 700; }

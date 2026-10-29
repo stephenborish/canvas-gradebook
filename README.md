@@ -527,6 +527,29 @@ For a course you teach to several sections that are **separate Canvas courses** 
 build an assignment, quiz, discussion, announcement, page or module once, then put it in every
 other section in one step, each with its own dates.
 
+**Post it while you make it.** On Canvas's own page for creating or editing an assignment, quiz,
+discussion or page in a linked course, a panel sits just above **Save**: *Also post to your other
+sections*. Each linked section has a row with its own **Due** date and time (and, under *More dates*,
+*Available from* and *Until*):
+
+- Leave a date blank for the same date as this section.
+- Type only a time, or a period shortcut such as `4`, for this section's day at that time.
+- Pick a date to use that date at this section's time of day.
+- A section that already has a copy shows the dates its copy has now, so saving never resets them.
+
+Tick the sections you want (each section's tick and usual due time are remembered for next time),
+then press Canvas's own **Save**. When the saved item opens, it is copied to every ticked section
+with those dates, and a banner at the top shows each section's progress with a link to its copy.
+
+- **Cancel copies nothing.** The copy is made only when the item really was saved since the editor
+  opened. For a new item, it must also be the one created since, with that title.
+- **Saving an edit of an item that is already in the sections updates their copies.** A copy that was
+  changed in its own section keeps its own version, and only its dates change.
+- **A New Quiz** is copied with Copy to sections once its questions are in, since it is saved before
+  they are written.
+- **Canvas's Add Module dialog** gets the same checklist, and the new module is copied to the ticked
+  sections once Canvas has created it.
+
 **Link the sections once.** Every course page has **Copy to sections** in the breadcrumb. The first
 time, it asks which of your courses are other sections of this one. It pre-ticks courses with the
 same name in the same term once "Period 2", "(P4)", "Section 7", "Block 3" and the like are set aside.
@@ -794,6 +817,7 @@ src/core/section-sync.js          Copy to sections: requests, dates, notes, chan
 src/sections/sync-runner.js       Copy to sections: survey each section, copy, apply dates/note,
                                    find copies both ways, bring a copy's changes back
 src/sections/sync-dialog.js       Copy to sections: breadcrumb button, dialog, page notice, review
+src/sections/inline-copy.js       the panel in Canvas's own editors; the copies after its Save
 src/speedgrader/content.js        comment draft autosave; live sync with the gradebook
 src/page/env-bridge.js            page context: ENV ids, column widths, Canvas's store and tray
 src/page/write-watch.js           page context: reports Canvas's own submission writes (ids only)
@@ -824,7 +848,7 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-586 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
+593 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
 again → not Missing, `L` → Late and `L` again → not Late, both leaving the grade untouched either
 way, `E` → Excused, a grade never adding a status (and lifting an applied Missing only when asked),
 statuses read exactly as Canvas computes them, the hand-off to Canvas's own store (and never
