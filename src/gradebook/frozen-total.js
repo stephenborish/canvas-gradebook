@@ -63,8 +63,17 @@
         CGP.diag.warn('frozenTotal.notFrozen', { reason: result && result.reason });
         return;
       }
-      self._nextAt = Date.now() + Math.min(MAX_DELAY_MS, 1000 * Math.pow(2, self._attempts - 1));
+      var delay = Math.min(MAX_DELAY_MS, 1000 * Math.pow(2, self._attempts - 1));
+      self._nextAt = Date.now() + delay;
+      // An idle grid may not repaint on its own, so the retry is not left
+      // waiting for one. The timer clears the wait itself, so firing a
+      // millisecond early cannot skip the retry.
+      self._schedule(function () { self._nextAt = 0; self.paint(); }, delay);
     });
+  };
+
+  P._schedule = function (fn, ms) {
+    return setTimeout(fn, ms);
   };
 
   P.request = function () {

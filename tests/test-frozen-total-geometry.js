@@ -10,6 +10,8 @@ const { loadGradebookDom } = require('./domharness');
 function controller(CGP, answers, settings) {
   const ctrl = new CGP.FrozenTotalController({ settings: settings || { values: { frozenTotal: true } } });
   ctrl.asked = 0;
+  ctrl.scheduled = [];
+  ctrl._schedule = function (fn, ms) { ctrl.scheduled.push({ fn: fn, ms: ms }); };
   ctrl.request = function () {
     const answer = answers[Math.min(ctrl.asked, answers.length - 1)];
     ctrl.asked++;
@@ -47,6 +49,19 @@ suite('frozen Total: Canvas\'s own column, frozen by Canvas', (test) => {
       await settle();
     }
     a.eq(ctrl.asked, 8, 'gives up after a bounded number of tries');
+    a.eq(ctrl.done, true);
+  });
+
+  test('a failed request schedules its own retry, so an idle grid still gets one', async () => {
+    const CGP = loadGradebookDom();
+    const ctrl = controller(CGP, [{ ok: false, reason: 'timeout' }, { ok: true, frozen: true, changed: true }]);
+    ctrl.start();
+    await settle();
+    a.eq(ctrl.scheduled.length, 1, 'a retry is timed, not left to the next paint');
+    a.eq(ctrl.scheduled[0].ms, 1000);
+    ctrl.scheduled[0].fn();   // even with the clock a hair short of the backoff
+    await settle();
+    a.eq(ctrl.asked, 2);
     a.eq(ctrl.done, true);
   });
 
