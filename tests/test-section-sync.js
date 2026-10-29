@@ -1087,12 +1087,24 @@ suite('copy to sections: the editor’s Save', (test) => {
   const here = { courseId: '11', type: 'assignment', id: '9' };
   const t = Date.parse('2026-11-01T12:00:00Z');
 
-  test('an edit counts only if the item changed after the editor opened: Cancel copies nothing', async () => {
-    const saved = await inline({ id: 9, updated_at: new Date(t + 60000).toISOString() }).matchSaved({ id: '9', armedAt: t }, here);
+  test('an edit counts only if the item is newer than the version the editor opened on: Cancel copies nothing', async () => {
+    const base = t - 5000;   // updated five seconds before the editor opened
+    const saved = await inline({ id: 9, updated_at: new Date(t + 60000).toISOString() }).matchSaved({ id: '9', armedAt: t, baseUpdated: base }, here);
     a.ok(saved);
-    const cancelled = await inline({ id: 9, updated_at: new Date(t - 3600000).toISOString() }).matchSaved({ id: '9', armedAt: t }, here);
-    a.eq(cancelled, null);
-    a.eq(await inline({ id: 8, updated_at: new Date(t + 60000).toISOString() }).matchSaved({ id: '9', armedAt: t }, { courseId: '11', type: 'assignment', id: '8' }), null, 'another item');
+    const cancelled = await inline({ id: 9, updated_at: new Date(base).toISOString() }).matchSaved({ id: '9', armedAt: t, baseUpdated: base }, here);
+    a.eq(cancelled, null, 'an update just before the editor opened is not a save from it');
+    a.eq(await inline({ id: 8, updated_at: new Date(t + 60000).toISOString() }).matchSaved({ id: '9', armedAt: t, baseUpdated: base }, { courseId: '11', type: 'assignment', id: '8' }), null, 'another item');
+    a.eq(await inline({ id: 9, updated_at: new Date(t + 60000).toISOString() }).matchSaved({ id: '9', armedAt: t, baseUpdated: null }, here), null,
+      'the opening version unknown: the Save must have been seen');
+    a.ok(await inline({ id: 9, updated_at: new Date(t + 60000).toISOString() }).matchSaved({ id: '9', armedAt: t, baseUpdated: null, savedAt: t + 50000 }, here));
+  });
+
+  test('a new item with no readable title matches only when its editor’s Save was seen and no other editor is waiting', async () => {
+    const it = { id: 12, name: 'Lab 5', created_at: new Date(t + 30000).toISOString() };
+    const h = { courseId: '11', type: 'assignment', id: '12' };
+    a.ok(await inline(it).matchSaved({ isNew: true, armedAt: t, title: '', savedAt: t + 20000, alone: true }, h));
+    a.eq(await inline(it).matchSaved({ isNew: true, armedAt: t, title: '', savedAt: t + 20000, alone: false }, h), null);
+    a.eq(await inline(it).matchSaved({ isNew: true, armedAt: t, title: '', alone: true }, h), null);
   });
 
   test('a new item counts only if created since, with the same title', async () => {
@@ -1112,5 +1124,14 @@ suite('copy to sections: the editor’s Save', (test) => {
     load();
     ['Save', 'Save & Publish', 'save and publish', ' Save ', 'Add Module', 'Update Module'].forEach((x) => a.ok(globalThis.CGP.inlineCopy.SAVE_TEXT.test(x), x));
     ['Cancel', 'Delete', 'Saved'].forEach((x) => a.not(globalThis.CGP.inlineCopy.SAVE_TEXT.test(x), x));
+  });
+});
+
+suite('copy to sections: existing copies without a date', (test) => {
+  test('a copy with no due date keeps none; typing one in gives it that date', () => {
+    const src = { due_at: '2026-11-03T13:55:00Z', unlock_at: null, lock_at: null };
+    a.eq(S().resolveInline(['due_at'], src, { due_at: { date: '', time: '', none: true } }, TZ, []).iso.due_at, null);
+    a.eq(S().resolveInline(['due_at'], src, { due_at: { date: '2026-11-04', time: '', none: true } }, TZ, []).iso.due_at, '2026-11-04T13:55:00.000Z');
+    a.eq(S().resolveInline(['due_at'], src, { due_at: { date: '', time: '' } }, TZ, []).iso.due_at, '2026-11-03T13:55:00Z', 'a new copy: blank is this class’s');
   });
 });

@@ -59,7 +59,12 @@
 
   var P = InlineSectionCopy.prototype;
 
-  P.intentKey = function () { return INTENT_PREFIX + this.origin; };
+  /* One entry per editor tab (two editors open at once never overwrite
+   * each other's choices); the saved page uses only the one that matches. */
+  P.intentKey = function () {
+    if (!this.tabToken) this.tabToken = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    return INTENT_PREFIX + this.origin + '|' + this.tabToken;
+  };
   P.prefsKey = function () { return PREFS_PREFIX + this.origin + '.' + this.courseId; };
 
   P.siblings = function () {
@@ -119,6 +124,22 @@
     });
     document.addEventListener('click', function (e) { self.onPageClick(e); }, true);
     document.addEventListener('submit', function () { self.markSaved(); }, true);
+    // The title as it is typed: a new item is matched to its choices by it.
+    var keepTitle = CGP.util.debounce(function () { if (self.state === st) self.saveIntent(); }, 500);
+    document.addEventListener('input', function (e) {
+      if (e.target && !(e.target.closest && e.target.closest('.cgp-inline'))) keepTitle();
+    }, true);
+    // 1. The item's version when the editor opened: a later save is one
+    // made from this editor; an earlier one is not.
+    if (page.id || page.slug) {
+      var read = page.type === 'page' ? this.api.pageBySlug(this.courseId, page.slug)
+        : this.api.sectionItem(this.courseId, page.type, page.id);
+      read.then(function (o) {
+        var u = o && Date.parse(o.updated_at || '');
+        st.baseUpdated = isFinite(u) ? u : null;
+        self.saveIntent();
+      }, function () { st.baseUpdated = null; });
+    }
   };
 
   /* Sections that already have a copy of the item being edited, with that
@@ -141,7 +162,9 @@
             if (!row) return;
             st.fields.forEach(function (f) {
               var local = S().isoToLocal(dd && dd[f], st.tz);
-              row.entry[f] = local ? { date: local.slice(0, 10), time: CGP.timeShortcuts.format(local.slice(11)) } : { date: '', time: '' };
+              // Its date, or that it has none: kept as it is unless changed
+              // here (blank would otherwise mean "same as this class").
+              row.entry[f] = local ? { date: local.slice(0, 10), time: CGP.timeShortcuts.format(local.slice(11)) } : { date: '', time: '', none: true };
             });
           }, function () { /* boxes stay as they are */ });
         }));
@@ -207,7 +230,7 @@
         var e = row.entry[f] || {};
         return '<label class="cgp-inline__date"><span>' + esc(S().DATE_LABELS[f]) + '</span>' +
           '<input type="date" data-d="' + esc(d) + '" data-f="' + f + '" data-part="date" value="' + esc(e.date || '') + '"' + (row.on ? '' : ' disabled') + '>' +
-          '<input type="text" class="cgp-inline__time" data-d="' + esc(d) + '" data-f="' + f + '" data-part="time" value="' + esc(e.time || '') + '" placeholder="time or period"' + (row.on ? '' : ' disabled') + '></label>';
+          '<input type="text" class="cgp-inline__time" data-d="' + esc(d) + '" data-f="' + f + '" data-part="time" value="' + esc(e.time || '') + '" placeholder="' + (e.none ? 'none there' : 'time or period') + '"' + (row.on ? '' : ' disabled') + '></label>';
       };
       var more = fields.length > 1
         ? '<details class="cgp-inline__more"' + (fields.slice(1).some(function (f) { var e = row.entry[f] || {}; return e.date || e.time; }) ? ' open' : '') +
@@ -262,6 +285,7 @@
       var row = st.rows[d] = st.rows[d] || { on: true, entry: {} };
       row.entry[f] = row.entry[f] || { date: '', time: '' };
       row.entry[f][part] = t.value;
+      if (t.value) row.entry[f].none = false;
       var err = this.panel.querySelector('[data-err="' + d + '"]');
       if (err) err.textContent = this.rowErrors(d).join('; ');
     } else return;
@@ -312,7 +336,8 @@
     var o = {};
     o[this.intentKey()] = {
       courseId: this.courseId, type: st.page.type, id: st.itemId || null, isNew: !st.page.id && !st.page.slug,
-      armedAt: st.openedAt, savedAt: st.savedAt || 0, title: st.title || this.titleOnPage(),
+      armedAt: st.openedAt, savedAt: st.savedAt || 0, title: this.titleOnPage() || st.title || '',
+      baseUpdated: st.baseUpdated === undefined ? null : st.baseUpdated,
       sections: sections
     };
     return local.set(o).catch(function () { return null; });
@@ -361,19 +386,32 @@
     var self = this;
     var local = store();
     if (!local) return Promise.resolve(null);
-    var k = this.intentKey();
     var here = S().itemFromPath(location.pathname);
-    return local.get(k).then(function (r) {
-      var intent = r && r[k];
-      if (!intent) return null;
-      var since = Date.now() - Number(intent.savedAt || intent.armedAt || 0);
-      if (since > INTENT_TTL_MS) { local.remove(k); return null; }
-      if (!here || here.courseId !== self.courseId || intent.courseId !== self.courseId) return null;
-      if (here.type !== intent.type && !(intent.type === 'discussion' && here.type === 'announcement')) return null;
-      return self.matchSaved(intent, here).then(function (item) {
-        if (!item) return null;
+    var prefix = INTENT_PREFIX + this.origin + '|';
+    return local.get(null).then(function (all) {
+      var keys = Object.keys(all || {}).filter(function (k) { return k.indexOf(prefix) === 0; });
+      var live = [];
+      keys.forEach(function (k) {
+        var it = all[k];
+        if (!it || Date.now() - Number(it.savedAt || it.armedAt || 0) > INTENT_TTL_MS) { local.remove(k); return; }
+        live.push({ key: k, intent: it });
+      });
+      if (!here || here.courseId !== self.courseId) return null;
+      var candidates = live.filter(function (x) {
+        var it = x.intent;
+        return it.courseId === self.courseId && (here.type === it.type || (it.type === 'discussion' && here.type === 'announcement'));
+      }).sort(function (x, y) { return Number(y.intent.savedAt || y.intent.armedAt) - Number(x.intent.savedAt || x.intent.armedAt); });
+      // The newest one this saved item matches.
+      return candidates.reduce(function (chain, x) {
+        return chain.then(function (found) {
+          if (found) return found;
+          var it = Object.assign({}, x.intent, { alone: candidates.length === 1 });
+          return self.matchSaved(it, here).then(function (item) { return item ? { item: item, x: x } : null; });
+        });
+      }, Promise.resolve(null)).then(function (hit) {
+        if (!hit) return null;
         // Used once: a reload of this page must not copy again.
-        return local.remove(k).then(function () { return self.copyNow(item, intent); });
+        return local.remove(hit.x.key).then(function () { return self.copyNow(hit.item, hit.x.intent); });
       });
     }).catch(function (e) { CGP.diag.warn('inline.runFailed', { message: String(e && e.message) }); });
   };
@@ -390,19 +428,26 @@
       if (!o) return null;
       var id = String(here.type === 'page' ? o.page_id : o.id);
       var slack = 15000;
-      var t0 = Number(intent.armedAt || intent.savedAt) - slack;
       if (intent.isNew) {
         var created = Date.parse(o.created_at || o.posted_at || '');
         if (!(created >= Number(intent.armedAt || intent.savedAt) - slack)) return null;
+        // The title typed in that editor. Where it could not be read, only
+        // when no other editor's choices are waiting and its Save was seen,
+        // so a second editor's new item cannot take this one's choices.
         var title = String(o.name || o.title || '').trim();
-        if (intent.title && title && intent.title !== title) return null;
+        if (intent.title ? intent.title !== title : !(intent.alone && intent.savedAt)) return null;
       } else {
         if (String(intent.id) !== id) return null;
-        // Changed since the editor opened - not just opened and cancelled.
-        // Without an updated time (discussions), Save itself must have
-        // been seen.
+        // Saved from that editor: a newer version than the one it opened
+        // on (an update just before it opened is not one). Without that
+        // version, or an updated time at all (discussions), the Save itself
+        // must have been seen.
         var updated = Date.parse(o.updated_at || '');
-        if (isFinite(updated) ? updated < t0 : !intent.savedAt) return null;
+        if (isFinite(updated) && intent.baseUpdated !== null && intent.baseUpdated !== undefined) {
+          if (!(updated > Number(intent.baseUpdated))) return null;
+        } else if (!intent.savedAt || (isFinite(updated) && updated < Number(intent.savedAt) - slack)) {
+          return null;
+        }
       }
       return self.controller.currentItem();
     });

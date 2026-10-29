@@ -915,7 +915,9 @@
       var base = src[f] || null;
       var baseLocal = isoToLocal(base, tz);
       var label = DATE_LABELS[f] || f;
-      if (!d && !t) { iso[f] = base; return; }
+      // A copy that has no such date keeps having none, unless one is
+      // typed in (e.none: what the box showed for it).
+      if (!d && !t) { iso[f] = e.none ? null : base; return; }
       var clock = t ? parseClock(t, shortcuts) : null;
       if (t && !clock) { errors.push(label + ': “' + t + '” is not a time or one of your period shortcuts'); return; }
       if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) { errors.push(label + ': not a date'); return; }
