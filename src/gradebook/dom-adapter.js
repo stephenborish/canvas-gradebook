@@ -1438,8 +1438,20 @@
     // Guard: frozen student pane only ever holds 1-3 columns (student name / split names).
     // If more than 4 columns are found, this is the scrolling assignments pane, not the frozen pane!
     if (cols.length > 4) return this._lastNaturalWidth || 190;
+    // Canvas's own Total, when a teacher has used its "Move to Front" menu
+    // item: Canvas then FREEZES Total as the last frozen column (a saved
+    // per-teacher, per-course preference), rather than making it the first
+    // scrolling one. It is hidden (opacity 0) once the frozen Total is
+    // active, so counting it here put the overlay to its RIGHT and left a
+    // blank, header-less, Total-sized gap between the names and the Total.
+    // Leaving it out lands the overlay exactly on top of it instead.
     var w = 0;
-    for (var i = 0; i < cols.length; i++) w += cols[i].getBoundingClientRect().width;
+    for (var i = 0; i < cols.length; i++) {
+      var colId = gridMap.parseSlickColumnId(cols[i].id || '') ||
+        cols[i].getAttribute('data-column-id') || '';
+      if (gridMap.classifyColumnId(colId).type === 'total') continue;
+      w += cols[i].getBoundingClientRect().width;
+    }
     w = Math.round(w);
     if (w > 600) return this._lastNaturalWidth || 190;
     if (w > 0) this._lastNaturalWidth = w;

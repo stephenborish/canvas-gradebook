@@ -115,6 +115,32 @@ suite('frozen-total: pane geometry preserves the grid\'s total footprint', (test
     a.eq(leftWidth + rightWidth, 1000, 'no net width added to the grid\'s total footprint');
   });
 
+  test('a native Total frozen by Canvas\'s "Move to Front" is covered by the overlay, not left as a blank gap beside it', () => {
+    // Canvas freezes Total as the last frozen column for a teacher who chose
+    // "Move to Front". It is hidden while the frozen Total is active, so
+    // counting its width put the overlay to its right, behind an empty gap.
+    const CGP = loadGradebookDom();
+    const grid = buildGrid(CGP, { naturalLeft: 190 + 84 });
+    const headerCols = grid.headerLeft.querySelector('.slick-header-columns');
+    const nameCol = headerCols.querySelector('.slick-header-column');
+    nameCol.setAttribute('id', 'slickgrid_123student');
+    nameCol.setRect({ left: 0, top: 0, width: 190, height: 40 });
+    const totalCol = new domshim.FakeElement('div');
+    totalCol.classList.add('slick-header-column');
+    totalCol.setAttribute('id', 'slickgrid_123total_grade');
+    totalCol.setRect({ left: 190, top: 0, width: 84, height: 40 });
+    headerCols.appendChild(totalCol);
+
+    const adapter = new CGP.GradebookDomAdapter();
+    const ctrl = makeController(CGP, adapter);
+    ctrl.start();
+
+    a.eq(ctrl.naturalWidth, 190, 'the frozen native Total is not counted as part of the names');
+    const right = adapter.bodyPanes()[1];
+    a.eq(parseFloat(right.style.getPropertyValue('left')), 190 + 84,
+      'the scrolling pane starts right after the Total, exactly where Canvas already had it');
+  });
+
   test('the same invariant holds when the panes carry NONE of Canvas\'s usual class names', () => {
     const CGP = loadGradebookDom();
     const grid = buildGrid(CGP, {
