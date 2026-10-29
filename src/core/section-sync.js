@@ -872,7 +872,74 @@
     return null;
   }
 
+  /* ------------------------------------------------- the editor pages */
+
+  /** Canvas's own create/edit page for an item: {courseId, type, id|null}
+   * (id null for a new one), or null. Quizzes are created through their
+   * edit page, so only edit counts there. */
+  function editPageFromPath(pathname) {
+    var p = String(pathname || '');
+    var m;
+    if ((m = /^\/courses\/(\d+)\/assignments\/new\/?$/.exec(p))) return { courseId: m[1], type: 'assignment', id: null };
+    if ((m = /^\/courses\/(\d+)\/assignments\/(\d+)\/edit\/?$/.exec(p))) return { courseId: m[1], type: 'assignment', id: m[2] };
+    if ((m = /^\/courses\/(\d+)\/discussion_topics\/new\/?$/.exec(p))) return { courseId: m[1], type: 'discussion', id: null };
+    if ((m = /^\/courses\/(\d+)\/discussion_topics\/(\d+)\/edit\/?$/.exec(p))) return { courseId: m[1], type: 'discussion', id: m[2] };
+    if ((m = /^\/courses\/(\d+)\/quizzes\/(\d+)\/edit\/?$/.exec(p))) return { courseId: m[1], type: 'quiz', id: m[2] };
+    if ((m = /^\/courses\/(\d+)\/(?:pages|wiki)\/new\/?$/.exec(p))) return { courseId: m[1], type: 'page', id: null };
+    if ((m = /^\/courses\/(\d+)\/(?:pages|wiki)\/([^\/]+)\/edit\/?$/.exec(p))) {
+      var slug;
+      try { slug = decodeURIComponent(m[2]); } catch (e) { slug = m[2]; }
+      return { courseId: m[1], type: 'page', id: null, slug: slug };
+    }
+    return null;
+  }
+
+  /* One section's dates from the editor panel. For each field the teacher
+   * gives a date ("YYYY-MM-DD") and/or a time (anything parseClock reads,
+   * period shortcuts included):
+   *   both blank  -> the same as this section's (as saved)
+   *   date only   -> that date, at this section's time of day (11:59 PM
+   *                  when this section has none)
+   *   time only   -> this section's day, at that time
+   *   both        -> exactly that
+   * src: this section's ISO dates. Returns {iso: {field: iso|null}, errors}. */
+  function resolveInline(fields, src, entry, tz, shortcuts) {
+    src = src || {};
+    entry = entry || {};
+    var iso = {};
+    var errors = [];
+    fields.forEach(function (f) {
+      var e = entry[f] || {};
+      var d = String(e.date || '').trim();
+      var t = String(e.time || '').trim();
+      var base = src[f] || null;
+      var baseLocal = isoToLocal(base, tz);
+      var label = DATE_LABELS[f] || f;
+      // A copy that has no such date keeps having none, unless one is
+      // typed in (e.none: what the box showed for it).
+      if (!d && !t) { iso[f] = e.none ? null : base; return; }
+      var clock = t ? parseClock(t, shortcuts) : null;
+      if (t && !clock) { errors.push(label + ': “' + t + '” is not a time or one of your period shortcuts'); return; }
+      if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) { errors.push(label + ': not a date'); return; }
+      if (!d && !baseLocal) { errors.push(label + ': this section has no date to put that time on; pick a date too'); return; }
+      var day = d || baseLocal.slice(0, 10);
+      var hm = clock || (baseLocal ? baseLocal.slice(11) : '23:59');
+      var local = day + 'T' + hm;
+      var out = localToIsoKeeping(local, tz, clock ? null : base);
+      if (!out) { errors.push(label + ': not a date'); return; }
+      if (!clock && !baseLocal) out = new Date(Date.parse(out) + 59000).toISOString();   // 11:59:59 PM
+      iso[f] = out;
+    });
+    var from = iso.unlock_at || iso.delayed_post_at;
+    function after(a, b) { return a && b && Date.parse(a) > Date.parse(b); }
+    if (after(from, iso.due_at)) errors.push('Available from is after Due');
+    if (after(iso.due_at, iso.lock_at)) errors.push('Due is after Until');
+    return { iso: iso, errors: errors };
+  }
+
   CGP.sectionSync = {
+    editPageFromPath: editPageFromPath,
+    resolveInline: resolveInline,
     TYPES: TYPES,
     DATE_LABELS: DATE_LABELS,
     dateFields: dateFields,

@@ -549,6 +549,29 @@ The Copy button names where things go (*Copy to AP Biology (Block 6)*, *Copy to 
 line beside it says how many copies are made or updated and that the class you copy from is not
 changed.
 
+**Post it while you make it.** On Canvas's own page for creating or editing an assignment, quiz,
+discussion or page in a course you have linked, a panel sits just above **Save**: *Also post to your
+other classes*. Each of your other classes has a row with its own **Due** date and time (and, under
+*More dates*, *Available from* and *Until*):
+
+- Leave a date blank for the same date as this class.
+- Type only a time, or a period shortcut such as `4`, for this class's day at that time.
+- Pick a date to use that date at this class's time of day.
+- A class that already has a copy shows the dates its copy has now, so saving never resets them.
+
+Tick the classes you want (each class's tick and usual due time are remembered for next time), then
+press Canvas's own **Save**. When the saved item opens, it is copied to every ticked class with those
+dates, and a banner at the top shows each class's progress with a link to its copy.
+
+- **Cancel copies nothing.** The copy is made only when the item really was saved since the editor
+  opened. For a new item, it must also be the one created since, with that title.
+- **Saving an edit of an item that is already in your other classes updates their copies.** A copy
+  that was changed in its own class keeps its own version, and only its dates change.
+- **A New Quiz** is copied with Copy to other classes once its questions are in, since it is saved
+  before they are written.
+- **Canvas's Add Module dialog** gets the same checklist, and the new module is copied to the ticked
+  classes once Canvas has created it.
+
 **Choose your classes once.** The first time (step 1 of 2), it asks which of your classes are the
 same course as this one. It pre-ticks courses with the
 same name in the same term once "Period 2", "(P4)", "Section 7", "Block 3" and the like are set aside.
@@ -816,6 +839,7 @@ src/core/section-sync.js          Copy to sections: requests, dates, notes, chan
 src/sections/sync-runner.js       Copy to sections: survey each section, copy, apply dates/note,
                                    find copies both ways, bring a copy's changes back
 src/sections/sync-dialog.js       Copy to sections: page button, dialog, page notice, review
+src/sections/inline-copy.js       the panel in Canvas's own editors; the copies after its Save
 src/speedgrader/content.js        comment draft autosave; live sync with the gradebook
 src/page/env-bridge.js            page context: ENV ids, column widths, Canvas's store and tray
 src/page/write-watch.js           page context: reports Canvas's own submission writes (ids only)
@@ -846,7 +870,7 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-586 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
+595 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
 again → not Missing, `L` → Late and `L` again → not Late, both leaving the grade untouched either
 way, `E` → Excused, a grade never adding a status (and lifting an applied Missing only when asked),
 statuses read exactly as Canvas computes them, the hand-off to Canvas's own store (and never

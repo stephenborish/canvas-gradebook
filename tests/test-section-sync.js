@@ -1035,3 +1035,103 @@ suite('copy to sections: PR review (Codex)', (test) => {
     a.eq(api.db.items['11:assignment:5'].name, 'Lab (renamed later)');
   });
 });
+
+suite('copy to sections: from Canvas’s own editor', (test) => {
+  const cuts = [{ key: '4', time: '13:45' }];
+  const src = { due_at: '2026-11-03T13:55:00Z', unlock_at: null, lock_at: null };
+  const F = ['due_at', 'unlock_at', 'lock_at'];
+
+  test('the editor pages are recognised; show pages and index pages are not', () => {
+    a.deep(S().editPageFromPath('/courses/1/assignments/new'), { courseId: '1', type: 'assignment', id: null });
+    a.deep(S().editPageFromPath('/courses/1/assignments/9/edit'), { courseId: '1', type: 'assignment', id: '9' });
+    a.deep(S().editPageFromPath('/courses/1/discussion_topics/new'), { courseId: '1', type: 'discussion', id: null });
+    a.deep(S().editPageFromPath('/courses/1/quizzes/3/edit'), { courseId: '1', type: 'quiz', id: '3' });
+    a.deep(S().editPageFromPath('/courses/1/pages/unit-1/edit'), { courseId: '1', type: 'page', id: null, slug: 'unit-1' });
+    a.eq(S().editPageFromPath('/courses/1/assignments/9'), null);
+    a.eq(S().editPageFromPath('/courses/1/assignments'), null);
+  });
+
+  test('blank is this section’s; a time alone (or a period) is this section’s day at that time', () => {
+    a.deep(S().resolveInline(F, src, {}, TZ, cuts).iso, src);
+    a.eq(S().resolveInline(F, src, { due_at: { time: '4' } }, TZ, cuts).iso.due_at, '2026-11-03T18:45:00.000Z');
+    a.eq(S().resolveInline(F, src, { due_at: { time: '1:45 pm' } }, TZ, cuts).iso.due_at, '2026-11-03T18:45:00.000Z');
+    a.eq(S().resolveInline(F, src, { due_at: { date: '2026-11-05' } }, TZ, cuts).iso.due_at, '2026-11-05T13:55:00.000Z', 'a date keeps the time of day');
+    a.eq(S().resolveInline(F, src, { due_at: { date: '2026-11-05', time: '4' } }, TZ, cuts).iso.due_at, '2026-11-05T18:45:00.000Z');
+    a.eq(S().resolveInline(F, {}, { due_at: { date: '2026-11-05' } }, TZ, cuts).iso.due_at, '2026-11-06T04:59:59.000Z', 'no time anywhere: end of that day');
+  });
+
+  test('what cannot be read, or cannot be placed, is said', () => {
+    a.ok(/not a time/.test(S().resolveInline(F, src, { due_at: { time: '7' } }, TZ, cuts).errors[0]));
+    a.ok(/no date to put that time on/.test(S().resolveInline(F, {}, { due_at: { time: '4' } }, TZ, cuts).errors[0]));
+    a.ok(/after Due/.test(S().resolveInline(F, src, { unlock_at: { date: '2026-11-09' } }, TZ, cuts).errors[0]));
+  });
+});
+
+suite('copy to sections: the editor’s Save', (test) => {
+  const fs = require('fs');
+  const path = require('path');
+  const vm = require('vm');
+  let loaded = false;
+  function load() {
+    if (loaded) return;
+    loaded = true;
+    loadRunner();
+    vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'sections', 'inline-copy.js'), 'utf8'), { filename: 'inline-copy.js' });
+  }
+  function inline(item) {
+    load();
+    const api = { sectionItem: async () => item, pageBySlug: async () => item };
+    const ctl = { copier: {}, currentItem: async () => ({ type: 'assignment', id: String(item.id) }), courseName: (d) => d };
+    return new globalThis.CGP.InlineSectionCopy({ api, courseId: '11', settings: { values: {} }, controller: ctl });
+  }
+  const here = { courseId: '11', type: 'assignment', id: '9' };
+  const t = Date.parse('2026-11-01T12:00:00Z');
+
+  test('an edit counts only if the item is newer than the version the editor opened on: Cancel copies nothing', async () => {
+    const base = t - 5000;   // updated five seconds before the editor opened
+    const saved = await inline({ id: 9, updated_at: new Date(t + 60000).toISOString() }).matchSaved({ id: '9', armedAt: t, baseUpdated: base }, here);
+    a.ok(saved);
+    const cancelled = await inline({ id: 9, updated_at: new Date(base).toISOString() }).matchSaved({ id: '9', armedAt: t, baseUpdated: base }, here);
+    a.eq(cancelled, null, 'an update just before the editor opened is not a save from it');
+    a.eq(await inline({ id: 8, updated_at: new Date(t + 60000).toISOString() }).matchSaved({ id: '9', armedAt: t, baseUpdated: base }, { courseId: '11', type: 'assignment', id: '8' }), null, 'another item');
+    a.eq(await inline({ id: 9, updated_at: new Date(t + 60000).toISOString() }).matchSaved({ id: '9', armedAt: t, baseUpdated: null }, here), null,
+      'the opening version unknown: the Save must have been seen');
+    a.ok(await inline({ id: 9, updated_at: new Date(t + 60000).toISOString() }).matchSaved({ id: '9', armedAt: t, baseUpdated: null, savedAt: t + 50000 }, here));
+  });
+
+  test('a new item with no readable title matches only when its editor’s Save was seen and no other editor is waiting', async () => {
+    const it = { id: 12, name: 'Lab 5', created_at: new Date(t + 30000).toISOString() };
+    const h = { courseId: '11', type: 'assignment', id: '12' };
+    a.ok(await inline(it).matchSaved({ isNew: true, armedAt: t, title: '', savedAt: t + 20000, alone: true }, h));
+    a.eq(await inline(it).matchSaved({ isNew: true, armedAt: t, title: '', savedAt: t + 20000, alone: false }, h), null);
+    a.eq(await inline(it).matchSaved({ isNew: true, armedAt: t, title: '', alone: true }, h), null);
+  });
+
+  test('a new item counts only if created since, with the same title', async () => {
+    const ok = await inline({ id: 12, name: 'Lab 5', created_at: new Date(t + 30000).toISOString() }).matchSaved({ isNew: true, armedAt: t, title: 'Lab 5' }, { courseId: '11', type: 'assignment', id: '12' });
+    a.ok(ok);
+    a.eq(await inline({ id: 12, name: 'Other', created_at: new Date(t + 30000).toISOString() }).matchSaved({ isNew: true, armedAt: t, title: 'Lab 5' }, { courseId: '11', type: 'assignment', id: '12' }), null);
+    a.eq(await inline({ id: 3, name: 'Lab 5', created_at: new Date(t - 86400000).toISOString() }).matchSaved({ isNew: true, armedAt: t, title: 'Lab 5' }, { courseId: '11', type: 'assignment', id: '3' }), null, 'an older item with that title');
+  });
+
+  test('without an updated time (discussions), the Save must have been seen', async () => {
+    const d = { courseId: '11', type: 'discussion', id: '9' };
+    a.eq(await inline({ id: 9 }).matchSaved({ id: '9', armedAt: t, type: 'discussion' }, d), null);
+    a.ok(await inline({ id: 9 }).matchSaved({ id: '9', armedAt: t, savedAt: t + 1000, type: 'discussion' }, d));
+  });
+
+  test('Save buttons are told apart from Cancel', () => {
+    load();
+    ['Save', 'Save & Publish', 'save and publish', ' Save ', 'Add Module', 'Update Module'].forEach((x) => a.ok(globalThis.CGP.inlineCopy.SAVE_TEXT.test(x), x));
+    ['Cancel', 'Delete', 'Saved'].forEach((x) => a.not(globalThis.CGP.inlineCopy.SAVE_TEXT.test(x), x));
+  });
+});
+
+suite('copy to sections: existing copies without a date', (test) => {
+  test('a copy with no due date keeps none; typing one in gives it that date', () => {
+    const src = { due_at: '2026-11-03T13:55:00Z', unlock_at: null, lock_at: null };
+    a.eq(S().resolveInline(['due_at'], src, { due_at: { date: '', time: '', none: true } }, TZ, []).iso.due_at, null);
+    a.eq(S().resolveInline(['due_at'], src, { due_at: { date: '2026-11-04', time: '', none: true } }, TZ, []).iso.due_at, '2026-11-04T13:55:00.000Z');
+    a.eq(S().resolveInline(['due_at'], src, { due_at: { date: '', time: '' } }, TZ, []).iso.due_at, '2026-11-03T13:55:00Z', 'a new copy: blank is this class’s');
+  });
+});
