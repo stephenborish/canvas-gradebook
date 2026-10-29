@@ -103,11 +103,13 @@
             <input id="rowHoverHighlight" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="frozenTotal">Keep Total frozen beside the student name</label>
+            <label class="setting__label" for="frozenTotal">Keep Total frozen beside the student name
+              <span class="hint">Freezes Canvas's own Total column, the same as choosing "Move to Front" in its menu, so the Total shown is always Canvas's. Canvas remembers this for the course; "Move to End" in that menu undoes it.</span>
+            </label>
             <input id="frozenTotal" type="checkbox" class="switch">
           </div>
           <div class="setting setting--field">
-            <label class="setting__label" for="gradingScale">Letter-grade scale for the Total hover
+            <label class="setting__label" for="gradingScale">Letter-grade scale for Analyze Scores
               <span class="hint">One per line as "Letter: minimum %", highest first. The percentage is rounded to the nearest 0.1 first; the last line is the floor (0).</span>
             </label>
             <div class="setting__control">

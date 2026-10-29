@@ -206,10 +206,8 @@
   /* ------------------------------------------------------------ row hover */
 
   /* Everything that represents one student row and is positioned by top:
-   * the row element in each frozen pane, plus the overlay cell the frozen
-   * Total column draws (which is stacked ON TOP of the left pane, so without
-   * it the highlight would drop out every time the pointer crossed Total). */
-  var ROW_PARTS = '.grid-canvas > .slick-row, .cgp-total-cell';
+   * the row element in each pane. */
+  var ROW_PARTS = '.grid-canvas > .slick-row';
 
   P.clearRowHover = function () {
     if (this._hoverTop === null) return;

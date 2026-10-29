@@ -74,10 +74,9 @@
    * enough right drives this element's rect left BELOW the stationary frozen
    * pane's, and a plain numeric sort then reports the scrolling pane as
    * pane[0] ("the frozen one") instead. Every caller of canvases()/
-   * headerContainers() - frozenRowGeometry, frozenNaturalWidth, bodyPanes,
-   * headerPanes, hideTestStudentRows, and more - trusts pane[0] to mean
-   * "frozen", so that flip silently redirects the Total overlay and the
-   * pane-widening math onto the wrong (scrolling) pane mid-scroll.
+   * headerContainers() - hideTestStudentRows, and more - trusts pane[0] to mean
+   * "frozen", so that flip silently redirects them onto the wrong
+   * (scrolling) pane mid-scroll.
    *
    * leftViewport()/rightViewport() are the VIEWPORT (clipping) boxes, not
    * their scrolled content, so their own rect.left is untouched by their
@@ -531,24 +530,6 @@
     }
     var e = this.colIndexToColumn.get(num);
     return e || null;
-  };
-
-  P.nativeTotalInScrollingPane = function () {
-    var headers = this.headerContainers();
-    if (headers.length < 2) return null;
-    var rightHeader = headers[1];
-    var firstCol = rightHeader.querySelector('.slick-header-column');
-    if (!firstCol) return null;
-    // Structural id only (element id / data-column-id) - header text such as
-    // "Total Points" or "Final Grade Override" must never count as Total.
-    var colId = gridMap.parseSlickColumnId(firstCol.id || '') ||
-      firstCol.getAttribute('data-column-id') || '';
-    var info = gridMap.classifyColumnId(colId);
-    if (info.type === 'total') {
-      var w = Math.round(firstCol.getBoundingClientRect().width) || 130;
-      return { el: firstCol, width: w };
-    }
-    return null;
   };
 
   /** Extract assignment ID from cell or its inner DOM if present. */
@@ -1407,102 +1388,10 @@
     });
   };
 
-  /** Rows currently rendered in the frozen pane, for the Total overlay. */
-  P.frozenRowGeometry = function () {
-    var self = this;
-    var canvas = this.canvases()[0];
-    if (!canvas) return [];
-    var h = this.rowHeight();
-    var out = [];
-    var rows = canvas.querySelectorAll(':scope > .slick-row');
-    for (var i = 0; i < rows.length; i++) {
-      var top = self.rowTop(rows[i]);
-      if (top === null) continue;
-      var sid = self.studentIdFromRow(rows[i]) || self.topToStudent.get(top) || null;
-      out.push({
-        top: top,
-        height: Math.round(rows[i].getBoundingClientRect().height) || h,
-        rowIndex: CGP.gridMap.rowIndexFromTop(top, h),
-        studentId: sid,
-        selected: rows[i].classList.contains('active') || rows[i].classList.contains('slick-row-selected')
-      });
-    }
-    return out;
-  };
-
-  /** Natural width of the frozen (student) pane, measured from header columns. */
-  P.frozenNaturalWidth = function () {
-    var container = this.headerContainers()[0];
-    if (!container) return 0;
-    var cols = container.querySelectorAll('.slick-header-column');
-    // Guard: frozen student pane only ever holds 1-3 columns (student name / split names).
-    // If more than 4 columns are found, this is the scrolling assignments pane, not the frozen pane!
-    if (cols.length > 4) return this._lastNaturalWidth || 190;
-    // Canvas's own Total, when a teacher has used its "Move to Front" menu
-    // item: Canvas then FREEZES Total as the last frozen column (a saved
-    // per-teacher, per-course preference), rather than making it the first
-    // scrolling one. It is hidden (opacity 0) once the frozen Total is
-    // active, so counting it here put the overlay to its RIGHT and left a
-    // blank, header-less, Total-sized gap between the names and the Total.
-    // Leaving it out lands the overlay exactly on top of it instead.
-    var w = 0;
-    for (var i = 0; i < cols.length; i++) {
-      var colId = gridMap.parseSlickColumnId(cols[i].id || '') ||
-        cols[i].getAttribute('data-column-id') || '';
-      if (gridMap.classifyColumnId(colId).type === 'total') continue;
-      w += cols[i].getBoundingClientRect().width;
-    }
-    w = Math.round(w);
-    if (w > 600) return this._lastNaturalWidth || 190;
-    if (w > 0) this._lastNaturalWidth = w;
-    return w;
-  };
-
-  P.hasFrozenPane = function () {
-    return this.canvases().length > 1;
-  };
-
-  /* The actual pane element the frozen-Total CSS widens (see
-   * `.slick-pane-left` / `.slick-viewport-left` in gradebook.css) - NOT
-   * `.grid-canvas`, whose width SlickGrid sets to the sum of that pane's
-   * column widths rather than to the pane's own (CSS-overridden) box width.
-   * Measuring the canvas instead of this element is what made
-   * FrozenTotalController.verifyWidened() never see the widen take hold.
-   *
-   * Falls back to positionedAncestor() (below) when neither class name
-   * matches - see that method's own comment for why that fallback exists at
-   * all: this Canvas build's real pane class names are not something this
-   * extension can verify against a live site. */
-  P.frozenPaneLeft = function () {
-    var byClass = document.querySelector('.slick-pane-left') ||
-      document.querySelector('.slick-viewport-left');
-    if (byClass) return byClass;
-    var canvas = this.canvases()[0];
-    return canvas ? this.positionedAncestor(canvas) : null;
-  };
-
   /* Nearest ancestor (starting at el itself, walking up toward <body>) whose
    * OWN box is `position: absolute` - i.e. the actual pane div SlickGrid
    * moves and sizes to build the frozen/scrolling two-pane layout, whatever
-   * this particular Canvas build happens to name it.
-   *
-   * The frozen-Total feature (see frozen-total.js) has to change that pane's
-   * width - both the frozen (left) one, widening it, and the scrolling
-   * (right) one, shrinking it back by the same amount so the grid's total
-   * on-screen footprint never grows. Doing that by class name alone
-   * (`.slick-pane-left` / `.slick-pane-right`) is exactly the kind of single
-   * fragile path this file's own header comment warns against: a Canvas
-   * build that names or nests these panes differently would leave the right
-   * pane's geometry completely untouched while the left one still widened
-   * (via the broader class-name matches elsewhere), silently pushing the
-   * grid's rendered content past whatever fixed-width box actually contains
-   * both panes - which is what turns into a horizontal scrollbar on some
-   * ANCESTOR of the grid that scrolls both (frozen and scrolling) panes
-   * together as one unit, since neither is `position: fixed` relative to
-   * that ancestor. Walking up by *computed position* instead of by class
-   * name survives a markup change that renames or restructures those
-   * classes, the same lesson `frozenPaneLeft()`'s own history already
-   * taught once (see its comment). */
+   * this particular Canvas build happens to name it. */
   P.positionedAncestor = function (el) {
     var node = el;
     for (var i = 0; i < 8 && node && node !== document.body && node !== document.documentElement; i++) {
@@ -1512,34 +1401,6 @@
       node = node.parentElement;
     }
     return null;
-  };
-
-  /* The two body panes (frozen/left, scrolling/right), left-to-right by
-   * current position - not by class name, so a Canvas build that names them
-   * differently (or doesn't split header/body pane classes the way this
-   * extension assumed) is still handled. Only ever returns as many entries
-   * as `canvases()` found (0, 1, or 2+ - a course with no frozen pane at all
-   * yields exactly one). */
-  P.bodyPanes = function () {
-    var self = this;
-    return this.canvases().map(function (canvas) {
-      return self.positionedAncestor(canvas) || canvas.parentElement || canvas;
-    });
-  };
-
-  /* Same idea as bodyPanes(), for the header row's own pane split. Canvas's
-   * frozen-column header is typically a SEPARATE pair of pane elements from
-   * the body (its own `.slick-pane-header-left` / `-right`, or similar),
-   * which must be kept in sync with the body panes' widen/shrink or the
-   * header row drifts out of alignment with the columns beneath it - see
-   * frozen-total.js's applyPaneGeometry(). */
-  P.headerPanes = function () {
-    var self = this;
-    return this.headerContainers().map(function (container) {
-      var pane = container.closest ? container.closest('.slick-pane-header-left, .slick-pane-header-right, .slick-pane-left, .slick-pane-right') : null;
-      if (pane) return pane;
-      return self.positionedAncestor(container) || container.parentElement || container;
-    });
   };
 
   CGP.GradebookDomAdapter = GradebookDomAdapter;

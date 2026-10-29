@@ -28,7 +28,6 @@
   window.__cgpBridgeLoaded = true;
 
   var GRADEBOOK_PATH = /\/courses\/\d+\/gradebook\/?$/;
-  var TOTAL_WIDTH = 84;          // the frozen-Total feature's slot (frozen-total.js)
   var MIN_WIDTH_FLOOR = 24;      // minWidth is only ever lowered to this
   var SEARCH_EVERY_MS = 1500;
   var SEARCH_BUDGET_MS = 60000;
@@ -105,7 +104,7 @@
 
   /* ------------------------------------------------------------- the grid */
 
-  var cgpState = window.__cgpState = { active: false, narrow: false, hideTotal: false, moveTotal: false, studentWidth: null, assignmentWidth: null };
+  var cgpState = window.__cgpState = { active: false, narrow: false, studentWidth: null, assignmentWidth: null };
 
   function isWindow(obj) {
     if (!obj) return false;
@@ -390,7 +389,6 @@
    * "leave it alone" (inactive, narrowing off, or not a sized kind). */
   function wantedWidth(kind) {
     if (!cgpState.active) return null;
-    if (kind === 'total') return cgpState.hideTotal ? TOTAL_WIDTH : null;
     if (!cgpState.narrow) return null;
     if (kind === 'student') return cgpState.studentWidth;
     if (kind === 'assignment') return cgpState.assignmentWidth;
@@ -400,7 +398,7 @@
   /* Width only. minWidth is lowered just enough to allow the width; maxWidth
    * is never set, so the teacher's own drag-resize keeps working. */
   // Canvas's own width for every column this bridge has resized, so a
-  // setting turned off later (narrow columns, frozen Total) puts the column
+  // setting turned off later (narrow columns) puts the column
   // back the way Canvas had it instead of leaving it at our width.
   var origWidths = {};
 
@@ -425,63 +423,6 @@
     return changed;
   }
 
-  /* The frozen Total sits immediately right of the frozen pane, so a native
-   * Total still parked at the far right (Canvas's default, the first time a
-   * teacher turns the feature on) is moved to be the first scrolling column.
-   * Returns a reordered copy, or the same array when nothing needs to move.
-   * Only runs while the frozen Total is wanted; in-memory only, so Canvas's
-   * own saved column order is never rewritten. */
-  var totalHome = null;   // Canvas's own index for Total, while it is moved
-
-  /* How many left-most columns the grid freezes, i.e. the index of the first
-   * scrolling column, or -1 when the grid doesn't say. Canvas's SlickGrid fork
-   * calls this numberOfColumnsToFreeze; frozenColumn (upstream SlickGrid's
-   * last-frozen-index) is only a fallback. Reading frozenColumn alone found
-   * nothing on Canvas, so Total was dropped right after Student - INSIDE the
-   * frozen block whenever a custom column (Notes, ...) was frozen beside the
-   * names. That pushed the custom column out into the scrolling pane, where it
-   * showed as an empty column-wide gap between the Total and the first
-   * assignment. */
-  function frozenCount(grid) {
-    var options = {};
-    try { options = grid.getOptions() || {}; } catch (e) { return -1; }
-    var count = Number(options.numberOfColumnsToFreeze);
-    if (isFinite(count) && count > 0) return count;
-    var last = Number(options.frozenColumn);
-    if (isFinite(last) && last >= 0) return last + 1;
-    return -1;
-  }
-  function totalFirst(grid, columns) {
-    if (!Array.isArray(columns)) return columns;
-    if (!cgpState.active || !cgpState.hideTotal || !cgpState.moveTotal) {
-      // Feature turned off, or the frozen Total stood down: put Total back where Canvas had it.
-      if (totalHome === null) return columns;
-      var cur = -1;
-      for (var j = 0; j < columns.length; j++) if (columnKind(columns[j]) === 'total') { cur = j; break; }
-      var home = Math.min(totalHome, columns.length - 1);
-      totalHome = null;
-      if (cur < 0 || cur === home) return columns;
-      var back = columns.slice();
-      back.splice(home, 0, back.splice(cur, 1)[0]);
-      return back;
-    }
-    var from = -1, studentAt = -1;
-    for (var i = 0; i < columns.length; i++) {
-      var kind = columnKind(columns[i]);
-      if (kind === 'total' && from < 0) from = i;
-      if (kind === 'student' && studentAt < 0) studentAt = i;
-    }
-    if (from < 0) return columns;
-    var target = frozenCount(grid);
-    if (target < 0) target = studentAt >= 0 ? studentAt + 1 : -1;
-    if (target < 0 || from <= target) return columns;
-    totalHome = from;
-    var next = columns.slice();
-    var moved = next.splice(from, 1)[0];
-    next.splice(target, 0, moved);
-    return next;
-  }
-
   function redraw(grid) {
     if (typeof grid.invalidate === 'function') grid.invalidate();
     if (typeof grid.render === 'function') grid.render();
@@ -496,8 +437,6 @@
     if (!Array.isArray(columns) || !columns.length) return false;
     var changed = false;
     columns.forEach(function (col) { if (col && applyWidth(col)) changed = true; });
-    var ordered = totalFirst(grid, columns);
-    if (ordered !== columns) { columns = ordered; changed = true; }
     if (changed) {
       try {
         (grid.__cgpOrigSetColumns || grid.setColumns).call(grid, columns);
@@ -537,7 +476,6 @@
       grid.setColumns = function (columns) {
         if (cgpState.active && Array.isArray(columns)) {
           columns.forEach(function (col) { if (col) applyWidth(col); });
-          columns = totalFirst(this, columns);
         }
         return origSetColumns.call(this, columns);
       };
@@ -597,11 +535,9 @@
     });
   }
 
-  function doResize(grid, studentWidth, assignmentWidth, hideTotal, narrow, moveTotal) {
+  function doResize(grid, studentWidth, assignmentWidth, narrow) {
     cgpState.active = true;
     cgpState.narrow = !!narrow;
-    cgpState.hideTotal = !!hideTotal;
-    cgpState.moveTotal = !!moveTotal;
     cgpState.studentWidth = studentWidth;
     cgpState.assignmentWidth = assignmentWidth;
     patchGrid(grid);
@@ -622,8 +558,6 @@
         if (applyWidth(copy)) changed++;
         return copy;
       });
-      var ordered = totalFirst(grid, next);
-      if (ordered !== next) { next = ordered; changed++; }
       if (!changed) return { ok: true, changed: 0 };
       try {
         grid.setColumns(next);
@@ -639,13 +573,51 @@
     });
   }
 
-  function resizeColumns(studentWidth, assignmentWidth, hideTotal, narrow, moveTotal) {
+  function resizeColumns(studentWidth, assignmentWidth, narrow) {
     var grid = findGrid();
-    if (grid) return doResize(grid, studentWidth, assignmentWidth, hideTotal, narrow, moveTotal);
+    if (grid) return doResize(grid, studentWidth, assignmentWidth, narrow);
     return waitForGrid(4500).then(function (g) {
       if (!g) return { ok: false, reason: 'unavailable' };
-      return doResize(g, studentWidth, assignmentWidth, hideTotal, narrow, moveTotal);
+      return doResize(g, studentWidth, assignmentWidth, narrow);
     });
+  }
+
+  /* "Keep Total frozen beside the student name": Canvas's own Total column,
+   * frozen by Canvas's own freezeTotalGradeColumn() - exactly what its Total
+   * menu's "Move to Front" item runs. The Total a teacher sees is therefore
+   * always Canvas's own live, client-side calculation, never a copy. Canvas
+   * saves this as the teacher's column-order preference for the course, the
+   * same as choosing "Move to Front" by hand, and "Move to End" undoes it.
+   *
+   * Result: { ok, frozen, changed } once Canvas's gradebook is reachable, or
+   * { ok: false, reason } when it is not (yet). frozen: false with reason
+   * 'notShown' means Canvas is not showing a Total at all right now (hidden
+   * in its View options, or a grading-period view without one), so there is
+   * nothing to freeze. */
+  function freezeCanvasTotal() {
+    var gb = findGradebook();
+    var cols = gb && gb.gridData && gb.gridData.columns;
+    if (!cols || !Array.isArray(cols.frozen) || !Array.isArray(cols.scrollable)) {
+      return { ok: false, reason: 'unavailable' };
+    }
+    if (cols.frozen.indexOf('total_grade') >= 0) return { ok: true, frozen: true, changed: false };
+    if (cols.scrollable.indexOf('total_grade') < 0) return { ok: true, frozen: false, reason: 'notShown' };
+    if (typeof gb.freezeTotalGradeColumn !== 'function') return { ok: false, reason: 'unavailable' };
+    try {
+      gb.freezeTotalGradeColumn();
+      // freezeTotalGradeColumn() inserts Total after a 'student' column that
+      // does not exist while Canvas shows separate first/last name columns,
+      // which would put Total in front of the names. Canvas's own column
+      // rebuild orders the frozen block correctly, so run it.
+      if (typeof gb.setVisibleGridColumns === 'function' && typeof gb.updateGrid === 'function') {
+        gb.setVisibleGridColumns();
+        gb.updateGrid();
+      }
+    } catch (e) {
+      return { ok: false, reason: 'failed' };
+    }
+    var frozen = Array.isArray(gb.gridData.columns.frozen) && gb.gridData.columns.frozen.indexOf('total_grade') >= 0;
+    return frozen ? { ok: true, frozen: true, changed: true } : { ok: false, reason: 'failed' };
   }
 
   /* Background search for the grid, so Canvas's own later setColumns calls
@@ -697,13 +669,20 @@
     if (event.source !== window || !message || message.source !== 'cgp-grid-request' || !message.id) return;
     var studentWidth = Number(message.studentWidth);
     var assignmentWidth = Number(message.assignmentWidth);
-    var hideTotal = !!message.hideTotal;
     // Senders that predate the flag only ever asked in order to narrow.
     var narrow = message.narrow === undefined ? true : !!message.narrow;
     if (narrow && (!isFinite(studentWidth) || !isFinite(assignmentWidth) || studentWidth < 1 || assignmentWidth < 1)) return;
-    resizeColumns(Math.round(studentWidth) || null, Math.round(assignmentWidth) || null, hideTotal, narrow, !!message.moveTotal).then(function (result) {
+    resizeColumns(Math.round(studentWidth) || null, Math.round(assignmentWidth) || null, narrow).then(function (result) {
       post({ source: 'cgp-grid-response', id: message.id, result: result });
     });
+  });
+
+  window.addEventListener('message', function (event) {
+    var message = event.data;
+    if (event.source !== window || !message || message.source !== 'cgp-total-request' || !message.id) return;
+    var result;
+    try { result = freezeCanvasTotal(); } catch (e) { result = { ok: false, reason: 'failed' }; }
+    post({ source: 'cgp-total-response', id: message.id, result: result });
   });
 
   /* ------------------------------------------------------- posted grades */

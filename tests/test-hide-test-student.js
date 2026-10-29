@@ -1,14 +1,12 @@
 /* Bug 2: Canvas's "Test Student" preview row must stay hidden at every
  * horizontal scroll position, in every pane it appears in (the frozen name
- * cell in the left pane, the grade cells in the right pane, and this
- * extension's own frozen-Total overlay cell). layout.js's
+ * cell in the left pane and the grade cells in the right pane). layout.js's
  * hideTestStudentRows() derives who to hide fresh from the FROZEN pane's own
  * rows (the only place the student's name is actually rendered) every single
  * call, and matches every other pane's row to it by rowTop() alone - these
  * tests build exactly that cross-pane structure and check every part of it,
  * including the parts a class-name assumption or a stale reference would get
- * wrong: more than two `.grid-canvas` panes, and a `.cgp-total-cell` that is
- * created (not merely re-used) on the same pass. */
+ * wrong, such as more than two `.grid-canvas` panes. */
 'use strict';
 
 const { suite, assert: a } = require('./harness');
@@ -109,29 +107,6 @@ suite('layout.hideTestStudentRows(): Test Student stays hidden across every pane
     a.not(grid.scrollingRows[0].classList.contains('cgp-hidden-row'));
     a.ok(grid.scrollingRows[1].classList.contains('cgp-hidden-row'), 'Student, Test grade row is hidden in scrolling pane');
     a.not(grid.scrollingRows[2].classList.contains('cgp-hidden-row'));
-  });
-
-  test('a .cgp-total-cell at the Test Student\'s row top is hidden even when it is CREATED fresh on this same pass (frozen.paint() runs before hideTestStudentRows in content.js\'s paint order)', () => {
-    const CGP = loadGradebookDom();
-    const grid = buildTwoPaneGrid(CGP, [
-      { top: 0, name: 'Aaron Adams', userId: '10' },
-      { top: 35, name: 'Test Student', userId: '999' }
-    ]);
-    const adapter = new CGP.GradebookDomAdapter();
-    const layout = makeLayout(CGP, adapter, true);
-
-    // Simulate frozen-total.js's overlay: a .cgp-total-cell appended into the
-    // frozen canvas at the Test Student's own top, exactly as
-    // FrozenTotalController.paint() creates one on a rowIndex it has never
-    // drawn before - see content.js's paint() ordering comment.
-    const totalCell = new (domshim.FakeElement)('div');
-    totalCell.classList.add('cgp-total-cell');
-    totalCell.style.top = '35px';
-    grid.frozenCanvas.appendChild(totalCell);
-
-    layout.hideTestStudentRows();
-
-    a.ok(totalCell.classList.contains('cgp-hidden-row'), 'freshly-created Total overlay cell for the Test Student is hidden on the very same pass');
   });
 
   test('more than two .grid-canvas panes (e.g. a header canvas Canvas also tags .grid-canvas) does not break the cross-pane match', () => {

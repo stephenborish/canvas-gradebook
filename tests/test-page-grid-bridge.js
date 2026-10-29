@@ -55,60 +55,82 @@ suite('page-context SlickGrid bridge', (test) => {
     a.deep(calls.slice(-4), ['setColumns', 'invalidate', 'render', 'resizeCanvas']);
   });
 
-  test('filters out total_grade column when hideTotal is true', async () => {
-    let model = [{ id: 'student', width: 260 }, { id: 'total_grade', width: 130 }, { id: 'assignment_1', width: 140 }];
-    const calls = [];
-    const grid = {
-      getColumns: function () { calls.push('getColumns'); return model; },
-      setColumns: function (columns) { calls.push('setColumns'); model = columns; },
-      invalidate: function () { calls.push('invalidate'); },
-      render: function () { calls.push('render'); },
-      resizeCanvas: function () { calls.push('resizeCanvas'); }
+  /* Canvas's own Gradebook, reduced to what "Move to Front" touches: its
+   * column lists and freezeTotalGradeColumn(), which (like Canvas's) splices
+   * Total in after a 'student' column, and setVisibleGridColumns(), which
+   * (like Canvas's) rebuilds the frozen block as names, Total, then Notes. */
+  function freezableGradebook(frozen, scrollable, opts) {
+    opts = opts || {};
+    const gb = fakeGradebook({}, { open: false });
+    gb.gridData = { columns: { frozen: frozen.slice(), scrollable: scrollable.slice() } };
+    gb.calls.freeze = 0;
+    gb.calls.updateGrid = 0;
+    if (!opts.noFreezeMethod) {
+      gb.freezeTotalGradeColumn = function () {
+        gb.calls.freeze++;
+        const cols = gb.gridData.columns;
+        cols.frozen.splice(cols.frozen.indexOf('student') + 1, 0, 'total_grade');
+        cols.scrollable = cols.scrollable.filter((id) => id !== 'total_grade');
+      };
+    }
+    gb.setVisibleGridColumns = function () {
+      const cols = gb.gridData.columns;
+      const names = cols.frozen.filter((id) => /^student/.test(id) && id !== 'student')
+        .concat(cols.frozen.indexOf('student') >= 0 ? ['student'] : []);
+      names.sort((x, y) => (x === 'student_lastname' ? -1 : y === 'student_lastname' ? 1 : 0));
+      const custom = cols.frozen.filter((id) => /^custom_col_/.test(id));
+      cols.frozen = names.concat(cols.frozen.indexOf('total_grade') >= 0 ? ['total_grade'] : [], custom);
     };
-    const listeners = [];
-    const responses = [];
-    const win = {
-      ENV: {},
-      location: { origin: 'https://canvas.example.edu' },
-      addEventListener: function (type, listener) { if (type === 'message') listeners.push(listener); },
-      postMessage: function (message) {
-        responses.push(message);
-        listeners.slice().forEach(function (listener) { listener({ source: win, data: message }); });
-      }
-    };
-    const context = {
-      window: win,
-      document: { querySelector: function () { return { slickGrid: grid }; } },
-      Promise: Promise,
-      Object: Object,
-      Array: Array,
-      String: String,
-      Number: Number,
-      Math: Math,
-      isFinite: isFinite,
-      setTimeout: function (fn) { fn(); }
-    };
-    vm.runInNewContext(fs.readFileSync('src/page/env-bridge.js', 'utf8'), context);
+    gb.updateGrid = function () { gb.calls.updateGrid++; };
+    return gb;
+  }
 
-    win.postMessage({
-      source: 'cgp-grid-request', id: 'test-hide-total', studentWidth: 190, assignmentWidth: 124, hideTotal: true
-    }, win.location.origin);
-    await Promise.resolve();
-    await Promise.resolve();
+  function askToFreeze(gb) {
+    const bridge = loadBridgeWith({ querySelector: (sel) => (sel === '#gradebook_app' && gb ? reactMount(gb) : null) });
+    bridge.win.postMessage({ source: 'cgp-total-request', id: 'freeze' }, bridge.win.location.origin);
+    return bridge.posted().find((m) => m.source === 'cgp-total-response' && m.id === 'freeze').result;
+  }
 
-    const response = responses.find((message) => message.source === 'cgp-grid-response' && message.id === 'test-hide-total');
-    a.deep(model.map((column) => column.id), ['student', 'total_grade', 'assignment_1'], 'preserves natural column order so headers and body cells remain in sync');
-    a.deep(model.map((column) => column.width), [190, 84, 124], 'sizes student, total (84px), and assignments correctly');
+  test('the frozen Total is Canvas\'s own Total, frozen by Canvas\'s own "Move to Front"', () => {
+    const gb = freezableGradebook(['student', 'custom_col_3'], ['assignment_1', 'total_grade']);
+    a.deep(askToFreeze(gb), { ok: true, frozen: true, changed: true });
+    a.eq(gb.calls.freeze, 1, 'Canvas\'s freezeTotalGradeColumn() did the work');
+    a.deep(gb.gridData.columns.frozen, ['student', 'total_grade', 'custom_col_3']);
+    a.deep(gb.gridData.columns.scrollable, ['assignment_1']);
   });
 
-  async function moveTotalWith(model, options) {
+  test('separate first/last name columns keep Total after the names, not in front of them', () => {
+    const gb = freezableGradebook(['student_lastname', 'student_firstname'], ['assignment_1', 'total_grade']);
+    a.deep(askToFreeze(gb), { ok: true, frozen: true, changed: true });
+    a.deep(gb.gridData.columns.frozen, ['student_lastname', 'student_firstname', 'total_grade']);
+    a.eq(gb.calls.updateGrid, 1, 'Canvas redraws the grid with the corrected order');
+  });
+
+  test('a Total Canvas already has frozen is left alone', () => {
+    const gb = freezableGradebook(['student', 'total_grade'], ['assignment_1']);
+    a.deep(askToFreeze(gb), { ok: true, frozen: true, changed: false });
+    a.eq(gb.calls.freeze, 0);
+  });
+
+  test('a Total Canvas is not showing is not forced on screen', () => {
+    const gb = freezableGradebook(['student'], ['assignment_1']);
+    a.deep(askToFreeze(gb), { ok: true, frozen: false, reason: 'notShown' });
+    a.eq(gb.calls.freeze, 0);
+  });
+
+  test('without Canvas\'s Gradebook object, or its freeze method, nothing is changed', () => {
+    a.deep(askToFreeze(null), { ok: false, reason: 'unavailable' });
+    const gb = freezableGradebook(['student'], ['assignment_1', 'total_grade'], { noFreezeMethod: true });
+    a.deep(askToFreeze(gb), { ok: false, reason: 'unavailable' });
+    a.deep(gb.gridData.columns.scrollable, ['assignment_1', 'total_grade']);
+  });
+
+  test('Canvas\'s Total column keeps Canvas\'s own width while narrowing', async () => {
+    let model = [{ id: 'student', width: 260 }, { id: 'total_grade', width: 130 }, { id: 'assignment_1', width: 140 }];
     const grid = {
       getColumns: function () { return model; },
-      getOptions: function () { return options; },
       setColumns: function (columns) { model = columns; },
-      invalidate: function () {},
-      render: function () {},
-      resizeCanvas: function () {}
+      invalidate: function () {}, render: function () {}, resizeCanvas: function () {}
     };
     const listeners = [];
     const win = {
@@ -125,27 +147,11 @@ suite('page-context SlickGrid bridge', (test) => {
       Promise, Object, Array, String, Number, Math, isFinite,
       setTimeout: function (fn) { fn(); }
     });
-    win.postMessage({
-      source: 'cgp-grid-request', id: 'move-total', studentWidth: 190, assignmentWidth: 124, hideTotal: true, moveTotal: true
-    }, win.location.origin);
+    win.postMessage({ source: 'cgp-grid-request', id: 'n', studentWidth: 190, assignmentWidth: 124 }, win.location.origin);
     await Promise.resolve();
     await Promise.resolve();
-    return model.map((column) => column.id);
-  }
-
-  test('Total moves to the first scrolling column, after every frozen column Canvas has (numberOfColumnsToFreeze)', async () => {
-    const ids = await moveTotalWith(
-      [{ id: 'student', width: 260 }, { id: 'custom_col_3', width: 120 }, { id: 'assignment_1', width: 140 },
-        { id: 'assignment_2', width: 140 }, { id: 'total_grade', width: 130 }],
-      { numberOfColumnsToFreeze: 2 });
-    a.deep(ids, ['student', 'custom_col_3', 'total_grade', 'assignment_1', 'assignment_2'],
-      'the frozen Notes column stays frozen; Total does not land inside the frozen block');
-  });
-
-  test('with no frozen-column option at all, Total still goes right after Student', async () => {
-    const ids = await moveTotalWith(
-      [{ id: 'student', width: 260 }, { id: 'assignment_1', width: 140 }, { id: 'total_grade', width: 130 }], {});
-    a.deep(ids, ['student', 'total_grade', 'assignment_1']);
+    a.deep(model.map((column) => column.id), ['student', 'total_grade', 'assignment_1'], 'column order untouched');
+    a.deep(model.map((column) => column.width), [190, 130, 124]);
   });
 
   test('marks submissions posted in Canvas\'s own rows and re-renders just those rows', async () => {

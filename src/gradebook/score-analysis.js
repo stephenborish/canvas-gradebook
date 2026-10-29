@@ -16,9 +16,8 @@
  * column that way is left exactly as Canvas built it.
  *
  * The Total gets the same panel, read from the course scores the Total column
- * itself shows (Canvas's enrollment scores, already a percentage): through a
- * button on the frozen Total header (frozen-total.js), and through Canvas's
- * own Total column menu whenever that column is the one on screen. */
+ * itself shows (Canvas's enrollment scores, already a percentage), through
+ * Canvas's own Total column menu. */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});

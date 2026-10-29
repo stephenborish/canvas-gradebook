@@ -265,25 +265,16 @@ works in it too.
 
 ### Student name + Total, frozen together
 
-The Total percentage is drawn beside the student name in Canvas's own frozen pane, so it stays
+Canvas's own Total column is kept frozen beside the student name, so it stays visible no matter
+how far right you scroll. The extension does this by running Canvas's own "Move to Front"
+action on the Total column - nothing is drawn, copied or recalculated, so the Total you see is
+always the one Canvas itself calculates in the gradebook, including Canvas's own warning icons.
 
-The first time the feature runs, Canvas's own Total column (still at the far right by default) is moved in the grid to sit immediately after the frozen student column, so it lands beside the names without any manual step; turning the setting off puts it back. Hovering a Total shows its letter grade, using a scale you can edit under Options → Appearance (the score is rounded half-up to 0.1, then the highest matching minimum applies; defaults A+ 96.5, A 92.5, A- 89.5, B+ 86.5, B 82.5, B- 79.5, C+ 76.5, C 72.5, C- 69.5, D 64.5, F below).
-visible no matter how far right you scroll — it does not scroll away with the assignment
-columns, and Canvas's own Total column at the far right is hidden so there is never a second,
-possibly-different-looking Total competing with it. The values come from Canvas's enrollment
-scores — weighting, drop rules and grading schemes are Canvas's own arithmetic, never
-recomputed here. Like Canvas's own teacher view, the Total counts grades that are still hidden
-from students (Canvas's `unposted_current_score`), so it moves as soon as you enter a grade on
-a manually-posted assignment. It follows the grading-period filter, including changes you make
-after the page has loaded.
-
-Both of those only happen once the frozen pane has actually been widened to make room: the
-widen is measured on every paint, not assumed, because Canvas's exact pane markup cannot be
-checked here against a live instance (see "Known limitations" below). If the
-measurement doesn't confirm the extra width is really there, nothing is drawn and Canvas's own
-Total column is left visible and untouched — you are never left looking at a gap where a Total
-used to be. A later paint that measures correctly brings the frozen Total right back with no
-reload needed either way.
+Canvas saves "Move to Front" as your column-order preference for the course, so this happens
+once per course. To undo it, choose **Move to End** in the Total column's `⋮` menu; with the
+setting still on, it is frozen again on your next visit. Turning the setting off leaves Canvas's
+saved preference as it is. If Canvas isn't showing a Total at all (hidden in its View options,
+or a grading-period view without one), there is nothing to freeze.
 
 ### The hidden Test Student stays out of your averages
 
@@ -362,7 +353,7 @@ points. Every grade sits in the middle of its cell both horizontally and vertica
 figures so a column of numbers lines up digit for digit; student names stay left-aligned and
 vertically centered, and are no longer underlined (they are still links to that student's
 grades page - hover turns them Canvas blue). The row under the pointer lights up across the
-frozen pane and the scrolling pane together, including the frozen Total column. The header gets
+frozen pane and the scrolling pane together. The header gets
 a gradient and a brand-coloured rule so it reads as a header, and Canvas's bare grade input
 becomes a properly inset, centered, focus-ringed box instead of a browser-default text field
 jammed against the cell borders.
@@ -400,9 +391,8 @@ histogram grouped by the letter-grade cutoffs under Options → Appearance. Blan
 are counted but left out of every figure (a blank is not a zero). Anonymous and moderated
 assignments don't get it, since the lists name students.
 
-The **Total** gets the same panel. Click the small bar-chart button beside "Total" in the frozen
-Total header (or, when Canvas's own Total column is the one showing, use **Analyze Scores** in its
-`⋮` menu). The figures are the course totals the Total column shows: Canvas's own weighted scores,
+The **Total** gets the same panel: use **Analyze Scores** in the Total column's `⋮` menu. The
+figures are Canvas's course scores as its API reports them: Canvas's own weighted scores,
 with the same grading-period filter, shown as percentages. Each student in the highest/lowest
 lists also gets their letter grade. Students with no graded work yet are counted but not included
 in the figures, and the Test Student is never included.
@@ -806,7 +796,7 @@ src/core/                         pure logic - no DOM, no chrome.* at load time
   clipboard-matrix.js             TSV / column / spaced-column clipboard parsing
   comment-analysis.js             "did I author this comment" logic and thread analysis
   grid-map.js                     cell <-> (student_id, assignment_id) mapping maths
-  totals.js                       Total formatting and row alignment
+  totals.js                       letter-grade scale for Analyze Scores
   roster-format.js                roster -> email list / TSV / HTML table / CSV
   snippets.js                     /trigger + Tab expansion
   time-shortcuts.js               period key -> start time lookup and formatting
@@ -824,7 +814,7 @@ src/gradebook/
   cell-actions.js                 double-click -> Canvas's own tray arrow; two-pane row hover
   keyboard.js                     M / E / L, navigation, editor reconciliation
   bulk-paste.js                   validate-then-write clipboard application
-  frozen-total.js                 the synchronized Total column in the frozen pane
+  frozen-total.js                 asks Canvas to freeze its own Total column
   layout.js                       compaction, column widths, header decoration
   post-grades.js                  the per-column Post button and the posting job
   comment-popover.js              in-place comment thread and reply
@@ -924,14 +914,9 @@ Two things that no longer happen, as of this fix:
   Canvas's documented markup and could not be exercised against a real gradebook here. That is
   exactly what the diagnostics panel is for: if something looks off, turn it on, reload the
   gradebook, and read the unmapped-cell and failed-request counts.
-- **Frozen Total depends on a pane-widen that is verified, not assumed.** Canvas's own Total
-  column at the far right is virtualized away during horizontal scrolling, so it cannot be made
-  sticky there; instead the frozen pane beside the student name is widened and a Total is drawn
-  into the space that opens up, and the native Total is hidden only once that widen is actually
-  confirmed to have taken hold (checked on every paint against Canvas's real, unverifiable-here
-  pane markup). If a future Canvas markup change ever breaks the widen, the frozen Total simply
-  stops drawing and Canvas's own native Total column is left visible in its place — you are
-  never left with neither.
+- **Frozen Total relies on Canvas's own "Move to Front".** The extension calls the same
+  Canvas function that menu item does. If a Canvas update ever renames it, the Total simply
+  stays where Canvas put it (and the diagnostics panel reports `frozenTotal.notFrozen`).
 - **Row height is unchanged.** SlickGrid computes row positions in JavaScript from its own row
   height; overriding it in CSS misaligns every row. Vertical space is won by collapsing Canvas's
   chrome instead.
@@ -940,10 +925,10 @@ Two things that no longer happen, as of this fix:
   grid to invalidate, render, and resize its canvas. If Canvas does not expose that API, narrowing
   remains presentation-only; Gradebook+ never simulates resize-handle drags that could persist a
   partial set of widths as the teacher's preferences.
-- **Grading periods.** The frozen Total is read with the same grading-period filter Canvas's own
-  Total column is currently using, learned from the page itself rather than assumed - so the two
-  agree, including when a grading period is the server's own default rather than something
-  spelled out in the URL.
+- **Grading periods.** Analyze Scores reads course totals with the same grading-period filter
+  Canvas's own Total column is currently using, learned from the page itself rather than assumed,
+  including when a grading period is the server's own default rather than something spelled out
+  in the URL.
 - **Anonymous or moderated assignments** are refused for API writes, since the identity mapping
   a write depends on is deliberately hidden there.
 - **Posting grades uses Canvas's GraphQL endpoint** (`postAssignmentGrades`), which is what
