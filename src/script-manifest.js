@@ -44,6 +44,7 @@ export const CONTENT_JS = [
   'src/assignments/time-shortcuts.js',
   'src/sections/sync-runner.js',
   'src/sections/sync-dialog.js',
+  'src/sections/inline-copy.js',
   'src/speedgrader/content.js',
   'src/gradebook/content.js'
 ];

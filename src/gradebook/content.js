@@ -680,7 +680,10 @@
     if (!CGP.SectionCopyController) return null;
     var ctl = new CGP.SectionCopyController({ api: api, courseId: courseId, settings: CGP.settings });
     ctl.start();
-    CGP.settings.onChange(function () { ctl.start(); });
+    // The panel in Canvas's own editors, and the copies after its Save.
+    var inline = CGP.InlineSectionCopy ? new CGP.InlineSectionCopy({ api: api, courseId: courseId, settings: CGP.settings, controller: ctl }) : null;
+    if (inline) inline.start();
+    CGP.settings.onChange(function () { ctl.start(); if (inline) inline.refresh(); });
     // After the page's own work has started; a leftover job is rare.
     setTimeout(function () { ctl.resume().catch(function () { /* reported in diag */ }); }, 4000);
     CGP.sectionCopy = ctl;
