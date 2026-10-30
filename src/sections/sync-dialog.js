@@ -534,6 +534,7 @@
       else if (r[2]) st.items.push(r[2]);
       st.dests = self.siblings();
       if (opts.dests) st.dests = st.dests.filter(function (d) { return opts.dests.indexOf(String(d)) >= 0; });
+      st.quick = !st.wantPick && st.items.length === 1 && st.items[0].type === 'assignment';
       if (!st.dests.length) st.view = 'link';
       else if (st.wantPick && !st.items.length) st.view = 'pick';
       self.root.querySelector('#cgp-sections-title').textContent = 'From ' + self.courseName(self.courseId);
@@ -650,7 +651,7 @@
       st.dests.forEach(function (d) {
         var k = cellKey(it, d);
         var info = surveyInfo(st, it, d);
-        if (!(k in st.include)) st.include[k] = !(info && info.lookalike) && !(destOf(st, d) && destOf(st, d).error);
+        if (!(k in st.include)) st.include[k] = !st.quick && !(info && info.lookalike) && !(destOf(st, d) && destOf(st, d).error);
         if (!(k in st.replace)) st.replace[k] = info ? sync.defaultReplace(info.status) : true;
         if (!(k in st.notes)) st.notes[k] = info && info.note ? info.note : '';
         dated(it).forEach(function (row) {
@@ -862,6 +863,7 @@
     var self = this;
     var sync = S();
     if (st.results) return this.renderResults();
+    if (st.quick && st.items.length === 1) return this.renderQuick();
 
     var items = st.items.map(function (it) {
       return '<span class="cgp-sections__chip">' + esc(sync.TYPES[it.type].label) + ' · ' + esc(it.title || '(untitled)') +
@@ -905,6 +907,31 @@
       esc(plan.label) + '</button>' +
       '<span class="cgp-stats__note">' + esc(plan.errors.length ? plan.errors[0] : plan.text) + '</span></div>';
     return html;
+  };
+
+  /* A saved assignment needs a destination, not the bulk-copy workspace.
+   * Reuse the surveyed rows and task builder: compact presentation must not
+   * bypass changed-copy checks, existing dates, or duplicate protection. */
+  P.renderQuick = function () {
+    var st = this.state;
+    var html = '<p class="cgp-stats__note">Choose the class to receive this assignment. Adjust its due date if needed.</p>' +
+      '<div class="cgp-roster__row"><button type="button" class="cgp-roster__btn" data-act="edit-link">Change classes…</button>' +
+      '<button type="button" class="cgp-roster__btn" data-act="advanced-copy">More options…</button></div>';
+    if (st.surveying) return html + '<p class="cgp-stats__note" role="status">Checking existing copies…</p>';
+    if (st.surveyError) return html + '<p class="cgp-sections__err">' + esc(st.surveyError) +
+      ' <button type="button" class="cgp-roster__btn" data-act="resurvey">Try again</button></p>';
+    if (!st.survey) return html;
+    html += '<p class="cgp-stats__note">Times: ' + esc(st.tz || 'your computer’s time zone') + '</p>' + this.renderItem(st.items[0]);
+    // Failed destinations remain visible even though they have no editable row.
+    st.dests.forEach(function (d) {
+      var dest = destOf(st, d);
+      if (dest && dest.error) html += '<p class="cgp-sections__err">' + esc(this.courseName(d)) + ': ' + esc(dest.error) + '</p>';
+    }, this);
+    var plan = this.planSummary();
+    return html + '<div class="cgp-roster__row cgp-roster__actions cgp-sections__go">' +
+      '<button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-act="run"' +
+      (plan.count && !plan.errors.length && !st.running ? '' : ' disabled') + '>' + esc(plan.label) + '</button>' +
+      '<span class="cgp-stats__note">' + esc(plan.errors.length ? plan.errors[0] : (plan.count ? plan.text : 'Choose a destination class.')) + '</span></div>';
   };
 
   P.renderAdjust = function (d) {
@@ -975,13 +1002,17 @@
         var fields = sync.dateFields(row).map(function (f) {
           return '<label class="cgp-sections__date"><span>' + esc(sync.DATE_LABELS[f]) + '</span>' +
             '<input type="datetime-local" data-cell="' + esc(rk) + '" data-field="' + f + '" value="' + esc(vals[f] || '') + '"' + (on ? '' : ' disabled') + '></label>';
-        }).join('');
+        });
         var check = sync.checkDates(vals, st.tz);
+        if (st.quick && sync.dateFields(row)[0] === 'due_at') {
+          fields = fields[0] + '<details' + (check.errors.length ? ' open' : '') +
+            '><summary>Availability dates</summary>' + fields.slice(1).join('') + '</details>';
+        } else fields = fields.join('');
         return '<div class="cgp-sections__daterow" data-row="' + esc(rk) + '">' + (row !== it ? '<span class="cgp-sections__child">' + esc(row.title || '') + '</span>' : '') +
           fields + '<span class="cgp-sections__err" data-row-err>' + esc(check.errors.join('; ')) + '</span></div>';
       }).join('');
       var note = '';
-      if (t.body) {
+      if (t.body && !st.quick) {
         var nv = st.notes[k] || '';
         note = '<details class="cgp-sections__note"' + (nv ? ' open' : '') + '><summary>Note for this class only' + (nv ? ' (has one)' : '') + '</summary>' +
           '<textarea rows="2" data-note="' + esc(k) + '" placeholder="Shown at the top of the instructions in this class only."' + (on ? '' : ' disabled') + '>' + esc(nv) + '</textarea></details>';
@@ -1041,6 +1072,7 @@
     }
     if (!act || act.disabled) return;
     var a = act.getAttribute('data-act');
+    if (a === 'advanced-copy') { st.quick = false; this.render(); return; }
     if (a === 'save-link') return this.saveLink();
     if (a === 'cancel-link') { st.view = 'main'; st.linkDraft = null; this.render(); return; }
     if (a === 'edit-link') { st.view = 'link'; st.linkDraft = null; this.render(); return; }
