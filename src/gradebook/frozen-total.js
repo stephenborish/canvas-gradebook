@@ -1,17 +1,16 @@
 /* Canvas Gradebook+ - Total frozen next to the student name.
  *
- * Canvas's own Total column, frozen by Canvas itself: the page bridge
- * (env-bridge.js, freezeCanvasTotal) runs Canvas's freezeTotalGradeColumn(),
- * the same thing its Total menu's "Move to Front" item does. Nothing here
- * draws, copies or recalculates a Total, so the Total a teacher sees is
- * always the one Canvas calculates live in the gradebook.
+ * Canvas's own Total column, moved by Canvas itself: the page bridge
+ * (env-bridge.js, placeCanvasTotal) runs Canvas's own Total-menu actions.
+ * Nothing here draws, copies or recalculates a Total, so the Total a teacher
+ * sees is always the one Canvas calculates live in the gradebook.
  *
- * Canvas saves the freeze as the teacher's column-order preference, so this
- * only ever has to happen once per course. It is asked for once per page
- * load (and again if the setting is turned off and back on); a teacher who
- * then chooses "Move to End" is not overruled until the next load with the
- * setting still on. Turning the setting off leaves Canvas's saved preference
- * alone, since it may be the teacher's own. */
+ * The setting decides where Total sits, checked on every paint:
+ *  - on (the default): frozen immediately after the student name, wherever
+ *    it was before - including after a "Move to End" from Canvas's menu;
+ *  - off: back at the far right, where Canvas puts it by default.
+ * Canvas saves each move as the teacher's column-order preference for the
+ * course, so once it is in place nothing further is asked of Canvas. */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
@@ -19,16 +18,16 @@
 
   var RESPONSE_TIMEOUT_MS = 5000;
   var MAX_DELAY_MS = 30000;
-  // Canvas builds the grid in stages; until it has, the bridge answers
-  // 'unavailable' or 'notShown'. Retried with backoff, then given up on.
-  var MAX_ATTEMPTS = 8;
+  // After a move, the time Canvas gets to redraw before the on-page check
+  // may ask again.
+  var SETTLE_MS = 1000;
 
   function FrozenTotalController(ctx) {
+    this.adapter = ctx.adapter;
     this.settings = ctx.settings;
-    this.enabled = false;   // the setting is on and this page load is handled
-    this.done = false;      // Canvas confirmed its Total frozen, or retries ran out
+    this._want = null;      // the position last asked for: true = frozen front
     this._pending = false;
-    this._attempts = 0;
+    this._attempts = 0;     // requests since Total was last seen where wanted
     this._nextAt = 0;
     this._timer = null;
   }
@@ -44,49 +43,52 @@
     this._timer = null;
   };
 
-  /* Called on every paint pass; cheap once done. */
+  /* Called on every paint pass; one cheap header check once Total is in place. */
   P.paint = function () {
-    if (!this.settings.values.frozenTotal) {
-      // Turned off: forget this page load's answer, so turning it back on
-      // asks Canvas again instead of staying latched on an old result.
-      if (this.enabled) {
-        this.enabled = false;
-        this.done = false;
-        this._attempts = 0;
-        this._nextAt = 0;
-        this._cancelRetry();
-      }
+    var want = !!this.settings.values.frozenTotal;
+    if (want !== this._want) {
+      // Setting changed: act on it now, not after an old backoff.
+      this._want = want;
+      this._attempts = 0;
+      this._nextAt = 0;
+      this._cancelRetry();
+    }
+    var frozen = this.adapter.totalInFrozenPane();
+    if (frozen === null) return;   // the grid hasn't split into its panes yet
+    if (frozen === want) {
+      this._attempts = 0;
+      this._cancelRetry();
       return;
     }
-    this.enabled = true;
-    if (this.done || this._pending || Date.now() < this._nextAt) return;
+    if (this._pending || Date.now() < this._nextAt) return;
     // A render pass got here first: the timed retry is no longer needed, and
     // left running it would wipe the NEXT backoff when it fired.
     this._cancelRetry();
     var self = this;
     this._pending = true;
-    this.request().then(function (result) {
+    this.request(want).then(function (result) {
       self._pending = false;
-      // Turned off while the request was out: its answer belongs to the old
-      // setting, and recording it would latch a later turn-on.
-      if (!self.settings.values.frozenTotal) return;
-      if (result && result.ok && result.frozen) {
-        self.done = true;
-        CGP.diag.bump(result.changed ? 'frozenTotal.frozeCanvasTotal' : 'frozenTotal.alreadyFrozen');
-        return;
+      // The setting changed while the request was out: its answer is stale.
+      if (want !== !!self.settings.values.frozenTotal) return;
+      if (result && result.ok && result.placed && result.changed) {
+        self._attempts = 0;
+        self._nextAt = Date.now() + SETTLE_MS;
+        CGP.diag.bump(want ? 'frozenTotal.movedToFront' : 'frozenTotal.movedToEnd');
+      } else {
+        // Not moved: Canvas's grid still building, no Total showing, or
+        // Canvas already has it where wanted and only the page lags. Try
+        // again with backoff, on a timer, since an idle grid may not repaint.
+        self._attempts++;
+        if (self._attempts === 1 || self._attempts % 8 === 0) {
+          CGP.diag.warn('frozenTotal.notPlaced', { reason: result && result.reason });
+        }
+        var delay = Math.min(MAX_DELAY_MS, 1000 * Math.pow(2, self._attempts - 1));
+        self._nextAt = Date.now() + delay;
       }
-      self._attempts++;
-      if (self._attempts >= MAX_ATTEMPTS) {
-        self.done = true;
-        CGP.diag.warn('frozenTotal.notFrozen', { reason: result && result.reason });
-        return;
-      }
-      var delay = Math.min(MAX_DELAY_MS, 1000 * Math.pow(2, self._attempts - 1));
-      self._nextAt = Date.now() + delay;
-      // An idle grid may not repaint on its own, so the retry is not left
-      // waiting for one. The timer clears the wait itself, so firing a
-      // millisecond early cannot skip the retry.
-      self._timer = self._schedule(function () { self._timer = null; self._nextAt = 0; self.paint(); }, delay);
+      // The timer clears the wait itself, so firing a millisecond early
+      // cannot skip the retry.
+      self._timer = self._schedule(function () { self._timer = null; self._nextAt = 0; self.paint(); },
+        Math.max(0, self._nextAt - Date.now()));
     });
   };
 
@@ -94,7 +96,7 @@
     return setTimeout(fn, ms);
   };
 
-  P.request = function () {
+  P.request = function (front) {
     return new Promise(function (resolve) {
       var id = 'cgp-total-' + Date.now() + '-' + Math.random().toString(36).slice(2);
       var timer;
@@ -110,7 +112,7 @@
       }
       window.addEventListener('message', onMessage);
       timer = setTimeout(function () { finish({ ok: false, reason: 'timeout' }); }, RESPONSE_TIMEOUT_MS);
-      window.postMessage({ source: 'cgp-total-request', id: id }, window.location.origin);
+      window.postMessage({ source: 'cgp-total-request', id: id, front: !!front }, window.location.origin);
     });
   };
 

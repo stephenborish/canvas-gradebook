@@ -21,8 +21,9 @@
  *     cells, Total and Grade Detail Tray show it without a reload. See
  *     "Canvas's own gradebook store" below.
  *  4. Frozen Total: on a {source:'cgp-total-request'} from frozen-total.js,
- *     runs Canvas's own "Move to Front" on its Total column and answers with
- *     {source:'cgp-total-response'}. See freezeCanvasTotal below.
+ *     runs Canvas's own "Move to Front" (or "Move to End") on its Total
+ *     column and answers with {source:'cgp-total-response'}. See
+ *     placeCanvasTotal below.
  *
  * Canvas's own writes on this page are watched by write-watch.js. */
 (function () {
@@ -585,44 +586,53 @@
     });
   }
 
-  /* "Keep Total frozen beside the student name": Canvas's own Total column,
-   * frozen by Canvas's own freezeTotalGradeColumn() - exactly what its Total
-   * menu's "Move to Front" item runs. The Total a teacher sees is therefore
-   * always Canvas's own live, client-side calculation, never a copy. Canvas
-   * saves this as the teacher's column-order preference for the course, the
-   * same as choosing "Move to Front" by hand, and "Move to End" undoes it.
+  /* "Keep Total frozen beside the student name": where Canvas's own Total
+   * column sits, moved only with Canvas's own Total-menu actions - "Move to
+   * Front" (freezeTotalGradeColumn: frozen right after the names) when the
+   * setting is on, "Move to End" (moveTotalGradeColumnToEnd: back at the far
+   * right, Canvas's default) when it is off. Nothing is drawn or copied, so
+   * the Total a teacher sees is always Canvas's own live calculation. Canvas
+   * saves either move as the teacher's column-order preference for the
+   * course, exactly as if they had picked the menu item themselves.
    *
-   * Result: { ok, frozen, changed } once Canvas's gradebook is reachable, or
-   * { ok: false, reason } when it is not (yet). frozen: false with reason
+   * Result: { ok, placed, changed } once Canvas's gradebook is reachable, or
+   * { ok: false, reason } when it is not (yet). placed: false with reason
    * 'notShown' means Canvas is not showing a Total at all right now (hidden
    * in its View options, or a grading-period view without one), so there is
-   * nothing to freeze. */
-  function freezeCanvasTotal() {
+   * nothing to move. */
+  function placeCanvasTotal(front) {
     var gb = findGradebook();
     var cols = gb && gb.gridData && gb.gridData.columns;
     if (!cols || !Array.isArray(cols.frozen) || !Array.isArray(cols.scrollable)) {
       return { ok: false, reason: 'unavailable' };
     }
-    if (cols.frozen.indexOf('total_grade') >= 0) return { ok: true, frozen: true, changed: false };
-    if (cols.scrollable.indexOf('total_grade') < 0) return { ok: true, frozen: false, reason: 'notShown' };
-    if (typeof gb.freezeTotalGradeColumn !== 'function') return { ok: false, reason: 'unavailable' };
+    var isFrozen = cols.frozen.indexOf('total_grade') >= 0;
+    if (isFrozen === front) return { ok: true, placed: true, changed: false };
+    if (front && cols.scrollable.indexOf('total_grade') < 0) return { ok: true, placed: false, reason: 'notShown' };
+    var move = front ? gb.freezeTotalGradeColumn : gb.moveTotalGradeColumnToEnd;
+    if (typeof move !== 'function') return { ok: false, reason: 'unavailable' };
     var hasStudent = cols.frozen.indexOf('student') >= 0;
     try {
-      gb.freezeTotalGradeColumn();
+      move.call(gb);
       // freezeTotalGradeColumn() inserts Total after a 'student' column that
       // does not exist while Canvas shows separate first/last name columns,
       // which would put Total in front of the names. Canvas's own column
       // rebuild orders the frozen block correctly, so run it - only then,
       // since freezeTotalGradeColumn() already redraws the grid itself.
-      if (!hasStudent && typeof gb.setVisibleGridColumns === 'function' && typeof gb.updateGrid === 'function') {
+      if (front && !hasStudent && typeof gb.setVisibleGridColumns === 'function' && typeof gb.updateGrid === 'function') {
         gb.setVisibleGridColumns();
         gb.updateGrid();
       }
     } catch (e) {
       return { ok: false, reason: 'failed' };
     }
-    var frozen = Array.isArray(gb.gridData.columns.frozen) && gb.gridData.columns.frozen.indexOf('total_grade') >= 0;
-    return frozen ? { ok: true, frozen: true, changed: true } : { ok: false, reason: 'failed' };
+    if (!front) {
+      // moveTotalGradeColumnToEnd() scrolls the grid to the far right to show
+      // where Total went; the teacher did not ask to be taken there.
+      try { gb.gradebookGrid.gridSupport.columns.scrollToStart(); } catch (e) { /* ignore */ }
+    }
+    var now = Array.isArray(gb.gridData.columns.frozen) && gb.gridData.columns.frozen.indexOf('total_grade') >= 0;
+    return now === front ? { ok: true, placed: true, changed: true } : { ok: false, reason: 'failed' };
   }
 
   /* Background search for the grid, so Canvas's own later setColumns calls
@@ -686,7 +696,9 @@
     var message = event.data;
     if (event.source !== window || !message || message.source !== 'cgp-total-request' || !message.id) return;
     var result;
-    try { result = freezeCanvasTotal(); } catch (e) { result = { ok: false, reason: 'failed' }; }
+    // Senders that predate the flag only ever asked to freeze.
+    var front = message.front === undefined ? true : !!message.front;
+    try { result = placeCanvasTotal(front); } catch (e) { result = { ok: false, reason: 'failed' }; }
     post({ source: 'cgp-total-response', id: message.id, result: result });
   });
 

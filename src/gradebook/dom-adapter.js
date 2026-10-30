@@ -1388,6 +1388,22 @@
     });
   };
 
+  /* Whether Canvas's own Total column is in the frozen (name) pane right now:
+   * true or false, or null while the grid has not split into its frozen and
+   * scrolling panes yet. Structural column ids only - a column merely titled
+   * "Total ..." is not the Total. */
+  P.totalInFrozenPane = function () {
+    var headers = this.headerContainers();
+    if (headers.length < 2) return null;
+    var cols = headers[0].querySelectorAll('.slick-header-column');
+    for (var i = 0; i < cols.length; i++) {
+      var colId = gridMap.parseSlickColumnId(cols[i].id || '') ||
+        cols[i].getAttribute('data-column-id') || '';
+      if (gridMap.classifyColumnId(colId).type === 'total') return true;
+    }
+    return false;
+  };
+
   /* Nearest ancestor (starting at el itself, walking up toward <body>) whose
    * OWN box is `position: absolute` - i.e. the actual pane div SlickGrid
    * moves and sizes to build the frozen/scrolling two-pane layout, whatever

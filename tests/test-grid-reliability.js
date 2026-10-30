@@ -588,6 +588,16 @@ suite('grid reliability E: Final Grade Override and "total" text', (test) => {
     void g;
   });
 
+  test('totalInFrozenPane trusts only the structural column id', () => {
+    const CGP = loadGradebookDom();
+    headerGrid([{ id: 'student' }, { id: 'total_grade', text: 'Total' }], [{ id: 'assignment_1' }]);
+    a.eq(new CGP.GradebookDomAdapter().totalInFrozenPane(), true, 'Canvas\'s Total frozen beside the names');
+    headerGrid([{ id: 'student' }, { id: 'custom_col_3', text: 'Total points' }], [{ id: 'total_grade' }]);
+    a.eq(new CGP.GradebookDomAdapter().totalInFrozenPane(), false, 'a Notes column titled "Total points" is not the Total');
+    headerGrid([{ id: 'student' }, { id: 'total_grade_override' }], [{ id: 'total_grade' }]);
+    a.eq(new CGP.GradebookDomAdapter().totalInFrozenPane(), false, 'Final Grade Override is not the Total');
+  });
+
   test('a header is never classified as Total by text containing "total"', () => {
     const CGP = loadGradebookDom();
     headerGrid([{ id: 'student' }], []);

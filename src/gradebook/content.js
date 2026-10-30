@@ -200,7 +200,7 @@
     CGP.selection = selection;
     CGP.bulkComment = bulkComment;
     // Keeps Canvas's own Total frozen beside the names (frozen-total.js).
-    var frozen = new CGP.FrozenTotalController({ settings: settings });
+    var frozen = new CGP.FrozenTotalController({ adapter: adapter, settings: settings });
     // Keeps the hidden Test Student row from being typed into, and offers to
     // clear grades that end up there anyway. Started before the keyboard
     // controller so its capture listener runs first.
@@ -602,9 +602,9 @@
       CGP.settings.onChange(function () {
         registry.invalidateAll();
         layout.start();
-        // Turning the frozen Total on asks Canvas to freeze its Total on the
-        // next paint (frozen.paint()); turning it off changes nothing on
-        // screen - see frozen-total.js.
+        // The frozen Total follows the setting on the next paint
+        // (frozen.paint()): on moves Canvas's Total beside the names, off
+        // moves it back to the far right - see frozen-total.js.
         // Column widths follow the settings too: narrowing is applied, or
         // undone, right away.
         _reconcileAttempts = 0;

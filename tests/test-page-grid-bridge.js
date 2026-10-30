@@ -64,7 +64,16 @@ suite('page-context SlickGrid bridge', (test) => {
     const gb = fakeGradebook({}, { open: false });
     gb.gridData = { columns: { frozen: frozen.slice(), scrollable: scrollable.slice() } };
     gb.calls.freeze = 0;
+    gb.calls.toEnd = 0;
+    gb.calls.scrollToStart = 0;
     gb.calls.updateGrid = 0;
+    gb.gradebookGrid = { gridSupport: { columns: { scrollToStart: function () { gb.calls.scrollToStart++; } } } };
+    gb.moveTotalGradeColumnToEnd = function () {
+      gb.calls.toEnd++;
+      const cols = gb.gridData.columns;
+      cols.frozen = cols.frozen.filter((id) => id !== 'total_grade');
+      cols.scrollable = cols.scrollable.filter((id) => id !== 'total_grade').concat(['total_grade']);
+    };
     if (!opts.noFreezeMethod) {
       gb.freezeTotalGradeColumn = function () {
         gb.calls.freeze++;
@@ -85,15 +94,17 @@ suite('page-context SlickGrid bridge', (test) => {
     return gb;
   }
 
-  function askToFreeze(gb) {
+  function askToFreeze(gb, front) {
     const bridge = loadBridgeWith({ querySelector: (sel) => (sel === '#gradebook_app' && gb ? reactMount(gb) : null) });
-    bridge.win.postMessage({ source: 'cgp-total-request', id: 'freeze' }, bridge.win.location.origin);
+    const message = { source: 'cgp-total-request', id: 'freeze' };
+    if (front !== undefined) message.front = front;
+    bridge.win.postMessage(message, bridge.win.location.origin);
     return bridge.posted().find((m) => m.source === 'cgp-total-response' && m.id === 'freeze').result;
   }
 
   test('the frozen Total is Canvas\'s own Total, frozen by Canvas\'s own "Move to Front"', () => {
     const gb = freezableGradebook(['student', 'custom_col_3'], ['assignment_1', 'total_grade']);
-    a.deep(askToFreeze(gb), { ok: true, frozen: true, changed: true });
+    a.deep(askToFreeze(gb), { ok: true, placed: true, changed: true });
     a.eq(gb.calls.freeze, 1, 'Canvas\'s freezeTotalGradeColumn() did the work');
     a.deep(gb.gridData.columns.frozen, ['student', 'total_grade', 'custom_col_3']);
     a.deep(gb.gridData.columns.scrollable, ['assignment_1']);
@@ -101,20 +112,35 @@ suite('page-context SlickGrid bridge', (test) => {
 
   test('separate first/last name columns keep Total after the names, not in front of them', () => {
     const gb = freezableGradebook(['student_lastname', 'student_firstname'], ['assignment_1', 'total_grade']);
-    a.deep(askToFreeze(gb), { ok: true, frozen: true, changed: true });
+    a.deep(askToFreeze(gb), { ok: true, placed: true, changed: true });
     a.deep(gb.gridData.columns.frozen, ['student_lastname', 'student_firstname', 'total_grade']);
     a.eq(gb.calls.updateGrid, 1, 'Canvas redraws the grid with the corrected order');
   });
 
   test('a Total Canvas already has frozen is left alone', () => {
     const gb = freezableGradebook(['student', 'total_grade'], ['assignment_1']);
-    a.deep(askToFreeze(gb), { ok: true, frozen: true, changed: false });
+    a.deep(askToFreeze(gb), { ok: true, placed: true, changed: false });
     a.eq(gb.calls.freeze, 0);
+  });
+
+  test('setting off: a frozen Total goes back to the far right through Canvas\'s own "Move to End"', () => {
+    const gb = freezableGradebook(['student', 'total_grade', 'custom_col_3'], ['assignment_1']);
+    a.deep(askToFreeze(gb, false), { ok: true, placed: true, changed: true });
+    a.eq(gb.calls.toEnd, 1, 'Canvas\'s moveTotalGradeColumnToEnd() did the work');
+    a.deep(gb.gridData.columns.frozen, ['student', 'custom_col_3']);
+    a.deep(gb.gridData.columns.scrollable, ['assignment_1', 'total_grade']);
+    a.eq(gb.calls.scrollToStart, 1, 'the teacher is not left scrolled to the far right');
+  });
+
+  test('setting off: a Total already at the far right is left alone', () => {
+    const gb = freezableGradebook(['student'], ['assignment_1', 'total_grade']);
+    a.deep(askToFreeze(gb, false), { ok: true, placed: true, changed: false });
+    a.eq(gb.calls.toEnd, 0);
   });
 
   test('a Total Canvas is not showing is not forced on screen', () => {
     const gb = freezableGradebook(['student'], ['assignment_1']);
-    a.deep(askToFreeze(gb), { ok: true, frozen: false, reason: 'notShown' });
+    a.deep(askToFreeze(gb), { ok: true, placed: false, reason: 'notShown' });
     a.eq(gb.calls.freeze, 0);
   });
 

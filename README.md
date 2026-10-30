@@ -265,16 +265,18 @@ works in it too.
 
 ### Student name + Total, frozen together
 
-Canvas's own Total column is kept frozen beside the student name, so it stays visible no matter
-how far right you scroll. The extension does this by running Canvas's own "Move to Front"
-action on the Total column - nothing is drawn, copied or recalculated, so the Total you see is
-always the one Canvas itself calculates in the gradebook, including Canvas's own warning icons.
+On by default: Canvas's own Total column is moved right after the student name, wherever it
+was before, and stays visible no matter how far right you scroll. The extension does this with
+Canvas's own "Move to Front" action on the Total column - nothing is drawn, copied or
+recalculated, so the Total you see is always the one Canvas itself calculates in the gradebook,
+including Canvas's own warning icons.
 
-Canvas saves "Move to Front" as your column-order preference for the course, so this happens
-once per course. To undo it, choose **Move to End** in the Total column's `⋮` menu; with the
-setting still on, it is frozen again on your next visit. Turning the setting off leaves Canvas's
-saved preference as it is. If Canvas isn't showing a Total at all (hidden in its View options,
-or a grading-period view without one), there is nothing to freeze.
+The setting decides where Total sits, every time the gradebook redraws. While it is on, a Total
+moved away (say, with "Move to End" in its `⋮` menu) is moved straight back. Turn the setting
+off under Options → Appearance and Total goes back to the far right, Canvas's default, using
+Canvas's own "Move to End". Canvas saves either move as your column-order preference for the
+course. If Canvas isn't showing a Total at all (hidden in its View options, or a grading-period
+view without one), there is nothing to move.
 
 ### The hidden Test Student stays out of your averages
 
@@ -814,7 +816,7 @@ src/gradebook/
   cell-actions.js                 double-click -> Canvas's own tray arrow; two-pane row hover
   keyboard.js                     M / E / L, navigation, editor reconciliation
   bulk-paste.js                   validate-then-write clipboard application
-  frozen-total.js                 asks Canvas to freeze its own Total column
+  frozen-total.js                 keeps Canvas's own Total column beside the names
   layout.js                       compaction, column widths, header decoration
   post-grades.js                  the per-column Post button and the posting job
   comment-popover.js              in-place comment thread and reply
@@ -914,9 +916,9 @@ Two things that no longer happen, as of this fix:
   Canvas's documented markup and could not be exercised against a real gradebook here. That is
   exactly what the diagnostics panel is for: if something looks off, turn it on, reload the
   gradebook, and read the unmapped-cell and failed-request counts.
-- **Frozen Total relies on Canvas's own "Move to Front".** The extension calls the same
-  Canvas function that menu item does. If a Canvas update ever renames it, the Total simply
-  stays where Canvas put it (and the diagnostics panel reports `frozenTotal.notFrozen`).
+- **Frozen Total relies on Canvas's own "Move to Front" / "Move to End".** The extension calls
+  the same Canvas functions those menu items do. If a Canvas update ever renames them, the Total
+  simply stays where Canvas put it (and the diagnostics panel reports `frozenTotal.notPlaced`).
 - **Row height is unchanged.** SlickGrid computes row positions in JavaScript from its own row
   height; overriding it in CSS misaligns every row. Vertical space is won by collapsing Canvas's
   chrome instead.
