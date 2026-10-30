@@ -521,6 +521,13 @@ put it in every other class in one step, each with its own dates. Below, each of
 called a *section*, as in the code; the buttons say *class*, so it is never mistaken for Canvas's own
 sections and Assign To.
 
+**Quick copy of a saved assignment.** Open the assignment and choose **Copy to other classes**.
+The compact view shows destination checkboxes and a due date for each class. Select the class,
+change the due date if needed, then press **Copy**. No destinations are selected automatically.
+Availability dates are folded away; **More options…** opens the full tool without losing your
+selection or date edits. Existing-copy and changed-content checks still apply. Canvas performs
+the copy in the background, so completion time depends on Canvas.
+
 **Where the button is.** It sits beside what it copies, not in the breadcrumb:
 
 - On an assignment, quiz, discussion, announcement or page: **Copy to other classes**, next to
