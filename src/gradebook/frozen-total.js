@@ -1,484 +1,118 @@
 /* Canvas Gradebook+ - Total frozen next to the student name.
  *
- * Canvas's own Total column lives at the far right and is removed from the DOM
- * while columns virtualize, so position: sticky on it is not an option. Instead
- * the frozen pane is widened and a Total column is drawn into the space that
- * opens up, using each rendered row's own top offset for vertical alignment
- * (no fake header row, no row shifting) and Canvas's own enrollment scores for
- * the values (no independent weighted-grade math). */
+ * Canvas's own Total column, moved by Canvas itself: the page bridge
+ * (env-bridge.js, placeCanvasTotal) runs Canvas's own Total-menu actions.
+ * Nothing here draws, copies or recalculates a Total, so the Total a teacher
+ * sees is always the one Canvas calculates live in the gradebook.
+ *
+ * The setting decides where Total sits, checked on every paint:
+ *  - on (the default): frozen immediately after the student name, wherever
+ *    it was before - including after a "Move to End" from Canvas's menu;
+ *  - off: back at the far right, where Canvas puts it by default.
+ * Canvas saves each move as the teacher's column-order preference for the
+ * course, so once it is in place nothing further is asked of Canvas. */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.FrozenTotalController) return;
 
+  var RESPONSE_TIMEOUT_MS = 5000;
+  var MAX_DELAY_MS = 30000;
+  // After a move, the time Canvas gets to redraw before the on-page check
+  // may ask again.
+  var SETTLE_MS = 1000;
+
   function FrozenTotalController(ctx) {
     this.adapter = ctx.adapter;
-    this.model = ctx.model;
     this.settings = ctx.settings;
-    // Reports true while layout.js has a column-sizing transaction in
-    // flight, so paint()/measure() can hold off rather than measuring the
-    // frozen pane against a grid whose column widths are momentarily
-    // between Canvas's old model and the extension's narrowed one.
-    this.isSizingPending = ctx.isSizingPending || function () { return false; };
-    // Called with true once the widen is confirmed and false when it is lost,
-    // so the native Total is only relocated while the overlay really shows.
-    this.onTotalMove = ctx.onTotalMove || function () {};
-    // The header's Analyze button: opens the score-analysis panel for the
-    // course totals (score-analysis.js).
-    this.onAnalyze = ctx.onAnalyze || null;
-    this.width = 84;
-    this.enabled = false;   // the setting is on and a frozen pane was found at start
-    // Verified to actually be showing, not merely attempted - see
-    // verifyWidened(). Everything downstream (drawing the Total overlay,
-    // hiding Canvas's own native Total column so there is never a confusing
-    // duplicate) is gated on this, not on `enabled`, precisely because the
-    // CSS trick `enabled` turns on is not guaranteed to have taken hold.
-    this.working = false;
-    this._failStreak = 0;
-    this._notifiedBroken = false;
-    this.layer = null;
-    this.header = null;
-    this.cellPool = new Map(); // rowIndex -> element
-    this.naturalWidth = 0;
-    this._clampedAncestors = [];
-    // pane element -> { width?: originalValue, left?: originalValue }, as it
-    // stood before applyPaneGeometry() ever pinned that property. Captured
-    // lazily (see _captureOriginal) the first time each property is about to
-    // be overwritten, so restorePaneGeometry() can put back what Canvas/
-    // SlickGrid actually had there - which is not necessarily nothing: some
-    // Canvas builds set these panes' own left/width inline, and simply
-    // deleting the property (the old behaviour) left the pane with no
-    // explicit geometry at all until Canvas happened to recompute its own
-    // layout, rather than restoring it.
-    this._paneOriginal = new Map();
+    this._want = null;      // the position last asked for: true = frozen front
+    this._pending = false;
+    this._attempts = 0;     // requests since Total was last seen where wanted
+    this._nextAt = 0;
+    this._timer = null;
   }
 
   var P = FrozenTotalController.prototype;
 
   P.start = function () {
-    if (this.enabled) return;
-    if (!this.settings.values.frozenTotal) return;
-    if (!this.adapter.hasFrozenPane()) {
-      // Not a permanent verdict - content.js calls start() exactly once, at
-      // the moment the grid clears its own minimal readiness bar (a header
-      // column plus a grid-canvas exist). Canvas can still be mid-render at
-      // that instant and split into its frozen/scrolling pane pair a beat
-      // later, especially on a slow course load. Leaving `enabled` false
-      // here (rather than latching some "gave up" flag) is what lets paint()
-      // below retry this exact check on every subsequent paint pass - cheap,
-      // since a real course only fails it for a handful of passes before the
-      // second pane exists - instead of the whole feature staying off for
-      // the rest of the page's life over a one-time timing race. That silent,
-      // permanent disable is exactly the "Total column just isn't frozen
-      // this time" report this replaces.
-      CGP.diag.warn('frozenTotal.noFrozenPane');
-      return;
-    }
-    this.enabled = true;
-    document.documentElement.classList.add('cgp-frozen-total');
-    document.documentElement.style.setProperty('--cgp-total-w', this.width + 'px');
-    this.clampAncestorOverflow();
-    this.measure();
+    this.paint();
   };
 
-  P.stop = function () {
-    if (this.working) this.onTotalMove(false);
-    this.enabled = false;
-    this._standingDown = false;
-    this._standDowns = 0;
-    this._failStreak = 0;
-    this.restorePaneGeometry();
-    document.documentElement.classList.remove('cgp-frozen-total');
-    document.documentElement.classList.remove('cgp-native-total-front');
-    this.restoreAncestorOverflow();
-    this.teardownDrawn();
+  P._cancelRetry = function () {
+    if (this._timer) clearTimeout(this._timer);
+    this._timer = null;
   };
 
-  /* Undo applyPaneGeometry()'s inline `!important` left/width pins so a
-   * teacher turning the setting off gets Canvas's own ACTUAL prior pane
-   * geometry back, not just an empty property. Restores from _paneOriginal
-   * where this feature has a captured value for that element/property (set
-   * back to exactly what it was, not merely non-empty); only falls back to
-   * removeProperty for a property this feature never touched (or a pane
-   * geometry() was never called against), where there is nothing recorded to
-   * restore and Canvas's own CSS/JS is free to take over as it would have
-   * anyway. The snapshot is cleared after restoring so a later start() in
-   * the same page load captures a fresh "before" from whatever is actually
-   * on the element at that time, rather than reusing this one indefinitely. */
-  P.restorePaneGeometry = function () {
-    var self = this;
-    ['width', 'left'].forEach(function (prop) {
-      [self.adapter.bodyPanes(), self.adapter.headerPanes()].forEach(function (panes) {
-        panes.forEach(function (el) {
-          if (!el) return;
-          var entry = self._paneOriginal.get(el);
-          if (entry && Object.prototype.hasOwnProperty.call(entry, prop)) {
-            if (entry[prop]) el.style.setProperty(prop, entry[prop]);
-            else el.style.removeProperty(prop);
-          } else {
-            el.style.removeProperty(prop);
-          }
-        });
-      });
-    });
-    this._paneOriginal.clear();
-  };
-
-  /* Belt-and-braces against the exact failure mode reported live: BOTH panes
-   * (the frozen student/Total pane and the scrolling assignment pane)
-   * sliding sideways together when the teacher scrolls right, with a
-   * horizontal scrollbar showing at the bottom of the grid.
-   *
-   * applyPaneGeometry() below is what actually PREVENTS that, by keeping the
-   * grid's total on-screen footprint exactly what it was before the widen
-   * (see its own comment) - but that guarantee depends on this extension
-   * correctly identifying every pane element on THIS Canvas build. Rather
-   * than trust that alone, every ancestor from the grid root up to (not
-   * including) <body> is force-clipped so that even a geometry mistake this
-   * extension does not know about yet can only ever be invisible/cropped,
-   * never a scrollbar that drags the "frozen" pane along with it - a
-   * position:absolute pane is not exempt from an ancestor's own scroll
-   * unless something stops that ancestor from ever needing one.
-   * `.slick-viewport-right` (or whichever pane genuinely owns the
-   * assignment columns' horizontal scroll) is explicitly left alone: that is
-   * the ONE scrollbar this feature wants to keep working exactly as before. */
-  P.clampAncestorOverflow = function () {
-    var root = this.adapter.gridRoot();
-    if (!root) return;
-    var rightViewport = this.adapter.rightViewport();
-    var out = [];
-    var node = root;
-    for (var i = 0; i < 12 && node && node !== document.body && node !== document.documentElement; i++) {
-      if (node.id === 'application' || node.id === 'wrapper') break;
-      if (node !== rightViewport && !node.style.getPropertyValue('overflow-x')) {
-        // clip, not hidden: hidden still makes the node a scroll container
-        // (scrollable by script / focus / scrollIntoView); clip never does.
-        node.style.setProperty('overflow-x', 'clip', 'important');
-        out.push(node);
-      }
-      node = node.parentElement;
-    }
-    this._clampedAncestors = out;
-    this._clampedRoot = root;
-  };
-
-  /* Canvas can replace the grid root (or an ancestor) wholesale; the clamp
-   * then sits on detached nodes and protects nothing. Re-applied on paint. */
-  P.ensureAncestorClamp = function () {
-    var root = this.adapter.gridRoot();
-    if (!root) return;
-    var intact = this._clampedRoot === root && root.isConnected &&
-      this._clampedAncestors.every(function (n) { return n && n.isConnected; });
-    if (intact) return;
-    this.restoreAncestorOverflow();
-    this.clampAncestorOverflow();
-  };
-
-  P.restoreAncestorOverflow = function () {
-    this._clampedAncestors.forEach(function (node) {
-      if (node && node.isConnected) node.style.removeProperty('overflow-x');
-    });
-    this._clampedAncestors = [];
-    this._clampedRoot = null;
-  };
-
-  /* Set every pane's left/width in real measured pixels rather than trusting
-   * a CSS `calc(100% - Npx)` to resolve against the containing block this
-   * extension assumes it will - the "100%" there is what actually failed
-   * live: whatever it was really resolving against was NOT the same box the
-   * left pane's own widened width is measured relative to, so the two panes'
-   * geometry silently stopped summing to the grid's real, unchanged total
-   * width, and something upstream of both (an ancestor sized to that ORIGINAL
-   * total) grew a scrollbar that scrolls both absolutely-positioned panes as
-   * one unit - exactly the reported bug.
-   *
-   * The invariant this method enforces instead needs no assumption about any
-   * containing block at all: leftWidth(new) + rightWidth(new) is kept
-   * IDENTICAL to leftWidth(natural) + rightWidth(natural), which is
-   * whatever the grid root's own rendered width already was (untouched by
-   * any of this). The right pane simply gives back exactly the `width`
-   * pixels the left pane gained, using ONE shared measured number
-   * (gridRootWidth) rather than two separately-resolved percentages that
-   * could each be wrong in their own way. Applied to both the body panes and
-   * the header panes (see dom-adapter's bodyPanes()/headerPanes()) so the
-   * header row's columns never drift out of alignment with the body's. */
-  P.applyPaneGeometry = function () {
-    if (!this.naturalWidth) return;
-    var root = this.adapter.gridRoot();
-    if (!root) return;
-    var gridWidth = Math.round(root.getBoundingClientRect().width);
-    if (!gridWidth) return;
-    var newLeftWidth = this.naturalWidth + this.width;
-    var nativeTotal = this.adapter && this.adapter.nativeTotalInScrollingPane && this.adapter.nativeTotalInScrollingPane();
-    var nativeAtFront = !!nativeTotal;
-    document.documentElement.classList.toggle('cgp-native-total-front', nativeAtFront);
-    var nativeWidth = nativeTotal ? (nativeTotal.width || 84) : 84;
-    var newRightLeft = nativeAtFront ? Math.max(0, this.naturalWidth + this.width - nativeWidth) : newLeftWidth;
-    var newRightWidth = Math.max(0, gridWidth - newRightLeft);
-    document.documentElement.style.setProperty('--cgp-right-left', newRightLeft + 'px');
-
-    var self = this;
-    function pin(el, prop, px) {
-      if (!el) return;
-      var value = px + 'px';
-      if (el.style.getPropertyValue(prop) === value) return;
-      // Capture BEFORE the first overwrite only - once _paneOriginal has an
-      // entry for this element/property, every later call here is pinning
-      // this feature's OWN previous value, never Canvas's, so it must never
-      // clobber the real original captured the first time.
-      var entry = self._paneOriginal.get(el);
-      if (!entry) { entry = {}; self._paneOriginal.set(el, entry); }
-      if (!Object.prototype.hasOwnProperty.call(entry, prop)) {
-        entry[prop] = el.style.getPropertyValue(prop) || null;
-      }
-      el.style.setProperty(prop, value, 'important');
-    }
-
-    [this.adapter.bodyPanes(), this.adapter.headerPanes()].forEach(function (panes) {
-      var left = panes[0], right = panes[1];
-      pin(left, 'width', newLeftWidth);
-      // A course with no real frozen pane (bodyPanes()/headerPanes() only
-      // found one element) has nothing on the right to reposition - start()
-      // already refused to enable the feature at all in that case, but
-      // paint()/measure() can still be called defensively.
-      if (!right || right === left) return;
-      pin(right, 'left', newRightLeft);
-      pin(right, 'width', newRightWidth);
-      if (right.querySelectorAll) {
-        var nested = right.querySelectorAll('.slick-header-right, .slick-header');
-        for (var ni = 0; ni < nested.length; ni++) {
-          if (nested[ni] !== right) {
-            nested[ni].style.setProperty('left', '0px', 'important');
-          }
-        }
-      }
-    });
-  };
-
-  /* Everything that only belongs on screen once the widen is actually
-   * confirmed (see paint()). Torn down, not just left stale, the moment that
-   * confirmation is lost - a half-correct overlay is worse than none. */
-  P.teardownDrawn = function () {
-    this.working = false;
-    document.documentElement.classList.remove('cgp-frozen-total-active');
-    document.documentElement.classList.remove('cgp-native-total-front');
-    document.documentElement.style.removeProperty('--cgp-right-left');
-    if (this.layer) { this.layer.remove(); this.layer = null; }
-    if (this.header) { this.header.remove(); this.header = null; }
-    this.cellPool.clear();
-  };
-
-  /* A widen that cannot be confirmed must leave nothing behind: no overlay,
-   * no pinned pane geometry and no cgp-frozen-total widening CSS (which
-   * would otherwise leave an empty Total-sized gap beside the names). Then
-   * back off - 2s, 4s, ... up to 30s - before probing again from paint(). */
-  P.standDown = function () {
-    var wasWorking = this.working;
-    this.teardownDrawn();
-    if (wasWorking) this.onTotalMove(false);
-    this.restorePaneGeometry();
-    this.restoreAncestorOverflow();
-    document.documentElement.classList.remove('cgp-frozen-total');
-    document.documentElement.classList.remove('cgp-frozen-total-active');
-    this._standDowns = (this._standDowns || 0) + 1;
-    this._probeAt = Date.now() + Math.min(30000, 2000 * Math.pow(2, this._standDowns - 1));
-    this._standingDown = true;
-  };
-
-  /* Confirm the CSS pane-widening this whole feature depends on actually took
-   * hold, rather than assuming it. Canvas's exact SlickGrid pane/viewport
-   * class names are not something this extension can verify against a live
-   * build (see the class list in gradebook.css), and a silently-failed widen
-   * is not cosmetic: the Total this method would otherwise draw is appended
-   * into the frozen canvas at a left offset past where a NOT-actually-widened
-   * pane really ends, which reads, from the grid, as a Total column that
-   * scrolls along with the assignment columns instead of staying put - the
-   * exact "it isn't actually frozen" report this guards against.
-   *
-   * Checked on every paint, not just once at start, because the widen can be
-   * lost later just as easily as it can fail to ever take hold (Canvas
-   * re-rendering the pane on a sort, a filter change, a column drag). A
-   * short streak of failures (not a single one - the frozen pane may simply
-   * not have its final layout yet on the very first paint or two) is what
-   * actually tears the overlay down; a later paint that measures correctly
-   * again brings it right back with no reload needed either way. */
-  P.verifyWidened = function () {
-    if (!this.naturalWidth) return false;
-    // The CSS widen (see `.slick-pane-left` / `.slick-viewport-left` in
-    // gradebook.css) resizes the pane itself, not `.grid-canvas` - SlickGrid
-    // sets the canvas's own width to the sum of that pane's column widths
-    // regardless of the pane's CSS box width, so measuring the canvas here
-    // never confirmed a real widen.
-    var pane = this.adapter.frozenPaneLeft();
-    if (!pane) return false;
-    var have = Math.round(pane.getBoundingClientRect().width);
-    var want = this.naturalWidth + this.width;
-    // A little slack for a hairline border, a scrollbar gutter, or ordinary
-    // sub-pixel layout rounding on an otherwise-correct widen.
-    return Math.abs(have - want) <= 12;
-  };
-
-  P.measure = function () {
-    var natural = this.adapter.frozenNaturalWidth();
-    if (!natural) return;
-    if (Math.abs(natural - this.naturalWidth) < 2) {
-      // The natural width itself hasn't moved, but the grid root's overall
-      // width can still change on its own (a window resize, the compact-
-      // layout controller's own geometry pass) - re-pinning every pane's
-      // pixels on every measure() call, not only when naturalWidth changes,
-      // is what keeps applyPaneGeometry()'s invariant true after that too.
-      this.applyPaneGeometry();
-      return;
-    }
-    this.naturalWidth = natural;
-    var root = document.documentElement;
-    root.style.setProperty('--cgp-frozen-natural', natural + 'px');
-    root.style.setProperty('--cgp-frozen-w', (natural + this.width) + 'px');
-    CGP.diag.set('frozenPaneWidth', natural + this.width);
-    this.applyPaneGeometry();
-  };
-
-  P.ensureHeader = function () {
-    var headerPane = document.querySelector('.slick-header-left') ||
-      document.querySelector('.slick-pane-header-left') ||
-      (this.adapter.headerContainers()[0] && (this.adapter.headerContainers()[0].closest ? this.adapter.headerContainers()[0].closest('.slick-header-left, .slick-pane-header-left, .slick-header') : this.adapter.headerContainers()[0].parentElement)) ||
-      (this.adapter.headerPanes() && this.adapter.headerPanes()[0]) ||
-      document.querySelector('.slick-header');
-    if (!headerPane) return null;
-    if (this.header && this.header.isConnected && this.header.parentElement === headerPane) return this.header;
-    var el = headerPane.querySelector(':scope > .cgp-total-header');
-    if (!el) {
-      el = document.createElement('div');
-      el.className = 'cgp-total-header';
-      el.setAttribute('role', 'columnheader');
-      el.innerHTML = '<span class="cgp-total-header__label">Total</span>';
-      headerPane.appendChild(el);
-    }
-    this.ensureAnalyzeButton(el);
-    this.header = el;
-    return el;
-  };
-
-  /* The same "Analyze Scores" panel an assignment column's menu opens, for
-   * the totals. This header is the extension's own, with no Canvas menu to
-   * add an item to, so it is a small button beside the label instead. */
-  P.ensureAnalyzeButton = function (header) {
-    if (!this.onAnalyze || header.querySelector('.cgp-total-analyze')) return;
-    var self = this;
-    var btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'cgp-total-analyze';
-    btn.setAttribute('aria-label', 'Analyze totals');
-    btn.title = 'Analyze totals: mean, median, standard deviation, high/low students and a letter-grade histogram';
-    btn.innerHTML = (CGP.ScoreAnalysisController && CGP.ScoreAnalysisController.ICON_SVG) || '';
-    // Nothing under the header (SlickGrid's sort/drag, the selection
-    // controller) may also act on this press.
-    btn.addEventListener('mousedown', function (e) { e.stopPropagation(); });
-    btn.addEventListener('click', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      self.onAnalyze();
-    });
-    header.appendChild(btn);
-  };
-
-  P.ensureLayer = function () {
-    var canvas = this.adapter.canvases()[0];
-    if (!canvas) return null;
-    if (this.layer && this.layer.isConnected && this.layer.parentElement === canvas) return this.layer;
-    var el = canvas.querySelector(':scope > .cgp-total-layer');
-    if (!el) {
-      el = document.createElement('div');
-      el.className = 'cgp-total-layer';
-      el.setAttribute('aria-hidden', 'false');
-      canvas.appendChild(el);
-    }
-    this.layer = el;
-    this.cellPool.clear();
-    return el;
-  };
-
+  /* Called on every paint pass; one cheap header check once Total is in place. */
   P.paint = function () {
-    if (this.isSizingPending()) return;
-    if (!this.enabled) {
-      // Retry the one-time start() gate on every paint pass rather than only
-      // at boot - see start()'s own comment for why a single failed check
-      // there must never be the last word on whether this feature ever runs
-      // this page load.
-      this.start();
-      if (!this.enabled) return;
+    var want = !!this.settings.values.frozenTotal;
+    if (want !== this._want) {
+      // Setting changed: act on it now, not after an old backoff.
+      this._want = want;
+      this._attempts = 0;
+      this._nextAt = 0;
+      this._cancelRetry();
     }
-    if (this._standingDown) {
-      // Backed off after a failed widen: leave Canvas's own geometry alone
-      // until the next probe is due, instead of re-pinning every paint.
-      if (Date.now() < this._probeAt) return;
-      this._standingDown = false;
-      document.documentElement.classList.add('cgp-frozen-total');
-      this._failStreak = 2;   // a probe gets one chance before backing off again
-    }
-    this.ensureAncestorClamp();
-    this.measure();
-
-    if (!this.verifyWidened()) {
-      this._failStreak++;
-      // Three misses in a row (not one - the very first paint or two can
-      // easily land before the frozen pane has its final layout) before
-      // standing down: draw nothing, and leave Canvas's own native Total
-      // column alone rather than hiding it out from under a Total that turned
-      // out not to actually be there.
-      if (this._failStreak >= 3) {
-        if (!this._notifiedBroken) {
-          this._notifiedBroken = true;
-          CGP.diag.warn('frozenTotal.widenNotConfirmed', { natural: this.naturalWidth, width: this.width });
-        }
-        this.standDown();
-      }
+    var frozen = this.adapter.totalInFrozenPane();
+    if (frozen === null) return;   // the grid hasn't split into its panes yet
+    if (frozen === want) {
+      this._attempts = 0;
+      this._cancelRetry();
       return;
     }
-    this._failStreak = 0;
-    this._standDowns = 0;
-    this._notifiedBroken = false;
-    if (!this.working) {
-      this.working = true;
-      document.documentElement.classList.add('cgp-frozen-total-active');
-      CGP.diag.bump('frozenTotal.confirmed');
-      this.onTotalMove(true);
-    }
-
-    var layer = this.ensureLayer();
-    this.ensureHeader();
-    if (!layer) return;
-
-    var geometry = this.adapter.frozenRowGeometry();
-    var rows = CGP.totals.buildTotalRows(geometry, this.model.students, this.settings.values.gradingScale);
-    var seen = new Set();
+    if (this._pending || Date.now() < this._nextAt) return;
+    // A render pass got here first: the timed retry is no longer needed, and
+    // left running it would wipe the NEXT backoff when it fired.
+    this._cancelRetry();
     var self = this;
-
-    rows.forEach(function (row) {
-      if (row.rowIndex === null || row.rowIndex === undefined) return;
-      seen.add(row.rowIndex);
-      var el = self.cellPool.get(row.rowIndex);
-      if (!el || !el.isConnected) {
-        el = document.createElement('div');
-        el.className = 'cgp-total-cell';
-        layer.appendChild(el);
-        self.cellPool.set(row.rowIndex, el);
+    this._pending = true;
+    this.request(want).then(function (result) {
+      self._pending = false;
+      // The setting changed while the request was out: its answer is stale.
+      if (want !== !!self.settings.values.frozenTotal) return;
+      if (result && result.ok && result.placed && result.changed) {
+        self._attempts = 0;
+        self._nextAt = Date.now() + SETTLE_MS;
+        CGP.diag.bump(want ? 'frozenTotal.movedToFront' : 'frozenTotal.movedToEnd');
+      } else {
+        // Not moved: Canvas's grid still building, no Total showing, or
+        // Canvas already has it where wanted and only the page lags. Try
+        // again with backoff, on a timer, since an idle grid may not repaint.
+        self._attempts++;
+        if (self._attempts === 1 || self._attempts % 8 === 0) {
+          CGP.diag.warn('frozenTotal.notPlaced', { reason: result && result.reason });
+        }
+        var delay = Math.min(MAX_DELAY_MS, 1000 * Math.pow(2, self._attempts - 1));
+        self._nextAt = Date.now() + delay;
       }
-      var top = row.top + 'px';
-      var height = row.height + 'px';
-      if (el.style.top !== top) el.style.top = top;
-      if (el.style.height !== height) el.style.height = height;
-      if (el.textContent !== row.text) el.textContent = row.text;
-      if (el.title !== row.title) el.title = row.title;
-      // Shown on hover by gradebook.css (.cgp-total-cell:hover::after).
-      if (row.letter) { if (el.getAttribute('data-letter') !== row.letter) el.setAttribute('data-letter', row.letter); }
-      else if (el.hasAttribute('data-letter')) el.removeAttribute('data-letter');
-      el.classList.toggle('cgp-total-cell--empty', !row.resolved);
-      el.classList.toggle('odd', row.rowIndex % 2 === 1);
+      // The timer clears the wait itself, so firing a millisecond early
+      // cannot skip the retry.
+      self._timer = self._schedule(function () { self._timer = null; self._nextAt = 0; self.paint(); },
+        Math.max(0, self._nextAt - Date.now()));
     });
+  };
 
-    this.cellPool.forEach(function (el, rowIndex) {
-      if (!seen.has(rowIndex)) { el.remove(); self.cellPool.delete(rowIndex); }
+  P._schedule = function (fn, ms) {
+    return setTimeout(fn, ms);
+  };
+
+  P.request = function (front) {
+    return new Promise(function (resolve) {
+      var id = 'cgp-total-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+      var timer;
+      function finish(result) {
+        window.removeEventListener('message', onMessage);
+        clearTimeout(timer);
+        resolve(result || { ok: false, reason: 'unavailable' });
+      }
+      function onMessage(event) {
+        var message = event.data;
+        if (event.source !== window || !message || message.source !== 'cgp-total-response' || message.id !== id) return;
+        finish(message.result);
+      }
+      window.addEventListener('message', onMessage);
+      timer = setTimeout(function () { finish({ ok: false, reason: 'timeout' }); }, RESPONSE_TIMEOUT_MS);
+      window.postMessage({ source: 'cgp-total-request', id: id, front: !!front }, window.location.origin);
     });
   };
 

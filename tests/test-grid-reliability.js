@@ -498,7 +498,7 @@ suite('grid reliability D: page bridge', (test) => {
 
   test('narrow: sizes only student / assignment_<id>, never pins maxWidth', async () => {
     const b = loadBridge({ columns: COLS });
-    const res = await b.request({ studentWidth: 180, assignmentWidth: 72, hideTotal: false, narrow: true });
+    const res = await b.request({ studentWidth: 180, assignmentWidth: 72, narrow: true });
     a.deep(res.result, { ok: true, changed: 2 });
     const m = b.model();
     a.deep(m.map((c) => c.width), [180, 100, 72, 90, 110, 110, 120],
@@ -508,23 +508,6 @@ suite('grid reliability D: page bridge', (test) => {
     // Canvas re-sets columns later: the patch re-applies the same widths.
     b.grid.setColumns(COLS.map((c) => Object.assign({}, c)));
     a.deep(b.model().map((c) => c.width), [180, 100, 72, 90, 110, 110, 120]);
-  });
-
-  test('narrow:false + hideTotal: only the native Total is resized', async () => {
-    const b = loadBridge({ columns: COLS });
-    const res = await b.request({ studentWidth: 180, assignmentWidth: 72, hideTotal: true, narrow: false, moveTotal: true });
-    a.deep(res.result, { ok: true, changed: 2 });   // Total resized and moved beside the names
-    a.deep(b.model().map((c) => c.width), [260, 84, 100, 140, 90, 110, 120]);
-  });
-
-  test('hideTotal without moveTotal leaves the native Total where Canvas put it', async () => {
-    const b = loadBridge({ columns: COLS });
-    await b.request({ studentWidth: 180, assignmentWidth: 72, hideTotal: true, narrow: false });
-    a.deep(b.model().map((c) => c.width), [260, 100, 140, 90, 84, 110, 120]);
-    await b.request({ studentWidth: 180, assignmentWidth: 72, hideTotal: true, narrow: false, moveTotal: true });
-    a.deep(b.model().map((c) => c.width), [260, 84, 100, 140, 90, 110, 120]);
-    await b.request({ studentWidth: 180, assignmentWidth: 72, hideTotal: true, narrow: false, moveTotal: false });
-    a.deep(b.model().map((c) => c.width), [260, 100, 140, 90, 84, 110, 120], 'moved back on stand-down');
   });
 
   test('a SlickGrid outside #gradebook_grid is never patched', () => {
@@ -605,6 +588,16 @@ suite('grid reliability E: Final Grade Override and "total" text', (test) => {
     void g;
   });
 
+  test('totalInFrozenPane trusts only the structural column id', () => {
+    const CGP = loadGradebookDom();
+    headerGrid([{ id: 'student' }, { id: 'total_grade', text: 'Total' }], [{ id: 'assignment_1' }]);
+    a.eq(new CGP.GradebookDomAdapter().totalInFrozenPane(), true, 'Canvas\'s Total frozen beside the names');
+    headerGrid([{ id: 'student' }, { id: 'custom_col_3', text: 'Total points' }], [{ id: 'total_grade' }]);
+    a.eq(new CGP.GradebookDomAdapter().totalInFrozenPane(), false, 'a Notes column titled "Total points" is not the Total');
+    headerGrid([{ id: 'student' }, { id: 'total_grade_override' }], [{ id: 'total_grade' }]);
+    a.eq(new CGP.GradebookDomAdapter().totalInFrozenPane(), false, 'Final Grade Override is not the Total');
+  });
+
   test('a header is never classified as Total by text containing "total"', () => {
     const CGP = loadGradebookDom();
     headerGrid([{ id: 'student' }], []);
@@ -634,15 +627,6 @@ suite('grid reliability E: Final Grade Override and "total" text', (test) => {
     a.eq(adapter.columnIdForHeader(h), 'assignment_66');
   });
 
-  test('nativeTotalInScrollingPane trusts only the structural column id', () => {
-    const CGP = loadGradebookDom();
-    headerGrid([{ id: 'student' }], [{ id: 'custom_col_3', text: 'Total points' }, { id: 'assignment_1' }]);
-    a.eq(new CGP.GradebookDomAdapter().nativeTotalInScrollingPane(), null, 'a custom column titled "Total points" is not the Total');
-    headerGrid([{ id: 'student' }], [{ id: 'total_grade_override', text: 'Override' }]);
-    a.eq(new CGP.GradebookDomAdapter().nativeTotalInScrollingPane(), null, 'Final Grade Override is not the Total');
-    headerGrid([{ id: 'student' }], [{ id: 'total_grade', text: 'Total' }, { id: 'assignment_1' }]);
-    a.ok(new CGP.GradebookDomAdapter().nativeTotalInScrollingPane() !== null);
-  });
 });
 
 function nameModel() {
@@ -703,96 +687,12 @@ suite('grid reliability I: header map reuse', (test) => {
   });
 });
 
-/* ------------------------------------------------------------------- G/H */
-
-function frozenFixture() {
-  const doc = domshim.install();
-  const F = domshim.FakeElement;
-  const wrap = new F('div');
-  doc.body.appendChild(wrap);
-  let root = new F('div');
-  wrap.appendChild(root);
-  const left = new F('div');
-  left.setRect({ left: 0, top: 0, width: 190, height: 400 });   // never widens
-  const right = new F('div');
-  root.appendChild(left);
-  root.appendChild(right);
-  root.setRect({ left: 0, top: 0, width: 1000, height: 400 });
-  const adapter = {
-    hasFrozenPane: () => true,
-    frozenNaturalWidth: () => 190,
-    gridRoot: () => root,
-    rightViewport: () => null,
-    bodyPanes: () => [left, right],
-    headerPanes: () => [],
-    frozenPaneLeft: () => left,
-    nativeTotalInScrollingPane: () => null,
-    headerContainers: () => [],
-    canvases: () => []
-  };
-  return {
-    doc, left, right, wrap, get root() { return root; },
-    replaceRoot: () => {
-      const next = new F('div');
-      next.setRect({ left: 0, top: 0, width: 1000, height: 400 });
-      root.remove();
-      next.appendChild(left);
-      next.appendChild(right);
-      wrap.appendChild(next);
-      root = next;
-      return next;
-    },
-    ctrl: null,
-    adapter
-  };
-}
-
-suite('grid reliability G/H: frozen Total failure path and overflow clamp', (test) => {
-  test('a widen that never confirms stands down completely and backs off', () => {
-    const CGP = loadGradebookDom();
-    const f = frozenFixture();
-    const ctrl = new CGP.FrozenTotalController({ adapter: f.adapter, model: {}, settings: { values: { frozenTotal: true } } });
-    const html = f.doc.documentElement;
-    ctrl.start();
-    ctrl.paint(); ctrl.paint();
-    a.eq(f.left.style.getPropertyValue('width'), '274px', 'pinned while still trying');
-    ctrl.paint();
-    a.ok(!html.classList.contains('cgp-frozen-total'), 'widening CSS class removed');
-    a.ok(!html.classList.contains('cgp-frozen-total-active'));
-    a.eq(f.left.style.getPropertyValue('width'), '', 'pane geometry restored - no 84px gap');
-    a.eq(f.right.style.getPropertyValue('left'), '');
-
-    ctrl.paint();
-    a.eq(f.left.style.getPropertyValue('width'), '', 'not re-pinned during the backoff');
-
-    const firstWait = ctrl._probeAt - Date.now();
-    ctrl._probeAt = 0;
-    ctrl.paint();   // probe, fails, stands down again with a longer wait
-    a.eq(f.left.style.getPropertyValue('width'), '');
-    a.ok(ctrl._probeAt - Date.now() > firstWait, 'backoff grows');
-  });
-
-  test('overflow clamp uses clip and is re-applied when the grid root is replaced', () => {
-    const CGP = loadGradebookDom();
-    const f = frozenFixture();
-    f.left.setRect({ left: 0, top: 0, width: 274, height: 400 });   // widen confirms
-    const ctrl = new CGP.FrozenTotalController({ adapter: f.adapter, model: { students: new Map() }, settings: { values: { frozenTotal: true } } });
-    ctrl.start();
-    a.eq(f.root.style.getPropertyValue('overflow-x'), 'clip');
-    const next = f.replaceRoot();
-    a.eq(next.style.getPropertyValue('overflow-x'), '');
-    ctrl.ensureLayer = () => null;   // geometry/clamp only; no overlay drawing
-    ctrl.paint();
-    a.eq(next.style.getPropertyValue('overflow-x'), 'clip', 'new root clamped on the next paint');
-  });
-});
-
 suite('grid reliability D: settings turned off restore Canvas widths', (test) => {
-  test('turning narrowing and the frozen Total off puts Canvas\'s own widths back', async () => {
+  test('turning narrowing off puts Canvas\'s own widths back', async () => {
     const b = loadBridge({ columns: COLS });
-    await b.request({ studentWidth: 180, assignmentWidth: 72, hideTotal: true, narrow: true, moveTotal: true });
-    a.deep(b.model().map((c) => c.width), [180, 84, 100, 72, 90, 110, 120]);
-    const res = await b.request({ studentWidth: null, assignmentWidth: null, hideTotal: false, narrow: false });
+    await b.request({ studentWidth: 180, assignmentWidth: 72, narrow: true });
+    a.deep(b.model().map((c) => c.width), [180, 100, 72, 90, 110, 110, 120]);
+    const res = await b.request({ studentWidth: null, assignmentWidth: null, narrow: false });
     a.eq(res.result.ok, true);
     a.deep(b.model().map((c) => c.width), COLS.map((c) => c.width), 'every resized column restored');
     a.eq(b.model()[2].minWidth, 90, 'minWidth restored too');

@@ -12,8 +12,7 @@
  * moves - the frozen pane has nothing to scroll). A plain ascending sort by
  * that rect.left then reports the SCROLLING pane as pane[0] ("the frozen
  * one"), which is exactly backwards - and every caller of canvases()/
- * headerContainers() (frozenRowGeometry, frozenNaturalWidth, bodyPanes,
- * headerPanes, hideTestStudentRows, ensureLayer, ...) trusts pane[0] to mean
+ * headerContainers() (hideTestStudentRows, and more) trusts pane[0] to mean
  * "frozen".
  *
  * The fix (orderPaneElements()) instead asks which VIEWPORT box - the

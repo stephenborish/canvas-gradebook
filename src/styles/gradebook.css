@@ -26,9 +26,6 @@ html.cgp-on {
   --cgp-surface: #fff;
   --cgp-shadow: 0 4px 16px rgba(19, 33, 44, 0.16), 0 1px 3px rgba(19, 33, 44, 0.08);
   --cgp-radius: 8px;
-  --cgp-total-w: 84px;
-  --cgp-frozen-natural: 190px;
-  --cgp-frozen-w: 274px;
 
   /* Grid surface. Every one of these is a *tint* laid over whatever Canvas
    * already painted (see the background-image note below), never a flat
@@ -58,8 +55,6 @@ html.cgp-on .slick-header-column *,
 html.cgp-on .slick-row,
 html.cgp-on .slick-cell,
 html.cgp-on .slick-cell *,
-html.cgp-on .cgp-total-cell,
-html.cgp-on .cgp-total-header,
 html.cgp-on .cgp-header-label,
 html.cgp-on .cgp-header-label *,
 html.cgp-on .slick-cell input,
@@ -760,217 +755,6 @@ html.cgp-on .slick-cell:not(:has(.Grid__GradeCell)) *:has(> input):has(> button)
   flex: 0 0 auto !important;
 }
 
-/* ------------------------------------------------------- frozen Total column */
-
-/* These class names are SlickGrid's own generated ones for a frozen-column
- * grid (not a guess at Canvas-specific markup), but this extension still
- * cannot confirm against a live build that Canvas's gradebook wires them up
- * the same way every time - so frozen-total.js verifies the widen actually
- * took hold (comparing the frozen canvas's real rendered width against what
- * was asked for) before relying on it for anything, on every paint, not just
- * once. Nothing below this comment ever draws or hides anything on its own;
- * see html.cgp-frozen-total-active further down for what is gated on that
- * confirmation.
- *
- * These rules are only ever a FIRST-PAINT BASELINE now, though - the frame
- * before frozen-total.js's own JS (FrozenTotalController.applyPaneGeometry(),
- * called from every measure()/paint()) has run. That JS re-pins every pane's
- * left/width as REAL MEASURED PIXELS, also via `!important` so it always wins
- * the cascade over these rules, because relying on `calc(100% - Npx)` here to
- * resolve against the same containing block the widened left pane's own box
- * uses is exactly what was reported broken live: whatever "100%" actually
- * resolved against there was NOT that box, so the two panes' widths silently
- * stopped summing to the grid's real, unchanged footprint, and an ancestor
- * sized to that original total grew a scrollbar that scrolled BOTH the
- * frozen and the scrolling pane together - neither is exempt from an
- * ancestor's own scroll just for being `position: absolute`. See
- * dom-adapter.js's positionedAncestor()/bodyPanes()/headerPanes() and
- * frozen-total.js's applyPaneGeometry()/clampAncestorOverflow() for the
- * actual fix; the class-name rules below exist only so nothing looks broken
- * for the one rendered frame before that JS gets there, or on a Canvas build
- * whose pane class names happen to match them exactly. */
-html.cgp-frozen-total .slick-pane-left {
-  width: var(--cgp-frozen-w) !important;
-  z-index: 10 !important;
-  background: #ffffff !important;
-}
-html.cgp-frozen-total .slick-pane-left .slick-header,
-html.cgp-frozen-total .slick-header-left,
-html.cgp-frozen-total .slick-pane-header-left {
-  width: var(--cgp-frozen-w) !important;
-  position: relative !important;
-  z-index: 10 !important;
-  background: #ffffff !important;
-}
-html.cgp-frozen-total .slick-pane-left .slick-viewport,
-html.cgp-frozen-total .slick-viewport-left {
-  width: var(--cgp-frozen-w) !important;
-  overflow-x: hidden !important;
-  z-index: 10 !important;
-  background: #ffffff !important;
-}
-html.cgp-frozen-total.cgp-native-total-front .slick-pane-right,
-html.cgp-frozen-total.cgp-native-total-front .slick-pane-header-right {
-  left: var(--cgp-right-left, var(--cgp-frozen-natural)) !important;
-  width: calc(100% - var(--cgp-right-left, var(--cgp-frozen-natural))) !important;
-}
-html.cgp-frozen-total.cgp-native-total-front .slick-header-right:not(.slick-pane-right *):not(.slick-pane-header-right *) {
-  left: var(--cgp-right-left, var(--cgp-frozen-natural)) !important;
-  width: calc(100% - var(--cgp-right-left, var(--cgp-frozen-natural))) !important;
-}
-html.cgp-frozen-total:not(.cgp-native-total-front) .slick-pane-right,
-html.cgp-frozen-total:not(.cgp-native-total-front) .slick-pane-header-right {
-  left: var(--cgp-frozen-w) !important;
-  width: calc(100% - var(--cgp-frozen-w)) !important;
-}
-/* When .slick-header-right is nested inside .slick-pane-right or .slick-pane-header-right,
- * it must stay at left: 0 so it is not shifted doubly relative to its pane */
-html.cgp-frozen-total .slick-pane-right .slick-header-right,
-html.cgp-frozen-total .slick-pane-header-right .slick-header-right {
-  left: 0 !important;
-  width: 100% !important;
-}
-/* Standalone header right (only if not inside a pane) */
-html.cgp-frozen-total:not(.cgp-native-total-front) .slick-header-right:not(.slick-pane-right *):not(.slick-pane-header-right *) {
-  left: var(--cgp-frozen-w) !important;
-  width: calc(100% - var(--cgp-frozen-w)) !important;
-}
-
-/* Safety net for the "whole grid scrolls together" failure mode: force every
- * plausible ancestor of the grid to clip rather than scroll, so that even a
- * geometry mistake this extension does not yet know about can only ever be
- * invisible, never a scrollbar that drags the frozen pane sideways with it.
- * frozen-total.js's clampAncestorOverflow() does the same thing, driven from
- * the grid's REAL DOM ancestry (not a guess at Canvas's element ids/classes)
- * and is the authoritative version of this - these rules only cover the one
- * rendered frame before that JS runs, same as the pane rules above. */
-html.cgp-frozen-total #gradebook_grid,
-html.cgp-frozen-total #content,
-html.cgp-frozen-total .ic-Layout-contentMain {
-  /* clip, not hidden: clip never makes these a (script-scrollable) scroll
-   * container, so nothing can still scroll them sideways. */
-  overflow-x: clip !important;
-}
-
-/* .cgp-total-layer (frozen-total.js) is appended into the frozen pane's own
- * .grid-canvas and absolutely positioned against it, on the same assumption
- * as .cgp-total-header below - true for every real SlickGrid build, but not
- * guaranteed if Canvas's own CSS has not finished loading yet. Without this
- * assertion, an unpositioned .grid-canvas lets the layer fall back to
- * position:absolute's next positioned ancestor further up the DOM - which,
- * unlike the frozen pane itself, can be a container that scrolls
- * horizontally with the assignment columns. That is what reads as "the
- * Total column moves with the scroll and disappears": the layer is still
- * exactly where its CSS places it, just against the wrong ancestor. */
-html.cgp-frozen-total .grid-canvas {
-  position: relative;
-}
-
-html.cgp-frozen-total .cgp-total-header {
-  position: absolute;
-  top: 0;
-  left: var(--cgp-frozen-natural);
-  width: var(--cgp-total-w);
-  height: 100%;
-  max-height: var(--cgp-header-h, 56px);
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-left: 1px solid var(--cgp-hairline-strong);
-  border-right: 1px solid var(--cgp-hairline-strong);
-  background: linear-gradient(180deg, var(--cgp-header-top), var(--cgp-header-bottom));
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.2px;
-  color: var(--cgp-ink-strong);
-  z-index: 5;
-  gap: 3px;
-}
-/* "Analyze totals" (frozen-total.js): an icon beside the label, quiet until
- * hovered, so the header still reads as just "Total". */
-html.cgp-frozen-total .cgp-total-analyze {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  margin: 0;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--cgp-muted);
-  cursor: pointer;
-  transition: background 100ms ease, color 100ms ease;
-}
-html.cgp-frozen-total .cgp-total-analyze svg { width: 14px; height: 14px; display: block; }
-html.cgp-frozen-total .cgp-total-analyze:hover {
-  background: var(--cgp-brand-wash);
-  color: var(--cgp-brand-dark);
-}
-html.cgp-frozen-total .cgp-total-analyze:focus-visible { outline: none; box-shadow: var(--cgp-focus-ring); }
-html.cgp-frozen-total .cgp-total-layer {
-  position: absolute;
-  top: 0;
-  left: var(--cgp-frozen-natural);
-  width: var(--cgp-total-w);
-  height: 100%;
-  pointer-events: none;
-  z-index: 2;
-}
-html.cgp-frozen-total .cgp-total-cell {
-  position: absolute;
-  left: 0;
-  width: var(--cgp-total-w);
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-left: 1px solid var(--cgp-hairline-strong);
-  border-right: 1px solid var(--cgp-hairline-strong);
-  border-bottom: 1px solid var(--cgp-hairline);
-  background: #fff;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--cgp-ink-strong);
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1;
-  pointer-events: auto;
-}
-html.cgp-frozen-total .cgp-total-cell.odd {
-  background: #f2f4f4;
-}
-/* Hovering a Total swaps the percentage for its letter grade (the tooltip
- * keeps both). */
-html.cgp-frozen-total .cgp-total-cell[data-letter]:hover { font-size: 0; }
-html.cgp-frozen-total .cgp-total-cell[data-letter]:hover::after {
-  content: attr(data-letter);
-  font-size: 14px;
-}
-html.cgp-frozen-total .cgp-total-cell--empty { color: var(--cgp-muted); font-weight: 500; }
-html.cgp-frozen-total .cgp-total-cell.cgp-row-hover {
-  background-image: linear-gradient(var(--cgp-row-hover), var(--cgp-row-hover));
-}
-
-/* Canvas's own native Total column in the scrolling pane - visually hidden
- * so it never overlaps or peeks out, but preserves its layout width in SlickGrid
- * so assignment headers and cells remain strictly aligned 1:1. Matched on the
- * native Total only (id ending in total_grade, or the exact total_grade
- * class) - never [id*="total"], which also hid Final Grade Override
- * (total_grade_override) and any column whose id merely contains "total". */
-html.cgp-frozen-total-active .slick-header-column[data-cgp-col="total"],
-html.cgp-frozen-total-active .slick-header-column[id$="total_grade"],
-html.cgp-frozen-total-active .slick-cell[data-cgp-col="total"],
-html.cgp-frozen-total-active .slick-cell[id$="total_grade"],
-html.cgp-frozen-total-active .slick-cell[class~="total_grade"] {
-  opacity: 0 !important;
-  pointer-events: none !important;
-  border-color: transparent !important;
-  box-shadow: none !important;
-}
-
 /* ------------------------------------------------------- compact layout */
 
 html.cgp-on .cgp-hidden,
@@ -1366,26 +1150,13 @@ html.cgp-on .slick-cell[class~="total_grade"]:not(:has(input:not([type="hidden"]
   color: var(--cgp-ink-strong, #1a232b) !important;
   font-weight: 600 !important;
 }
-html.cgp-on:not(.cgp-frozen-total-active) .slick-cell[data-cgp-col="total"],
-html.cgp-on:not(.cgp-frozen-total-active) .slick-cell[class~="total_grade"] {
+html.cgp-on .slick-cell[data-cgp-col="total"],
+html.cgp-on .slick-cell[class~="total_grade"] {
   font-weight: 700 !important;
   color: var(--cgp-ink-strong) !important;
   min-width: 84px !important;
   text-align: center !important;
   justify-content: center !important;
-}
-/* Suppress eye-slash unposted icons or symbols inside total cells so values remain centered */
-html.cgp-on .slick-cell[data-cgp-col="total"] i,
-html.cgp-on .slick-cell[data-cgp-col="total"] svg,
-html.cgp-on .slick-cell[data-cgp-col="total"] [class*="unposted"],
-html.cgp-on .slick-cell[data-cgp-col="total"] [class*="eye"],
-html.cgp-on .slick-cell[data-cgp-col="total"] [class*="icon"],
-html.cgp-on .slick-cell[class~="total_grade"] i,
-html.cgp-on .slick-cell[class~="total_grade"] svg,
-html.cgp-on .slick-cell[class~="total_grade"] [class*="unposted"],
-html.cgp-on .slick-cell[class~="total_grade"] [class*="eye"],
-html.cgp-on .slick-cell[class~="total_grade"] [class*="icon"] {
-  display: none !important;
 }
 html.cgp-on .slick-cell[data-cgp-col="total"] .Grid__GradeCell,
 html.cgp-on .slick-cell[data-cgp-col="total"] .Grid__GradeCell__Content,
@@ -1540,15 +1311,6 @@ html.cgp-on .slick-header-columns {
 html.cgp-on .slick-header {
   border-bottom: 2px solid var(--cgp-brand) !important;
   box-shadow: 0 1px 4px rgba(19, 33, 44, 0.07);
-  /* .cgp-total-header (frozen-total.js) is absolutely positioned against
-   * this element on the assumption that SlickGrid's own stylesheet already
-   * makes it a positioned ancestor - true for every real SlickGrid build,
-   * but not guaranteed if Canvas's own CSS has not finished loading yet on
-   * a slow connection. Asserting it here too costs nothing and removes that
-   * race entirely, rather than leaving the Total header able to drift to
-   * position:absolute's fallback (the viewport) and overlap page chrome
-   * above the grid until Canvas's stylesheet catches up. */
-  position: relative;
 }
 html.cgp-on .slick-header-column {
   background: transparent !important;
@@ -1565,8 +1327,8 @@ html.cgp-on .slick-header-column[data-cgp-col="student"] .slick-column-name {
   letter-spacing: 0.2px;
   color: var(--cgp-ink-strong);
 }
-html.cgp-on:not(.cgp-frozen-total-active) .slick-header-column[data-cgp-col="total"],
-html.cgp-on:not(.cgp-frozen-total-active) .slick-header-column[id$="total_grade"] {
+html.cgp-on .slick-header-column[data-cgp-col="total"],
+html.cgp-on .slick-header-column[id$="total_grade"] {
   min-width: 84px !important;
 }
 html.cgp-on .slick-header-column[data-cgp-col="total"] .slick-column-name,
@@ -2032,16 +1794,14 @@ html.cgp-on .cgp-student-hit .cgp-course-menu__term {
  * beat after the scroll does - then it fades out and leaves the grid alone.
  * Painted as a tint layer like every other highlight, so a Late or Missing
  * cell in the flashed row keeps its own colour underneath. */
-html.cgp-on .slick-row.cgp-row-flash > .slick-cell,
-html.cgp-on .cgp-total-cell.cgp-row-flash {
+html.cgp-on .slick-row.cgp-row-flash > .slick-cell {
   background-image: linear-gradient(rgba(3, 116, 181, 0.22), rgba(3, 116, 181, 0.22));
 }
 html.cgp-on .slick-row.cgp-row-flash > .slick-cell[data-cgp-col="student"] {
   box-shadow: inset 3px 0 0 var(--cgp-brand);
 }
 @media (prefers-reduced-motion: no-preference) {
-  html.cgp-on .slick-row.cgp-row-flash > .slick-cell,
-  html.cgp-on .cgp-total-cell.cgp-row-flash {
+  html.cgp-on .slick-row.cgp-row-flash > .slick-cell {
     animation: cgp-row-flash 3s ease-out 1 both;
   }
   @keyframes cgp-row-flash {

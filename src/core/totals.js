@@ -1,8 +1,7 @@
-/* Canvas Gradebook+ - pure Total column synchronization.
+/* Canvas Gradebook+ - letter grades for Analyze Scores.
  *
- * Canvas already computes the course score (weighting, drop rules, grading
- * schemes). We never recompute it: we read enrollment grades from the Canvas
- * API and align them to whatever rows the grid is currently showing. */
+ * The teacher's letter-grade scale (Options -> Appearance): reading and
+ * writing it as text, and the letter a percentage earns on it. */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
@@ -43,46 +42,7 @@
     return out;
   }
 
-  function formatTotal(student, scale) {
-    if (!student) return { text: '\u2014', title: 'Total unavailable' };
-    var score = student.currentScore;
-    var letter = letterFor(score, scale) || student.currentGrade;
-    if (score === null || score === undefined || score === '') {
-      return { text: '\u2014', title: 'No graded work yet' };
-    }
-    var text = CGP.util.fmtPercent(score);
-    var title = 'Total ' + text + (letter ? ' (' + letter + ')' : '');
-    return { text: text, title: title, letter: letter || null };
-  }
-
-  /**
-   * buildTotalRows(rows, studentsById)
-   * rows: [{rowIndex, top, height, studentId}] taken straight from the rendered
-   *       frozen pane, so vertical alignment is inherited from Canvas itself.
-   */
-  function buildTotalRows(rows, studentsById, scale) {
-    var lookup = studentsById instanceof Map
-      ? function (id) { return studentsById.get(String(id)); }
-      : function (id) { return studentsById ? studentsById[String(id)] : null; };
-
-    return (rows || []).map(function (row) {
-      var student = row && row.studentId ? lookup(row.studentId) : null;
-      var f = formatTotal(student, scale);
-      return {
-        rowIndex: row.rowIndex,
-        top: row.top,
-        height: row.height,
-        studentId: row.studentId || null,
-        text: f.text,
-        letter: f.letter || null,
-        title: student ? f.title : 'Total unavailable',
-        resolved: !!student && student.currentScore !== null && student.currentScore !== undefined
-      };
-    });
-  }
-
   CGP.totals = {
-    formatTotal: formatTotal, buildTotalRows: buildTotalRows,
     letterFor: letterFor, scaleToText: scaleToText, textToScale: textToScale, badScaleLines: badScaleLines
   };
 })();

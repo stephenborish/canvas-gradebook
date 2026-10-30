@@ -153,54 +153,6 @@ suite('comment cache updates after a new comment', (test) => {
   });
 });
 
-suite('frozen Total column synchronization', (test) => {
-  test('Canvas percentages are formatted, never recomputed', () => {
-    a.eq(CGP.totals.formatTotal({ currentScore: 87.456 }).text, '87.5%');
-    a.eq(CGP.totals.formatTotal({ currentScore: 90 }).text, '90%');
-    a.eq(CGP.totals.formatTotal({ currentScore: 0 }).text, '0%', 'a real zero is not "no grade"');
-  });
-
-  test('a student with no graded work shows a dash, not a fake 0%', () => {
-    a.eq(CGP.totals.formatTotal({ currentScore: null }).text, '\u2014');
-    a.eq(CGP.totals.formatTotal({}).text, '\u2014');
-    a.eq(CGP.totals.formatTotal(null).text, '\u2014');
-  });
-
-  test('the letter grade rides along in the tooltip', () => {
-    const f = CGP.totals.formatTotal({ currentScore: 91.5, currentGrade: 'A-' });
-    a.eq(f.title, 'Total 91.5% (A-)');
-    a.eq(f.letter, 'A-');
-  });
-
-  test('total cells inherit their geometry from the rendered rows', () => {
-    const rows = [
-      { rowIndex: 0, top: 0, height: 35, studentId: '101' },
-      { rowIndex: 1, top: 35, height: 35, studentId: '102' },
-      { rowIndex: 2, top: 70, height: 35, studentId: '999' } // student not loaded yet
-    ];
-    const byId = new Map([
-      ['101', { currentScore: 88, currentGrade: 'B+' }],
-      ['102', { currentScore: null }]
-    ]);
-    const out = CGP.totals.buildTotalRows(rows, byId);
-    a.eq(out.length, 3);
-    a.eq(out[0].text, '88%');
-    a.eq(out[0].top, 0);
-    a.eq(out[1].height, 35);
-    a.eq(out[1].resolved, false, 'no score yet is not a resolved total');
-    a.eq(out[2].text, '\u2014');
-    a.eq(out[2].title, 'Total unavailable', 'an unknown student never borrows another row\'s total');
-  });
-
-  test('a plain object lookup works as well as a Map', () => {
-    const out = CGP.totals.buildTotalRows(
-      [{ rowIndex: 0, top: 0, height: 35, studentId: '101' }],
-      { 101: { currentScore: 75 } }
-    );
-    a.eq(out[0].text, '75%');
-  });
-});
-
 suite('comment snippets', (test) => {
   const snips = [{ trigger: 'evidence', text: 'Tie it back to your data.' }];
 
@@ -271,8 +223,5 @@ suite('Total letter grades', (test) => {
   test('malformed scale lines are reported, not dropped', () => {
     a.deep(CGP.totals.badScaleLines('P: 60\nF: zero\n\n'), ['F: zero']);
     a.deep(CGP.totals.badScaleLines(CGP.totals.scaleToText(CGP.DEFAULT_GRADING_SCALE)), []);
-  });
-  test('Total title shows the scale letter', () => {
-    a.ok(CGP.totals.formatTotal({ currentScore: 91.2, currentGrade: 'x' }).title.indexOf('(A-)') > 0);
   });
 });

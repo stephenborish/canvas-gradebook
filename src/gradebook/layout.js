@@ -631,7 +631,6 @@
     if (el.id === 'courseMenuToggle' || el.classList.contains('ic-app-course-nav-toggle') || (el.closest && el.closest('#courseMenuToggle, .ic-app-course-nav-toggle, .cgp-course-menu'))) return true;
     if (el.querySelector('.slick-header, .grid-canvas, #gradebook_grid')) return true;
     if (el.querySelector('select')) return true;                     // gradebook selector
-    if (el.classList.contains('cgp-total-header')) return true;
     return false;
   };
 
@@ -770,7 +769,7 @@
 
   /* Ask the page-context bridge to transact against Canvas's SlickGrid. The
    * grid object itself cannot cross Chrome's isolated-world boundary. */
-  P.requestColumnSizing = function (studentWidth, assignmentWidth, hideTotal, narrow, moveTotal) {
+  P.requestColumnSizing = function (studentWidth, assignmentWidth, narrow) {
     return new Promise(function (resolve) {
       var id = 'cgp-grid-' + Date.now() + '-' + Math.random().toString(36).slice(2);
       var timer;
@@ -789,11 +788,8 @@
       window.postMessage({
         source: 'cgp-grid-request', id: id,
         studentWidth: studentWidth, assignmentWidth: assignmentWidth,
-        hideTotal: !!hideTotal,
-        // false: leave student/assignment widths alone (frozenTotal only).
-        narrow: !!narrow,
-        // Only while the frozen Total's widen is confirmed (frozen-total.js).
-        moveTotal: !!moveTotal
+        // false: put back Canvas's own widths.
+        narrow: !!narrow
       }, window.location.origin);
     });
   };
@@ -845,27 +841,23 @@
    * earlier, successful transaction. */
   P.resizeColumns = function () {
     var s = this.settings.values;
-    var needSizing = s.narrowColumns || s.frozenTotal;
+    var needSizing = s.narrowColumns;
     if (this._resizing) return Promise.resolve();
     if (!needSizing) {
-      // Both turned off after sizing ran this page: one last request with
+      // Turned off after sizing ran this page: one last request with
       // nothing wanted lets the bridge restore Canvas's own widths.
       if (!this._sizedOnce) return Promise.resolve();
       this._sizedOnce = false;
-      return this.requestColumnSizing(null, null, false, false).then(function () { return true; }, function () { return false; });
+      return this.requestColumnSizing(null, null, false).then(function () { return true; }, function () { return false; });
     }
     this._sizedOnce = true;
     if (this.isUserBusy()) return Promise.resolve(false);
     if (this._resizeBackoffUntil && Date.now() < this._resizeBackoffUntil) return Promise.resolve(false);
     var self = this;
     this._resizing = true;
-    this._resizeStartedAt = Date.now();
     var studentW = s.studentColumnWidth || 190;
     var assignmentW = s.assignmentColumnWidth || 124;
-    var hideTotal = !!s.frozenTotal;
-    // narrowColumns off + frozenTotal on: only the Total column is handled.
-    var narrow = !!s.narrowColumns;
-    return this.requestColumnSizing(studentW, assignmentW, hideTotal, narrow, this.moveTotal).then(function (result) {
+    return this.requestColumnSizing(studentW, assignmentW, true).then(function (result) {
       if (result && result.ok) {
         document.documentElement.classList.remove('cgp-column-sizing-presentation-only');
         self._resizeAttempts = 0;
@@ -888,7 +880,6 @@
       return false;
     }).catch(function () { return false; }).then(function (ok) {
       self._resizing = false;
-      self._resizeStartedAt = 0;
       if (ok) self.applyGeometry();
       return ok;
     });
@@ -996,25 +987,11 @@
       // frozen pane's own name cell stayed correctly hidden.
       if (isTest) tops[self.adapter.rowTop(rows[i])] = true;
     }
-    var others = document.querySelectorAll('.grid-canvas > .slick-row, .cgp-total-cell');
+    var others = document.querySelectorAll('.grid-canvas > .slick-row');
     for (var j = 0; j < others.length; j++) {
       var el = others[j];
-      // "Handled above" only ever means "this exact element was already
-      // toggled by the loop over frozen's OWN .slick-row children" - it does
-      // NOT mean "everything living inside the frozen canvas". frozen-total.js
-      // appends its .cgp-total-cell overlay as a SIBLING of those same
-      // .slick-row elements, inside that very canvas (see its ensureLayer()) -
-      // so a blanket `el.parentElement === frozen` skip here silently
-      // excluded the Total column's own cell for the Test Student's row from
-      // ever being hidden at all, regardless of scroll position: it is a
-      // different element from anything the loop above touched, and nothing
-      // downstream of this function checks it again. That is a second,
-      // independent way the Test Student could show up - not the frozen
-      // pane's name cell (which the loop above DOES catch), but this
-      // extension's own Total figure sitting right next to it. Excluding by
-      // class (only an actual .slick-row already toggled above) instead of
-      // by parentage closes that gap without re-toggling anything twice.
-      if (el.classList.contains('slick-row') && el.parentElement === frozen) continue;
+      // The frozen pane's own rows were toggled above.
+      if (el.parentElement === frozen) continue;
       el.classList.toggle('cgp-hidden-row', !!tops[self.adapter.rowTop(el)]);
     }
   };

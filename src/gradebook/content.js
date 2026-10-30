@@ -16,7 +16,7 @@
     if (!node) return false;
     if (node.nodeType === 3) return false;
     if (node.classList && OURS.test(node.className || '')) return true;
-    if (node.closest && node.closest('.cgp-marks, .cgp-total-layer, .cgp-pop, .cgp-course-menu, .cgp-toast')) return true;
+    if (node.closest && node.closest('.cgp-marks, .cgp-pop, .cgp-course-menu, .cgp-toast')) return true;
     return false;
   }
 
@@ -199,26 +199,8 @@
     });
     CGP.selection = selection;
     CGP.bulkComment = bulkComment;
-    var frozen = new CGP.FrozenTotalController({
-      adapter: adapter, model: model, settings: settings,
-      // While a column-sizing transaction is in flight, the frozen pane's
-      // natural width and the grid's real column widths are momentarily out
-      // of step - see layout.resizeColumns(). Skipping paint()/measure()
-      // for that narrow window means the overlay is only ever built from a
-      // grid Canvas has finished laying out, never a half-applied one.
-      isSizingPending: function () {
-        return !!(layout._resizing && layout._resizeStartedAt && (Date.now() - layout._resizeStartedAt < 2000));
-      },
-      // The native Total is only relocated beside the names while the frozen
-      // overlay's widen is confirmed; losing it puts Canvas's column back.
-      onTotalMove: function (on) {
-        if (!!layout.moveTotal === !!on) return;
-        layout.moveTotal = !!on;
-        _reconcileAttempts = 0;
-        reconcileColumns();
-      },
-      onAnalyze: function () { scoreAnalysis.openTotals(); }
-    });
+    // Keeps Canvas's own Total frozen beside the names (frozen-total.js).
+    var frozen = new CGP.FrozenTotalController({ adapter: adapter, settings: settings });
     // Keeps the hidden Test Student row from being typed into, and offers to
     // clear grades that end up there anyway. Started before the keyboard
     // controller so its capture listener runs first.
@@ -235,8 +217,8 @@
     var posting = new CGP.PostGradesController({
       model: model, adapter: adapter, api: api, settings: settings, requestPaint: requestPaint, liveSync: liveSync
     });
-    // "Analyze Scores" in each assignment column's "..." menu (and Canvas's
-    // Total column menu), plus the frozen Total header's Analyze button.
+    // "Analyze Scores" in each assignment column's "..." menu and in
+    // Canvas's Total column menu.
     var scoreAnalysis = new CGP.ScoreAnalysisController({ model: model, adapter: adapter, settings: settings });
     // "Copy Roster" in the Student Name column's "..." menu.
     var rosterExport = new CGP.RosterExportController({ api: api, courseId: courseId, adapter: adapter });
@@ -252,7 +234,7 @@
      * by the student link Canvas puts in the frozen pane rather than by
      * computing a top from rowIndex * rowHeight, because the two disagree by a
      * pixel on some Canvas builds and a highlight on the wrong row is worse
-     * than none. Both panes (and the frozen Total overlay) share a style.top,
+     * than none. Both panes share a style.top,
      * so lighting all of them lights the whole row. */
     function rowPartsForStudent(userId) {
       var rows = document.querySelectorAll('.grid-canvas > .slick-row');
@@ -261,7 +243,7 @@
         if (String(adapter.studentIdFromRow(rows[i]) || '') === String(userId)) { top = rows[i].style.top; break; }
       }
       if (top === null) return [];
-      var parts = document.querySelectorAll('.grid-canvas > .slick-row, .cgp-total-cell');
+      var parts = document.querySelectorAll('.grid-canvas > .slick-row');
       var out = [];
       for (var j = 0; j < parts.length; j++) {
         if (parts[j].style && parts[j].style.top === top) out.push(parts[j]);
@@ -321,18 +303,6 @@
         posting.paint();
         indicators.paint();
         selection.paint(registry.lastCells);
-        // frozen.paint() runs BEFORE hideTestStudentRows(), not after: it is
-        // what creates/repositions the .cgp-total-cell overlay elements (see
-        // frozen-total.js), and hideTestStudentRows()'s own `others` query
-        // matches those same .cgp-total-cell nodes to keep the Test
-        // Student's row hidden across every pane, INCLUDING that overlay.
-        // Running hideTestStudentRows() first used to mean a .cgp-total-cell
-        // freshly created THIS SAME PASS (a fresh rowIndex the cell pool had
-        // never seen - e.g. right after a scroll or a re-render moved the
-        // Test Student to a row this overlay hadn't drawn before) got no
-        // cgp-hidden-row class at all until the NEXT full paint pass - a
-        // real, if narrow, window where the Test Student's Total cell could
-        // show. Ordering it last closes that window every single pass.
         frozen.paint();
         layout.hideTestStudentRows();
         if (courseMenu && typeof courseMenu.attachDirectListeners === 'function') {
@@ -356,8 +326,7 @@
     /* Belt-and-braces for bindScroll() above: per-viewport listeners only
      * ever cover whichever `.slick-viewport` ELEMENTS existed at the moment
      * bindScroll() last ran. Canvas can - on a sort, a filter change, or
-     * simply re-rendering a pane after this extension's own frozen-Total
-     * widen (see frozen-total.js) - tear down and recreate that element
+     * simply re-rendering a pane - tear down and recreate that element
      * outright, which silently orphans the old listener: nothing calls
      * paint() again for that pane's scrolling until the next periodic
      * bindScroll() call (content.js's safetyTick, up to 1500ms later) finds
@@ -369,18 +338,12 @@
      * know which element scrolled at all: the 'scroll' event does not
      * bubble, but it IS dispatched during the capture phase on every
      * ancestor of the element that scrolled, `document` included, in every
-     * browser this extension runs in. This also means ANY horizontal scroll
-     * of an ancestor above the grid - the exact failure mode Bug 1's fix
-     * (applyPaneGeometry / clampAncestorOverflow in frozen-total.js) targets
-     * directly - still triggers a repaint even if that fix somehow missed a
-     * case this extension does not yet know about, instead of the Test
-     * Student staying visible with nothing left to ever hide it again. */
+     * browser this extension runs in. */
     function bindDocumentScroll() {
       document.addEventListener('scroll', paint, { passive: true, capture: true });
     }
 
-    // Reconciles column widths and, on success, the frozen-pane geometry that
-    // depends on them. Debounced so a burst of header mutations (Canvas
+    // Reconciles column widths. Debounced so a burst of header mutations (Canvas
     // replacing several column nodes in one re-render) triggers exactly one
     // transaction rather than one per mutation record.
     //
@@ -410,9 +373,9 @@
     }
     var reconcileColumns = CGP.util.debounce(function () {
       layout.resizeColumns().then(function (sized) {
-        if (sized) { _reconcileAttempts = 0; frozen.measure(); paint(); return; }
+        if (sized) { _reconcileAttempts = 0; paint(); return; }
         paint();
-        if (settings.values.narrowColumns || settings.values.frozenTotal) scheduleReconcileRetry();
+        if (settings.values.narrowColumns) scheduleReconcileRetry();
       });
     }, 200);
 
@@ -549,7 +512,7 @@
       });
 
       // Narrow Canvas's own column widths once the grid has had a moment to
-      // settle after boot, then re-measure the frozen pane.
+      // settle after boot.
       setTimeout(reconcileColumns, 500);
 
       // Keep the utility strip collapsed if Canvas re-renders it.
@@ -639,16 +602,11 @@
       CGP.settings.onChange(function () {
         registry.invalidateAll();
         layout.start();
-        // frozen.paint() (called from the render loop below) already retries
-        // start() on its own while the setting is on and not yet enabled -
-        // but turning the setting OFF has no such path back, since paint()
-        // only ever checks in the other direction. Stop explicitly here so
-        // toggling it off actually removes the overlay and restores Canvas's
-        // own pane geometry immediately, instead of leaving both in place
-        // until the next full page load.
-        if (!CGP.settings.values.frozenTotal && frozen.enabled) frozen.stop();
-        // Column widths follow the settings too: narrowing (or the frozen
-        // Total's squeezed native column) is applied, or undone, right away.
+        // The frozen Total follows the setting on the next paint
+        // (frozen.paint()): on moves Canvas's Total beside the names, off
+        // moves it back to the far right - see frozen-total.js.
+        // Column widths follow the settings too: narrowing is applied, or
+        // undone, right away.
         _reconcileAttempts = 0;
         reconcileColumns();
         paint();

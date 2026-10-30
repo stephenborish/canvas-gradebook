@@ -1,21 +1,7 @@
-/* Bug 1 (frozen Total scrolling away with the rest of the grid) traces back
- * to how this extension identifies the actual pane elements it has to widen
- * (the frozen/left one) and shrink-and-shift (the scrolling/right one, plus
- * both header panes) to keep the grid's total on-screen footprint unchanged.
- * The OLD mechanism was pure class-name matching (`.slick-pane-left`,
- * `.slick-pane-right`, `.slick-header-left`, `.slick-header-right`) with NO
- * fallback at all for the right/header-right side - see gradebook.css's
- * history and dom-adapter.js's own frozenPaneLeft() comment, which already
- * documented this exact lesson for the LEFT pane once before
- * ("Measuring the canvas instead of this element is what made
- * verifyWidened() never see the widen take hold").
- *
- * These tests build a fake grid whose pane elements do NOT carry Canvas's
- * usual `-left`/`-right` class suffixes at all, to prove
- * positionedAncestor()/bodyPanes()/headerPanes() find the right elements by
- * their actual rendered position and CSS `position: absolute`, not by name -
- * the same robustness principle this file's own header comment already
- * commits to for column/row identity. */
+/* The extension identifies the grid's frozen and scrolling panes by their
+ * rendered position and CSS `position: absolute`, not by Canvas's
+ * `-left`/`-right` class names. These tests build a fake grid whose pane
+ * elements do NOT carry those class suffixes at all. */
 'use strict';
 
 const { suite, assert: a } = require('./harness');
@@ -114,31 +100,5 @@ suite('dom-adapter: pane identification is class-name-agnostic', (test) => {
     a.ok(adapter.positionedAncestor(grid.canvasB) === grid.bodyPaneB);
     a.ok(adapter.positionedAncestor(grid.headerColsA) === grid.headerPaneA);
     a.ok(adapter.positionedAncestor(grid.headerColsB) === grid.headerPaneB);
-  });
-
-  test('bodyPanes() and headerPanes() return [left, right] even with no -left/-right class names at all', () => {
-    const CGP = loadGradebookDom();
-    const grid = buildGrid(CGP, { bodyLeftClass: 'foo', bodyRightClass: 'bar', headerLeftClass: 'baz', headerRightClass: 'qux' });
-    const adapter = new CGP.GradebookDomAdapter();
-
-    const body = adapter.bodyPanes();
-    a.deep([body[0] === grid.bodyPaneA, body[1] === grid.bodyPaneB], [true, true]);
-
-    const headers = adapter.headerPanes();
-    a.deep([headers[0] === grid.headerPaneA, headers[1] === grid.headerPaneB], [true, true]);
-  });
-
-  test('frozenPaneLeft() falls back to positionedAncestor() when the .slick-pane-left / .slick-viewport-left class names are absent', () => {
-    const CGP = loadGradebookDom();
-    const grid = buildGrid(CGP, { bodyLeftClass: 'totally-different-name' });
-    const adapter = new CGP.GradebookDomAdapter();
-    a.ok(adapter.frozenPaneLeft() === grid.bodyPaneA);
-  });
-
-  test('frozenPaneLeft() still prefers the real Canvas class name when it IS present', () => {
-    const CGP = loadGradebookDom();
-    const grid = buildGrid(CGP, { bodyLeftClass: 'slick-pane-left' });
-    const adapter = new CGP.GradebookDomAdapter();
-    a.ok(adapter.frozenPaneLeft() === grid.bodyPaneA);
   });
 });
