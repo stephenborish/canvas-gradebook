@@ -14,12 +14,15 @@
  *     transaction and answers with {source:'cgp-grid-response'}. Until such a
  *     request arrives nothing about the grid is changed. Only Canvas's own
  *     gradebook grid (inside #gradebook_grid) is ever patched, only the
- *     student, total and assignment_<id> columns are ever resized, and
+ *     student and assignment_<id> columns are ever resized, and
  *     maxWidth is never pinned, so teachers can still drag-resize.
  *  3. Canvas's store: every submission the content script saves (or learns
  *     changed elsewhere) is handed to Canvas's own gradebook store, so its
  *     cells, Total and Grade Detail Tray show it without a reload. See
  *     "Canvas's own gradebook store" below.
+ *  4. Frozen Total: on a {source:'cgp-total-request'} from frozen-total.js,
+ *     runs Canvas's own "Move to Front" on its Total column and answers with
+ *     {source:'cgp-total-response'}. See freezeCanvasTotal below.
  *
  * Canvas's own writes on this page are watched by write-watch.js. */
 (function () {
@@ -603,13 +606,15 @@
     if (cols.frozen.indexOf('total_grade') >= 0) return { ok: true, frozen: true, changed: false };
     if (cols.scrollable.indexOf('total_grade') < 0) return { ok: true, frozen: false, reason: 'notShown' };
     if (typeof gb.freezeTotalGradeColumn !== 'function') return { ok: false, reason: 'unavailable' };
+    var hasStudent = cols.frozen.indexOf('student') >= 0;
     try {
       gb.freezeTotalGradeColumn();
       // freezeTotalGradeColumn() inserts Total after a 'student' column that
       // does not exist while Canvas shows separate first/last name columns,
       // which would put Total in front of the names. Canvas's own column
-      // rebuild orders the frozen block correctly, so run it.
-      if (typeof gb.setVisibleGridColumns === 'function' && typeof gb.updateGrid === 'function') {
+      // rebuild orders the frozen block correctly, so run it - only then,
+      // since freezeTotalGradeColumn() already redraws the grid itself.
+      if (!hasStudent && typeof gb.setVisibleGridColumns === 'function' && typeof gb.updateGrid === 'function') {
         gb.setVisibleGridColumns();
         gb.updateGrid();
       }

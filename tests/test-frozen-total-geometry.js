@@ -78,6 +78,33 @@ suite('frozen Total: Canvas\'s own column, frozen by Canvas', (test) => {
     a.eq(ctrl.done, true);
   });
 
+  test('turning the setting off and on again asks Canvas again, even after it gave up', async () => {
+    const CGP = loadGradebookDom();
+    const settings = { values: { frozenTotal: true } };
+    const ctrl = controller(CGP, [{ ok: false, reason: 'unavailable' }], settings);
+    ctrl._attempts = 7;   // one try from giving up
+    ctrl.start();
+    await settle();
+    a.eq(ctrl.done, true, 'gave up');
+    settings.values.frozenTotal = false;
+    ctrl.paint();
+    settings.values.frozenTotal = true;
+    ctrl.paint();
+    await settle();
+    a.eq(ctrl.asked, 2, 'asked again after the turn-on');
+  });
+
+  test('an answer that arrives after the setting was turned off is not recorded', async () => {
+    const CGP = loadGradebookDom();
+    const settings = { values: { frozenTotal: true } };
+    const ctrl = controller(CGP, [{ ok: true, frozen: true, changed: true }], settings);
+    ctrl.start();
+    settings.values.frozenTotal = false;
+    ctrl.paint();
+    await settle();
+    a.eq(ctrl.done, false);
+  });
+
   test('with the setting off, Canvas is never asked', async () => {
     const CGP = loadGradebookDom();
     const ctrl = controller(CGP, [{ ok: true, frozen: true }], { values: { frozenTotal: false } });

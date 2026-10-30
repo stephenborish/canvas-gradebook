@@ -8,9 +8,10 @@
  *
  * Canvas saves the freeze as the teacher's column-order preference, so this
  * only ever has to happen once per course. It is asked for once per page
- * load; a teacher who then chooses "Move to End" is not overruled until the
- * next load with the setting still on. Turning the setting off leaves
- * Canvas's saved preference alone, since it may be the teacher's own. */
+ * load (and again if the setting is turned off and back on); a teacher who
+ * then chooses "Move to End" is not overruled until the next load with the
+ * setting still on. Turning the setting off leaves Canvas's saved preference
+ * alone, since it may be the teacher's own. */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
@@ -29,29 +30,46 @@
     this._pending = false;
     this._attempts = 0;
     this._nextAt = 0;
+    this._timer = null;
   }
 
   var P = FrozenTotalController.prototype;
 
   P.start = function () {
-    if (!this.settings.values.frozenTotal) return;
-    this.enabled = true;
     this.paint();
   };
 
-  P.stop = function () {
-    this.enabled = false;
+  P._cancelRetry = function () {
+    if (this._timer) clearTimeout(this._timer);
+    this._timer = null;
   };
 
   /* Called on every paint pass; cheap once done. */
   P.paint = function () {
-    if (!this.settings.values.frozenTotal) { this.enabled = false; return; }
+    if (!this.settings.values.frozenTotal) {
+      // Turned off: forget this page load's answer, so turning it back on
+      // asks Canvas again instead of staying latched on an old result.
+      if (this.enabled) {
+        this.enabled = false;
+        this.done = false;
+        this._attempts = 0;
+        this._nextAt = 0;
+        this._cancelRetry();
+      }
+      return;
+    }
     this.enabled = true;
     if (this.done || this._pending || Date.now() < this._nextAt) return;
+    // A render pass got here first: the timed retry is no longer needed, and
+    // left running it would wipe the NEXT backoff when it fired.
+    this._cancelRetry();
     var self = this;
     this._pending = true;
     this.request().then(function (result) {
       self._pending = false;
+      // Turned off while the request was out: its answer belongs to the old
+      // setting, and recording it would latch a later turn-on.
+      if (!self.settings.values.frozenTotal) return;
       if (result && result.ok && result.frozen) {
         self.done = true;
         CGP.diag.bump(result.changed ? 'frozenTotal.frozeCanvasTotal' : 'frozenTotal.alreadyFrozen');
@@ -68,7 +86,7 @@
       // An idle grid may not repaint on its own, so the retry is not left
       // waiting for one. The timer clears the wait itself, so firing a
       // millisecond early cannot skip the retry.
-      self._schedule(function () { self._nextAt = 0; self.paint(); }, delay);
+      self._timer = self._schedule(function () { self._timer = null; self._nextAt = 0; self.paint(); }, delay);
     });
   };
 

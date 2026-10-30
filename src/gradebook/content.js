@@ -217,8 +217,8 @@
     var posting = new CGP.PostGradesController({
       model: model, adapter: adapter, api: api, settings: settings, requestPaint: requestPaint, liveSync: liveSync
     });
-    // "Analyze Scores" in each assignment column's "..." menu (and Canvas's
-    // Total column menu), plus the frozen Total header's Analyze button.
+    // "Analyze Scores" in each assignment column's "..." menu and in
+    // Canvas's Total column menu.
     var scoreAnalysis = new CGP.ScoreAnalysisController({ model: model, adapter: adapter, settings: settings });
     // "Copy Roster" in the Student Name column's "..." menu.
     var rosterExport = new CGP.RosterExportController({ api: api, courseId: courseId, adapter: adapter });
@@ -512,7 +512,7 @@
       });
 
       // Narrow Canvas's own column widths once the grid has had a moment to
-      // settle after boot, then re-measure the frozen pane.
+      // settle after boot.
       setTimeout(reconcileColumns, 500);
 
       // Keep the utility strip collapsed if Canvas re-renders it.

@@ -855,7 +855,6 @@
     if (this._resizeBackoffUntil && Date.now() < this._resizeBackoffUntil) return Promise.resolve(false);
     var self = this;
     this._resizing = true;
-    this._resizeStartedAt = Date.now();
     var studentW = s.studentColumnWidth || 190;
     var assignmentW = s.assignmentColumnWidth || 124;
     return this.requestColumnSizing(studentW, assignmentW, true).then(function (result) {
@@ -881,7 +880,6 @@
       return false;
     }).catch(function () { return false; }).then(function (ok) {
       self._resizing = false;
-      self._resizeStartedAt = 0;
       if (ok) self.applyGeometry();
       return ok;
     });
