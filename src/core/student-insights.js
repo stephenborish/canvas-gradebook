@@ -62,6 +62,55 @@
     return (a.submissionTypes || []).some(function (t) { return ONLINE.indexOf(t) >= 0; });
   }
 
+  /* How work for this assignment is handed in, which decides where a
+   * teacher goes to see it:
+   *   tool   - an external tool (Turnitin, Edpuzzle, Google Assignments...):
+   *            the work lives in the tool
+   *   online - handed in to Canvas: SpeedGrader shows it
+   *   paper  - on paper: there is nothing online to open
+   *   none   - no submission at all (or not graded) */
+  function submissionKind(a) {
+    var types = a.submissionTypes || [];
+    if (types.indexOf('external_tool') >= 0 || types.indexOf('basic_lti_launch') >= 0) return 'tool';
+    if (acceptsOnline(a)) return 'online';
+    if (types.indexOf('on_paper') >= 0) return 'paper';
+    return 'none';
+  }
+
+  var KNOWN_TOOLS = [
+    [/turnitin/i, 'Turnitin'],
+    [/edpuzzle/i, 'Edpuzzle'],
+    [/assignments\.google|google\.com\/.*assignments|classroom\.google|googleusercontent|\bgoogle\b/i, 'Google Assignments'],
+    [/deltamath/i, 'DeltaMath'],
+    [/khanacademy/i, 'Khan Academy'],
+    [/pear(deck)?\.com|peardeck/i, 'Pear Deck'],
+    [/nearpod/i, 'Nearpod'],
+    [/quizizz|wayground/i, 'Quizizz'],
+    [/kami/i, 'Kami'],
+    [/flip(grid)?\.com/i, 'Flip'],
+    [/newsela/i, 'Newsela'],
+    [/commonlit/i, 'CommonLit'],
+    [/ixl\.com/i, 'IXL'],
+    [/gradescope/i, 'Gradescope'],
+    [/mcgraw|connect\.mheducation/i, 'McGraw Hill Connect'],
+    [/pearson|mylab|mastering/i, 'Pearson'],
+    [/webassign/i, 'WebAssign'],
+    [/youtube|playposit/i, 'PlayPosit']
+  ];
+
+  /* A readable name for the tool behind a launch URL ("Turnitin"), or the
+   * tool's own host name when it is not one we know. */
+  function toolName(url) {
+    if (!url) return null;
+    var s = String(url);
+    for (var i = 0; i < KNOWN_TOOLS.length; i++) if (KNOWN_TOOLS[i][0].test(s)) return KNOWN_TOOLS[i][1];
+    var m = /^https?:\/\/([^/?#]+)/i.exec(s);
+    if (!m) return null;
+    var host = m[1].replace(/^www\./i, '').replace(/:\d+$/, '').split('.');
+    var core = host.length > 2 ? host[host.length - 2] : host[0];
+    return core ? core.charAt(0).toUpperCase() + core.slice(1) : null;
+  }
+
   /* One row per assignment the student has been given. */
   function classify(a, sub, now) {
     var due = time(sub.cached_due_date || a.dueAt);
@@ -100,6 +149,12 @@
       percent: (!excused && score !== null && pp) ? (score / pp) * 100 : null,
       status: status,
       online: acceptsOnline(a),
+      kind: submissionKind(a),
+      toolUrl: a.toolUrl || null,
+      toolName: submissionKind(a) === 'tool' ? (toolName(sub.url) || toolName(a.toolUrl)) : null,
+      // For an external-tool submission, the tool's launch URL for THIS
+      // student's work - what SpeedGrader itself opens.
+      submissionUrl: sub.submission_type === 'basic_lti_launch' && sub.url ? String(sub.url) : null,
       secondsLate: status === 'late' ? (secondsLate || 0) : null,
       attempt: num(sub.attempt) || 0,
       needsGrading: needsGrading,
@@ -659,6 +714,8 @@
   }
 
   CGP.studentInsights = {
+    submissionKind: submissionKind,
+    toolName: toolName,
     workReport: workReport,
     dateSearchText: dateSearchText,
     matchesSearch: matchesSearch,

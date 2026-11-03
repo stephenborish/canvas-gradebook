@@ -640,6 +640,34 @@
 
   /* ------------------------------------------------------- assignments tab */
 
+  /* Where "see this student's work" goes, by how the work is handed in.
+   * null for on-paper and no-submission assignments: nothing to open.
+   * An external tool's submission opens in the tool through Canvas's own
+   * launch - the same one SpeedGrader embeds - so the teacher lands on THIS
+   * student's work in Turnitin, Edpuzzle, Google Assignments...; without a
+   * per-student launch, the assignment's own launch opens the tool's
+   * teacher view. */
+  P.workLink = function (i) {
+    if (i.kind === 'paper' || i.kind === 'none') return null;
+    if (i.kind === 'tool') {
+      var name = i.toolName || 'the tool';
+      var href = i.submissionUrl
+        ? '/courses/' + this.courseId + '/external_tools/retrieve?display=borderless&assignment_id=' + encodeURIComponent(i.id) +
+          '&url=' + encodeURIComponent(i.submissionUrl)
+        : this.assignmentUrl(i.id);
+      return {
+        href: href,
+        label: 'Open in ' + name,
+        primary: !!i.submittedAt,
+        title: i.submissionUrl ? 'Open this student’s work in ' + name : 'Open ' + name + ' for this assignment'
+      };
+    }
+    if (i.submittedAt) {
+      return { href: this.speedGraderUrl(i.id, this._uid), label: 'View work', primary: true, title: 'Open this student’s submission in SpeedGrader' };
+    }
+    return { href: this.speedGraderUrl(i.id, this._uid), label: 'SpeedGrader', primary: false, title: 'Open this student in SpeedGrader' };
+  };
+
   P.assignmentUrl = function (assignmentId) {
     return '/courses/' + this.courseId + '/assignments/' + encodeURIComponent(assignmentId);
   };
@@ -745,9 +773,12 @@
           (diff > 0 ? '+' : diff < 0 ? '−' : '±') + Math.abs(diff) + '</span>');
       var flags = (i.needsGrading ? '<span class="cgp-si__pill cgp-si__pill--needs">Needs grading</span>' : '') +
         (i.attempt > 1 ? '<span class="cgp-si__pill">Attempt ' + i.attempt + '</span>' : '');
-      var action = i.submittedAt
-        ? '<a class="cgp-si__work" href="' + esc(self.speedGraderUrl(i.id, uid)) + '" target="_blank" rel="noopener" title="Open this student’s submission in SpeedGrader">View work</a>'
-        : '<a class="cgp-si__work cgp-si__work--quiet" href="' + esc(self.speedGraderUrl(i.id, uid)) + '" target="_blank" rel="noopener" title="Open this student in SpeedGrader">SpeedGrader</a>';
+      var link = self.workLink(i);
+      var action = link
+        ? '<a class="cgp-si__work' + (link.primary ? '' : ' cgp-si__work--quiet') + '" href="' + esc(link.href) + '" target="_blank" rel="noopener" title="' +
+          esc(link.title) + '">' + esc(link.label) + '</a>'
+        : '<span class="cgp-si__muted" title="' + (i.kind === 'paper' ? 'Turned in on paper' : 'No online submission') + '">' +
+          (i.kind === 'paper' ? 'On paper' : 'No submission') + '</span>';
       var haystack = [i.name, st.label, SI().dateSearchText(i.dueAt), SI().dateSearchText(i.submittedAt)].join(' | ');
       return '<tr data-tags="' + tags + '" data-search="' + esc(haystack.toLowerCase()) + '">' +
         '<td class="cgp-si__name-cell"><a href="' + esc(self.assignmentUrl(i.id)) + '" target="_blank" rel="noopener" title="Open the assignment">' + esc(i.name) + '</a>' + flags + '</td>' +
@@ -771,7 +802,8 @@
     }).join('') + '</ul>', fmtNum(r.missingPoints, 1) + ' pts outstanding') : '';
 
     var lateCard = r.lateness.count ? section('Late work', '<ul class="cgp-si__todo">' + L.late.map(function (i) {
-      return '<li><a href="' + esc(self.speedGraderUrl(i.id, uid)) + '" target="_blank" rel="noopener" title="Open this student’s submission in SpeedGrader">' + esc(i.name) + '</a>' +
+      var link = self.workLink(i) || { href: self.assignmentUrl(i.id), title: 'Open the assignment' };
+      return '<li><a href="' + esc(link.href) + '" target="_blank" rel="noopener" title="' + esc(link.title) + '">' + esc(i.name) + '</a>' +
         '<span>Due ' + esc(fmtDate(i.dueAt)) + ' · <em class="cgp-si__late-by">' + esc(SI().duration(i.secondsLate)) + ' late</em></span>' +
         '<b>' + (i.score === null ? '' : fmtNum(i.score) + (i.pointsPossible ? '/' + fmtNum(i.pointsPossible) : '')) + '</b></li>';
     }).join('') + '</ul>' + this.latenessChart(r), fmtPct((r.rates.late || 0) * 100, 0) + ' of submissions') : '';

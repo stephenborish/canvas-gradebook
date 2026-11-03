@@ -274,3 +274,54 @@ suite('student overview: search by name or date', (test) => {
     a.not(si().matchesSearch(hay, '11/12'));
   });
 });
+
+suite('student overview: where "see the work" goes', (test) => {
+  const C = globalThis.CGP.StudentInsightsController;
+  const ctl = new C({ model: {}, api: {}, adapter: {}, courseId: '5', settings: { values: {} } });
+  ctl._uid = '7';
+  function item(types, subExtra, aExtra) {
+    const r = si().summarize({ now: NOW, studentId: '7',
+      assignments: [asg(1, Object.assign({ submissionTypes: types }, aExtra || {}))],
+      submissions: [sub(1, Object.assign({ score: 8, workflow_state: 'graded' }, subExtra || {}))] });
+    return r.items[0];
+  }
+  const done = { submitted_at: new Date(NOW - 20 * D).toISOString() };
+
+  test('on paper and no-submission assignments have nothing to open', () => {
+    a.eq(item(['on_paper']).kind, 'paper');
+    a.eq(ctl.workLink(item(['on_paper'])), null);
+    a.eq(ctl.workLink(item(['none'])), null);
+    a.eq(ctl.workLink(item(['not_graded'])), null);
+  });
+
+  test('work handed in to Canvas opens in SpeedGrader', () => {
+    const l = ctl.workLink(item(['online_upload', 'online_text_entry'], done));
+    a.eq(l.label, 'View work');
+    a.eq(l.href, '/courses/5/gradebook/speed_grader?assignment_id=1&student_id=7');
+  });
+
+  test('an external tool submission opens the student’s own work in the tool', () => {
+    const i = item(['external_tool'], Object.assign({ submission_type: 'basic_lti_launch', url: 'https://api.turnitin.com/lti/sub?id=99&x=1' }, done),
+      { toolUrl: 'https://api.turnitin.com/lti/launch' });
+    a.eq(i.kind, 'tool');
+    const l = ctl.workLink(i);
+    a.eq(l.label, 'Open in Turnitin');
+    a.eq(l.href, '/courses/5/external_tools/retrieve?display=borderless&assignment_id=1&url=' +
+      encodeURIComponent('https://api.turnitin.com/lti/sub?id=99&x=1'));
+    a.ok(l.primary);
+  });
+
+  test('without a per-student launch, the tool opens on the assignment', () => {
+    const l = ctl.workLink(item(['external_tool'], {}, { toolUrl: 'https://edpuzzle.com/lti/launch' }));
+    a.eq(l.label, 'Open in Edpuzzle');
+    a.eq(l.href, '/courses/5/assignments/1');
+    a.not(l.primary, 'not handed in yet, so a quiet link');
+  });
+
+  test('tool names: known tools by name, others by host', () => {
+    a.eq(si().toolName('https://assignments.google.com/lti/a'), 'Google Assignments');
+    a.eq(si().toolName('https://lti.deltamath.com/launch'), 'DeltaMath');
+    a.eq(si().toolName('https://www.example-tool.org/lti'), 'Example-tool');
+    a.eq(si().toolName(null), null);
+  });
+});

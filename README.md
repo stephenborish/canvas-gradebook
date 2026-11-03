@@ -435,8 +435,15 @@ link. **←** / **→** step to the previous / next student without closing; **E
   score and the class median with the difference — filterable to Missing, Late, Submitted, Needs
   grading, Upcoming or Resubmitted, and searchable by name or by date however you type it
   (`lab`, `Oct 12`, `October 12`, `10/12`, `2026-10-12`, `Monday`).
-- An assignment's name opens the assignment itself. **View work**, on everything the student
-  submitted, opens their submission in SpeedGrader; the names in the Late work list do the same.
+- An assignment's name opens the assignment itself. The button at the end of each row goes to the
+  student's work, wherever it lives:
+  - handed in to Canvas: **View work** opens their submission in SpeedGrader;
+  - an external tool (Turnitin, Edpuzzle, Google Assignments, DeltaMath, ...): **Open in Turnitin**
+    (and so on) launches the tool on *this student's* work, through the same Canvas launch
+    SpeedGrader uses. When the tool keeps no per-student link, it opens the tool's teacher view
+    for that assignment;
+  - on paper or no submission: no button, since there is nothing online to open.
+  The names in the Late work list follow the same rule.
 
 **Activity** (from Canvas course analytics, when the course has it)
 - Page views and participations, each with the student's percentile in the class and the class

@@ -151,6 +151,9 @@
           // WHY a column has hidden grades, so it rides along in the tooltip.
           postManually: !!a.post_manually,
           omitFromFinal: !!a.omit_from_final_grade,
+          // An external tool assignment's launch URL (Turnitin, Edpuzzle...),
+          // for naming the tool and opening it from the student overview.
+          toolUrl: (a.external_tool_tag_attributes && a.external_tool_tag_attributes.url) || null,
           groupId: a.assignment_group_id === undefined || a.assignment_group_id === null ? null : String(a.assignment_group_id),
           dueAt: a.due_at || null,
           hasMultipleDueDates: !!a.has_overrides || !!a.all_dates,
