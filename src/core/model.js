@@ -151,6 +151,7 @@
           // WHY a column has hidden grades, so it rides along in the tooltip.
           postManually: !!a.post_manually,
           omitFromFinal: !!a.omit_from_final_grade,
+          groupId: a.assignment_group_id === undefined || a.assignment_group_id === null ? null : String(a.assignment_group_id),
           dueAt: a.due_at || null,
           hasMultipleDueDates: !!a.has_overrides || !!a.all_dates,
           // What Canvas will accept as a submission for this assignment. Drives
@@ -208,7 +209,13 @@
       sortableName: e.user.sortable_name || '',
       currentScore: scoresToo ? score : (prev ? prev.currentScore : null),
       currentGrade: scoresToo ? letter : (prev ? prev.currentGrade : null),
-      enrollmentId: e.id === undefined ? null : String(e.id)
+      enrollmentId: e.id === undefined ? null : String(e.id),
+      // Canvas's own engagement figures, read by the student overview
+      // (gradebook/student-insights.js): when the student last did anything
+      // in the course, and how long they have spent in it, in seconds.
+      lastActivityAt: e.last_activity_at || (prev ? prev.lastActivityAt : null) || null,
+      totalActivityTime: e.total_activity_time === undefined ? (prev ? prev.totalActivityTime : null) : e.total_activity_time,
+      sectionId: e.course_section_id === undefined ? (prev ? prev.sectionId : null) : String(e.course_section_id)
     };
     if (!prev) this.studentOrder.push(uid);
     this.students.set(uid, rec);

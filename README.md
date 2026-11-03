@@ -399,6 +399,58 @@ with the same grading-period filter, shown as percentages. Each student in the h
 lists also gets their letter grade. Students with no graded work yet are counted but not included
 in the figures, and the Test Student is never included.
 
+### Student overview, one click on a name
+
+Click any student's name in the gradebook and a panel opens with everything that says how that
+student is doing, in three tabs. Cmd/Ctrl/Shift-click (or middle-click) still opens Canvas's own
+link. **←** / **→** step to the previous / next student without closing; **Esc** closes.
+
+**Overview**
+- Their current grade (Canvas's own current score and letter) in the header, with when they were
+  last active and how long they have spent in the course.
+- Tiles for **Missing** (and the points outstanding), **Late** (and what share of submitted work
+  that is), **on-time rate**, **average score** against the class median, **needs grading** and
+  **last active**. Each tile jumps to the details.
+- **What stands out**: a short, ranked list of things worth noticing — several missing
+  assignments, a high late rate and how late it typically is, no Canvas activity for a week,
+  scores trending up or down, running above or below the class median, fewer page views than
+  most of the class, a student reply to your feedback still unanswered, a habit of submitting in
+  the last two hours or late at night, an on-time streak or a run of missed work.
+- The **submission record** as one bar (on time / late / missing / excused) with counts.
+- **Average by category** for each assignment group, its weight, and a marker for the class
+  median in that category.
+- A **score trend** line across every graded assignment in due-date order, with the class median
+  dashed behind it and late or missing work marked; hover a point for the assignment.
+
+**Assignments**
+- Missing work, each with its due date, how many days overdue and the points at stake.
+- **How late, when late**: how many late submissions were under an hour, up to a day, 1–3 days,
+  3–7 days or over a week late, with the median, average and longest.
+- What is coming up in the next two weeks and not yet submitted.
+- Every assignment in one table — due date, status, when it was submitted (and how early or late),
+  score, percent and the class median with the difference — filterable to Missing, Late, Needs
+  grading, Upcoming or Resubmitted. Each name opens that submission in SpeedGrader.
+
+**Activity** (from Canvas course analytics, when the course has it)
+- Page views and participations, each with the student's percentile in the class and the class
+  median; time in the course against the class; page views in the last 7 days; active days in the
+  last 30.
+- A calendar of daily page views over the last 16 weeks, and page views by day of week and by hour.
+- When work gets submitted: by hour of day, how far ahead of the deadline on-time work arrives,
+  and how much lands in the last two hours.
+- The feedback conversation: your comments, the student's, resubmissions, and any student reply
+  still waiting on you.
+
+Statuses are Canvas's own (`missing`, `late`, or a status a teacher applied). Excused work is left
+out of every rate and average, and a blank is never a zero. The average shown is points earned over
+points possible on graded work; the header's grade is Canvas's, with your weighting and drop rules.
+If Canvas analytics is off for the course, the Activity tab says so and still shows last activity
+and time in the course from the enrollment.
+
+Everything is read from Canvas when the panel opens — that student's submissions and comments,
+their analytics, the course's assignment groups — and held in memory for that page only. Turn it
+off with *Clicking a student's name opens their overview* in the options page.
+
 ### Copy the class roster
 
 The **Student Name** column's `⋮` menu has a **Copy Roster** item. It opens a panel with every

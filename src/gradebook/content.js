@@ -220,6 +220,10 @@
     // "Analyze Scores" in each assignment column's "..." menu and in
     // Canvas's Total column menu.
     var scoreAnalysis = new CGP.ScoreAnalysisController({ model: model, adapter: adapter, settings: settings });
+    // Clicking a student's name opens their overview.
+    var studentInsights = CGP.StudentInsightsController
+      ? new CGP.StudentInsightsController({ model: model, api: api, adapter: adapter, settings: settings, courseId: courseId })
+      : null;
     // "Copy Roster" in the Student Name column's "..." menu.
     var rosterExport = new CGP.RosterExportController({ api: api, courseId: courseId, adapter: adapter });
     var paste = new CGP.BulkPasteController({
@@ -442,6 +446,7 @@
       keyboard.start();
       paste.start();
       scoreAnalysis.start();
+      if (studentInsights) studentInsights.start();
       rosterExport.start();
       frozen.start();
       bindScroll();

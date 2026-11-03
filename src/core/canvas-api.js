@@ -505,6 +505,40 @@
     }, { maxPages: 20 });
   };
 
+  /* Everything the student overview needs about one student's work: every
+   * submission in the course, with its comment thread. One student, so the
+   * comments cost little. */
+  CanvasApi.prototype.studentWork = function (courseId, userId) {
+    return this.getAll('/api/v1/courses/' + courseId + '/students/submissions', {
+      'student_ids[]': [String(userId)],
+      'include[]': ['submission_comments']
+    }, { maxPages: 20 });
+  };
+
+  /* Canvas course analytics for one student: page views by hour and the
+   * list of participations. Courses without analytics answer 401/404, and
+   * that is reported as null rather than as a failure. */
+  function analyticsOrNull(promise) {
+    return promise.then(null, function (err) {
+      if (err && (err.status === 401 || err.status === 403 || err.status === 404)) return null;
+      throw err;
+    });
+  }
+
+  CanvasApi.prototype.studentActivity = function (courseId, userId) {
+    return analyticsOrNull(this.get('/api/v1/courses/' + courseId + '/analytics/users/' + userId + '/activity'));
+  };
+
+  /* Every student's page views, participations and on-time / late / missing
+   * breakdown, so one student can be placed against the class. */
+  CanvasApi.prototype.studentSummaries = function (courseId) {
+    return analyticsOrNull(this.getAll('/api/v1/courses/' + courseId + '/analytics/student_summaries', {}, { maxPages: 20 }));
+  };
+
+  CanvasApi.prototype.course = function (courseId) {
+    return this.get('/api/v1/courses/' + courseId);
+  };
+
   CanvasApi.prototype.teachingCourses = function () {
     return this.getAll('/api/v1/courses', {
       enrollment_state: 'active',
