@@ -325,3 +325,42 @@ suite('student overview: where "see the work" goes', (test) => {
     a.eq(si().toolName(null), null);
   });
 });
+
+suite('student overview: PR review fixes', (test) => {
+  test('category class median is the median of classmates’ category averages', () => {
+    // Everyone earns 10/10 and 0/100: every category average is 9.1%, not 50%.
+    const assignments = [asg(1, { pointsPossible: 10 }), asg(2, { pointsPossible: 100 })];
+    const cells = {};
+    ['a', 'b', 'c'].forEach((u) => { cells['1:' + u] = { score: 10 }; cells['2:' + u] = { score: 0 }; });
+    const gm = si().classGroupMedians((aid, uid) => cells[aid + ':' + uid] || null, assignments, ['a', 'b', 'c']);
+    a.eq(Math.round(gm['1'] * 10) / 10, 9.1);
+    const r = si().summarize({ now: NOW, studentId: '7', assignments, groups: [{ id: 1, name: 'All' }], classGroupMedians: gm,
+      submissions: [sub(1, { score: 10, workflow_state: 'graded' }), sub(2, { score: 0, workflow_state: 'graded' })] });
+    a.eq(Math.round(r.groups[0].average * 10) / 10, 9.1);
+    a.eq(r.groups[0].classMedian, gm['1'], 'the student matches the class exactly');
+  });
+
+  test('category class median skips excused and ungraded work per student', () => {
+    const assignments = [asg(1), asg(2)];
+    const cells = { '1:a': { score: 5 }, '2:a': { excused: true, score: 0 }, '1:b': { score: 10 }, '2:b': { score: null } };
+    const gm = si().classGroupMedians((aid, uid) => cells[aid + ':' + uid] || null, assignments, ['a', 'b']);
+    a.eq(gm['1'], 75);
+  });
+
+  test('zero-point extra credit adds earned points to the averages', () => {
+    const assignments = [asg(1, { pointsPossible: 10 }), asg(2, { pointsPossible: 0 })];
+    const r = si().summarize({ now: NOW, studentId: '7', weighted: true, assignments,
+      groups: [{ id: 1, name: 'All', group_weight: 100 }],
+      submissions: [sub(1, { score: 8, workflow_state: 'graded' }), sub(2, { score: 2, workflow_state: 'graded' })] });
+    a.eq(r.overall.percent, 100);
+    a.eq(r.groups[0].average, 100);
+    a.eq(r.weightedEstimate, 100);
+  });
+
+  test('a category holding only extra credit has no average (nothing possible)', () => {
+    const r = si().summarize({ now: NOW, studentId: '7', assignments: [asg(1, { pointsPossible: 0 })],
+      groups: [{ id: 1, name: 'Bonus' }], submissions: [sub(1, { score: 2, workflow_state: 'graded' })] });
+    a.eq(r.groups[0].average, null);
+    a.eq(r.overall, null);
+  });
+});

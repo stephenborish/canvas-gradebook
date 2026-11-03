@@ -461,7 +461,9 @@
     }
     var roster = this.roster();
     var assignments = model.assignmentOrder.map(function (id) { return model.assignments.get(id); }).filter(Boolean);
-    var medians = SI().classMedians(function (aid, sid) { return model.cell(aid, sid); }, assignments, roster);
+    var cellOf = function (aid, sid) { return model.cell(aid, sid); };
+    var medians = SI().classMedians(cellOf, assignments, roster);
+    var groupMedians = SI().classGroupMedians(cellOf, assignments, roster);
     var r = SI().summarize({
       now: Date.now(),
       studentId: uid,
@@ -471,6 +473,7 @@
       groups: parts.course ? parts.course.groups : [],
       weighted: parts.course ? parts.course.weighted : false,
       classMedians: medians,
+      classGroupMedians: groupMedians,
       student: student,
       classActivityTimes: roster.map(function (id) { var s = model.students.get(id); return s && s.totalActivityTime; }),
       activity: parts.activity || null,

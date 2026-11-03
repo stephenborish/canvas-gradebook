@@ -243,8 +243,10 @@
   function pointsAverage(items) {
     var earned = 0, possible = 0, n = 0;
     items.forEach(function (i) {
-      if (i.score === null || !i.pointsPossible || i.omitFromFinal) return;
-      earned += i.score; possible += i.pointsPossible; n++;
+      if (i.score === null || i.score === undefined || i.omitFromFinal) return;
+      // A zero-point assignment is extra credit: its points count toward
+      // what was earned and add nothing to what was possible.
+      earned += i.score; possible += i.pointsPossible || 0; n++;
     });
     return possible ? { percent: (earned / possible) * 100, earned: earned, possible: possible, count: n } : null;
   }
@@ -258,6 +260,7 @@
    *   groups           [{id, name, group_weight}]   (optional)
    *   weighted         bool (course applies group weights)
    *   classMedians     {assignmentId: percent}      (optional)
+   *   classGroupMedians {groupId: percent}          (optional) - see classGroupMedians()
    *   student          {currentScore, currentGrade, lastActivityAt, totalActivityTime}
    *   classActivityTimes  [seconds]                  (optional, the whole class incl. this student)
    *   activity         Canvas analytics activity payload (optional)
@@ -338,20 +341,23 @@
     };
 
     // Averages: overall and per assignment group.
-    var gradedItems = items.filter(function (i) { return i.score !== null && i.pointsPossible; });
+    var gradedItems = items.filter(function (i) { return i.score !== null; });
     var overall = pointsAverage(gradedItems);
+    var groupMedians = input.classGroupMedians || {};
     var groups = (input.groups || []).map(function (g) {
       var gid = String(g.id);
       var mine = items.filter(function (i) { return i.groupId === gid; });
       var avg = pointsAverage(mine);
-      var cls = mine.filter(function (i) { return i.classMedian !== null && i.percent !== null; });
       return {
         id: gid,
         name: g.name || 'Group',
         weight: num(g.group_weight),
         average: avg ? avg.percent : null,
         graded: avg ? avg.count : 0,
-        classMedian: cls.length ? mean(cls.map(function (i) { return i.classMedian; })) : null,
+        // The median of every classmate's own average in this category,
+        // computed the same way as this student's - never an average of
+        // per-assignment medians, which mis-weights mixed point values.
+        classMedian: groupMedians[gid] === undefined || groupMedians[gid] === null ? null : groupMedians[gid],
         missing: mine.filter(function (i) { return i.status === 'missing'; }).length,
         total: mine.length
       };
@@ -597,6 +603,36 @@
     return out;
   }
 
+  /* Each assignment group's class median: every student's own category
+   * average (points earned over points possible on their graded work, extra
+   * credit included - pointsAverage), then the median of those. */
+  function classGroupMedians(cellsFor, assignments, studentIds) {
+    var byGroup = Object.create(null);
+    (assignments || []).forEach(function (a) {
+      if (!a || a.published === false || a.groupId === null || a.groupId === undefined) return;
+      var g = String(a.groupId);
+      (byGroup[g] = byGroup[g] || []).push(a);
+    });
+    var out = {};
+    Object.keys(byGroup).forEach(function (g) {
+      var avgs = [];
+      studentIds.forEach(function (uid) {
+        var items = [];
+        byGroup[g].forEach(function (a) {
+          var rec = cellsFor(a.id, uid);
+          if (!rec || rec.excused) return;
+          var sc = num(rec.score);
+          if (sc === null) return;
+          items.push({ score: sc, pointsPossible: num(a.pointsPossible), omitFromFinal: !!a.omitFromFinal });
+        });
+        var avg = pointsAverage(items);
+        if (avg) avgs.push(avg.percent);
+      });
+      if (avgs.length >= 2) out[g] = median(avgs);
+    });
+    return out;
+  }
+
   /* ------------------------------------------------ missing / late list */
 
   function escHtml(s) {
@@ -723,6 +759,7 @@
     insights: insights,
     activity: activity,
     classMedians: classMedians,
+    classGroupMedians: classGroupMedians,
     duration: duration,
     relativeDay: relativeDay,
     percentile: percentile,
