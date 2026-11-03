@@ -3,8 +3,8 @@
  * Clicking a student's name in the gradebook opens one panel that answers
  * "how is this student doing?" at a glance: their grade, what is missing and
  * how many points that is, how often work arrives late and by how much, their
- * average in each assignment group against the class, the trend of their
- * scores, and what Canvas analytics knows about their activity (page views by
+ * average in each assignment group against the class, a list of missing and
+ * late work ready to send to a parent, counselor or the student, and what Canvas analytics knows about their activity (page views by
  * day and hour, participations, last activity, time in the course, and where
  * all of that sits in the class).
  *
@@ -55,6 +55,9 @@
     this._uid = null;
     this._tab = 'overview';
     this._filter = 'all';
+    this._query = '';
+    this._share = { missing: true, late: true, links: true };
+    this._courseName = '';
     this._cache = new Map();       // uid -> {at, work, activity, enrollment}
     this._course = null;           // promise: {groups, weighted}
     this._summaries = null;        // promise: student_summaries or null
@@ -117,6 +120,7 @@
         this.api.assignmentGroups(this.courseId).catch(function () { return []; }),
         this.api.course(this.courseId).catch(function () { return null; })
       ]).then(function (r) {
+        self._courseName = (r[1] && (r[1].name || r[1].course_code)) || '';
         return { groups: r[0] || [], weighted: !!(r[1] && r[1].apply_assignment_group_weights) };
       });
       this._course.catch(function () { self._course = null; });
@@ -168,6 +172,7 @@
     uid = String(uid);
     this._uid = uid;
     this._filter = 'all';
+    this._query = '';
     var gen = ++this._gen;
     this.ensureRoot();
     var student = this.model.students.get(uid) || { name: 'Student', fullName: '' };
@@ -224,6 +229,15 @@
       '</div>';
     root.querySelector('.cgp-si__backdrop').addEventListener('click', function () { self.close(); });
     root.addEventListener('click', function (e) { self.onPanelClick(e); });
+    root.addEventListener('input', function (e) {
+      var t = e.target;
+      if (t && t.matches && t.matches('[data-si-search]')) { self._query = t.value; self.applyFilter(self._filter); }
+    });
+    root.addEventListener('change', function (e) {
+      var t = e.target;
+      var key = t && t.getAttribute && t.getAttribute('data-si-share');
+      if (key) { self._share[key] = !!t.checked; self.refreshPreview(); }
+    });
     root.addEventListener('mouseover', function (e) { self.onTip(e); });
     root.addEventListener('focusin', function (e) { self.onTip(e); });
     root.addEventListener('mouseout', function (e) {
@@ -232,7 +246,13 @@
     this._onKey = function (e) {
       if (!self._root) return;
       var typing = e.target && e.target.closest && e.target.closest('input, textarea, select, [contenteditable="true"]');
-      if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); self.close(); return; }
+      if (e.key === 'Escape') {
+        e.stopPropagation(); e.preventDefault();
+        if (typing && typing.matches('[data-si-search]') && typing.value) {
+          typing.value = ''; self._query = ''; self.applyFilter(self._filter); return;
+        }
+        self.close(); return;
+      }
       if (typing) return;
       var btn = e.target && e.target.closest && e.target.closest('[role="button"][data-si-tab]');
       if (btn && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); btn.click(); return; }
@@ -271,6 +291,7 @@
     if (t.closest('[data-si-retry]')) { this._cache.delete(this._uid); this.open(this._uid); return; }
     var tab = t.closest('[data-si-tab]');
     if (tab) { this.selectTab(tab.getAttribute('data-si-tab'), tab.getAttribute('data-si-filter')); return; }
+    if (t.closest('[data-si-copy]')) { this.copyReport(); return; }
     var chip = t.closest('[data-si-filter-chip]');
     if (chip) { this.applyFilter(chip.getAttribute('data-si-filter-chip')); return; }
   };
@@ -298,9 +319,10 @@
       c.setAttribute('aria-pressed', c.getAttribute('data-si-filter-chip') === f ? 'true' : 'false');
     });
     var shown = 0;
+    var q = this._query || '';
     this._root.querySelectorAll('.cgp-si__table tbody tr').forEach(function (tr) {
       var tags = (tr.getAttribute('data-tags') || '').split(' ');
-      var on = f === 'all' || tags.indexOf(f) >= 0;
+      var on = (f === 'all' || tags.indexOf(f) >= 0) && SI().matchesSearch(tr.getAttribute('data-search'), q);
       tr.hidden = !on;
       if (on) shown++;
     });
@@ -424,6 +446,7 @@
       '<a class="cgp-si__link" href="/conversations?context_id=course_' + esc(this.courseId) + '&amp;user_id=' + esc(uid) +
         '&amp;user_name=' + encodeURIComponent(name) + '" target="_blank" rel="noopener">Message student</a>' +
       '<a class="cgp-si__link" href="' + base + '/users/' + esc(uid) + '/usage" target="_blank" rel="noopener">Access report</a>' +
+      '<button type="button" class="cgp-si__link cgp-si__link--btn" data-si-copy title="Copy this student’s missing and late work as a list">Copy missing &amp; late work</button>' +
       '<span class="cgp-si__hint">← → next student · Esc to close</span>';
   };
 
@@ -461,6 +484,10 @@
     this.renderHeader(student, r);
     var body = this._root.querySelector('.cgp-si__body');
     var keepScroll = body.scrollTop;
+    // Later data (analytics, class scores) re-renders the panel; whoever is
+    // typing in the search box keeps their place.
+    var active = document.activeElement;
+    var searching = active && active.matches && active.matches('[data-si-search]') ? { start: active.selectionStart, end: active.selectionEnd } : null;
     var c = r.counts;
     var tabs = [
       ['overview', 'Overview', ''],
@@ -479,6 +506,12 @@
       this.panel('activity', this.activityPanel(r));
     this.applyFilter(this._filter);
     body.scrollTop = keepScroll;
+    if (searching) {
+      var box = body.querySelector('[data-si-search]');
+      if (box) {
+        try { box.focus({ preventScroll: true }); box.setSelectionRange(searching.start, searching.end); } catch (e) { /* ignore */ }
+      }
+    }
   };
 
   P.wireTabKeys = function () {
@@ -560,8 +593,7 @@
           section('Submission record', this.statusBar(r)) +
           (r.groups.length ? section('Average by category', this.groupBars(r), r.weightedEstimate !== null ? 'Weighted est. ' + fmtPct(r.weightedEstimate, 1) : '') : '') +
         '</div>' +
-      '</div>' +
-      section('Score trend', this.trendChart(r), r.trend.series.length ? r.trend.series.length + ' graded' : '');
+      '</div>';
   };
 
   P.statusBar = function (r) {
@@ -589,60 +621,6 @@
     return bar + legend + lateLine + streak + (extra.length ? '<p class="cgp-si__note">' + esc(extra.join(' · ')) + '</p>' : '');
   };
 
-  P.trendChart = function (r) {
-    var pts = r.trend.series;
-    if (pts.length < 2) return '<p class="cgp-si__note">A trend appears once two or more assignments are graded.</p>';
-    var W = 720, H = 210, padL = 38, padR = 12, padT = 14, padB = 26;
-    var maxY = Math.max(100, Math.ceil(Math.max.apply(null, pts.map(function (p) { return Math.max(p.percent, p.classMedian || 0); })) / 10) * 10);
-    var plotW = W - padL - padR, plotH = H - padT - padB;
-    var step = pts.length > 1 ? plotW / (pts.length - 1) : 0;
-    function x(i) { return padL + i * step; }
-    function y(v) { return padT + plotH - (Math.max(0, v) / maxY) * plotH; }
-    var svg = '<svg class="cgp-si__trend" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Score on each graded assignment, in due-date order, with the class median">';
-    [0, 25, 50, 75, 100].concat(maxY > 100 ? [maxY] : []).forEach(function (g) {
-      svg += '<line class="cgp-si__gridline" x1="' + padL + '" x2="' + (W - padR) + '" y1="' + y(g) + '" y2="' + y(g) + '"/>' +
-        '<text class="cgp-si__axis" x="' + (padL - 8) + '" y="' + (y(g) + 3.5) + '" text-anchor="end">' + g + '%</text>';
-    });
-    var med = pts.map(function (p, i) { return p.classMedian === null ? null : [x(i), y(p.classMedian)]; });
-    var medPath = '';
-    med.forEach(function (m, i) {
-      if (!m) return;
-      medPath += (i && med[i - 1] ? 'L' : 'M') + m[0].toFixed(1) + ' ' + m[1].toFixed(1);
-    });
-    if (medPath) svg += '<path class="cgp-si__median" d="' + medPath + '"/>';
-    var line = pts.map(function (p, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.percent).toFixed(1); }).join('');
-    svg += '<path class="cgp-si__line-path" d="' + line + '"/>';
-    pts.forEach(function (p, i) {
-      var cls = p.status === 'late' ? ' cgp-si__dot--late' : p.status === 'missing' ? ' cgp-si__dot--missing' : '';
-      svg += '<circle class="cgp-si__dot' + cls + '" cx="' + x(i).toFixed(1) + '" cy="' + y(p.percent).toFixed(1) + '" r="4.5"/>';
-    });
-    // Hit columns, wider than the dots.
-    pts.forEach(function (p, i) {
-      var w = Math.max(step, 14);
-      var tip = p.name + '\n' + fmtPct(p.percent, 1) + (p.classMedian !== null ? ' · class median ' + fmtPct(p.classMedian, 1) : '') +
-        (p.status === 'late' ? ' · late' : p.status === 'missing' ? ' · missing' : '') + (p.at ? '\nDue ' + fmtDate(p.at) : '');
-      svg += '<rect class="cgp-si__hit" x="' + (x(i) - w / 2).toFixed(1) + '" y="' + padT + '" width="' + w.toFixed(1) + '" height="' + plotH +
-        '" data-tip="' + esc(tip) + '"/>';
-    });
-    var first = pts[0], last = pts[pts.length - 1];
-    svg += '<text class="cgp-si__axis" x="' + padL + '" y="' + (H - 6) + '">' + esc(fmtDate(first.at)) + '</text>' +
-      '<text class="cgp-si__axis" x="' + (W - padR) + '" y="' + (H - 6) + '" text-anchor="end">' + esc(fmtDate(last.at)) + '</text>';
-    svg += '</svg>';
-    var legend = '<ul class="cgp-si__legend cgp-si__legend--inline">' +
-      '<li><i class="cgp-si__key cgp-si__key--line"></i>This student</li>' +
-      (medPath ? '<li><i class="cgp-si__key cgp-si__key--median"></i>Class median</li>' : '') +
-      '<li><i class="cgp-si__sw cgp-si__sw--late cgp-si__sw--dot"></i>Late</li>' +
-      '<li><i class="cgp-si__sw cgp-si__sw--missing cgp-si__sw--dot"></i>Missing</li></ul>';
-    var t = r.trend;
-    var summary = t.delta !== null
-      ? '<p class="cgp-si__line">Last ' + t.recentCount + ' graded: <b>' + fmtPct(t.recentAvg, 0) + '</b> vs <b>' + fmtPct(t.priorAvg, 0) +
-        '</b> before <span class="cgp-si__delta cgp-si__delta--' + (t.delta >= 2 ? 'up' : t.delta <= -2 ? 'down' : 'flat') + '">' +
-        (t.delta >= 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(t.delta)) + ' pts</span>' +
-        (r.relative.count ? ' · above the class median on ' + r.relative.above + ' of ' + r.relative.count : '') + '</p>'
-      : '';
-    return legend + svg + summary;
-  };
-
   P.groupBars = function (r) {
     return '<ul class="cgp-si__bars">' + r.groups.map(function (g) {
       var v = g.average;
@@ -662,6 +640,71 @@
 
   /* ------------------------------------------------------- assignments tab */
 
+  P.assignmentUrl = function (assignmentId) {
+    return '/courses/' + this.courseId + '/assignments/' + encodeURIComponent(assignmentId);
+  };
+
+  /* ------------------------------------------- sharing missing / late work */
+
+  P.report = function () {
+    var r = this._last;
+    if (!r) return null;
+    var self = this;
+    var student = this.model.students.get(this._uid) || {};
+    var origin = (typeof location !== 'undefined' && location.origin) || '';
+    return SI().workReport(r, {
+      studentName: student.fullName || student.name || '',
+      courseName: this._courseName || '',
+      now: r.now,
+      include: { missing: this._share.missing, late: this._share.late },
+      links: this._share.links,
+      urlFor: function (i) { return origin + self.assignmentUrl(i.id); }
+    });
+  };
+
+  P.copyReport = function () {
+    var rep = this.report();
+    if (!rep) { CGP.ui.toast('Still reading this student’s work from Canvas…'); return; }
+    if (!this._share.missing && !this._share.late) { CGP.ui.error('Pick Missing, Late or both first.'); return; }
+    var n = rep.count;
+    CGP.ui.copy(rep.text, rep.html).then(function () {
+      CGP.ui.toast(n ? n + (n === 1 ? ' assignment' : ' assignments') + ' copied — paste into an email, message or document'
+        : 'Copied — nothing is missing or late right now');
+    }, function () { CGP.ui.error('Couldn’t copy to the clipboard.'); });
+  };
+
+  P.refreshPreview = function () {
+    if (!this._root) return;
+    var pre = this._root.querySelector('.cgp-si__preview');
+    var rep = this.report();
+    if (pre && rep) pre.textContent = rep.text;
+  };
+
+  P.sharePanel = function (r) {
+    var sh = this._share;
+    var L = r.lists;
+    function box(key, label, count) {
+      return '<label class="cgp-si__check"><input type="checkbox" data-si-share="' + key + '"' + (sh[key] ? ' checked' : '') + '>' +
+        label + (count === undefined ? '' : ' <b>' + count + '</b>') + '</label>';
+    }
+    var rep = this.report();
+    return '<div class="cgp-si__card cgp-si__share">' +
+      '<div class="cgp-si__card-head"><h3>Send missing &amp; late work</h3>' +
+        '<span class="cgp-si__aside">For a parent, counselor or the student</span></div>' +
+      '<div class="cgp-si__share-row">' +
+        '<div class="cgp-si__share-opts">' + box('missing', 'Missing', L.missing.length) + box('late', 'Late', L.late.length) +
+          box('links', 'Include links') + '</div>' +
+        '<button type="button" class="cgp-si__btn cgp-si__btn--copy" data-si-copy>' +
+          '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><rect x="6.5" y="6.5" width="10" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
+          '<path d="M13.5 4.5V4a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 4v9A1.5 1.5 0 0 0 5 14.5h.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>Copy list</button>' +
+      '</div>' +
+      '<pre class="cgp-si__preview" aria-label="What will be copied">' + esc(rep ? rep.text : '') + '</pre>' +
+      '<p class="cgp-si__note">Pastes as a table (with linked assignment names) in Gmail, Outlook, Docs and Word, and as plain lines in a text or Canvas message.</p>' +
+      '</div>';
+  };
+
+  /* ------------------------------------------------------- assignments tab */
+
   P.work = function (r) {
     var self = this;
     var uid = this._uid;
@@ -670,6 +713,7 @@
       ['all', 'All', r.items.length],
       ['missing', 'Missing', L.missing.length],
       ['late', 'Late', L.late.length],
+      ['submitted', 'Submitted', r.items.filter(function (i) { return i.submittedAt; }).length],
       ['needs', 'Needs grading', L.needsGrading.length],
       ['upcoming', 'Upcoming', r.counts.upcoming],
       ['resub', 'Resubmitted', L.resubmitted.length]
@@ -678,10 +722,14 @@
       return '<button type="button" class="cgp-si__chip" data-si-filter-chip="' + c[0] + '" aria-pressed="' + (self._filter === c[0]) + '"' +
         (c[2] || c[0] === 'all' ? '' : ' disabled') + '>' + c[1] + '<b>' + c[2] + '</b></button>';
     }).join('') + '</div>';
+    var search = '<div class="cgp-si__search">' +
+      '<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m12.7 12.7 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>' +
+      '<input type="search" data-si-search placeholder="Search by assignment name or date (e.g. lab, Oct 12, 10/12, Monday)" aria-label="Search assignments by name or date" value="' + esc(this._query || '') + '">' +
+      '</div>';
 
     var rows = r.items.slice().reverse().map(function (i) {
       var tags = [i.status === 'missing' ? 'missing' : '', i.status === 'late' ? 'late' : '', i.needsGrading ? 'needs' : '',
-        i.status === 'upcoming' ? 'upcoming' : '', i.attempt > 1 ? 'resub' : ''].filter(Boolean).join(' ');
+        i.status === 'upcoming' ? 'upcoming' : '', i.attempt > 1 ? 'resub' : '', i.submittedAt ? 'submitted' : ''].filter(Boolean).join(' ');
       var st = STATUS[i.status];
       var submitted = i.submittedAt
         ? esc(fmtDate(i.submittedAt, true)) + (i.status === 'late' ? '<span class="cgp-si__sub cgp-si__sub--late">' + esc(SI().duration(i.secondsLate)) + ' late</span>'
@@ -689,47 +737,55 @@
         : (i.status === 'missing' && i.dueAt ? '<span class="cgp-si__sub cgp-si__sub--missing">' + Math.max(0, Math.floor((r.now - i.dueAt) / DAY)) + ' days overdue</span>' : '<span class="cgp-si__muted">–</span>');
       var score = i.status === 'excused' ? '<span class="cgp-si__muted">EX</span>'
         : i.score === null ? '<span class="cgp-si__muted">–</span>'
-          : fmtNum(i.score) + (i.pointsPossible ? '<span class="cgp-si__muted"> / ' + fmtNum(i.pointsPossible) + '</span>' : '');
-      var pct = i.percent === null ? '' : fmtPct(i.percent, 0);
+          : fmtNum(i.score) + (i.pointsPossible ? '<span class="cgp-si__muted"> / ' + fmtNum(i.pointsPossible) + '</span>' : '') +
+            (i.percent === null ? '' : '<span class="cgp-si__sub">' + fmtPct(i.percent, 0) + '</span>');
       var diff = (i.percent !== null && i.classMedian !== null) ? Math.round(i.percent - i.classMedian) : null;
       var medianCell = i.classMedian === null ? '<span class="cgp-si__muted">–</span>'
         : fmtPct(i.classMedian, 0) + (diff === null ? '' : '<span class="cgp-si__delta cgp-si__delta--' + (diff >= 2 ? 'up' : diff <= -2 ? 'down' : 'flat') + '">' +
           (diff > 0 ? '+' : diff < 0 ? '−' : '±') + Math.abs(diff) + '</span>');
       var flags = (i.needsGrading ? '<span class="cgp-si__pill cgp-si__pill--needs">Needs grading</span>' : '') +
         (i.attempt > 1 ? '<span class="cgp-si__pill">Attempt ' + i.attempt + '</span>' : '');
-      return '<tr data-tags="' + tags + '">' +
-        '<td class="cgp-si__name-cell"><a href="' + esc(self.speedGraderUrl(i.id, uid)) + '" target="_blank" rel="noopener" title="Open in SpeedGrader">' + esc(i.name) + '</a>' + flags + '</td>' +
-        '<td>' + (i.dueAt ? esc(fmtDate(i.dueAt)) : '<span class="cgp-si__muted">No due date</span>') + '</td>' +
+      var action = i.submittedAt
+        ? '<a class="cgp-si__work" href="' + esc(self.speedGraderUrl(i.id, uid)) + '" target="_blank" rel="noopener" title="Open this student’s submission in SpeedGrader">View work</a>'
+        : '<a class="cgp-si__work cgp-si__work--quiet" href="' + esc(self.speedGraderUrl(i.id, uid)) + '" target="_blank" rel="noopener" title="Open this student in SpeedGrader">SpeedGrader</a>';
+      var haystack = [i.name, st.label, SI().dateSearchText(i.dueAt), SI().dateSearchText(i.submittedAt)].join(' | ');
+      return '<tr data-tags="' + tags + '" data-search="' + esc(haystack.toLowerCase()) + '">' +
+        '<td class="cgp-si__name-cell"><a href="' + esc(self.assignmentUrl(i.id)) + '" target="_blank" rel="noopener" title="Open the assignment">' + esc(i.name) + '</a>' + flags + '</td>' +
+        '<td>' + (i.dueAt ? esc(fmtDate(i.dueAt, true)) : '<span class="cgp-si__muted">No due date</span>') + '</td>' +
         '<td><span class="cgp-si__status cgp-si__status--' + st.cls + '">' + st.label + '</span></td>' +
         '<td>' + submitted + '</td>' +
         '<td class="cgp-si__num">' + score + '</td>' +
-        '<td class="cgp-si__num">' + pct + '</td>' +
         '<td class="cgp-si__num">' + medianCell + '</td>' +
+        '<td class="cgp-si__act">' + action + '</td>' +
         '</tr>';
     }).join('');
     var table = '<div class="cgp-si__table-wrap"><table class="cgp-si__table"><thead><tr><th>Assignment</th><th>Due</th><th>Status</th><th>Submitted</th>' +
-      '<th class="cgp-si__num">Score</th><th class="cgp-si__num">%</th><th class="cgp-si__num">Class median</th></tr></thead><tbody>' + rows +
-      '</tbody></table><p class="cgp-si__table-empty cgp-si__note" hidden>Nothing here.</p></div>';
+      '<th class="cgp-si__num">Score</th><th class="cgp-si__num">Class median</th><th><span class="cgp-si__sr">Open</span></th></tr></thead><tbody>' + rows +
+      '</tbody></table><p class="cgp-si__table-empty cgp-si__note" hidden>No assignments match.</p></div>';
 
     var missingCard = L.missing.length ? section('Missing work', '<ul class="cgp-si__todo">' + L.missing.map(function (i) {
       var overdue = i.dueAt ? Math.max(0, Math.floor((r.now - i.dueAt) / DAY)) : null;
-      return '<li><a href="' + esc(self.speedGraderUrl(i.id, uid)) + '" target="_blank" rel="noopener">' + esc(i.name) + '</a>' +
+      return '<li><a href="' + esc(self.assignmentUrl(i.id)) + '" target="_blank" rel="noopener" title="Open the assignment">' + esc(i.name) + '</a>' +
         '<span>' + (i.dueAt ? 'Due ' + esc(fmtDate(i.dueAt)) + ' · ' + overdue + (overdue === 1 ? ' day' : ' days') + ' overdue' : 'No due date') + '</span>' +
         '<b>' + (i.pointsPossible ? fmtNum(i.pointsPossible) + ' pts' : '') + '</b></li>';
     }).join('') + '</ul>', fmtNum(r.missingPoints, 1) + ' pts outstanding') : '';
 
-    var lateCard = r.lateness.count ? section('How late, when late', this.latenessChart(r),
-      fmtPct((r.rates.late || 0) * 100, 0) + ' of submissions') : '';
+    var lateCard = r.lateness.count ? section('Late work', '<ul class="cgp-si__todo">' + L.late.map(function (i) {
+      return '<li><a href="' + esc(self.speedGraderUrl(i.id, uid)) + '" target="_blank" rel="noopener" title="Open this student’s submission in SpeedGrader">' + esc(i.name) + '</a>' +
+        '<span>Due ' + esc(fmtDate(i.dueAt)) + ' · <em class="cgp-si__late-by">' + esc(SI().duration(i.secondsLate)) + ' late</em></span>' +
+        '<b>' + (i.score === null ? '' : fmtNum(i.score) + (i.pointsPossible ? '/' + fmtNum(i.pointsPossible) : '')) + '</b></li>';
+    }).join('') + '</ul>' + this.latenessChart(r), fmtPct((r.rates.late || 0) * 100, 0) + ' of submissions') : '';
 
     var upcoming = L.upcoming.length ? section('Coming up (next 14 days)', '<ul class="cgp-si__todo">' + L.upcoming.map(function (i) {
-      return '<li><span class="cgp-si__todo-name">' + esc(i.name) + '</span><span>Due ' + esc(fmtDate(i.dueAt, true)) + ' · ' +
+      return '<li><a href="' + esc(self.assignmentUrl(i.id)) + '" target="_blank" rel="noopener" title="Open the assignment">' + esc(i.name) + '</a><span>Due ' + esc(fmtDate(i.dueAt, true)) + ' · ' +
         esc(SI().relativeDay(i.dueAt, r.now)) + '</span><b>' + (i.pointsPossible ? fmtNum(i.pointsPossible) + ' pts' : '') + '</b></li>';
     }).join('') + '</ul>') : '';
 
     var top = [missingCard, lateCard].filter(Boolean);
-    return (top.length ? '<div class="cgp-si__grid2' + (top.length === 1 ? ' cgp-si__grid2--one' : '') + '">' + top.join('') + '</div>' : '') +
+    return (L.missing.length || L.late.length ? this.sharePanel(r) : '') +
+      (top.length ? '<div class="cgp-si__grid2 cgp-si__grid2--top' + (top.length === 1 ? ' cgp-si__grid2--one' : '') + '">' + top.join('') + '</div>' : '') +
       upcoming +
-      section('Every assignment', chipHtml + table);
+      section('Every assignment', search + chipHtml + table);
   };
 
   P.latenessChart = function (r) {

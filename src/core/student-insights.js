@@ -542,7 +542,126 @@
     return out;
   }
 
+  /* ------------------------------------------------ missing / late list */
+
+  function escHtml(s) {
+    return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function longDate(t, withTime) {
+    if (!t) return '';
+    var o = { weekday: 'short', month: 'short', day: 'numeric' };
+    if (withTime) { o.hour = 'numeric'; o.minute = '2-digit'; }
+    try { return new Date(t).toLocaleString('en-US', o); } catch (e) { return new Date(t).toDateString(); }
+  }
+
+  function points(i) {
+    if (!i.pointsPossible) return '';
+    var pp = Math.round(i.pointsPossible * 100) / 100;
+    if (i.score === null) return 'worth ' + pp + ' pts';
+    return (Math.round(i.score * 100) / 100) + ' / ' + pp + ' pts';
+  }
+
+  /* A list of a student's missing and/or late work, ready to paste into an
+   * email, a message or a document - as plain text and as an HTML table.
+   *
+   * opts: { studentName, courseName, now, include: {missing, late},
+   *         links: bool, urlFor(item) -> absolute assignment URL } */
+  function workReport(r, opts) {
+    opts = opts || {};
+    var now = opts.now || r.now || Date.now();
+    var inc = opts.include || { missing: true, late: true };
+    var urlFor = opts.urlFor || function () { return ''; };
+    var groups = [];
+    function byDue(a, b) { return (a.dueAt || 0) - (b.dueAt || 0); }
+    if (inc.missing) {
+      groups.push({ title: 'Missing', items: r.lists.missing.slice().sort(byDue), detail: function (i) {
+        var days = i.dueAt ? Math.max(0, Math.floor((now - i.dueAt) / DAY)) : null;
+        return days === null ? 'not turned in' : 'not turned in · ' + days + (days === 1 ? ' day' : ' days') + ' overdue';
+      } });
+    }
+    if (inc.late) {
+      groups.push({ title: 'Late', items: r.lists.late.slice().sort(byDue), detail: function (i) {
+        return 'turned in ' + longDate(i.submittedAt, true) + ' · ' + duration(i.secondsLate) + ' late';
+      } });
+    }
+    var total = groups.reduce(function (t, g) { return t + g.items.length; }, 0);
+    var what = groups.map(function (g) { return g.title.toLowerCase(); }).join(' and ');
+    var title = (what ? what.charAt(0).toUpperCase() + what.slice(1) : 'No') + ' work' +
+      (opts.studentName ? ' — ' + opts.studentName : '');
+    var sub = [opts.courseName, 'as of ' + longDate(now)].filter(Boolean).join(' · ');
+
+    var text = [title, sub, ''];
+    var html = '<p><b>' + escHtml(title) + '</b><br>' + escHtml(sub) + '</p>';
+    if (!total) {
+      text.push('Nothing ' + (what || 'selected') + ' right now.');
+      html += '<p>Nothing ' + escHtml(what || 'selected') + ' right now.</p>';
+    }
+    groups.forEach(function (g) {
+      if (!g.items.length) return;
+      text.push(g.title + ' (' + g.items.length + ')');
+      html += '<p><b>' + escHtml(g.title) + ' (' + g.items.length + ')</b></p>' +
+        '<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px">' +
+        '<thead><tr style="background:#f2f4f5"><th align="left">Assignment</th><th align="left">Due</th><th align="left">Status</th><th align="left">Score</th></tr></thead><tbody>';
+      g.items.forEach(function (i) {
+        var due = i.dueAt ? 'due ' + longDate(i.dueAt, true) : 'no due date';
+        var pts = points(i);
+        text.push('• ' + i.name + ' — ' + due + ' — ' + g.detail(i) + (pts ? ' — ' + pts : ''));
+        var url = opts.links ? urlFor(i) : '';
+        if (url) text.push('  ' + url);
+        html += '<tr><td>' + (url ? '<a href="' + escHtml(url) + '">' + escHtml(i.name) + '</a>' : escHtml(i.name)) + '</td>' +
+          '<td>' + escHtml(i.dueAt ? longDate(i.dueAt, true) : 'No due date') + '</td>' +
+          '<td>' + escHtml(g.detail(i).charAt(0).toUpperCase() + g.detail(i).slice(1)) + '</td>' +
+          '<td>' + escHtml(pts) + '</td></tr>';
+      });
+      html += '</tbody></table>';
+      text.push('');
+    });
+    var missingGroup = groups.filter(function (g) { return g.title === 'Missing'; })[0];
+    if (missingGroup && missingGroup.items.length) {
+      var at = missingGroup.items.reduce(function (t, i) { return t + (i.pointsPossible || 0); }, 0);
+      if (at) {
+        var line = 'Points not yet earned on missing work: ' + Math.round(at * 100) / 100;
+        text.push(line);
+        html += '<p>' + escHtml(line) + '</p>';
+      }
+    }
+    return { text: text.join('\n').replace(/\n+$/, '') + '\n', html: html, count: total };
+  }
+
+  /* Every way a teacher might type a date, so a search for "10/12",
+   * "Oct 12", "october 12", "2026-10-12" or "monday" finds it. */
+  function dateSearchText(t) {
+    if (!t) return '';
+    var d = new Date(t);
+    var m = d.getMonth() + 1, day = d.getDate(), y = d.getFullYear();
+    var out = [m + '/' + day, m + '/' + day + '/' + y, m + '/' + day + '/' + String(y).slice(2),
+      String(m).padStart(2, '0') + '/' + String(day).padStart(2, '0'),
+      y + '-' + String(m).padStart(2, '0') + '-' + String(day).padStart(2, '0')];
+    try {
+      out.push(d.toLocaleString('en-US', { month: 'short', day: 'numeric' }));
+      out.push(d.toLocaleString('en-US', { month: 'long', day: 'numeric' }));
+      out.push(d.toLocaleString('en-US', { weekday: 'long' }));
+      out.push(d.toLocaleString(undefined, { month: 'short', day: 'numeric' }));
+    } catch (e) { /* the numeric forms are enough */ }
+    return out.join(' | ').toLowerCase();
+  }
+
+  /* Does one assignment match a search? Every word must appear somewhere in
+   * its name or one of its dates. */
+  function matchesSearch(haystack, query) {
+    var words = String(query || '').toLowerCase().replace(/,/g, ' ').split(/\s+/).filter(Boolean);
+    if (!words.length) return true;
+    var h = String(haystack || '').toLowerCase().replace(/,/g, ' ');
+    return words.every(function (w) { return h.indexOf(w) >= 0; });
+  }
+
   CGP.studentInsights = {
+    workReport: workReport,
+    dateSearchText: dateSearchText,
+    matchesSearch: matchesSearch,
     summarize: summarize,
     insights: insights,
     activity: activity,

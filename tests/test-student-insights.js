@@ -216,3 +216,61 @@ suite('student overview: opening from a name click', (test) => {
     a.eq(ctl(true).studentForClick(click(span)), null);
   });
 });
+
+suite('student overview: missing and late list to send', (test) => {
+  function record() {
+    const assignments = [asg(1), asg(2, { name: 'Lab <2>', pointsPossible: 20 }), asg(3)];
+    const due1 = Date.parse(assignments[0].dueAt);
+    return si().summarize({ now: NOW, studentId: '7', assignments, submissions: [
+      sub(1, { submitted_at: new Date(due1 + 26 * H).toISOString(), late: true, seconds_late: 26 * 3600, score: 7, workflow_state: 'graded' }),
+      sub(2, { missing: true }),
+      sub(3, { submitted_at: new Date(NOW - 30 * D).toISOString(), score: 9 })
+    ] });
+  }
+
+  test('lists missing then late work with due dates, overdue days, lateness and points', () => {
+    const rep = si().workReport(record(), { studentName: 'Avery Chen', courseName: 'Chemistry', now: NOW,
+      links: true, urlFor: (i) => 'https://x.test/courses/5/assignments/' + i.id });
+    a.eq(rep.count, 2);
+    const t = rep.text;
+    a.ok(/^Missing and late work — Avery Chen\nChemistry · as of /.test(t), t);
+    a.ok(t.indexOf('Missing (1)') < t.indexOf('Late (1)'), 'missing first');
+    a.ok(/• Lab <2> — due .+ — not turned in · 18 days overdue — worth 20 pts/.test(t), t);
+    a.ok(/• A1 — due .+ — turned in .+ · 1 d 2 h late — 7 \/ 10 pts/.test(t), t);
+    a.ok(t.includes('  https://x.test/courses/5/assignments/2'), 'links under each line');
+    a.ok(t.includes('Points not yet earned on missing work: 20'));
+    a.ok(rep.html.includes('<a href="https://x.test/courses/5/assignments/2">Lab &lt;2&gt;</a>'), 'names linked and escaped');
+    a.not(rep.html.includes('<2>'), 'no raw markup from assignment names');
+  });
+
+  test('just one kind, and no links', () => {
+    const rep = si().workReport(record(), { include: { missing: false, late: true }, links: false, now: NOW });
+    a.eq(rep.count, 1);
+    a.ok(/^Late work\n/.test(rep.text));
+    a.not(rep.text.includes('Missing'));
+    a.not(rep.text.includes('http'));
+  });
+
+  test('nothing to report still says so', () => {
+    const r = si().summarize({ now: NOW, studentId: '7', assignments: [asg(1)], submissions: [sub(1, { submitted_at: new Date(NOW - 30 * D).toISOString() })] });
+    const rep = si().workReport(r, { now: NOW });
+    a.eq(rep.count, 0);
+    a.ok(rep.text.includes('Nothing missing and late right now.'));
+  });
+});
+
+suite('student overview: search by name or date', (test) => {
+  const t = new Date(2026, 9, 12, 23, 59).getTime(); // Mon Oct 12 2026
+  const hay = ['Lab 3: Gas Laws', si().dateSearchText(t)].join(' | ');
+  test('finds dates however they are typed', () => {
+    ['10/12', '10/12/2026', '10/12/26', '2026-10-12', 'oct 12', 'October 12', 'monday'].forEach((q) => {
+      a.ok(si().matchesSearch(hay, q), q);
+    });
+  });
+  test('names match word by word, in any order', () => {
+    a.ok(si().matchesSearch(hay, 'gas lab'));
+    a.ok(si().matchesSearch(hay, ''));
+    a.not(si().matchesSearch(hay, 'quiz'));
+    a.not(si().matchesSearch(hay, '11/12'));
+  });
+});

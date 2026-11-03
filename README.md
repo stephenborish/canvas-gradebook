@@ -419,17 +419,24 @@ link. **←** / **→** step to the previous / next student without closing; **E
 - The **submission record** as one bar (on time / late / missing / excused) with counts.
 - **Average by category** for each assignment group, its weight, and a marker for the class
   median in that category.
-- A **score trend** line across every graded assignment in due-date order, with the class median
-  dashed behind it and late or missing work marked; hover a point for the assignment.
 
 **Assignments**
+- **Send missing & late work**: tick Missing, Late or both (and whether to include links), check
+  the preview, and press **Copy list**. Each assignment is listed with its name, due date and time,
+  how many days overdue (or when it was turned in and how late), and the points. It pastes as a
+  table with linked assignment names into Gmail, Outlook, Docs and Word, and as plain lines into a
+  text or Canvas message, ready for a parent, a counselor or the student. **Copy missing & late
+  work** in the panel's footer does the same from any tab.
 - Missing work, each with its due date, how many days overdue and the points at stake.
-- **How late, when late**: how many late submissions were under an hour, up to a day, 1–3 days,
-  3–7 days or over a week late, with the median, average and longest.
+- Late work, each with how late it was, plus how many late submissions were under an hour, up to
+  a day, 1–3 days, 3–7 days or over a week late.
 - What is coming up in the next two weeks and not yet submitted.
 - Every assignment in one table — due date, status, when it was submitted (and how early or late),
-  score, percent and the class median with the difference — filterable to Missing, Late, Needs
-  grading, Upcoming or Resubmitted. Each name opens that submission in SpeedGrader.
+  score and the class median with the difference — filterable to Missing, Late, Submitted, Needs
+  grading, Upcoming or Resubmitted, and searchable by name or by date however you type it
+  (`lab`, `Oct 12`, `October 12`, `10/12`, `2026-10-12`, `Monday`).
+- An assignment's name opens the assignment itself. **View work**, on everything the student
+  submitted, opens their submission in SpeedGrader; the names in the Late work list do the same.
 
 **Activity** (from Canvas course analytics, when the course has it)
 - Page views and participations, each with the student's percentile in the class and the class
