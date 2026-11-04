@@ -369,7 +369,7 @@
       var k = kind.getAttribute('data-si-kind');
       this._contentKind = k;
       this._root.querySelectorAll('[data-si-kind]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-si-kind') === k)); });
-      this._root.querySelectorAll('.cgp-si__table--content tbody tr').forEach(function (tr) { tr.hidden = !(k === 'all' || tr.getAttribute('data-kind') === k); });
+      this._root.querySelectorAll('.cgp-si__table--content tbody tr[data-kind]').forEach(function (tr) { tr.hidden = !(k === 'all' || tr.getAttribute('data-kind') === k); });
       return;
     }
     var chip = t.closest('[data-si-filter-chip]');
@@ -1119,8 +1119,13 @@
     if (s.none) return section(title, '<p class="cgp-si__note">Studio has no course named “' + esc(this._courseName) + '”, so there are no Studio videos to show.</p>');
     if (!s.rows.length) return section(title, '<p class="cgp-si__note">No Studio videos have been added to this course.</p>');
     var c = s.counts;
-    var labels = { none: 'Not watched', partial: 'Partly watched', watched: 'Watched' };
+    var labels = { none: 'Not watched', partial: 'Partly watched', watched: 'Watched', unknown: 'Unavailable' };
     var rows = s.rows.map(function (v) {
+      if (v.status === 'unknown') {
+        return '<tr><td class="cgp-si__name-cell">' + esc(v.title) + '</td>' +
+          '<td><span class="cgp-si__vstatus cgp-si__vstatus--unknown" title="Studio didn’t give this video’s viewers">' + labels.unknown + '</span></td>' +
+          '<td class="cgp-si__muted">–</td><td class="cgp-si__muted">–</td></tr>';
+      }
       var pct = v.completion === null ? 0 : Math.round(v.completion * 100);
       return '<tr>' +
         '<td class="cgp-si__name-cell">' + esc(v.title) + (v.duration ? ' <span class="cgp-si__muted">' + esc(SI().duration(v.duration)) + '</span>' : '') + '</td>' +
@@ -1131,7 +1136,7 @@
     }).join('');
     var table = '<div class="cgp-si__table-wrap cgp-si__table-wrap--content"><table class="cgp-si__table cgp-si__table--content"><thead><tr>' +
       '<th>Video</th><th>Status</th><th>Watched</th><th>Class</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
-    var aside = c.watched + ' watched · ' + c.partial + ' partly · ' + c.none + ' not watched';
+    var aside = c.watched + ' watched · ' + c.partial + ' partly · ' + c.none + ' not watched' + (c.unknown ? ' · ' + c.unknown + ' unavailable' : '');
     return section(title, table + '<p class="cgp-si__note">From Studio’s Insights for each video in this course. “Watched” is at least ' +
       Math.round(CGP.studioClass.WATCHED_AT * 100) + '% of the video.</p>', esc(aside));
   };

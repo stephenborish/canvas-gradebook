@@ -124,6 +124,16 @@ suite('Studio videos for one student', (test) => {
     a.eq(r.rows[0].watchedSeconds, 454.5);
     a.eq(r.rows[1].status, 'none');
     a.eq(r.rows[1].classWatched, 1);
-    a.deep(r.counts, { total: 2, watched: 0, partial: 1, none: 1 });
+    a.deep(r.counts, { total: 2, watched: 0, partial: 1, none: 1, unknown: 0 });
+  });
+
+  test('a video whose viewers Studio didn’t give is unknown, not "not watched"', () => {
+    const videos = sc().videosFromTiles(TILES).slice(0, 1);
+    videos[0].viewers = [];
+    videos[0].error = 'unavailable';
+    const r = sc().studentVideos(videos, { name: 'Avery Adams', email: 'aadams@x.org' });
+    a.eq(r.rows[0].status, 'unknown');
+    a.eq(r.rows[0].completion, null);
+    a.deep(r.counts, { total: 1, watched: 0, partial: 0, none: 0, unknown: 1 });
   });
 });

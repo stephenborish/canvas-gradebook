@@ -3388,6 +3388,7 @@ html.cgp-on .cgp-si__vstatus { display: inline-block; border-radius: 999px; padd
 html.cgp-on .cgp-si__vstatus--none { background: var(--si-risk-wash); color: #a8322a; }
 html.cgp-on .cgp-si__vstatus--partial { background: var(--si-warn-wash, #fdf1d6); color: #8a6100; }
 html.cgp-on .cgp-si__vstatus--watched { background: var(--si-good-wash); color: #0b6b37; }
+html.cgp-on .cgp-si__vstatus--unknown { background: var(--cgp-hairline, #eef1f2); color: var(--cgp-muted); }
 html.cgp-on .cgp-si__vmeter { display: flex; align-items: center; gap: 8px; min-width: 140px; }
 html.cgp-on .cgp-si__vmeter .cgp-si__track { flex: 1; }
 html.cgp-on .cgp-si__vmeter b { width: 38px; text-align: right; font-variant-numeric: tabular-nums; }

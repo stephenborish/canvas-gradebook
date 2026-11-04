@@ -222,6 +222,11 @@
    * viewersFrom), student {name, sortable_name, email}. */
   function studentVideos(videos, student) {
     var rows = (videos || []).filter(function (v) { return v && !v.archived; }).map(function (v) {
+      // Studio didn't give this video's viewers: unknown, not "not watched".
+      if (v.error) {
+        return { uuid: v.uuid, title: v.title, duration: v.duration, thumbnail: v.thumbnail, createdAt: v.createdAt,
+          completion: null, status: 'unknown', watchedSeconds: null, classWatched: null };
+      }
       var r = classList([student], v.viewers || []).rows[0];
       return {
         uuid: v.uuid, title: v.title, duration: v.duration, thumbnail: v.thumbnail, createdAt: v.createdAt,
@@ -232,7 +237,7 @@
       };
     });
     rows.sort(function (a, b) { return String(b.createdAt || '').localeCompare(String(a.createdAt || '')); });
-    var counts = { total: rows.length, watched: 0, partial: 0, none: 0 };
+    var counts = { total: rows.length, watched: 0, partial: 0, none: 0, unknown: 0 };
     rows.forEach(function (r) { counts[r.status]++; });
     return { rows: rows, counts: counts };
   }
