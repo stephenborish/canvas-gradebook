@@ -7,7 +7,7 @@
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.util) return;
 
-  CGP.VERSION = '1.22.0';
+  CGP.VERSION = '1.23.0';
 
   /* Default letter-grade scale: the lowest rounded percentage (to 0.1) that
    * earns each letter. The last entry is the floor and always has min 0. */
@@ -78,6 +78,9 @@
     // extras
     courseSwitcher: true,
     studentSearch: true,
+    // Clicking a student's name opens their overview (missing and late work,
+    // averages, trend, Canvas activity) instead of Canvas's context card.
+    studentInsights: true,
     speedgraderDrafts: true,
     speedgraderStickySubmit: true,
     // Canvas's Assign To "Time" boxes: type a short key (1-4 = school periods)

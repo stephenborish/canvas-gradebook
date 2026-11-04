@@ -25,6 +25,7 @@ const CORE_FILES = [
   'src/core/grid-map.js',
   'src/core/totals.js',
   'src/core/score-stats.js',
+  'src/core/student-insights.js',
   'src/core/roster-format.js',
   'src/core/snippets.js',
   'src/core/time-shortcuts.js',

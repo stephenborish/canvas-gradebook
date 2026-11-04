@@ -32,6 +32,38 @@
           opts.level === 'error' ? 7000 : 3200);
       } catch (e) { /* never let a message break grading */ }
     },
-    error: function (message) { this.toast(message, { level: 'error' }); }
+    error: function (message) { this.toast(message, { level: 'error' }); },
+    copy: copy
   };
+
+  /* Plain text, plus an HTML version when given, so the paste target picks
+   * whichever it understands (a formatted table in Gmail, Docs or Word, plain
+   * lines in a text message). The async clipboard API first; the copy-event
+   * route when that is unavailable or refused. */
+  function copy(text, html) {
+    function viaCopyEvent() {
+      return new Promise(function (resolve, reject) {
+        var done = false;
+        var onCopy = function (e) {
+          e.preventDefault();
+          e.clipboardData.setData('text/plain', text);
+          if (html) e.clipboardData.setData('text/html', html);
+          done = true;
+        };
+        document.addEventListener('copy', onCopy, true);
+        try { document.execCommand('copy'); } catch (e) { /* reported below */ }
+        document.removeEventListener('copy', onCopy, true);
+        done ? resolve() : reject(new Error('copy failed'));
+      });
+    }
+    var clip = typeof navigator !== 'undefined' && navigator.clipboard;
+    if (clip && html && typeof ClipboardItem !== 'undefined' && clip.write) {
+      return clip.write([new ClipboardItem({
+        'text/plain': new Blob([text], { type: 'text/plain' }),
+        'text/html': new Blob([html], { type: 'text/html' })
+      })]).catch(viaCopyEvent);
+    }
+    if (clip && !html && clip.writeText) return clip.writeText(text).catch(viaCopyEvent);
+    return viaCopyEvent();
+  }
 })();
