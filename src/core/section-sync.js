@@ -183,6 +183,57 @@
     return { migration_type: 'course_copy_importer', select: select, settings: settings };
   }
 
+  /** One course copy for several items at once (into one destination): the
+   * same request with more ids under each select key. Used for items that
+   * need no per-item placement (an existing copy being updated, or a first
+   * copy with no module to go into), so a sync of twenty items into a class
+   * is one Canvas job there, not twenty queued behind each other.
+   * opts.assignmentGroupId applies to every assignment in it, so only first
+   * copies that all belong in that group may share one. */
+  function copyRequestMany(srcCourseId, items, opts) {
+    opts = opts || {};
+    var select = {};
+    (items || []).forEach(function (item) {
+      var t = TYPES[item && item.type];
+      if (!t) throw new Error('Unknown item type: ' + (item && item.type));
+      var list = select[t.select] = select[t.select] || [];
+      if (list.indexOf(String(item.id)) < 0) list.push(String(item.id));
+    });
+    var settings = { source_course_id: String(srcCourseId) };
+    if (opts.assignmentGroupId) settings.move_to_assignment_group_id = String(opts.assignmentGroupId);
+    return { migration_type: 'course_copy_importer', select: select, settings: settings };
+  }
+
+  /* Tasks for one destination, grouped into the course copies that carry
+   * them: a first copy placed in a module is a copy of its own (Canvas's
+   * insert_into_module applies to the whole copy); first copies headed for
+   * the same assignment group share one; everything else - updates of
+   * existing copies, first copies with nowhere particular to go - shares
+   * one. 'keep' tasks copy nothing and are left out. Returns
+   * [{key, tasks, assignmentGroupId, module}] in a stable order: the
+   * shared batch first, then groups, then module placements. */
+  function batchTasks(tasks) {
+    var out = [];
+    var byKey = {};
+    (tasks || []).forEach(function (task) {
+      if (!task || task.mode === 'keep') return;
+      var key, group = null, module = null;
+      if (task.module && task.module.id && TYPES[task.item.type] && TYPES[task.item.type].insert) {
+        key = 'm:' + out.length + ':' + task.item.type + ':' + task.item.id;
+        module = task.module;
+      } else if (task.assignmentGroupId) {
+        key = 'g:' + task.assignmentGroupId;
+        group = String(task.assignmentGroupId);
+      } else key = 'plain';
+      if (!byKey[key]) { byKey[key] = { key: key, tasks: [], assignmentGroupId: group, module: module }; out.push(byKey[key]); }
+      byKey[key].tasks.push(task);
+    });
+    var rank = function (b) { return b.key === 'plain' ? 0 : (b.key.charAt(0) === 'g' ? 1 : 2); };
+    return out.map(function (b, i) { return { b: b, i: i }; })
+      .sort(function (x, y) { return (rank(x.b) - rank(y.b)) || (x.i - y.i); })
+      .map(function (x) { return x.b; });
+  }
+
   /** Canvas's own state names for a migration (lib/api/v1/content_migration.rb). */
   function migrationState(m) {
     var s = String((m && m.workflow_state) || '');
@@ -563,6 +614,127 @@
     return baseline === dest ? 'stale' : 'edited';
   }
 
+  /* ------------------------------------------------------ settings drift */
+
+  /* The text is not all a copy carries: a teacher who changes Lab 4 to 20
+   * points, or a quiz to two attempts, has changed it as surely as one who
+   * rewrites its instructions. These are the settings Canvas's copy brings
+   * along and that are the same in every class unless someone changed them
+   * (not the assignment group, which belongs to each course). null = this
+   * object does not say (a list left the field out): nothing is compared. */
+  var SETTING_LABELS = {
+    points: 'Points', grading: 'Display grade as', submit: 'Submission type', attempts: 'Allowed attempts',
+    questions: 'Questions', quizType: 'Quiz type', timeLimit: 'Time limit', graded: 'Graded'
+  };
+
+  function num(v) { return v === null || v === undefined || v === '' ? null : Number(v); }
+
+  function settingsOf(type, o) {
+    if (!o) return null;
+    if (type === 'assignment') {
+      if (o.points_possible === undefined && o.grading_type === undefined) return null;
+      return {
+        points: num(o.points_possible), grading: o.grading_type || null,
+        submit: (o.submission_types || []).slice().sort().join(', ') || null,
+        attempts: o.allowed_attempts === undefined ? null : (Number(o.allowed_attempts) < 0 ? 'unlimited' : num(o.allowed_attempts))
+      };
+    }
+    if (type === 'quiz') {
+      if (o.points_possible === undefined && o.question_count === undefined) return null;
+      return {
+        points: num(o.points_possible), questions: num(o.question_count), quizType: o.quiz_type || null,
+        timeLimit: num(o.time_limit),
+        attempts: o.allowed_attempts === undefined ? null : (Number(o.allowed_attempts) < 0 ? 'unlimited' : num(o.allowed_attempts))
+      };
+    }
+    if (type === 'discussion') {
+      if (o.is_announcement) return {};
+      var graded = !!(o.assignment_id || o.assignment);
+      if (!graded) return { graded: 'no' };
+      if (!o.assignment) return null;
+      return { graded: 'yes', points: num(o.assignment.points_possible), grading: o.assignment.grading_type || null };
+    }
+    return {};
+  }
+
+  /** A short, stable string for a settings object (null stays null). */
+  function settingsSig(s) {
+    if (!s) return null;
+    return Object.keys(s).sort().map(function (k) { return k + '=' + (s[k] === null ? '' : String(s[k])); }).join(';');
+  }
+
+  /** What differs, in words: ["Points: 10 here, 20 there"]. */
+  function settingsDiff(src, dest, here, there) {
+    if (!src || !dest) return [];
+    here = here || 'here';
+    there = there || 'there';
+    var keys = Object.keys(src).filter(function (k) { return k in dest; });
+    var show = function (v) { return v === null || v === undefined || v === '' ? 'none' : String(v).replace(/_/g, ' '); };
+    return keys.filter(function (k) { return String(src[k]) !== String(dest[k]); }).map(function (k) {
+      return (SETTING_LABELS[k] || k) + ': ' + show(src[k]) + ' ' + here + ', ' + show(dest[k]) + ' ' + there;
+    });
+  }
+
+  var STATUS_RANK = { same: 0, stale: 1, differs: 2, edited: 3 };
+
+  /** compareCopy, for the text AND the settings. rec: the record of the
+   * copy ({fp, sig}; null when there is none). A record from before
+   * settings were recorded has no sig: a settings difference then follows
+   * what its text record says (the copy untouched there since it was
+   * copied -> the original moved on), and with no text verdict either it
+   * is "differs" (no record of which side changed).
+   * -> {status, text, settings, diffs: [words]} */
+  function compareFull(src, dest, rec) {
+    var text = compareCopy(src.html || '', dest.html || '', rec && rec.fp);
+    var a = settingsSig(src.settings), b = settingsSig(dest.settings);
+    var settings;
+    if (a === null || b === null || a === b) settings = 'same';
+    else if (rec && rec.sig) settings = rec.sig === b ? 'stale' : 'edited';
+    else if (rec && rec.fp && text === 'stale') settings = 'stale';
+    else settings = 'differs';
+    var status = STATUS_RANK[settings] > STATUS_RANK[text] ? settings : text;
+    return { status: status, text: text, settings: settings, diffs: settings === 'same' ? [] : settingsDiff(src.settings, dest.settings) };
+  }
+
+  /* -------------------------------------------------- module structure */
+
+  /* A module copied last week, and since then a page added to it here: its
+   * copy in the other classes does not have that page. Copying the module
+   * again adds what is missing (Canvas matches the items already there);
+   * it never removes an item that class added on its own.
+   * srcItems/destItems: Canvas module items. A source item is found in the
+   * copy through Canvas's record of the copy (module_items in
+   * asset_id_mapping), else by its kind and title.
+   * -> {missing: [title], extra: [title], reordered: bool} */
+  function moduleDrift(srcItems, destItems, mapping) {
+    var mi = (mapping && mapping.module_items) || {};
+    var dest = (destItems || []).map(function (d, i) { return { id: String(d.id), key: itemTitleKey(d), title: d.title || '', i: i }; });
+    var used = {};
+    var missing = [];
+    var order = [];
+    (srcItems || []).forEach(function (s) {
+      var mapped = mi[String(s.id)];
+      var hit = null;
+      if (typeof mapped === 'string' || typeof mapped === 'number') {
+        hit = dest.filter(function (d) { return d.id === String(mapped) && !used[d.i]; })[0] || null;
+      }
+      if (!hit) {
+        var k = itemTitleKey(s);
+        hit = dest.filter(function (d) { return d.key === k && !used[d.i]; })[0] || null;
+      }
+      if (!hit) { missing.push(s.title || '(untitled)'); return; }
+      used[hit.i] = true;
+      order.push(hit.i);
+    });
+    var extra = dest.filter(function (d) { return !used[d.i]; }).map(function (d) { return d.title || '(untitled)'; });
+    var reordered = order.some(function (v, i) { return i > 0 && v < order[i - 1]; });
+    return { missing: missing, extra: extra, reordered: reordered };
+  }
+
+  function itemTitleKey(it) {
+    return String((it && it.type) || '') + '|' + String((it && it.title) || '').trim().toLowerCase();
+  }
+
   /** Updating overwrites the copy unless it was edited there; when it is
    * unknown which side changed, the safe default keeps the section's own. */
   function defaultReplace(status) {
@@ -794,7 +966,8 @@
         type: 'assignment', id: String(o.id), title: o.name || '', published: !!o.published,
         newQuiz: !!o.is_quiz_lti_assignment, assignmentGroupId: o.assignment_group_id ? String(o.assignment_group_id) : null,
         html: o.description || '', dates: pick(o, ['due_at', 'unlock_at', 'lock_at']),
-        hasOverrides: !!(o.has_overrides || o.only_visible_to_overrides)
+        hasOverrides: !!(o.has_overrides || o.only_visible_to_overrides),
+        settings: settingsOf('assignment', o)
       };
     }
     if (type === 'quiz') {
@@ -802,7 +975,8 @@
         type: 'quiz', id: String(o.id), title: o.title || '', published: !!o.published,
         assignmentGroupId: o.assignment_group_id ? String(o.assignment_group_id) : null,
         html: o.description || '', dates: pick(o, ['due_at', 'unlock_at', 'lock_at']),
-        hasOverrides: !!o.only_visible_to_overrides
+        hasOverrides: !!o.only_visible_to_overrides,
+        settings: settingsOf('quiz', o)
       };
     }
     if (type === 'discussion' || type === 'announcement') {
@@ -811,7 +985,8 @@
       var item = {
         type: isAnn ? 'announcement' : 'discussion', id: String(o.id), title: o.title || '',
         published: o.published !== false, html: o.message || '', graded: !isAnn && !!(o.assignment_id || a),
-        assignmentGroupId: a && a.assignment_group_id ? String(a.assignment_group_id) : null
+        assignmentGroupId: a && a.assignment_group_id ? String(a.assignment_group_id) : null,
+        settings: isAnn ? {} : settingsOf('discussion', o)
       };
       if (isAnn) item.dates = pick(o, ['delayed_post_at', 'lock_at']);
       else if (item.graded && a) item.dates = pick(a, ['due_at', 'unlock_at', 'lock_at']);
@@ -821,7 +996,7 @@
     if (type === 'page') {
       return {
         type: 'page', id: String(o.page_id), url: o.url || '', title: o.title || '', published: !!o.published,
-        html: o.body || '', dates: {}
+        html: o.body || '', dates: {}, settings: {}
       };
     }
     if (type === 'module') {
@@ -950,6 +1125,14 @@
     baseName: baseName,
     suggestSiblings: suggestSiblings,
     copyRequest: copyRequest,
+    copyRequestMany: copyRequestMany,
+    batchTasks: batchTasks,
+    settingsOf: settingsOf,
+    settingsSig: settingsSig,
+    settingsDiff: settingsDiff,
+    compareFull: compareFull,
+    moduleDrift: moduleDrift,
+    safeDecode: safeDecode,
     migrationState: migrationState,
     latestCopyFrom: latestCopyFrom,
     destIdFor: destIdFor,

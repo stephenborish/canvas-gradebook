@@ -103,7 +103,7 @@
       CGP.teachingCourseList(this.api).catch(function () { return []; })
     ]).then(function (r) {
       st.tz = r[0] || (Intl.DateTimeFormat().resolvedOptions().timeZone || null);
-      var prefs = r[1] || {};
+      var prefs = st.prefs = r[1] || {};
       st.courses = r[2] || [];
       sibs.forEach(function (d) {
         var pref = prefs[d] || {};
@@ -154,6 +154,13 @@
     return idRead.then(function () {
       if (!st.itemId) return null;
       return self.copier.relations(self.courseId, { type: page.type, id: st.itemId }, st.sibs).then(function (rel) {
+        // This item is that class's copy: posting it there would give that
+        // class a second one, so that row is left out.
+        st.origins = {};
+        rel.from.forEach(function (r) {
+          st.origins[r.courseId] = true;
+          if (st.rows[r.courseId]) st.rows[r.courseId].on = false;
+        });
         return Promise.all(rel.to.map(function (r) {
           st.existing[r.courseId] = { destId: r.destId };
           if (!st.fields.length) return null;
@@ -225,7 +232,9 @@
     var rows = st.sibs.map(function (d) {
       var row = st.rows[d] || { on: true, entry: {} };
       var ex = st.existing[d];
-      var status = ex ? 'Has a copy: saving updates it (and these dates).' : 'Gets a copy when you save.';
+      var origin = st.origins && st.origins[d];
+      var status = origin ? 'This was copied here from that class, so it is not posted back there.'
+        : (ex ? 'Has a copy: saving updates it (and these dates).' : 'Gets a copy when you save.');
       var boxes = function (f) {
         var e = row.entry[f] || {};
         return '<label class="cgp-inline__date"><span>' + esc(S().DATE_LABELS[f]) + '</span>' +
@@ -238,7 +247,7 @@
         : '';
       var problems = self.rowErrors(d);
       return '<div class="cgp-inline__row' + (row.on ? '' : ' is-off') + '">' +
-        '<label class="cgp-inline__name"><input type="checkbox" data-on="' + esc(d) + '"' + (row.on ? ' checked' : '') + '> ' + esc(self.name(d)) + '</label>' +
+        '<label class="cgp-inline__name"><input type="checkbox" data-on="' + esc(d) + '"' + (row.on ? ' checked' : '') + (origin ? ' disabled' : '') + '> ' + esc(self.name(d)) + '</label>' +
         (fields.length ? boxes(fields[0]) : '') + more +
         '<span class="cgp-inline__status">' + esc(status) + '</span>' +
         '<span class="cgp-inline__err" data-err="' + esc(d) + '">' + esc(problems.join('; ')) + '</span></div>';
@@ -309,6 +318,8 @@
     var prefs = {};
     st.sibs.forEach(function (d) {
       var row = st.rows[d] || {};
+      // Unticked only because this item came from there: not a choice to keep.
+      if (st.origins && st.origins[d]) { prefs[d] = (st.prefs && st.prefs[d]) || { on: true, time: '' }; return; }
       prefs[d] = { on: row.on !== false, time: row.entry && row.entry.due_at && !row.entry.due_at.date ? row.entry.due_at.time || '' : '' };
     });
     var o = {};
@@ -475,6 +486,10 @@
         var dest = survey.dests.filter(function (x) { return String(x.courseId) === d; })[0] || {};
         var info = (dest.items || {})[item.type + ':' + item.id] || {};
         if (dest.error) { banner.set(d, { error: dest.error }); return null; }
+        if (info.status === 'origin') {
+          banner.set(d, { error: 'Not copied: this was copied here from that class, so a copy would give it a second one. Use the notice on this page to update it there.' });
+          return null;
+        }
         if (info.lookalike && !info.destId) {
           banner.set(d, { error: 'Not copied: it already has “' + info.lookalike.title + '”, which was not copied from here. Copy to other classes can add it anyway.' });
           return null;

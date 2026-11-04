@@ -665,6 +665,18 @@
     return Promise.resolve([]);
   };
 
+  /* Every page with its body, for comparing a whole course's pages with
+   * another's in one read (Canvas's pages index takes include[]=body).
+   * A Canvas that ignores it answers without bodies; the caller checks. */
+  CanvasApi.prototype.pagesWithBodies = function (courseId) {
+    return this.getAll(cpath(courseId) + '/pages', { sort: 'title', order: 'asc', 'include[]': ['body'] }, { maxPages: 20 });
+  };
+
+  /* One module's items, in order. */
+  CanvasApi.prototype.moduleItems = function (courseId, moduleId) {
+    return this.getAll(cpath(courseId) + '/modules/' + encodeURIComponent(String(moduleId)) + '/items', {}, { maxPages: 10 });
+  };
+
   /* Every module with its items. Canvas leaves `items` out of the list for
    * a module with too many of them; those are read on their own. */
   CanvasApi.prototype.modulesWithItems = function (courseId) {
