@@ -506,7 +506,7 @@
     return ic ? ic.label.toLowerCase() : 'icon';
   }
 
-  /* "Totals 72.4% or below: red-orange alert · 72.5–82.4%: golden yellow warning". */
+  /* "Totals 70% or below: red alert · 70.1–77%: yellow flag". */
   function thresholdSummary(rules) {
     var sorted = rules.filter(function (r) { return isFinite(r.below); }).slice().sort(function (a, b) { return a.below - b.below; });
     if (!sorted.length) return 'No Totals are flagged.';
@@ -593,7 +593,7 @@
       var paintSwatch = function () {
         var sw = CGP.highlightSwatch(rule.color) || CGP.HIGHLIGHT_PALETTE[0];
         swatchIcon.style.color = sw.edge;
-        swatchIcon.innerHTML = CGP.totalIconSvg(rule.icon, 16);
+        swatchIcon.innerHTML = CGP.totalIconSvg(rule.icon, 20);
         updateSummary();
       };
       paintSwatch();

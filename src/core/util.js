@@ -117,8 +117,8 @@
     // flagged with an icon when it falls below a teacher's threshold.
     roundTotals: true,
     totalHighlights: true,
-    // 72.4% or below a red-orange alert, 72.5-82.4% a golden-yellow warning.
-    totalHighlightRules: [{ below: 72.5, color: 'redorange', icon: 'alert' }, { below: 82.5, color: 'gold', icon: 'warning' }],
+    // 70% or below a red alert, 70.1-77% a yellow flag.
+    totalHighlightRules: [{ below: 70.1, color: 'red', icon: 'alert' }, { below: 77.1, color: 'yellow', icon: 'flag' }],
     centerAssignmentColumns: true,
     showAssignmentDueDate: true,
     hideTestStudent: true,

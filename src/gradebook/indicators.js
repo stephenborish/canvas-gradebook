@@ -612,7 +612,7 @@
     }
     if (flag.getAttribute('data-icon') !== icon.id) {
       flag.setAttribute('data-icon', icon.id);
-      flag.innerHTML = CGP.totalIconSvg(icon.id, 16);
+      flag.innerHTML = CGP.totalIconSvg(icon.id, 20);
     }
     if (flag.getAttribute('data-color') !== swatch.edge) {
       flag.style.color = swatch.edge;

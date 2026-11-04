@@ -764,7 +764,7 @@ input.switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2p
   font-variant-numeric: tabular-nums;
 }
 .threshold-row__icon { display: inline-flex; line-height: 0; }
-.threshold-row__icon svg { display: block; }
+.threshold-row__icon svg { display: block; filter: drop-shadow(0 0 0.6px rgba(0, 0, 0, 0.75)) drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.3)); }
 .threshold-row__picker { width: 36px; height: 30px; padding: 0 2px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; }
 .threshold-row__picker[hidden] { display: none; }
 .threshold-summary { margin: 2px 2px 0; font-size: 13px; color: var(--muted); }
