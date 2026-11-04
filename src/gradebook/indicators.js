@@ -673,7 +673,9 @@
     document.addEventListener('scroll', hide, true);
     document.addEventListener('mousedown', hide, true);
     document.addEventListener('keydown', hide, true);
-    document.addEventListener('mouseleave', hide);
+    // Leaving the window fires no mouseover anywhere: a mouseout with no
+    // element to go to is the pointer leaving the page.
+    document.addEventListener('mouseout', function (e) { if (!e.relatedTarget) hide(); }, true);
     if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('blur', hide);
   };
 

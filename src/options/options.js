@@ -512,6 +512,19 @@
     }).join(' · ') + '.';
   }
 
+  /* What sanitizeSettings would silently drop from the threshold rows. */
+  function thresholdProblems(rules) {
+    var seen = {};
+    for (var i = 0; i < rules.length; i++) {
+      var b = rules[i].below;
+      if (!isFinite(b) || b < 0.1 || b > 1000) return 'a Total threshold needs a number from 0 to 999.9 - fill it in or remove that row.';
+      if (seen[b]) return 'two Total thresholds are both "at or below ' + tenth(b - 0.1) + '%" - change or remove one.';
+      seen[b] = true;
+    }
+    if (rules.length > 8) return 'at most 8 Total thresholds can be saved.';
+    return '';
+  }
+
   function renderThresholds(list) {
     currentThresholds = (Array.isArray(list) ? list : []).map(function (r) {
       return { below: r.below, color: r.color };
@@ -790,6 +803,8 @@
         badLines.join('; ') + '. Fix or remove them, then save again.', { error: true });
       return Promise.resolve();
     }
+    var thresholdProblem = thresholdProblems(currentThresholds);
+    if (thresholdProblem) { status('Not saved: ' + thresholdProblem, { error: true }); return Promise.resolve(); }
     var timeProblems = timeShortcutProblems(readRawTimeShortcuts());
     if (timeProblems.length) {
       status('Not saved: ' + timeProblems.join(' ') + ' Fix or remove those time shortcuts, then save again.', { error: true });

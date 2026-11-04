@@ -711,6 +711,17 @@
 
   /* ------------------------------------------- sharing missing / late work */
 
+  /* Missing / Late as chosen, but never a kind this student has none of:
+   * the choice carries over from the last student, and "Missing" for one
+   * who only has late work would otherwise leave nothing to copy. */
+  P.shareInclude = function (r) {
+    var L = r.lists;
+    var missing = !!this._share.missing && L.missing.length > 0;
+    var late = !!this._share.late && L.late.length > 0;
+    if (!missing && !late) { missing = L.missing.length > 0; late = L.late.length > 0; }
+    return { missing: missing, late: late };
+  };
+
   P.report = function () {
     var r = this._last;
     if (!r) return null;
@@ -721,7 +732,7 @@
     return SI().workReport(r, {
       courseName: this._courseName || '',
       now: r.now,
-      include: { missing: this._share.missing, late: this._share.late },
+      include: this.shareInclude(r),
       links: this._share.links,
       exclude: this._shareExcluded,
       urlFor: function (i) { return origin + self.assignmentUrl(i.id); }
@@ -731,7 +742,6 @@
   P.copyReport = function () {
     var rep = this.report();
     if (!rep) { CGP.ui.toast('Still reading this student’s work from Canvas…'); return; }
-    if (!this._share.missing && !this._share.late) { CGP.ui.error('Pick Missing, Late or both first.'); return; }
     if (!rep.count) { CGP.ui.error('Nothing is selected to copy - tick at least one assignment.'); return; }
     var n = rep.count;
     CGP.ui.copy(rep.text, rep.html).then(function () {
@@ -759,10 +769,20 @@
     var focusedItem = document.activeElement && document.activeElement.getAttribute &&
       (document.activeElement.getAttribute('data-si-share-item') || document.activeElement.getAttribute('data-si-share') ||
         document.activeElement.getAttribute('data-si-share-mode'));
+    // The item list and the preview scroll on their own; a redraw keeps
+    // them where the teacher had them.
+    var scrolls = ['.cgp-si__share-items', '.cgp-si__preview'].map(function (sel) {
+      var el = old.querySelector(sel);
+      return el ? el.scrollTop : 0;
+    });
     var holder = document.createElement('div');
     holder.innerHTML = this.sharePanel(this._last);
     var next = holder.firstChild;
     old.parentNode.replaceChild(next, old);
+    ['.cgp-si__share-items', '.cgp-si__preview'].forEach(function (sel, i) {
+      var el = next.querySelector(sel);
+      if (el && scrolls[i]) el.scrollTop = scrolls[i];
+    });
     var target = focusToggle ? next.querySelector('[data-si-share-toggle]')
       : focusedItem ? next.querySelector('[data-si-share-item="' + focusedItem + '"], [data-si-share="' + focusedItem + '"], [data-si-share-mode="' + focusedItem + '"]') : null;
     if (target && target.focus) { try { target.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }
@@ -789,7 +809,8 @@
       '</button>';
     if (!sh.open) return '<div class="cgp-si__card cgp-si__share">' + toggle + '</div>';
 
-    var mode = sh.missing && sh.late ? 'both' : sh.missing ? 'missing' : sh.late ? 'late' : '';
+    var inc = this.shareInclude(r);
+    var mode = inc.missing && inc.late ? 'both' : inc.missing ? 'missing' : inc.late ? 'late' : '';
     function seg(key, label, count, disabled) {
       return '<button type="button" class="cgp-si__seg" data-si-share-mode="' + key + '" aria-pressed="' + (mode === key) + '"' +
         (disabled ? ' disabled' : '') + '>' + label + (count === undefined ? '' : ' <b>' + count + '</b>') + '</button>';
@@ -816,7 +837,7 @@
             seg('missing', 'Missing', L.missing.length, !L.missing.length) +
             seg('late', 'Late', L.late.length, !L.late.length) +
           '</div>' +
-          '<div class="cgp-si__share-items">' + group('Missing', L.missing, sh.missing) + group('Late', L.late, sh.late) + '</div>' +
+          '<div class="cgp-si__share-items">' + group('Missing', L.missing, inc.missing) + group('Late', L.late, inc.late) + '</div>' +
           '<label class="cgp-si__check"><input type="checkbox" data-si-share="links"' + (sh.links ? ' checked' : '') + '>Include a link to each assignment</label>' +
         '</div>' +
         '<div class="cgp-si__share-out">' +

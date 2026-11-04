@@ -11,9 +11,8 @@
   /* Round half-up to 0.1, then take the first (highest) threshold the score
    * meets. The scale is sorted descending by sanitizeSettings. */
   function letterFor(score, scale) {
-    var n = Number(score);
-    if (score === null || score === undefined || score === '' || !isFinite(n)) return null;
-    var rounded = Math.floor(n * 10 + 0.5 + 1e-9) / 10;
+    var rounded = roundTenth(score);
+    if (rounded === null) return null;
     var list = Array.isArray(scale) && scale.length ? scale : CGP.DEFAULT_GRADING_SCALE;
     for (var i = 0; i < list.length; i++) {
       if (rounded >= list[i].min) return list[i].letter;

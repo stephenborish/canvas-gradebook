@@ -1201,6 +1201,14 @@ html.cgp-on .slick-cell[data-cgp-col="total"][data-cgp-band] {
   background-color: var(--cgp-band-bg) !important;
   box-shadow: inset 4px 0 0 var(--cgp-band-edge) !important;
 }
+/* The strip must not replace the active cell's focus ring or a selection's
+ * outline: each keeps its own shadow, with the strip layered inside it. */
+html.cgp-on .slick-cell.cgp-sel[data-cgp-col="total"][data-cgp-band] {
+  box-shadow: inset 0 0 0 2px var(--cgp-sel), inset 6px 0 0 var(--cgp-band-edge) !important;
+}
+html.cgp-on .slick-cell.active[data-cgp-col="total"][data-cgp-band] {
+  box-shadow: inset 0 0 0 2px var(--cgp-brand), inset 6px 0 0 var(--cgp-band-edge), 0 2px 8px rgba(19, 33, 44, 0.14) !important;
+}
 
 /* The Total hover tooltip, on <body> so no grid pane clips it. */
 html.cgp-on .cgp-total-tip {
