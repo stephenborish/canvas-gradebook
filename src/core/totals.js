@@ -68,7 +68,7 @@
   /* Rules are { below: 70, color: 'red' }. The strictest rule a score falls
    * under wins: with "below 70 red" and "below 80 yellow", 65 is red and 75
    * yellow. Compared on the rounded score, the one shown in the cell. */
-  function highlightFor(score, rules) {
+  function highlightRuleFor(score, rules) {
     var r = roundTenth(score);
     if (r === null || !Array.isArray(rules)) return null;
     var hit = null;
@@ -76,12 +76,16 @@
       if (!rule || !isFinite(rule.below) || r >= rule.below) return;
       if (!hit || rule.below < hit.below) hit = rule;
     });
+    return hit;
+  }
+  function highlightFor(score, rules) {
+    var hit = highlightRuleFor(score, rules);
     return hit ? hit.color : null;
   }
 
   CGP.totals = {
     letterFor: letterFor, scaleToText: scaleToText, textToScale: textToScale, badScaleLines: badScaleLines,
     roundTenth: roundTenth, formatPercent: formatPercent, parsePercent: parsePercent,
-    HIGHLIGHT_COLORS: CGP.HIGHLIGHT_COLORS, highlightFor: highlightFor, sanitizeHighlights: CGP.sanitizeHighlights
+    HIGHLIGHT_COLORS: CGP.HIGHLIGHT_COLORS, highlightFor: highlightFor, highlightRuleFor: highlightRuleFor, sanitizeHighlights: CGP.sanitizeHighlights
   };
 })();

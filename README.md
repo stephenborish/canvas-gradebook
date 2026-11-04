@@ -284,11 +284,14 @@ How the Total reads (Options → Appearance):
 - **Hover for the letter grade**: a tooltip shows the letter (from your letter-grade scale) and
   the points earned / possible; the cell keeps showing the percentage. The tooltip closes as soon
   as the pointer leaves the Total. Canvas's own Total tooltip is hidden.
-- **Color thresholds**: a Total at or below a percentage you set is tinted - by default
-  **red-orange at 72.4% or below** and **golden yellow from 72.5% to 82.4%**, compared on the
-  rounded Total. Under Options → Appearance, change each threshold, pick one of nine colors or any
-  **Custom color…**, add or remove thresholds, or turn coloring off; a summary line spells out
-  which ranges get which color. When a Total falls under more than one threshold, the lowest wins.
+- **Threshold icons**: a Total at or below a percentage you set gets an icon beside it - by
+  default a **red-orange alert (!) at 72.4% or below** and a **golden-yellow warning triangle from
+  72.5% to 82.4%**, compared on the rounded Total. The cell itself is not tinted. The icons are
+  drawn by the extension as SVG, not emoji, so they look the same in every browser. Under Options →
+  Appearance, change each threshold, pick its icon (alert, warning, eye, megaphone, flag or arrow)
+  and one of nine colors or any **Custom color…**, add or remove thresholds, or turn flagging off; a
+  summary line spells out which ranges get which icon. When a Total falls under more than one
+  threshold, the lowest wins.
 - The **Total** header always shows the whole word, however narrow the column.
 
 ### The hidden Test Student stays out of your averages
@@ -951,7 +954,7 @@ src/core/                         pure logic - no DOM, no chrome.* at load time
   clipboard-matrix.js             TSV / column / spaced-column clipboard parsing
   comment-analysis.js             "did I author this comment" logic and thread analysis
   grid-map.js                     cell <-> (student_id, assignment_id) mapping maths
-  totals.js                       letter-grade scale, Total rounding and color thresholds
+  totals.js                       letter-grade scale, Total rounding and icon thresholds
   roster-format.js                roster -> email list / TSV / HTML table / CSV
   snippets.js                     /trigger + Tab expansion
   time-shortcuts.js               period key -> start time lookup and formatting

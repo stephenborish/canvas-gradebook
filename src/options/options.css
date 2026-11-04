@@ -728,8 +728,9 @@ input.switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2p
 .threshold-list { display: grid; gap: 8px; }
 .threshold-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -738,28 +739,32 @@ input.switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2p
 }
 .threshold-row:focus-within { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
 .threshold-row input[type="number"] {
-  width: 80px;
+  width: 70px;
   padding: 5px 8px;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
   font: inherit;
   font-variant-numeric: tabular-nums;
 }
-.threshold-row select { padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; background: #fff; }
+.threshold-row select { width: auto; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; background: #fff; }
 .threshold-row__swatch {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 64px;
+  gap: 6px;
   height: 28px;
+  padding: 0 8px;
   border-radius: 5px;
-  border-left: 4px solid transparent;
+  border: 1px solid var(--line);
+  background: #fff;
   flex: 0 0 auto;
   font-size: 12px;
   font-weight: 700;
   color: #1a232b;
   font-variant-numeric: tabular-nums;
 }
+.threshold-row__icon { display: inline-flex; line-height: 0; }
+.threshold-row__icon svg { display: block; }
 .threshold-row__picker { width: 36px; height: 30px; padding: 0 2px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; }
 .threshold-row__picker[hidden] { display: none; }
 .threshold-summary { margin: 2px 2px 0; font-size: 13px; color: var(--muted); }
