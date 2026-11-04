@@ -83,3 +83,47 @@ suite('Studio class list', (test) => {
     a.eq(sc().overviewFrom({ nothing: 'here' }).timeline, null);
   });
 });
+
+suite('Studio videos for one student', (test) => {
+  // Trimmed from the real collections and tiles answers.
+  const COLLECTIONS = [
+    { id: 713, type: 'course_wide', name: 'AP Biology - 2' },
+    { id: 400, type: 'course_wide', name: 'Integrated Science I - 4' },
+    { id: 252, type: 'course_wide', name: 'AP Biology - 1' }
+  ];
+  const TILES = { tiles: [
+    { item_type: 'perspective', data: { id: 'CwFk9GMFJK-bCZ5dUFUa2g', title: 'The Scientific Method', created_at: '2026-11-04T04:07:26Z', archived_at: null,
+      media: { id: 257, duration: 909.0, thumbnail_url: 'https://i.ytimg.com/x.jpg' } } },
+    { item_type: 'perspective', data: { id: 'IMSKjIsEsPct9BECUs17rQ', title: 'VIDEO - Isotopes & Average Atomic Mass', created_at: '2026-10-12T17:01:21Z',
+      media: { id: 203, duration: 687.0 } } },
+    { item_type: 'media', data: { id: 'not-a-perspective' } },
+    { item_type: 'perspective', data: { id: 'old', title: 'Archived', archived_at: '2026-10-01T00:00:00Z', media: {} } }
+  ] };
+
+  test('finds the Studio course by the Canvas course name', () => {
+    a.eq(sc().findCollection(COLLECTIONS, 'AP Biology - 1').id, 252);
+    a.eq(sc().findCollection(COLLECTIONS, 'ap biology – 1').id, 252, 'case and dash style ignored');
+    a.eq(sc().findCollection(COLLECTIONS, 'Chemistry'), null);
+  });
+
+  test('reads a course’s videos from its tiles', () => {
+    const v = sc().videosFromTiles(TILES);
+    a.deep(v.map((x) => x.uuid), ['CwFk9GMFJK-bCZ5dUFUa2g', 'IMSKjIsEsPct9BECUs17rQ', 'old']);
+    a.eq(v[0].duration, 909);
+    a.ok(v[2].archived);
+  });
+
+  test('one student across the videos: watched, partly, not watched; newest first', () => {
+    const videos = sc().videosFromTiles(TILES);
+    videos[0].viewers = sc().viewersFrom({ insights: [{ display_name: 'Avery Adams', email: 'aadams@x.org', role_names: ['Student'], completion_rate: 0.5 }] });
+    videos[1].viewers = sc().viewersFrom({ insights: [{ display_name: 'Someone Else', email: 'se@x.org', role_names: ['Student'], completion_rate: 1 }] });
+    const r = sc().studentVideos(videos, { name: 'Avery Adams', sortable_name: 'Adams, Avery', email: 'AAdams@x.org' });
+    a.eq(r.rows.length, 2, 'archived left out');
+    a.eq(r.rows[0].title, 'The Scientific Method');
+    a.eq(r.rows[0].status, 'partial');
+    a.eq(r.rows[0].watchedSeconds, 454.5);
+    a.eq(r.rows[1].status, 'none');
+    a.eq(r.rows[1].classWatched, 1);
+    a.deep(r.counts, { total: 2, watched: 0, partial: 1, none: 1 });
+  });
+});

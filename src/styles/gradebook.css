@@ -3383,6 +3383,14 @@ html.cgp-on .cgp-si__spinner {
 }
 @keyframes cgp-si-spin { to { transform: rotate(360deg); } }
 html.cgp-on .cgp-si__spinner--sm { display: inline-block; width: 11px; height: 11px; border-width: 2px; vertical-align: -1px; margin-right: 4px; }
+/* Activity: Studio videos */
+html.cgp-on .cgp-si__vstatus { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+html.cgp-on .cgp-si__vstatus--none { background: var(--si-risk-wash); color: #a8322a; }
+html.cgp-on .cgp-si__vstatus--partial { background: var(--si-warn-wash, #fdf1d6); color: #8a6100; }
+html.cgp-on .cgp-si__vstatus--watched { background: var(--si-good-wash); color: #0b6b37; }
+html.cgp-on .cgp-si__vmeter { display: flex; align-items: center; gap: 8px; min-width: 140px; }
+html.cgp-on .cgp-si__vmeter .cgp-si__track { flex: 1; }
+html.cgp-on .cgp-si__vmeter b { width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
 /* Activity: course content opened */
 html.cgp-on .cgp-si__table-wrap--content { max-height: 360px; overflow: auto; margin: 0 -16px 10px; border-bottom: 1px solid var(--cgp-hairline); }
 html.cgp-on .cgp-si__table--content thead th { position: sticky; top: 0; z-index: 1; }

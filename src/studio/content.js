@@ -53,9 +53,111 @@
   window.addEventListener('message', function (e) {
     var d = e.data;
     if (!d || typeof d !== 'object') return;
-    if (e.source === window && d.source === WATCH) { onStudio(d); return; }
-    if (d.source === RELAY && e.origin === canvasOrigin()) onRoster(d);
+    if (e.source === window && d.source === WATCH) {
+      if (d.kind === 'auth-ready') { onSignedIn(d.key); return; }
+      onStudio(d);
+      return;
+    }
+    if (e.source === window && d.source === STUDIO_ANSWER) { onAnswer(d); return; }
+    if (e.origin !== canvasOrigin()) return;
+    if (d.source === RELAY) { onRoster(d); return; }
+    if (d.source === CANVAS_ASK && e.source === window.top) onCanvasAsk(d);
   });
+
+  /* ------------------------- the gradebook's questions (student overview) */
+
+  var STUDIO_ASK = 'cgp-studio-req';
+  var STUDIO_ANSWER = 'cgp-studio-res';
+  var CANVAS_ASK = 'cgp-canvas-ask';
+  var HELLO = 'cgp-studio-hello';
+  var MAX_VIDEOS = 80;
+  var studioUserId = null;
+  var pending = Object.create(null);
+  var seq = 0;
+
+  /* Studio's page has signed in: tell the Canvas page we can answer. */
+  function onSignedIn(userId) {
+    studioUserId = userId || null;
+    var origin = canvasOrigin();
+    if (!origin || window.top === window) return;
+    try { window.top.postMessage({ source: HELLO, type: 'ready' }, origin); } catch (e) { /* ignore */ }
+  }
+
+  function studioGet(path, query) {
+    var id = 's' + (++seq);
+    return new Promise(function (resolve, reject) {
+      pending[id] = { resolve: resolve, reject: reject };
+      window.postMessage({ source: STUDIO_ASK, id: id, path: path, query: query || {} }, location.origin);
+      setTimeout(function () {
+        if (pending[id]) { delete pending[id]; reject(new Error('Studio didn’t answer')); }
+      }, 30000);
+    });
+  }
+  function onAnswer(d) {
+    var p = pending[d.id];
+    if (!p) return;
+    delete pending[d.id];
+    if (d.ok) p.resolve(d.data);
+    else p.reject(Object.assign(new Error(d.error || 'Studio said no (' + d.status + ')'), { status: d.status }));
+  }
+
+  function allPages(path, query, key, maxPages) {
+    var out = [];
+    function step(page) {
+      return studioGet(path, Object.assign({}, query, { page: page, per_page: 50 })).then(function (data) {
+        var list = data && Array.isArray(data[key]) ? data[key] : [];
+        out = out.concat(list);
+        var last = data && data.meta && Number(data.meta.last_page);
+        if (last && page < last && page < maxPages && list.length) return step(page + 1);
+        return out;
+      });
+    }
+    return step(1);
+  }
+
+  /* Every video in the Studio course named after a Canvas course, with who
+   * watched each one. A few at a time, so Studio isn't flooded. */
+  function courseVideos(courseName) {
+    return allPages('/api/media_management/collections', {
+      user_id: studioUserId || undefined, type: 'course_wide', with_concluded_courses: 'true'
+    }, 'collections', 10).then(function (cols) {
+      var col = SC().findCollection(cols, courseName);
+      if (!col) return { collection: null, videos: [] };
+      return allPages('/api/media_management/collections/' + col.id + '/tiles', {
+        sort_by: 'created_at', order: 'desc', 'filter[]': ['perspectives']
+      }, 'tiles', 4).then(function (tiles) {
+        var videos = SC().videosFromTiles({ tiles: tiles }).filter(function (v) { return !v.archived; }).slice(0, MAX_VIDEOS);
+        var i = 0;
+        function worker() {
+          if (i >= videos.length) return Promise.resolve();
+          var v = videos[i++];
+          return studioGet('/api/media_management/perspectives/' + encodeURIComponent(v.uuid) + '/insights/users').then(function (data) {
+            v.viewers = SC().viewersFrom(data);
+          }, function (err) {
+            v.viewers = [];
+            v.error = err && err.status === 403 ? 'no insights' : 'unavailable';
+          }).then(worker);
+        }
+        return Promise.all([worker(), worker(), worker()]).then(function () {
+          return { collection: { id: col.id, name: col.name }, videos: videos };
+        });
+      });
+    });
+  }
+
+  function onCanvasAsk(d) {
+    if (d.type !== 'courseVideos') return;
+    var origin = canvasOrigin();
+    var reply = function (msg) {
+      try { window.top.postMessage(Object.assign({ source: 'cgp-studio-videos', id: String(d.id || '') }, msg), origin); } catch (e) { /* ignore */ }
+    };
+    if (!SC()) { reply({ ok: false, error: 'not ready' }); return; }
+    courseVideos(String(d.courseName || '').slice(0, 300)).then(function (r) {
+      reply({ ok: true, collection: r.collection, videos: r.videos });
+    }, function (err) {
+      reply({ ok: false, error: String((err && err.message) || err) });
+    });
+  }
 
   function onStudio(d) {
     if (!SC()) return;

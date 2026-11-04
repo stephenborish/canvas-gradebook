@@ -193,6 +193,50 @@
     };
   }
 
+  /* A Studio course's videos (tiles), from collections/<id>/tiles. */
+  function videosFromTiles(data) {
+    var tiles = (data && Array.isArray(data.tiles)) ? data.tiles : [];
+    return tiles.filter(function (t) { return t && t.item_type === 'perspective' && t.data && t.data.id; }).map(function (t) {
+      var d = t.data, m = d.media || {};
+      return {
+        uuid: String(d.id),
+        title: String(d.title || m.title || 'Untitled video'),
+        duration: num(m.duration),
+        thumbnail: m.thumbnail_url || null,
+        createdAt: d.created_at || m.created_at || null,
+        archived: !!(d.archived_at || m.archived_at)
+      };
+    });
+  }
+
+  /* The Studio course (collection) for a Canvas course, by name. */
+  function findCollection(collections, courseName) {
+    var n = normName(courseName);
+    if (!n) return null;
+    var list = (collections || []).filter(function (c) { return c && normName(c.name) === n; });
+    return list.filter(function (c) { return c.type === 'course_wide'; })[0] || list[0] || null;
+  }
+
+  /* One student's line for each of a course's videos, newest first:
+   * videos [{uuid, title, duration, createdAt, viewers}] (viewers from
+   * viewersFrom), student {name, sortable_name, email}. */
+  function studentVideos(videos, student) {
+    var rows = (videos || []).filter(function (v) { return v && !v.archived; }).map(function (v) {
+      var r = classList([student], v.viewers || []).rows[0];
+      return {
+        uuid: v.uuid, title: v.title, duration: v.duration, thumbnail: v.thumbnail, createdAt: v.createdAt,
+        completion: r ? r.completion : null,
+        status: r ? r.status : 'none',
+        watchedSeconds: r && r.completion !== null && v.duration ? r.completion * v.duration : null,
+        classWatched: (v.viewers || []).filter(function (x) { return !x.teacher && statusOf(x.completion) !== 'none'; }).length
+      };
+    });
+    rows.sort(function (a, b) { return String(b.createdAt || '').localeCompare(String(a.createdAt || '')); });
+    var counts = { total: rows.length, watched: 0, partial: 0, none: 0 };
+    rows.forEach(function (r) { counts[r.status]++; });
+    return { rows: rows, counts: counts };
+  }
+
   /* Plain text for pasting: one name per line, "First Last". */
   function namesText(rows) {
     return rows.map(function (r) { return r.name; }).join('\n');
@@ -207,6 +251,9 @@
     viewersOnly: viewersOnly,
     statusOf: statusOf,
     namesText: namesText,
+    videosFromTiles: videosFromTiles,
+    findCollection: findCollection,
+    studentVideos: studentVideos,
     plainName: plainName,
     normName: normName
   };
