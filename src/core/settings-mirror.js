@@ -238,7 +238,18 @@
     }
     var statusKey = STATUS_KEY + '.' + this.origin;
     var deviceId = null;
-    this.running = c.storage.local.get([statusKey, PENDING_KEY, 'cgp.deviceId']).then(function (r) {
+    // After the extension is updated or reloaded, this tab's content script
+    // is orphaned and every chrome.* call throws "Extension context
+    // invalidated" synchronously. Nothing can be merged from here any more;
+    // say so quietly instead of throwing out of a visibilitychange handler.
+    var first;
+    try {
+      if (c.runtime && !c.runtime.id) throw new Error('Extension context invalidated.');
+      first = c.storage.local.get([statusKey, PENDING_KEY, 'cgp.deviceId']);
+    } catch (e) {
+      return Promise.resolve({ ok: false, skipped: 'orphaned' });
+    }
+    this.running = Promise.resolve(first).then(function (r) {
       deviceId = (r && r['cgp.deviceId']) || null;
       var last = r && r[statusKey];
       if (!force && last && self.now() - Number(last.tried || last.at || 0) < MIN_GAP_MS) return { skipped: 'recent' };
@@ -256,7 +267,7 @@
       if (status && !status.skipped) {
         var o = {};
         o[statusKey] = status;
-        c.storage.local.set(o).catch(function () { return null; });
+        try { c.storage.local.set(o).catch(function () { return null; }); } catch (e) { /* orphaned tab */ }
         if (status.ok && (status.pulled || status.pushed)) CGP.diag.log('settingsMirror', { pulled: status.pulled, pushed: status.pushed });
       }
       if (self.again) { self.again = false; return self.run(true); }

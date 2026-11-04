@@ -658,6 +658,180 @@
     return out;
   }
 
+  /* ----------------------------------------- content: pages, files, ... */
+
+  /* What a student actually opened in the course, item by item, from the
+   * Access Report (Canvas's asset accesses: views, participations, first and
+   * last time) and - where Canvas lets the teacher read them - the raw page
+   * views, which add time on each item and tell a file download from a
+   * preview.
+   *
+   * input: { courseId, accesses: [...]|null, pageViews: [...]|null,
+   *          assignments: [model assignments], now }
+   * Answers null when there is no Access Report to read. */
+  var KINDS = {
+    wiki_page: 'page', attachment: 'file', assignment: 'assignment', quiz: 'quiz',
+    discussion_topic: 'discussion', context_external_tool: 'tool', context_module: 'module',
+    calendar_event: 'event', collaboration: 'other', web_conference: 'other'
+  };
+  var KIND_LABELS = {
+    page: 'Page', file: 'File', assignment: 'Assignment', quiz: 'Quiz', discussion: 'Discussion',
+    tool: 'External tool', module: 'Module', area: 'Course area', event: 'Event', other: 'Other'
+  };
+  // Course-wide areas, logged as "<area>:course_<id>".
+  var AREAS = {
+    home: 'Course home', pages: 'Pages list', files: 'Files list', assignments: 'Assignments list',
+    quizzes: 'Quizzes list', topics: 'Discussions list', announcements: 'Announcements', modules: 'Modules',
+    grades: 'Grades', syllabus: 'Syllabus', roster: 'People', calendar: 'Calendar', outcomes: 'Outcomes',
+    conferences: 'Conferences', collaborations: 'Collaborations', external_tools: 'External tools'
+  };
+
+  function snake(s) {
+    return String(s || '').split('::').pop().replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+  }
+
+  /* "wiki_page_12" / "quizzes:quiz_5" / "pages:course_376" -> a key both
+   * the Access Report and page views reduce to. */
+  function assetKey(code) {
+    var m = /^(?:([a-z_]+):)?([a-z_]+?)_(\d+)$/.exec(String(code || ''));
+    if (!m) return null;
+    if (m[2] === 'course') return { key: 'area:' + (m[1] || 'home'), type: 'course', area: m[1] || 'home', id: m[3] };
+    return { key: m[2] + '_' + m[3], type: m[2], id: m[3] };
+  }
+
+  function pageViewKey(pv, courseId) {
+    var url = String(pv.url || '');
+    var path = url.replace(/^https?:\/\/[^/]+/, '').split(/[?#]/)[0];
+    var links = pv.links || {};
+    if (pv.asset_type && links.asset !== undefined && links.asset !== null) {
+      var t = snake(pv.asset_type);
+      if (t !== 'course') return t + '_' + links.asset;
+    }
+    // Fall back to the URL.
+    var base = '/courses/' + courseId;
+    if (path.indexOf(base) !== 0) return null;
+    var rest = path.slice(base.length).replace(/\/$/, '');
+    var m;
+    if ((m = /^\/files\/(\d+)/.exec(rest))) return 'attachment_' + m[1];
+    if ((m = /^\/assignments\/(\d+)/.exec(rest))) return 'assignment_' + m[1];
+    if ((m = /^\/quizzes\/(\d+)/.exec(rest))) return 'quiz_' + m[1];
+    if ((m = /^\/discussion_topics\/(\d+)/.exec(rest))) return 'discussion_topic_' + m[1];
+    if ((m = /^\/(?:pages|wiki)\/([^/]+)/.exec(rest))) return 'page_url:' + decodeURIComponent(m[1]);
+    if (!rest) return 'area:home';
+    if ((m = /^\/([a-z_]+)$/.exec(rest))) return 'area:' + (m[1] === 'discussion_topics' ? 'topics' : m[1] === 'users' ? 'roster' : m[1]);
+    return null;
+  }
+
+  function inCourse(pv, courseId) {
+    var links = pv.links || {};
+    if (pv.context_type === 'Course' && links.context !== undefined && links.context !== null) return String(links.context) === String(courseId);
+    return RegExp('/courses/' + courseId + '(?:[/?#]|$)').test(String(pv.url || ''));
+  }
+
+  function contentActivity(input) {
+    input = input || {};
+    if (!Array.isArray(input.accesses)) return null;
+    var now = time(input.now) || Date.now();
+    var courseId = String(input.courseId || '');
+    var byKey = Object.create(null);
+    var list = [];
+    input.accesses.forEach(function (raw) {
+      var x = raw && (raw.asset_user_access || raw);
+      if (!x) return;
+      var k = assetKey(x.asset_code);
+      if (!k) return;
+      var kind = k.type === 'course' ? 'area' : (KINDS[k.type] || 'other');
+      var name = x.readable_name || x.display_name || (k.type === 'course' ? AREAS[k.area] : '') || '';
+      if (k.type === 'course') name = AREAS[k.area] || name || k.area;
+      var item = byKey[k.key];
+      if (!item) {
+        item = byKey[k.key] = {
+          key: k.key, id: k.id, type: k.type, kind: kind, name: name,
+          views: 0, participations: 0, firstAt: null, lastAt: null,
+          seconds: null, recentViews: 0, downloads: 0, previews: 0
+        };
+        list.push(item);
+      }
+      item.views += num(x.view_score) || 0;
+      item.participations += num(x.participate_score) || 0;
+      var first = time(x.created_at), last = time(x.last_access) || time(x.updated_at);
+      if (first && (!item.firstAt || first < item.firstAt)) item.firstAt = first;
+      if (last && (!item.lastAt || last > item.lastAt)) item.lastAt = last;
+    });
+    list.forEach(function (i) { i.views = Math.round(i.views); i.participations = Math.round(i.participations); });
+
+    var pvKnown = Array.isArray(input.pageViews);
+    var since = null, totalSeconds = 0, unmatchedSeconds = 0, courseViews = 0;
+    if (pvKnown) {
+      // Wiki pages show up in page views by URL slug, not id; tie a slug to
+      // the page whose title it was made from where that is unambiguous.
+      var bySlug = Object.create(null);
+      list.forEach(function (i) {
+        if (i.type !== 'wiki_page') return;
+        var slug = String(i.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        if (slug) bySlug[slug] = bySlug[slug] === undefined ? i : false;
+      });
+      input.pageViews.forEach(function (pv) {
+        if (!pv || !inCourse(pv, courseId)) return;
+        var at = time(pv.created_at);
+        if (at && (!since || at < since)) since = at;
+        var secs = Math.max(0, num(pv.interaction_seconds) || 0);
+        courseViews++;
+        totalSeconds += secs;
+        var key = pageViewKey(pv, courseId);
+        var item = key && byKey[key];
+        if (!item && key && key.indexOf('page_url:') === 0) item = bySlug[key.slice(9).toLowerCase()] || null;
+        if (!item) { unmatchedSeconds += secs; return; }
+        item.seconds = (item.seconds || 0) + secs;
+        item.recentViews++;
+        if (item.type === 'attachment') {
+          if (/\/download(?:[?#]|$)|download_frd=1/.test(String(pv.url || ''))) item.downloads++;
+          else item.previews++;
+        }
+      });
+    }
+
+    // Assignments, quizzes and graded discussions the student has never
+    // opened (instructions never read), most urgent first.
+    var notOpened = [];
+    (input.assignments || []).forEach(function (a) {
+      if (!a || a.published === false) return;
+      var keys = ['assignment_' + a.id];
+      if (a.quizId) keys.push('quiz_' + a.quizId);
+      if (a.discussionTopicId) keys.push('discussion_topic_' + a.discussionTopicId);
+      var seen = keys.some(function (k) { return byKey[k]; });
+      if (!seen) notOpened.push({ id: String(a.id), name: a.name || '', dueAt: time(a.dueAt) });
+    });
+    notOpened.sort(function (x, y) {
+      var xa = x.dueAt || Infinity, ya = y.dueAt || Infinity;
+      // Past due (and soonest due) first.
+      return xa - ya || x.name.localeCompare(y.name);
+    });
+
+    var byKind = {};
+    list.forEach(function (i) {
+      var b = byKind[i.kind] = byKind[i.kind] || { kind: i.kind, label: KIND_LABELS[i.kind], items: 0, views: 0, seconds: null };
+      b.items++;
+      b.views += i.views;
+      if (i.seconds !== null) b.seconds = (b.seconds || 0) + i.seconds;
+    });
+    list.sort(function (x, y) { return (y.lastAt || 0) - (x.lastAt || 0) || y.views - x.views; });
+
+    return {
+      items: list,
+      byKind: Object.keys(byKind).map(function (k) { return byKind[k]; }).sort(function (x, y) { return y.views - x.views; }),
+      notOpened: notOpened,
+      notOpenedPastDue: notOpened.filter(function (n) { return n.dueAt && n.dueAt <= now; }).length,
+      pageViewsKnown: pvKnown,
+      pageViewsSince: since,
+      courseViews: courseViews,
+      totalSeconds: pvKnown ? totalSeconds : null,
+      unmatchedSeconds: unmatchedSeconds,
+      truncated: !!input.accesses.truncated || !!(input.pageViews && input.pageViews.truncated),
+      kindLabels: KIND_LABELS
+    };
+  }
+
   /* ------------------------------------------------ missing / late list */
 
   function escHtml(s) { return CGP.util.escapeHtml(s); }
@@ -667,6 +841,12 @@
     var o = { weekday: 'short', month: 'short', day: 'numeric' };
     if (withTime) { o.hour = 'numeric'; o.minute = '2-digit'; }
     try { return new Date(t).toLocaleString('en-US', o); } catch (e) { return new Date(t).toDateString(); }
+  }
+
+  /* "Tuesday, November 3, 2026" */
+  function fullDate(t) {
+    if (!t) return '';
+    try { return new Date(t).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }); } catch (e) { return new Date(t).toDateString(); }
   }
 
   function points(i) {
@@ -704,12 +884,12 @@
     }
     var total = groups.reduce(function (t, g) { return t + g.items.length; }, 0);
     var what = groups.map(function (g) { return g.title.toLowerCase(); }).join(' and ');
-    var title = (what ? what.charAt(0).toUpperCase() + what.slice(1) : 'No') + ' work' +
-      (opts.studentName ? ' — ' + opts.studentName : '');
-    var sub = [opts.courseName, 'as of ' + longDate(now)].filter(Boolean).join(' · ');
+    // No title line: the list is pasted under a greeting that already says
+    // what it is. Just the course and the day, in bold.
+    var heading = [opts.courseName, fullDate(now)].filter(Boolean);
 
-    var text = [title, sub, ''];
-    var html = '<p><b>' + escHtml(title) + '</b><br>' + escHtml(sub) + '</p>';
+    var text = heading.length ? [heading.join(' · '), ''] : [];
+    var html = heading.length ? '<p>' + heading.map(function (h) { return '<b>' + escHtml(h) + '</b>'; }).join('<br>') + '</p>' : '';
     if (!total) {
       text.push('Nothing ' + (what || 'selected') + ' right now.');
       html += '<p>Nothing ' + escHtml(what || 'selected') + ' right now.</p>';
@@ -734,15 +914,6 @@
       html += '</tbody></table>';
       text.push('');
     });
-    var missingGroup = groups.filter(function (g) { return g.title === 'Missing'; })[0];
-    if (missingGroup && missingGroup.items.length) {
-      var at = missingGroup.items.reduce(function (t, i) { return t + (i.pointsPossible || 0); }, 0);
-      if (at) {
-        var line = 'Points not yet earned on missing work: ' + Math.round(at * 100) / 100;
-        text.push(line);
-        html += '<p>' + escHtml(line) + '</p>';
-      }
-    }
     return { text: text.join('\n').replace(/\n+$/, '') + '\n', html: html, count: total };
   }
 
@@ -782,6 +953,7 @@
     summarize: summarize,
     insights: insights,
     activity: activity,
+    contentActivity: contentActivity,
     classMedians: classMedians,
     classGroupMedians: classGroupMedians,
     duration: duration,
