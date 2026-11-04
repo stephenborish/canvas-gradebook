@@ -1169,6 +1169,74 @@ html.cgp-on .slick-cell[class~="total_grade"] .Grid__GradeCell__Content {
   text-align: center !important;
 }
 
+/* ------------------------------------------------------- Total extras */
+
+/* Canvas's own Total tooltip ("304.5 / 354"). The colour rules above forced
+ * its text dark on its dark bubble, and Canvas keeps it open on the active
+ * cell until another click. indicators.js shows the same numbers - with the
+ * letter grade - in .cgp-total-tip instead, open only while hovered. */
+html.cgp-on .slick-cell[data-cgp-col="total"] .gradebook-tooltip,
+html.cgp-on .slick-cell[class~="total_grade"] .gradebook-tooltip {
+  display: none !important;
+}
+
+/* The Total rounded to 0.1 (data-cgp-pct), and its letter grade while the
+ * pointer is on the cell (data-cgp-letter). Canvas's own text stays in the
+ * DOM; only what is painted changes. The attribute selectors are repeated
+ * to outrank the "every descendant inherits the grade size" rule above. */
+html.cgp-on .slick-cell[data-cgp-col="total"][data-cgp-col="total"] [data-cgp-pct][data-cgp-pct][data-cgp-pct],
+html.cgp-on .slick-cell[data-cgp-col="total"][data-cgp-col="total"]:hover [data-cgp-letter][data-cgp-letter][data-cgp-letter] {
+  font-size: 0 !important;
+  letter-spacing: 0 !important;
+}
+html.cgp-on .slick-cell[data-cgp-col="total"] [data-cgp-pct]::before {
+  content: attr(data-cgp-pct);
+  font-size: var(--cgp-grade-font, 16px);
+}
+html.cgp-on .slick-cell[data-cgp-col="total"]:hover [data-cgp-letter]::before {
+  content: attr(data-cgp-letter);
+  font-size: var(--cgp-grade-font, 16px);
+  font-weight: 800;
+  color: var(--cgp-brand-dark);
+}
+
+/* Thresholds (Options -> Appearance): the cell tinted, with a strip on its
+ * leading edge so the colour still reads under a selection or row hover. */
+html.cgp-on .slick-cell[data-cgp-col="total"][data-cgp-band] {
+  background-color: var(--cgp-band-bg) !important;
+  box-shadow: inset 4px 0 0 var(--cgp-band-edge) !important;
+}
+html.cgp-on .slick-cell[data-cgp-band="red"]    { --cgp-band-bg: #fde2df; --cgp-band-edge: #d1453b; }
+html.cgp-on .slick-cell[data-cgp-band="orange"] { --cgp-band-bg: #fde8d4; --cgp-band-edge: #dd7a1f; }
+html.cgp-on .slick-cell[data-cgp-band="yellow"] { --cgp-band-bg: #fdf3c4; --cgp-band-edge: #d6a500; }
+html.cgp-on .slick-cell[data-cgp-band="green"]  { --cgp-band-bg: #dcf3e5; --cgp-band-edge: #1f9254; }
+html.cgp-on .slick-cell[data-cgp-band="blue"]   { --cgp-band-bg: #dcebf8; --cgp-band-edge: #0374b5; }
+html.cgp-on .slick-cell[data-cgp-band="purple"] { --cgp-band-bg: #ebe2f6; --cgp-band-edge: #6b3fa0; }
+html.cgp-on .slick-cell[data-cgp-band="gray"]   { --cgp-band-bg: #e9ecef; --cgp-band-edge: #6b7780; }
+
+/* The Total hover tooltip, on <body> so no grid pane clips it. */
+html.cgp-on .cgp-total-tip {
+  position: fixed;
+  z-index: 100000;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 11px;
+  border-radius: 7px;
+  background: #1f2b34;
+  color: #fff;
+  box-shadow: var(--cgp-shadow);
+  font-family: var(--cgp-font);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+}
+html.cgp-on .cgp-total-tip[hidden] { display: none; }
+html.cgp-on .cgp-total-tip b { font-size: 14px; font-weight: 700; color: #fff; }
+html.cgp-on .cgp-total-tip span { color: #d5dde3; }
+
 /* ------------------------------------------------------- student column */
 
 /* Student names stay left aligned, and read as the anchor of the row: larger
@@ -1330,6 +1398,43 @@ html.cgp-on .slick-header-column[data-cgp-col="student"] .slick-column-name {
 html.cgp-on .slick-header-column[data-cgp-col="total"],
 html.cgp-on .slick-header-column[id$="total_grade"] {
   min-width: 84px !important;
+}
+/* Canvas truncates its own "Total" title to "To..." in a column this narrow
+ * (the space its "..." menu keeps for itself). As with assignments, its text
+ * is hidden and layout.js draws the whole word in .cgp-header-label; the
+ * menu button and resize handle stay exactly as Canvas built them. */
+html.cgp-on .slick-header-column[data-cgp-col="total"] { overflow: visible !important; }
+html.cgp-on .slick-header-column[data-cgp-col="total"]:has(> .cgp-header-label) * {
+  visibility: hidden !important;
+}
+html.cgp-on .slick-header-column[data-cgp-col="total"] .cgp-header-label,
+html.cgp-on .slick-header-column[data-cgp-col="total"] .cgp-header-label *,
+html.cgp-on .slick-header-column[data-cgp-col="total"] .slick-resizable-handle,
+html.cgp-on .slick-header-column[data-cgp-col="total"] button,
+html.cgp-on .slick-header-column[data-cgp-col="total"] button *,
+html.cgp-on .slick-header-column[data-cgp-col="total"] [role="button"],
+html.cgp-on .slick-header-column[data-cgp-col="total"] [role="button"] *,
+html.cgp-on .slick-header-column[data-cgp-col="total"] [role="menu"],
+html.cgp-on .slick-header-column[data-cgp-col="total"] [role="menu"] *,
+html.cgp-on .slick-header-column[data-cgp-col="total"] [aria-haspopup],
+html.cgp-on .slick-header-column[data-cgp-col="total"] [aria-haspopup] * {
+  visibility: visible !important;
+}
+html.cgp-on .slick-header-column[data-cgp-col="total"] button,
+html.cgp-on .slick-header-column[data-cgp-col="total"] [role="button"],
+html.cgp-on .slick-header-column[data-cgp-col="total"] [aria-haspopup] {
+  z-index: 6 !important;
+}
+html.cgp-on .slick-header-column[data-cgp-col="total"] .cgp-header-label {
+  inset: 0 18px 0 4px !important;
+  overflow: visible !important;
+}
+html.cgp-on .cgp-header-total {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--cgp-ink-strong);
+  white-space: nowrap;
 }
 html.cgp-on .slick-header-column[data-cgp-col="total"] .slick-column-name,
 html.cgp-on .slick-header-column[id$="total_grade"] .slick-column-name {
@@ -3349,9 +3454,101 @@ html.cgp-on .cgp-si__tip[hidden] { display: none; }
 }
 
 /* Student overview: sending missing / late work, search, opening work. */
-html.cgp-on .cgp-si__share { border-color: rgba(3, 116, 181, 0.32); background: linear-gradient(180deg, #f7fbfe, var(--cgp-surface) 60%); }
-html.cgp-on .cgp-si__share-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
-html.cgp-on .cgp-si__share-opts { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+html.cgp-on .cgp-si__share { padding: 0; border-color: rgba(3, 116, 181, 0.32); background: linear-gradient(180deg, #f7fbfe, var(--cgp-surface) 70%); overflow: hidden; }
+html.cgp-on .cgp-si__share-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  padding: 12px 16px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  color: var(--cgp-ink-strong);
+  cursor: pointer;
+}
+html.cgp-on .cgp-si__share-toggle:hover { background: rgba(3, 116, 181, 0.05); }
+html.cgp-on .cgp-si__share-toggle:focus-visible { outline: none; box-shadow: inset var(--cgp-focus-ring); }
+html.cgp-on .cgp-si__share-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--cgp-brand);
+  color: #fff;
+}
+html.cgp-on .cgp-si__share-title { display: flex; flex-direction: column; gap: 1px; flex: 1 1 auto; min-width: 0; font-size: 14px; font-weight: 600; }
+html.cgp-on .cgp-si__share-title small { font-size: 12px; font-weight: 400; color: var(--cgp-muted); }
+html.cgp-on .cgp-si .cgp-si__share-icon svg,
+html.cgp-on .cgp-si .cgp-si__btn--copy svg { width: 15px; height: 15px; flex: none; }
+html.cgp-on .cgp-si svg.cgp-si__share-chev { width: 16px; height: 16px; flex: none; color: var(--cgp-brand); transition: transform 0.15s ease; }
+html.cgp-on .cgp-si__share.is-open .cgp-si__share-chev { transform: rotate(180deg); }
+html.cgp-on .cgp-si__share.is-open .cgp-si__share-toggle { border-bottom: 1px solid var(--cgp-hairline); }
+html.cgp-on .cgp-si__share-body {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.85fr) minmax(0, 1.15fr);
+  gap: 18px;
+  padding: 14px 16px 16px;
+}
+html.cgp-on .cgp-si__share-pick, html.cgp-on .cgp-si__share-out { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+html.cgp-on .cgp-si__share-label { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--cgp-muted); }
+html.cgp-on .cgp-si__share-label span { font-weight: 400; letter-spacing: 0; text-transform: none; }
+html.cgp-on .cgp-si__segs { display: flex; border: 1px solid var(--cgp-hairline-strong); border-radius: 8px; overflow: hidden; background: var(--cgp-surface); }
+html.cgp-on .cgp-si__seg {
+  flex: 1 1 0;
+  margin: 0;
+  padding: 7px 10px;
+  border: 0;
+  border-left: 1px solid var(--cgp-hairline-strong);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--cgp-ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+html.cgp-on .cgp-si__seg:first-child { border-left: 0; }
+html.cgp-on .cgp-si__seg b { margin-left: 3px; font-weight: 600; color: var(--cgp-muted); font-variant-numeric: tabular-nums; }
+html.cgp-on .cgp-si__seg:hover:not([disabled]):not([aria-pressed="true"]) { background: var(--cgp-brand-wash); }
+html.cgp-on .cgp-si__seg[aria-pressed="true"] { background: var(--cgp-brand); color: #fff; }
+html.cgp-on .cgp-si__seg[aria-pressed="true"] b { color: rgba(255, 255, 255, 0.85); }
+html.cgp-on .cgp-si__seg[disabled] { color: var(--cgp-nosub); cursor: default; }
+html.cgp-on .cgp-si__seg:focus-visible { outline: none; box-shadow: inset var(--cgp-focus-ring); }
+html.cgp-on .cgp-si__share-items { display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow: auto; }
+html.cgp-on .cgp-si__share-group { margin: 0; padding: 0; border: 0; min-width: 0; }
+html.cgp-on .cgp-si__share-group legend { padding: 0; margin-bottom: 4px; font-size: 12px; font-weight: 600; color: var(--cgp-ink-strong); }
+html.cgp-on .cgp-si__share-group[disabled] { opacity: 0.45; }
+html.cgp-on .cgp-si__share-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--cgp-ink-strong);
+  cursor: pointer;
+}
+html.cgp-on .cgp-si__share-item:hover { background: var(--cgp-brand-wash); }
+html.cgp-on .cgp-si__share-group[disabled] .cgp-si__share-item { cursor: default; background: none; }
+html.cgp-on .cgp-si__share-item input { width: 16px; height: 16px; margin: 0; accent-color: var(--cgp-brand); }
+html.cgp-on .cgp-si__share-item input:focus-visible { outline: none; box-shadow: var(--cgp-focus-ring); }
+html.cgp-on .cgp-si__share-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html.cgp-on .cgp-si__share-item em { font-style: normal; font-size: 12px; color: var(--cgp-muted); white-space: nowrap; }
+html.cgp-on .cgp-si__share-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+html.cgp-on .cgp-si__share-foot .cgp-si__note { margin: 0; }
+html.cgp-on .cgp-si__btn--copy[disabled] { opacity: 0.55; cursor: default; }
+@media (max-width: 760px) {
+  html.cgp-on .cgp-si__share-body { grid-template-columns: minmax(0, 1fr); }
+  html.cgp-on .cgp-si__share-foot { flex-direction: column; align-items: stretch; }
+}
 html.cgp-on .cgp-si__check { display: inline-flex; align-items: center; gap: 7px; margin: 0; font-size: 13px; color: var(--cgp-ink-strong); cursor: pointer; }
 html.cgp-on .cgp-si__check input { width: 16px; height: 16px; margin: 0; accent-color: var(--cgp-brand); }
 html.cgp-on .cgp-si__check b { font-weight: 600; color: var(--cgp-muted); font-variant-numeric: tabular-nums; }
@@ -3359,8 +3556,10 @@ html.cgp-on .cgp-si__btn--copy { display: inline-flex; align-items: center; gap:
 html.cgp-on .cgp-si__btn--copy:hover { background: var(--cgp-brand-dark); border-color: var(--cgp-brand-dark); }
 html.cgp-on .cgp-si__btn:focus-visible, html.cgp-on .cgp-si__link--btn:focus-visible, html.cgp-on .cgp-si__check input:focus-visible { outline: none; box-shadow: var(--cgp-focus-ring); }
 html.cgp-on .cgp-si__preview {
-  margin: 12px 0 0;
-  max-height: 168px;
+  margin: 0;
+  flex: 1 1 auto;
+  min-height: 120px;
+  max-height: 260px;
   overflow: auto;
   padding: 10px 12px;
   border: 1px solid var(--cgp-hairline-strong);

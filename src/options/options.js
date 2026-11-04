@@ -480,12 +480,84 @@
     BOOLS.forEach(function (k) { var el = $(k); if (el) el.checked = !!values[k]; });
     NUMS.forEach(function (k) { var el = $(k); if (el) el.value = values[k]; });
     $('gradingScale').value = CGP.totals.scaleToText(values.gradingScale);
+    renderThresholds(values.totalHighlightRules);
     var snips = Array.isArray(values.snippets) ? values.snippets.slice() : [];
     renderSnippetCards(snips);
     $('snippets').value = snippetsToText(snips);
     renderTimeShortcuts(values.timeShortcuts);
     renderSectionGroups(values.sectionGroups);
     currentRosterPrefs = values.rosterPrefs;
+  }
+
+  /* Total thresholds: one row per rule, "Below [70] % [Red]". */
+  var currentThresholds = [];
+  var SWATCH = {
+    red: ['#fde2df', '#d1453b'], orange: ['#fde8d4', '#dd7a1f'], yellow: ['#fdf3c4', '#d6a500'],
+    green: ['#dcf3e5', '#1f9254'], blue: ['#dcebf8', '#0374b5'], purple: ['#ebe2f6', '#6b3fa0'], gray: ['#e9ecef', '#6b7780']
+  };
+
+  function renderThresholds(list) {
+    currentThresholds = (Array.isArray(list) ? list : []).map(function (r) {
+      return { below: r.below, color: r.color };
+    });
+    var box = $('totalHighlightList');
+    if (!box) return;
+    box.innerHTML = '';
+    if (!currentThresholds.length) {
+      box.innerHTML = '<p class="threshold-empty">No thresholds. Click <strong>+ Add threshold</strong>.</p>';
+    }
+    currentThresholds.forEach(function (rule, i) {
+      var row = document.createElement('div');
+      row.className = 'threshold-row';
+      var swatch = document.createElement('span');
+      swatch.className = 'threshold-row__swatch';
+      var lead = document.createElement('span');
+      lead.textContent = 'Total below';
+      var num = document.createElement('input');
+      num.type = 'number';
+      num.min = '0'; num.max = '1000'; num.step = '0.1';
+      num.value = rule.below;
+      num.setAttribute('aria-label', 'Threshold percentage');
+      var pct = document.createElement('span');
+      pct.textContent = '% is';
+      var sel = document.createElement('select');
+      sel.setAttribute('aria-label', 'Highlight color');
+      CGP.HIGHLIGHT_COLORS.forEach(function (c) {
+        var o = document.createElement('option');
+        o.value = c;
+        o.textContent = c.charAt(0).toUpperCase() + c.slice(1);
+        if (c === rule.color) o.selected = true;
+        sel.appendChild(o);
+      });
+      var paintSwatch = function () {
+        var sw = SWATCH[rule.color] || SWATCH.gray;
+        swatch.style.background = sw[0];
+        swatch.style.borderLeftColor = sw[1];
+      };
+      paintSwatch();
+      num.addEventListener('input', function () { rule.below = Number(num.value); });
+      sel.addEventListener('change', function () { rule.color = sel.value; paintSwatch(); });
+      var spacer = document.createElement('span');
+      spacer.className = 'threshold-row__spacer';
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'threshold-row__delete';
+      del.title = 'Remove threshold';
+      del.setAttribute('aria-label', 'Remove threshold');
+      del.textContent = '\u00d7';
+      del.addEventListener('click', function () {
+        currentThresholds.splice(i, 1);
+        renderThresholds(currentThresholds);
+      });
+      row.appendChild(swatch);
+      row.appendChild(lead);
+      row.appendChild(num);
+      row.appendChild(pct);
+      row.appendChild(sel);
+      row.appendChild(spacer);
+      row.appendChild(del);
+      box.appendChild(row);
+    });
   }
 
   // Chosen in the gradebook's Copy Roster panel, not here; carried as is.
@@ -531,6 +603,7 @@
     patch.snippets = readRawSnippets();
     patch.timeShortcuts = readRawTimeShortcuts();
     patch.gradingScale = CGP.totals.textToScale($('gradingScale').value);
+    patch.totalHighlightRules = currentThresholds.slice();
     patch.sectionGroups = currentGroups;
     if (currentRosterPrefs) patch.rosterPrefs = currentRosterPrefs;
     return CGP.sanitizeSettings(patch);
@@ -880,6 +953,18 @@
   }
 
   /* ---------------------------------------------------------------- wiring */
+
+  $('addTotalHighlight').addEventListener('click', function () {
+    var used = currentThresholds.map(function (r) { return r.color; });
+    var color = CGP.HIGHLIGHT_COLORS.filter(function (c) { return used.indexOf(c) < 0; })[0] || 'red';
+    var top = currentThresholds.reduce(function (m, r) { return Math.max(m, Number(r.below) || 0); }, 0);
+    currentThresholds.push({ below: Math.min(100, top ? top + 10 : 70), color: color });
+    renderThresholds(currentThresholds);
+  });
+  $('resetTotalHighlights').addEventListener('click', function () {
+    renderThresholds(CGP.DEFAULTS.totalHighlightRules);
+    status('Default thresholds restored above \u2014 click Save changes to keep them.');
+  });
 
   $('resetGradingScale').addEventListener('click', function () {
     $('gradingScale').value = CGP.totals.scaleToText(CGP.DEFAULT_GRADING_SCALE);

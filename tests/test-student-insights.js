@@ -251,6 +251,22 @@ suite('student overview: missing and late list to send', (test) => {
     a.not(rep.text.includes('http'));
   });
 
+  test('no student name unless asked, and excluded assignments are left off', () => {
+    const rep = si().workReport(record(), { courseName: 'Chemistry', now: NOW, exclude: { 2: true } });
+    a.ok(/^Late work\nChemistry · as of /.test(rep.text) || /^Missing and late work\nChemistry/.test(rep.text), rep.text);
+    a.eq(rep.count, 1);
+    a.not(rep.text.includes('Lab <2>'));
+    a.not(rep.text.includes('Points not yet earned'));
+  });
+
+  test('last active says the time, and the date when it was not today or yesterday', () => {
+    const t = new Date(2026, 10, 3, 19, 50).getTime();
+    a.eq(si().lastActiveText(t, new Date(2026, 10, 3, 21, 0).getTime()), 'today at 7:50 PM');
+    a.eq(si().lastActiveText(t, new Date(2026, 10, 4, 8, 0).getTime()), 'yesterday at 7:50 PM');
+    a.eq(si().lastActiveText(t, new Date(2026, 10, 9, 8, 0).getTime()), 'on Tue, Nov 3 at 7:50 PM');
+    a.eq(si().lastActiveText(null, NOW), '–');
+  });
+
   test('nothing to report still says so', () => {
     const r = si().summarize({ now: NOW, studentId: '7', assignments: [asg(1)], submissions: [sub(1, { submitted_at: new Date(NOW - 30 * D).toISOString() })] });
     const rep = si().workReport(r, { now: NOW });

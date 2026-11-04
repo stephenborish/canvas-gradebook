@@ -18,6 +18,25 @@
     { letter: 'D', min: 64.5 }, { letter: 'F', min: 0 }
   ];
 
+  /* The colours a teacher can pick for a Total threshold. */
+  CGP.HIGHLIGHT_COLORS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'gray'];
+
+  /* Total thresholds ({ below: 70, color: 'red' }): usable rules only, lowest
+   * threshold first, one rule per threshold. null when not a list at all. */
+  CGP.sanitizeHighlights = function (list) {
+    if (!Array.isArray(list)) return null;
+    var seen = Object.create(null);
+    return list.map(function (r) {
+      var below = Number(r && r.below);
+      var color = String((r && r.color) || '').toLowerCase().trim();
+      return { below: isFinite(below) ? Math.max(0, Math.min(1000, Math.round(below * 10) / 10)) : NaN, color: color };
+    }).filter(function (r) {
+      if (!isFinite(r.below) || CGP.HIGHLIGHT_COLORS.indexOf(r.color) < 0 || seen[r.below]) return false;
+      seen[r.below] = true;
+      return true;
+    }).sort(function (a, b) { return a.below - b.below; }).slice(0, 8);
+  };
+
   CGP.DEFAULTS = {
     // layout
     narrowColumns: true,
@@ -27,6 +46,11 @@
     maximizeHeight: true,
     frozenTotal: true,
     gradingScale: CGP.DEFAULT_GRADING_SCALE,
+    // The Total column: shown rounded to 0.1, its letter grade on hover, and
+    // tinted when it falls below a teacher's threshold.
+    roundTotals: true,
+    totalHighlights: true,
+    totalHighlightRules: [{ below: 70, color: 'red' }, { below: 80, color: 'yellow' }],
     centerAssignmentColumns: true,
     showAssignmentDueDate: true,
     hideTestStudent: true,
@@ -357,6 +381,12 @@
         rows.sort(function (a, b) { return b.min - a.min; });
         rows[rows.length - 1].min = 0;   // every score maps to some letter
         out[k] = rows;
+        return;
+      }
+      if (k === 'totalHighlightRules') {
+        // An empty list is a real choice (no thresholds); junk is not.
+        var rules = CGP.sanitizeHighlights(v);
+        out[k] = rules || d[k];
         return;
       }
       if (k === 'timeShortcuts') {

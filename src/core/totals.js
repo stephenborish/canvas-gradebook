@@ -1,7 +1,8 @@
-/* Canvas Gradebook+ - letter grades for Analyze Scores.
+/* Canvas Gradebook+ - letter grades and the Total column.
  *
  * The teacher's letter-grade scale (Options -> Appearance): reading and
- * writing it as text, and the letter a percentage earns on it. */
+ * writing it as text, and the letter a percentage earns on it. Also the
+ * Total column's rounding (0.1) and its colour thresholds. */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
@@ -42,7 +43,46 @@
     return out;
   }
 
+  /* ------------------------------------------------ the Total column */
+
+  /* Half-up to 0.1, the same rounding letterFor uses, so the percentage a
+   * teacher reads and the letter it earns always agree. */
+  function roundTenth(score) {
+    var n = Number(score);
+    if (score === null || score === undefined || score === '' || !isFinite(n)) return null;
+    return Math.floor(n * 10 + 0.5 + 1e-9) / 10;
+  }
+
+  /* 86.02 -> "86.0%". */
+  function formatPercent(score) {
+    var r = roundTenth(score);
+    return r === null ? '' : r.toFixed(1) + '%';
+  }
+
+  /* The percentage in a piece of Canvas's Total text ("86.02%", "86,02 %"),
+   * or null when there is none (a points display, "–", a letter only). */
+  function parsePercent(text) {
+    var m = /(-?\d+(?:[.,]\d+)?)\s*%/.exec(String(text || ''));
+    return m ? Number(m[1].replace(',', '.')) : null;
+  }
+
+  /* Rules are { below: 70, color: 'red' }. The strictest rule a score falls
+   * under wins: with "below 70 red" and "below 80 yellow", 65 is red and 75
+   * yellow. Compared on the rounded score, the one shown in the cell. */
+  function highlightFor(score, rules) {
+    var r = roundTenth(score);
+    if (r === null || !Array.isArray(rules)) return null;
+    var hit = null;
+    rules.forEach(function (rule) {
+      if (!rule || !isFinite(rule.below) || r >= rule.below) return;
+      if (!hit || rule.below < hit.below) hit = rule;
+    });
+    return hit ? hit.color : null;
+  }
+
   CGP.totals = {
-    letterFor: letterFor, scaleToText: scaleToText, textToScale: textToScale, badScaleLines: badScaleLines
+    letterFor: letterFor, scaleToText: scaleToText, textToScale: textToScale, badScaleLines: badScaleLines,
+    roundTenth: roundTenth, formatPercent: formatPercent, parsePercent: parsePercent,
+    HIGHLIGHT_COLORS: CGP.HIGHLIGHT_COLORS, highlightFor: highlightFor, sanitizeHighlights: CGP.sanitizeHighlights
   };
 })();

@@ -220,6 +220,29 @@ suite('Total letter grades', (test) => {
     a.deep(CGP.sanitizeSettings({ gradingScale: 'bad' }).gradingScale, CGP.DEFAULT_GRADING_SCALE);
     a.deep(CGP.totals.textToScale(CGP.totals.scaleToText(CGP.DEFAULT_GRADING_SCALE)), CGP.DEFAULT_GRADING_SCALE);
   });
+  test('the Total rounds half-up to one decimal place', () => {
+    a.eq(CGP.totals.formatPercent(86.02), '86.0%');
+    a.eq(CGP.totals.formatPercent(100.14), '100.1%');
+    a.eq(CGP.totals.formatPercent(89.45), '89.5%');
+    a.eq(CGP.totals.formatPercent(null), '');
+    a.eq(CGP.totals.parsePercent('86.02%'), 86.02);
+    a.eq(CGP.totals.parsePercent('86,5 %'), 86.5);
+    a.eq(CGP.totals.parsePercent('304.5 / 354'), null);
+  });
+  test('Total thresholds: the lowest one a score is under wins, on the rounded score', () => {
+    const rules = CGP.DEFAULTS.totalHighlightRules;
+    a.eq(CGP.totals.highlightFor(65, rules), 'red');
+    a.eq(CGP.totals.highlightFor(75, rules), 'yellow');
+    a.eq(CGP.totals.highlightFor(79.96, rules), null, '79.96 shows as 80.0%');
+    a.eq(CGP.totals.highlightFor(91, rules), null);
+    a.eq(CGP.totals.highlightFor(null, rules), null);
+  });
+  test('Total thresholds are sanitized; an empty list stays empty', () => {
+    const s = CGP.sanitizeSettings({ totalHighlightRules: [{ below: '85', color: 'Blue' }, { below: 60, color: 'pink' }, { below: 'x', color: 'red' }, { below: 50, color: 'red' }] });
+    a.deep(s.totalHighlightRules, [{ below: 50, color: 'red' }, { below: 85, color: 'blue' }]);
+    a.deep(CGP.sanitizeSettings({ totalHighlightRules: [] }).totalHighlightRules, []);
+    a.deep(CGP.sanitizeSettings({ totalHighlightRules: 'bad' }).totalHighlightRules, CGP.DEFAULTS.totalHighlightRules);
+  });
   test('malformed scale lines are reported, not dropped', () => {
     a.deep(CGP.totals.badScaleLines('P: 60\nF: zero\n\n'), ['F: zero']);
     a.deep(CGP.totals.badScaleLines(CGP.totals.scaleToText(CGP.DEFAULT_GRADING_SCALE)), []);

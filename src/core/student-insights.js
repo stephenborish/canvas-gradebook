@@ -590,6 +590,25 @@
     return 'in ' + (-days) + ' days';
   }
 
+  /* "today at 7:50 PM", "yesterday at 9:05 AM", "on Mon, Oct 26 at 3:12 PM"
+   * - for a "Last active ..." line. */
+  function lastActiveText(t, now) {
+    if (t === null || t === undefined || !isFinite(t)) return '–';
+    var d = new Date(t);
+    var time;
+    try { time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); } catch (e) { time = ''; }
+    var days = Math.round((startOfDay(now) - startOfDay(t)) / DAY);
+    var day;
+    if (days === 0) day = 'today';
+    else if (days === 1) day = 'yesterday';
+    else {
+      var o = { weekday: 'short', month: 'short', day: 'numeric' };
+      if (d.getFullYear() !== new Date(now).getFullYear()) o.year = 'numeric';
+      try { day = 'on ' + d.toLocaleDateString('en-US', o); } catch (e) { day = 'on ' + d.toDateString(); }
+    }
+    return time ? day + ' at ' + time : day;
+  }
+
   /* Each assignment's class median percent, from whatever the gradebook model
    * holds: graded, non-excused scores of real students only. */
   function classMedians(cellsFor, assignments, studentIds) {
@@ -661,22 +680,25 @@
    * email, a message or a document - as plain text and as an HTML table.
    *
    * opts: { studentName, courseName, now, include: {missing, late},
-   *         links: bool, urlFor(item) -> absolute assignment URL } */
+   *         links: bool, urlFor(item) -> absolute assignment URL,
+   *         exclude: { assignmentId: true } - left off the list } */
   function workReport(r, opts) {
     opts = opts || {};
     var now = opts.now || r.now || Date.now();
     var inc = opts.include || { missing: true, late: true };
     var urlFor = opts.urlFor || function () { return ''; };
     var groups = [];
+    var exclude = opts.exclude || {};
+    function kept(i) { return !exclude[String(i.id)]; }
     function byDue(a, b) { return (a.dueAt || 0) - (b.dueAt || 0); }
     if (inc.missing) {
-      groups.push({ title: 'Missing', items: r.lists.missing.slice().sort(byDue), detail: function (i) {
+      groups.push({ title: 'Missing', items: r.lists.missing.filter(kept).sort(byDue), detail: function (i) {
         var days = i.dueAt ? Math.max(0, Math.floor((now - i.dueAt) / DAY)) : null;
         return days === null ? 'not turned in' : 'not turned in · ' + days + (days === 1 ? ' day' : ' days') + ' overdue';
       } });
     }
     if (inc.late) {
-      groups.push({ title: 'Late', items: r.lists.late.slice().sort(byDue), detail: function (i) {
+      groups.push({ title: 'Late', items: r.lists.late.filter(kept).sort(byDue), detail: function (i) {
         return 'turned in ' + longDate(i.submittedAt, true) + ' · ' + duration(i.secondsLate) + ' late';
       } });
     }
@@ -764,6 +786,7 @@
     classGroupMedians: classGroupMedians,
     duration: duration,
     relativeDay: relativeDay,
+    lastActiveText: lastActiveText,
     percentile: percentile,
     median: median,
     LATE_BUCKETS: LATE_BUCKETS
