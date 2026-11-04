@@ -253,6 +253,13 @@ suite('Total letter grades', (test) => {
     CGP.TOTAL_ICONS.forEach((ic) => a.ok(/^<svg [^>]*viewBox="0 0 20 20"/.test(CGP.totalIconSvg(ic.id)), ic.id));
     a.eq(CGP.totalIconSvg('nope'), '');
   });
+  test('the threshold icon is kept out of the grade font rules without outranking the rounded-Total rule', () => {
+    const css = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'styles', 'gradebook.css'), 'utf8');
+    // A plain :not(.cgp-total-flag) adds a class's specificity to the grade font
+    // rule, which then beats the rule hiding Canvas's unrounded text: "86.0% 86.02%".
+    a.ok(!/:not\(\.cgp-total-flag/.test(css), 'excluded with :not(:where(...)), never a bare :not(.cgp-total-flag)');
+    a.ok(css.includes(':not(:where(.cgp-total-flag, .cgp-total-flag *))'), 'the icon is still excluded, so it keeps its colour');
+  });
   test('threshold colors: named swatches, and a custom color tinted toward white', () => {
     a.eq(CGP.highlightSwatch('gold').label, 'Golden yellow');
     const c = CGP.highlightSwatch('#000000');
