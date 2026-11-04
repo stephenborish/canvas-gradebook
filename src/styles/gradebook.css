@@ -1201,18 +1201,12 @@ html.cgp-on .slick-cell[data-cgp-col="total"]:hover [data-cgp-letter]::before {
 }
 
 /* Thresholds (Options -> Appearance): the cell tinted, with a strip on its
- * leading edge so the colour still reads under a selection or row hover. */
+ * leading edge so the colour still reads under a selection or row hover.
+ * indicators.js sets the two colours on the cell (CGP.highlightSwatch). */
 html.cgp-on .slick-cell[data-cgp-col="total"][data-cgp-band] {
   background-color: var(--cgp-band-bg) !important;
   box-shadow: inset 4px 0 0 var(--cgp-band-edge) !important;
 }
-html.cgp-on .slick-cell[data-cgp-band="red"]    { --cgp-band-bg: #fde2df; --cgp-band-edge: #d1453b; }
-html.cgp-on .slick-cell[data-cgp-band="orange"] { --cgp-band-bg: #fde8d4; --cgp-band-edge: #dd7a1f; }
-html.cgp-on .slick-cell[data-cgp-band="yellow"] { --cgp-band-bg: #fdf3c4; --cgp-band-edge: #d6a500; }
-html.cgp-on .slick-cell[data-cgp-band="green"]  { --cgp-band-bg: #dcf3e5; --cgp-band-edge: #1f9254; }
-html.cgp-on .slick-cell[data-cgp-band="blue"]   { --cgp-band-bg: #dcebf8; --cgp-band-edge: #0374b5; }
-html.cgp-on .slick-cell[data-cgp-band="purple"] { --cgp-band-bg: #ebe2f6; --cgp-band-edge: #6b3fa0; }
-html.cgp-on .slick-cell[data-cgp-band="gray"]   { --cgp-band-bg: #e9ecef; --cgp-band-edge: #6b7780; }
 
 /* The Total hover tooltip, on <body> so no grid pane clips it. */
 html.cgp-on .cgp-total-tip {

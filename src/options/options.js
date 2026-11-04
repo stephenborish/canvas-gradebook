@@ -489,12 +489,28 @@
     currentRosterPrefs = values.rosterPrefs;
   }
 
-  /* Total thresholds: one row per rule, "Below [70] % [Red]". */
+  /* Total thresholds: one row per rule, "Totals at or below [72.4] % [Red-orange]".
+   * Stored as { below: 72.5 }: the Total is compared after rounding to 0.1,
+   * so "at or below 72.4" and "under 72.5" are the same rule; the form shows
+   * the at-or-below number teachers think in. */
   var currentThresholds = [];
-  var SWATCH = {
-    red: ['#fde2df', '#d1453b'], orange: ['#fde8d4', '#dd7a1f'], yellow: ['#fdf3c4', '#d6a500'],
-    green: ['#dcf3e5', '#1f9254'], blue: ['#dcebf8', '#0374b5'], purple: ['#ebe2f6', '#6b3fa0'], gray: ['#e9ecef', '#6b7780']
-  };
+
+  function tenth(n) { return Math.round(n * 10) / 10; }
+  function colorLabel(c) {
+    var sw = CGP.highlightSwatch(c);
+    return sw ? (sw.label === 'Custom' ? 'Custom (' + c + ')' : sw.label) : c;
+  }
+
+  /* "Totals 72.4% or below: Red-orange · 72.5–82.4%: Golden yellow". */
+  function thresholdSummary(rules) {
+    var sorted = rules.filter(function (r) { return isFinite(r.below); }).slice().sort(function (a, b) { return a.below - b.below; });
+    if (!sorted.length) return 'No Totals are colored.';
+    return 'Totals ' + sorted.map(function (r, i) {
+      var top = tenth(r.below - 0.1);
+      var range = i === 0 ? top + '% or below' : tenth(sorted[i - 1].below) + '–' + top + '%';
+      return range + ': ' + colorLabel(r.color);
+    }).join(' · ') + '.';
+  }
 
   function renderThresholds(list) {
     currentThresholds = (Array.isArray(list) ? list : []).map(function (r) {
@@ -503,6 +519,9 @@
     var box = $('totalHighlightList');
     if (!box) return;
     box.innerHTML = '';
+    var summary = document.createElement('p');
+    summary.className = 'threshold-summary';
+    var updateSummary = function () { summary.textContent = thresholdSummary(currentThresholds); };
     if (!currentThresholds.length) {
       box.innerHTML = '<p class="threshold-empty">No thresholds. Click <strong>+ Add threshold</strong>.</p>';
     }
@@ -511,32 +530,56 @@
       row.className = 'threshold-row';
       var swatch = document.createElement('span');
       swatch.className = 'threshold-row__swatch';
+      swatch.textContent = '85.0%';
       var lead = document.createElement('span');
-      lead.textContent = 'Total below';
+      lead.textContent = 'Totals at or below';
       var num = document.createElement('input');
       num.type = 'number';
       num.min = '0'; num.max = '1000'; num.step = '0.1';
-      num.value = rule.below;
-      num.setAttribute('aria-label', 'Threshold percentage');
+      num.value = tenth(rule.below - 0.1);
+      num.setAttribute('aria-label', 'Highest percentage that gets this color');
       var pct = document.createElement('span');
-      pct.textContent = '% is';
+      pct.textContent = '% are';
       var sel = document.createElement('select');
       sel.setAttribute('aria-label', 'Highlight color');
-      CGP.HIGHLIGHT_COLORS.forEach(function (c) {
+      var isCustom = !CGP.HIGHLIGHT_PALETTE.some(function (c) { return c.id === rule.color; });
+      CGP.HIGHLIGHT_PALETTE.forEach(function (c) {
         var o = document.createElement('option');
-        o.value = c;
-        o.textContent = c.charAt(0).toUpperCase() + c.slice(1);
-        if (c === rule.color) o.selected = true;
+        o.value = c.id;
+        o.textContent = c.label;
+        if (c.id === rule.color) o.selected = true;
         sel.appendChild(o);
       });
+      var co = document.createElement('option');
+      co.value = 'custom';
+      co.textContent = 'Custom color…';
+      if (isCustom) co.selected = true;
+      sel.appendChild(co);
+      var picker = document.createElement('input');
+      picker.type = 'color';
+      picker.className = 'threshold-row__picker';
+      picker.setAttribute('aria-label', 'Custom color');
+      picker.value = isCustom && /^#[0-9a-f]{6}$/i.test(rule.color) ? rule.color : '#e0531f';
+      picker.hidden = !isCustom;
       var paintSwatch = function () {
-        var sw = SWATCH[rule.color] || SWATCH.gray;
-        swatch.style.background = sw[0];
-        swatch.style.borderLeftColor = sw[1];
+        var sw = CGP.highlightSwatch(rule.color) || CGP.HIGHLIGHT_PALETTE[0];
+        swatch.style.background = sw.bg;
+        swatch.style.borderLeftColor = sw.edge;
+        updateSummary();
       };
       paintSwatch();
-      num.addEventListener('input', function () { rule.below = Number(num.value); });
-      sel.addEventListener('change', function () { rule.color = sel.value; paintSwatch(); });
+      num.addEventListener('input', function () {
+        var v = Number(num.value);
+        rule.below = num.value === '' || !isFinite(v) ? NaN : tenth(v + 0.1);
+        updateSummary();
+      });
+      sel.addEventListener('change', function () {
+        picker.hidden = sel.value !== 'custom';
+        rule.color = sel.value === 'custom' ? picker.value.toLowerCase() : sel.value;
+        paintSwatch();
+        if (sel.value === 'custom' && picker.showPicker) { try { picker.showPicker(); } catch (e) { /* ignore */ } }
+      });
+      picker.addEventListener('input', function () { rule.color = picker.value.toLowerCase(); paintSwatch(); });
       var spacer = document.createElement('span');
       spacer.className = 'threshold-row__spacer';
       var del = document.createElement('button');
@@ -544,20 +587,16 @@
       del.className = 'threshold-row__delete';
       del.title = 'Remove threshold';
       del.setAttribute('aria-label', 'Remove threshold');
-      del.textContent = '\u00d7';
+      del.textContent = '×';
       del.addEventListener('click', function () {
         currentThresholds.splice(i, 1);
         renderThresholds(currentThresholds);
       });
-      row.appendChild(swatch);
-      row.appendChild(lead);
-      row.appendChild(num);
-      row.appendChild(pct);
-      row.appendChild(sel);
-      row.appendChild(spacer);
-      row.appendChild(del);
+      [swatch, lead, num, pct, sel, picker, spacer, del].forEach(function (n) { row.appendChild(n); });
       box.appendChild(row);
     });
+    if (currentThresholds.length) box.appendChild(summary);
+    updateSummary();
   }
 
   // Chosen in the gradebook's Copy Roster panel, not here; carried as is.
@@ -956,9 +995,9 @@
 
   $('addTotalHighlight').addEventListener('click', function () {
     var used = currentThresholds.map(function (r) { return r.color; });
-    var color = CGP.HIGHLIGHT_COLORS.filter(function (c) { return used.indexOf(c) < 0; })[0] || 'red';
+    var color = CGP.HIGHLIGHT_COLORS.filter(function (c) { return used.indexOf(c) < 0; })[0] || 'gray';
     var top = currentThresholds.reduce(function (m, r) { return Math.max(m, Number(r.below) || 0); }, 0);
-    currentThresholds.push({ below: Math.min(100, top ? top + 10 : 70), color: color });
+    currentThresholds.push({ below: Math.min(100, top ? tenth(top + 10) : 72.5), color: color });
     renderThresholds(currentThresholds);
   });
   $('resetTotalHighlights').addEventListener('click', function () {

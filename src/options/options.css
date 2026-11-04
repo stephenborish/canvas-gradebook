@@ -747,12 +747,22 @@ input.switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2p
 }
 .threshold-row select { padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; background: #fff; }
 .threshold-row__swatch {
-  width: 44px;
-  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 28px;
   border-radius: 5px;
   border-left: 4px solid transparent;
   flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1a232b;
+  font-variant-numeric: tabular-nums;
 }
+.threshold-row__picker { width: 36px; height: 30px; padding: 0 2px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; }
+.threshold-row__picker[hidden] { display: none; }
+.threshold-summary { margin: 2px 2px 0; font-size: 13px; color: var(--muted); }
 .threshold-row__spacer { flex: 1 1 auto; }
 .threshold-row__delete {
   border: 0;

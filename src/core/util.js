@@ -18,11 +18,43 @@
     { letter: 'D', min: 64.5 }, { letter: 'F', min: 0 }
   ];
 
-  /* The colours a teacher can pick for a Total threshold. */
-  CGP.HIGHLIGHT_COLORS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'gray'];
+  /* The named colours a teacher can pick for a Total threshold: the cell's
+   * tint and the strip on its leading edge. A threshold can also use any
+   * custom colour as "#rrggbb" (see highlightSwatch). */
+  CGP.HIGHLIGHT_PALETTE = [
+    { id: 'redorange', label: 'Red-orange', bg: '#fdd9cd', edge: '#e0531f' },
+    { id: 'red', label: 'Red', bg: '#fde2df', edge: '#d1453b' },
+    { id: 'orange', label: 'Orange', bg: '#fde8d4', edge: '#dd7a1f' },
+    { id: 'gold', label: 'Golden yellow', bg: '#fcecb0', edge: '#c99a06' },
+    { id: 'yellow', label: 'Yellow', bg: '#fdf5c9', edge: '#e0b800' },
+    { id: 'green', label: 'Green', bg: '#dcf3e5', edge: '#1f9254' },
+    { id: 'blue', label: 'Blue', bg: '#dcebf8', edge: '#0374b5' },
+    { id: 'purple', label: 'Purple', bg: '#ebe2f6', edge: '#6b3fa0' },
+    { id: 'gray', label: 'Gray', bg: '#e9ecef', edge: '#6b7780' }
+  ];
+  CGP.HIGHLIGHT_COLORS = CGP.HIGHLIGHT_PALETTE.map(function (c) { return c.id; });
+  var HEX_RE = /^#[0-9a-f]{6}$/;
 
-  /* Total thresholds ({ below: 70, color: 'red' }): usable rules only, lowest
-   * threshold first, one rule per threshold. null when not a list at all. */
+  /* { bg, edge, label } for a threshold colour: a named one from the palette,
+   * or a custom "#rrggbb" - its strip in that colour, its tint the colour
+   * mixed 75% toward white so the grade on it stays readable. */
+  CGP.highlightSwatch = function (color) {
+    var c = String(color || '').toLowerCase();
+    for (var i = 0; i < CGP.HIGHLIGHT_PALETTE.length; i++) {
+      if (CGP.HIGHLIGHT_PALETTE[i].id === c) return CGP.HIGHLIGHT_PALETTE[i];
+    }
+    if (!HEX_RE.test(c)) return null;
+    var mix = function (at) {
+      var v = parseInt(c.slice(at, at + 2), 16);
+      return ('0' + Math.round(v + (255 - v) * 0.75).toString(16)).slice(-2);
+    };
+    return { id: c, label: 'Custom', bg: '#' + mix(1) + mix(3) + mix(5), edge: c };
+  };
+
+  /* Total thresholds ({ below: 72.5, color: 'redorange' }: a Total that
+   * rounds to under 72.5 - 72.4 or less - gets that colour): usable rules
+   * only, lowest threshold first, one rule per threshold. null when not a
+   * list at all. */
   CGP.sanitizeHighlights = function (list) {
     if (!Array.isArray(list)) return null;
     var seen = Object.create(null);
@@ -31,7 +63,7 @@
       var color = String((r && r.color) || '').toLowerCase().trim();
       return { below: isFinite(below) ? Math.max(0, Math.min(1000, Math.round(below * 10) / 10)) : NaN, color: color };
     }).filter(function (r) {
-      if (!isFinite(r.below) || CGP.HIGHLIGHT_COLORS.indexOf(r.color) < 0 || seen[r.below]) return false;
+      if (!isFinite(r.below) || !CGP.highlightSwatch(r.color) || seen[r.below]) return false;
       seen[r.below] = true;
       return true;
     }).sort(function (a, b) { return a.below - b.below; }).slice(0, 8);
@@ -50,7 +82,8 @@
     // tinted when it falls below a teacher's threshold.
     roundTotals: true,
     totalHighlights: true,
-    totalHighlightRules: [{ below: 70, color: 'red' }, { below: 80, color: 'yellow' }],
+    // 72.4% or below red-orange, 72.5-82.4% golden yellow.
+    totalHighlightRules: [{ below: 72.5, color: 'redorange' }, { below: 82.5, color: 'gold' }],
     centerAssignmentColumns: true,
     showAssignmentDueDate: true,
     hideTestStudent: true,

@@ -635,7 +635,17 @@
       setAttr(valueEl, 'data-cgp-letter', letter || '');
     }
     var band = s.totalHighlights ? T.highlightFor(pct, s.totalHighlightRules) : null;
-    setAttr(cell, 'data-cgp-band', band || '');
+    var swatch = band ? CGP.highlightSwatch(band) : null;
+    setAttr(cell, 'data-cgp-band', swatch ? swatch.id : '');
+    // The colours ride on the cell as custom properties the stylesheet reads,
+    // so a teacher's own "#rrggbb" works like a named colour.
+    if (swatch) {
+      if (cell.style.getPropertyValue('--cgp-band-bg') !== swatch.bg) cell.style.setProperty('--cgp-band-bg', swatch.bg);
+      if (cell.style.getPropertyValue('--cgp-band-edge') !== swatch.edge) cell.style.setProperty('--cgp-band-edge', swatch.edge);
+    } else if (cell.style.getPropertyValue('--cgp-band-bg')) {
+      cell.style.removeProperty('--cgp-band-bg');
+      cell.style.removeProperty('--cgp-band-edge');
+    }
 
     var lines = [];
     if (pct !== null) lines.push(T.formatPercent(pct) + (letter ? ' \u00b7 ' + letter : ''));

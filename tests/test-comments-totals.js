@@ -229,19 +229,31 @@ suite('Total letter grades', (test) => {
     a.eq(CGP.totals.parsePercent('86,5 %'), 86.5);
     a.eq(CGP.totals.parsePercent('304.5 / 354'), null);
   });
-  test('Total thresholds: the lowest one a score is under wins, on the rounded score', () => {
+  test('Total thresholds: 72.4 or below red-orange, 72.5-82.4 golden yellow, on the rounded score', () => {
     const rules = CGP.DEFAULTS.totalHighlightRules;
-    a.eq(CGP.totals.highlightFor(65, rules), 'red');
-    a.eq(CGP.totals.highlightFor(75, rules), 'yellow');
-    a.eq(CGP.totals.highlightFor(79.96, rules), null, '79.96 shows as 80.0%');
-    a.eq(CGP.totals.highlightFor(91, rules), null);
-    a.eq(CGP.totals.highlightFor(null, rules), null);
+    const H = (n) => CGP.totals.highlightFor(n, rules);
+    a.eq(H(50), 'redorange'); a.eq(H(72.4), 'redorange'); a.eq(H(72.44), 'redorange');
+    a.eq(H(72.45), 'gold', '72.45 shows as 72.5%'); a.eq(H(72.5), 'gold'); a.eq(H(82.4), 'gold');
+    a.eq(H(82.45), null, '82.45 shows as 82.5%'); a.eq(H(82.5), null); a.eq(H(95), null);
+    a.eq(H(null), null);
   });
-  test('Total thresholds are sanitized; an empty list stays empty', () => {
-    const s = CGP.sanitizeSettings({ totalHighlightRules: [{ below: '85', color: 'Blue' }, { below: 60, color: 'pink' }, { below: 'x', color: 'red' }, { below: 50, color: 'red' }] });
-    a.deep(s.totalHighlightRules, [{ below: 50, color: 'red' }, { below: 85, color: 'blue' }]);
+  test('Total thresholds are sanitized; custom #rrggbb colors are kept; an empty list stays empty', () => {
+    const s = CGP.sanitizeSettings({ totalHighlightRules: [{ below: '85', color: 'Blue' }, { below: 60, color: 'pink' },
+      { below: 'x', color: 'red' }, { below: 50, color: 'red' }, { below: 70, color: '#12AB34' }, { below: 75, color: '#12ab3' }] });
+    a.deep(s.totalHighlightRules, [{ below: 50, color: 'red' }, { below: 70, color: '#12ab34' }, { below: 85, color: 'blue' }]);
     a.deep(CGP.sanitizeSettings({ totalHighlightRules: [] }).totalHighlightRules, []);
     a.deep(CGP.sanitizeSettings({ totalHighlightRules: 'bad' }).totalHighlightRules, CGP.DEFAULTS.totalHighlightRules);
+  });
+  test('threshold colors: named swatches, and a custom color tinted toward white', () => {
+    a.eq(CGP.highlightSwatch('gold').label, 'Golden yellow');
+    const c = CGP.highlightSwatch('#000000');
+    a.eq(c.edge, '#000000'); a.eq(c.bg, '#bfbfbf');
+    a.eq(CGP.highlightSwatch('nope'), null);
+  });
+  test('the default letter scale is the school scale', () => {
+    a.deep(CGP.DEFAULT_GRADING_SCALE.map((r) => r.letter + ' ' + r.min).join(', '),
+      'A+ 96.5, A 92.5, A- 89.5, B+ 86.5, B 82.5, B- 79.5, C+ 76.5, C 72.5, C- 69.5, D 64.5, F 0');
+    a.eq(CGP.totals.letterFor(96.4), 'A'); a.eq(CGP.totals.letterFor(96.45), 'A+');
   });
   test('malformed scale lines are reported, not dropped', () => {
     a.deep(CGP.totals.badScaleLines('P: 60\nF: zero\n\n'), ['F: zero']);

@@ -285,9 +285,11 @@ How the Total reads (Options → Appearance):
   while the pointer is on it, and a tooltip shows the percentage, letter, points earned / possible
   and the exact percentage. The tooltip closes as soon as the pointer leaves the Total. Canvas's
   own Total tooltip is hidden.
-- **Color thresholds**: a Total below a number you set is tinted - by default red below 70% and
-  yellow below 80%. Add, change or remove thresholds and pick from seven colors; the lowest
-  threshold a Total is under wins.
+- **Color thresholds**: a Total at or below a percentage you set is tinted - by default
+  **red-orange at 72.4% or below** and **golden yellow from 72.5% to 82.4%**, compared on the
+  rounded Total. Under Options → Appearance, change each threshold, pick one of nine colors or any
+  **Custom color…**, add or remove thresholds, or turn coloring off; a summary line spells out
+  which ranges get which color. When a Total falls under more than one threshold, the lowest wins.
 - The **Total** header always shows the whole word, however narrow the column.
 
 ### The hidden Test Student stays out of your averages
