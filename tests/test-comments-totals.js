@@ -209,7 +209,7 @@ suite('Total letter grades', (test) => {
   test('default scale uses half-up rounding to 0.1 and the highest matching threshold', () => {
     const L = (n) => CGP.totals.letterFor(n);
     a.eq(L(96.5), 'A+'); a.eq(L(96.45), 'A+'); a.eq(L(96.44), 'A');
-    a.eq(L(92.5), 'A'); a.eq(L(89.5), 'A-'); a.eq(L(89.44), 'B+');
+    a.eq(L(92.5), 'A'); a.eq(L(89.5), 'A\u2013'); a.eq(L(89.44), 'B+');
     a.eq(L(64.5), 'D'); a.eq(L(64.4), 'F'); a.eq(L(0), 'F'); a.eq(L(100), 'A+');
     a.eq(L(null), null);
   });
@@ -252,8 +252,14 @@ suite('Total letter grades', (test) => {
   });
   test('the default letter scale is the school scale', () => {
     a.deep(CGP.DEFAULT_GRADING_SCALE.map((r) => r.letter + ' ' + r.min).join(', '),
-      'A+ 96.5, A 92.5, A- 89.5, B+ 86.5, B 82.5, B- 79.5, C+ 76.5, C 72.5, C- 69.5, D 64.5, F 0');
+      'A+ 96.5, A 92.5, A\u2013 89.5, B+ 86.5, B 82.5, B\u2013 79.5, C+ 76.5, C 72.5, C\u2013 69.5, D 64.5, F 0');
     a.eq(CGP.totals.letterFor(96.4), 'A'); a.eq(CGP.totals.letterFor(96.45), 'A+');
+  });
+  test('a minus shows as a dash, even in a scale saved with a plain hyphen', () => {
+    a.eq(CGP.totals.letterFor(80), 'B\u2013');
+    const s = CGP.sanitizeSettings({ gradingScale: [{ letter: 'B-', min: 80 }, { letter: 'C\u2212', min: 0 }] });
+    a.deep(s.gradingScale.map((r) => r.letter), ['B\u2013', 'C\u2013']);
+    a.eq(CGP.dashLetter('A-'), 'A\u2013'); a.eq(CGP.dashLetter('A+'), 'A+'); a.eq(CGP.dashLetter(null), null);
   });
   test('malformed scale lines are reported, not dropped', () => {
     a.deep(CGP.totals.badScaleLines('P: 60\nF: zero\n\n'), ['F: zero']);

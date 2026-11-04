@@ -12,9 +12,9 @@
   /* Default letter-grade scale: the lowest rounded percentage (to 0.1) that
    * earns each letter. The last entry is the floor and always has min 0. */
   CGP.DEFAULT_GRADING_SCALE = [
-    { letter: 'A+', min: 96.5 }, { letter: 'A', min: 92.5 }, { letter: 'A-', min: 89.5 },
-    { letter: 'B+', min: 86.5 }, { letter: 'B', min: 82.5 }, { letter: 'B-', min: 79.5 },
-    { letter: 'C+', min: 76.5 }, { letter: 'C', min: 72.5 }, { letter: 'C-', min: 69.5 },
+    { letter: 'A+', min: 96.5 }, { letter: 'A', min: 92.5 }, { letter: 'A\u2013', min: 89.5 },
+    { letter: 'B+', min: 86.5 }, { letter: 'B', min: 82.5 }, { letter: 'B\u2013', min: 79.5 },
+    { letter: 'C+', min: 76.5 }, { letter: 'C', min: 72.5 }, { letter: 'C\u2013', min: 69.5 },
     { letter: 'D', min: 64.5 }, { letter: 'F', min: 0 }
   ];
 
@@ -67,6 +67,12 @@
       seen[r.below] = true;
       return true;
     }).sort(function (a, b) { return a.below - b.below; }).slice(0, 8);
+  };
+
+  /* A letter grade's minus as a dash: "B-" (or "B\u2212") reads as "B\u2013",
+   * because a plain hyphen is easy to miss at a glance. */
+  CGP.dashLetter = function (letter) {
+    return letter === null || letter === undefined ? letter : String(letter).replace(/[-\u2212]$/, '\u2013');
   };
 
   CGP.DEFAULTS = {
@@ -407,7 +413,7 @@
         // Unusable values fall back to the default scale rather than leaving
         // the Total hover without any letter grade.
         var rows = Array.isArray(v) ? v.map(function (r) {
-          return { letter: String((r && r.letter) || '').trim().slice(0, 6), min: Number(r && r.min) };
+          return { letter: CGP.dashLetter(String((r && r.letter) || '').trim().slice(0, 6)), min: Number(r && r.min) };
         }).filter(function (r) { return r.letter && isFinite(r.min); }).slice(0, 20) : [];
         if (!rows.length) { out[k] = d[k]; return; }
         rows.forEach(function (r) { r.min = Math.max(0, Math.min(1000, Math.round(r.min * 10) / 10)); });

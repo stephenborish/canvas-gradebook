@@ -433,7 +433,7 @@
     var list = this.roster();
     var pos = list.indexOf(this._uid);
     var score = student.currentScore;
-    var letter = student.currentGrade || (score !== null && score !== undefined
+    var letter = CGP.dashLetter(student.currentGrade) || (score !== null && score !== undefined
       ? CGP.totals.letterFor(score, this.settings.values.gradingScale) : null);
     var tone = score === null || score === undefined ? '' : score >= 89.5 ? 'a' : score >= 79.5 ? 'b' : score >= 69.5 ? 'c' : 'd';
     var meta = [];
