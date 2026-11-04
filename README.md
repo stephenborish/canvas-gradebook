@@ -285,8 +285,7 @@ How the Total reads (Options → Appearance):
   the points earned / possible; the cell keeps showing the percentage. The tooltip closes as soon
   as the pointer leaves the Total. Canvas's own Total tooltip is hidden.
 - **Threshold icons**: a Total at or below a percentage you set gets an icon beside it - by
-  default a **red-orange alert (!) at 72.4% or below** and a **golden-yellow warning triangle from
-  72.5% to 82.4%**, compared on the rounded Total. The cell itself is not tinted. The icons are
+  default a **red alert (!) at 70% or below** and a **yellow flag from 70.1% to 77%**, compared on the rounded Total. The cell itself is not tinted. The icons are
   drawn by the extension as SVG, not emoji, so they look the same in every browser. Under Options →
   Appearance, change each threshold, pick its icon (alert, warning, eye, megaphone, flag or arrow)
   and one of nine colors or any **Custom color…**, add or remove thresholds, or turn flagging off; a

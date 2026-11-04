@@ -229,12 +229,13 @@ suite('Total letter grades', (test) => {
     a.eq(CGP.totals.parsePercent('86,5 %'), 86.5);
     a.eq(CGP.totals.parsePercent('304.5 / 354'), null);
   });
-  test('Total thresholds: 72.4 or below red-orange, 72.5-82.4 golden yellow, on the rounded score', () => {
+  test('Total thresholds: 70 or below a red alert, 70.1-77 a yellow flag, on the rounded score', () => {
     const rules = CGP.DEFAULTS.totalHighlightRules;
     const H = (n) => CGP.totals.highlightFor(n, rules);
-    a.eq(H(50), 'redorange'); a.eq(H(72.4), 'redorange'); a.eq(H(72.44), 'redorange');
-    a.eq(H(72.45), 'gold', '72.45 shows as 72.5%'); a.eq(H(72.5), 'gold'); a.eq(H(82.4), 'gold');
-    a.eq(H(82.45), null, '82.45 shows as 82.5%'); a.eq(H(82.5), null); a.eq(H(95), null);
+    const I = (n) => (CGP.totals.highlightRuleFor(n, rules) || {}).icon || null;
+    a.eq(H(50), 'red'); a.eq(H(70), 'red'); a.eq(H(70.04), 'red', '70.04 shows as 70.0%'); a.eq(I(70), 'alert');
+    a.eq(H(70.05), 'yellow', '70.05 shows as 70.1%'); a.eq(H(70.1), 'yellow'); a.eq(H(77), 'yellow'); a.eq(I(77), 'flag');
+    a.eq(H(77.05), null, '77.05 shows as 77.1%'); a.eq(H(77.1), null); a.eq(H(95), null);
     a.eq(H(null), null);
   });
   test('Total thresholds are sanitized; custom #rrggbb colors are kept; an empty list stays empty', () => {
@@ -259,6 +260,12 @@ suite('Total letter grades', (test) => {
     // rule, which then beats the rule hiding Canvas's unrounded text: "86.0% 86.02%".
     a.ok(!/:not\(\.cgp-total-flag/.test(css), 'excluded with :not(:where(...)), never a bare :not(.cgp-total-flag)');
     a.ok(css.includes(':not(:where(.cgp-total-flag, .cgp-total-flag *))'), 'the icon is still excluded, so it keeps its colour');
+  });
+  test('a flagged Total stays centered with the rest of the column: the icon takes no room', () => {
+    const css = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'styles', 'gradebook.css'), 'utf8');
+    const banded = css.split('}').filter((r) => /\[data-cgp-col="total"\]\[data-cgp-band\]\s*\{/.test(r));
+    banded.forEach((r) => a.ok(!/padding/.test(r), 'no padding on a flagged Total cell: ' + r.trim().slice(0, 80)));
+    a.ok(/> \.cgp-total-flag \{[^}]*position: absolute/.test(css), 'the icon is absolutely positioned');
   });
   test('threshold colors: named swatches, and a custom color tinted toward white', () => {
     a.eq(CGP.highlightSwatch('gold').label, 'Golden yellow');
