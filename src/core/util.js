@@ -33,6 +33,29 @@
     { id: 'gray', label: 'Gray', bg: '#e9ecef', edge: '#6b7780' }
   ];
   CGP.HIGHLIGHT_COLORS = CGP.HIGHLIGHT_PALETTE.map(function (c) { return c.id; });
+
+  /* The icons a teacher can pick for a Total threshold, drawn beside the
+   * Total in the threshold's colour. Inline SVG rather than emoji, so they
+   * look the same in every browser and OS. "currentColor" is the threshold
+   * colour; the white parts are the cut-outs (the "!", the pupil). */
+  CGP.TOTAL_ICONS = [
+    { id: 'alert', label: 'Alert', svg: '<circle cx="10" cy="10" r="9" fill="currentColor"/><path fill="#fff" d="M8.85 4.6h2.3l-.45 7.1H9.3zM10 13.3a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8z"/>' },
+    { id: 'warning', label: 'Warning', svg: '<path fill="currentColor" d="M10 1.3c.5 0 1 .3 1.3.8l7.9 14c.5.9-.1 2-1.2 2H2c-1.1 0-1.7-1.1-1.2-2L8.7 2.1c.3-.5.8-.8 1.3-.8z"/><path fill="#fff" d="M8.95 6.4h2.1l-.35 5.9H9.3zM10 13.7a1.25 1.25 0 1 1 0 2.5 1.25 1.25 0 0 1 0-2.5z"/>' },
+    { id: 'eye', label: 'Eye', svg: '<path fill="currentColor" d="M10 3.8C5.4 3.8 1.9 6.9.6 10c1.3 3.1 4.8 6.2 9.4 6.2s8.1-3.1 9.4-6.2c-1.3-3.1-4.8-6.2-9.4-6.2z"/><circle cx="10" cy="10" r="3.7" fill="#fff"/><circle cx="10" cy="10" r="2" fill="currentColor"/>' },
+    { id: 'megaphone', label: 'Megaphone', svg: '<path fill="currentColor" d="M14.6 2.6 6.8 6.2H3.4A1.6 1.6 0 0 0 1.8 7.8v3.6c0 .9.7 1.6 1.6 1.6h.5l1.3 4.2c.2.5.6.8 1.1.8h1.5c.7 0 1.1-.6.9-1.2L7.4 13l7.2 3.6c.6.3 1.3-.1 1.3-.8V3.4c0-.7-.7-1.1-1.3-.8z"/><path fill="currentColor" d="M17.5 7a.9.9 0 0 1 1.2.3 4 4 0 0 1 0 4.6.9.9 0 1 1-1.5-1 2.2 2.2 0 0 0 0-2.6.9.9 0 0 1 .3-1.3z"/>' },
+    { id: 'flag', label: 'Flag', svg: '<path fill="currentColor" d="M4 1.8a1 1 0 0 1 1 1V3h10.3c.8 0 1.2.9.7 1.5l-2.6 3.3 2.6 3.3c.5.6.1 1.5-.7 1.5H5v5.6a1 1 0 1 1-2 0V2.8a1 1 0 0 1 1-1z"/>' },
+    { id: 'arrow', label: 'Arrow', svg: '<path fill="currentColor" d="M2 8.6h9V4.5c0-.8 1-1.2 1.6-.7l6 5.5c.4.4.4 1 0 1.4l-6 5.5c-.6.5-1.6.1-1.6-.7v-4.1H2a1 1 0 0 1-1-1V9.6a1 1 0 0 1 1-1z"/>' }
+  ];
+  CGP.totalIcon = function (id) {
+    for (var i = 0; i < CGP.TOTAL_ICONS.length; i++) if (CGP.TOTAL_ICONS[i].id === id) return CGP.TOTAL_ICONS[i];
+    return null;
+  };
+  /* The whole <svg> for an icon id, or '' when there is no such icon. */
+  CGP.totalIconSvg = function (id, size) {
+    var ic = CGP.totalIcon(id);
+    var n = size || 16;
+    return ic ? '<svg viewBox="0 0 20 20" width="' + n + '" height="' + n + '" aria-hidden="true" focusable="false">' + ic.svg + '</svg>' : '';
+  };
   var HEX_RE = /^#[0-9a-f]{6}$/;
 
   /* { bg, edge, label } for a threshold colour: a named one from the palette,
@@ -51,9 +74,11 @@
     return { id: c, label: 'Custom', bg: '#' + mix(1) + mix(3) + mix(5), edge: c };
   };
 
-  /* Total thresholds ({ below: 72.5, color: 'redorange' }: a Total that
-   * rounds to under 72.5 - 72.4 or less - gets that colour): usable rules
-   * only, lowest threshold first, one rule per threshold. null when not a
+  /* Total thresholds ({ below: 72.5, color: 'redorange', icon: 'alert' }: a
+   * Total that rounds to under 72.5 - 72.4 or less - gets that icon, in that
+   * colour): usable rules only, lowest threshold first, one rule per
+   * threshold. A rule saved before icons existed gets one: the lowest
+   * threshold the alert, the others the warning triangle. null when not a
    * list at all. */
   CGP.sanitizeHighlights = function (list) {
     if (!Array.isArray(list)) return null;
@@ -61,12 +86,16 @@
     return list.map(function (r) {
       var below = Number(r && r.below);
       var color = String((r && r.color) || '').toLowerCase().trim();
-      return { below: isFinite(below) ? Math.max(0, Math.min(1000, Math.round(below * 10) / 10)) : NaN, color: color };
+      var icon = String((r && r.icon) || '').toLowerCase().trim();
+      return { below: isFinite(below) ? Math.max(0, Math.min(1000, Math.round(below * 10) / 10)) : NaN, color: color, icon: icon };
     }).filter(function (r) {
       if (!isFinite(r.below) || !CGP.highlightSwatch(r.color) || seen[r.below]) return false;
       seen[r.below] = true;
       return true;
-    }).sort(function (a, b) { return a.below - b.below; }).slice(0, 8);
+    }).sort(function (a, b) { return a.below - b.below; }).slice(0, 8).map(function (r, i) {
+      if (!CGP.totalIcon(r.icon)) r.icon = i === 0 ? 'alert' : 'warning';
+      return r;
+    });
   };
 
   /* A letter grade's minus as a dash: "B-" (or "B\u2212") reads as "B\u2013",
@@ -85,11 +114,11 @@
     frozenTotal: true,
     gradingScale: CGP.DEFAULT_GRADING_SCALE,
     // The Total column: shown rounded to 0.1, its letter grade on hover, and
-    // tinted when it falls below a teacher's threshold.
+    // flagged with an icon when it falls below a teacher's threshold.
     roundTotals: true,
     totalHighlights: true,
-    // 72.4% or below red-orange, 72.5-82.4% golden yellow.
-    totalHighlightRules: [{ below: 72.5, color: 'redorange' }, { below: 82.5, color: 'gold' }],
+    // 72.4% or below a red-orange alert, 72.5-82.4% a golden-yellow warning.
+    totalHighlightRules: [{ below: 72.5, color: 'redorange', icon: 'alert' }, { below: 82.5, color: 'gold', icon: 'warning' }],
     centerAssignmentColumns: true,
     showAssignmentDueDate: true,
     hideTestStudent: true,

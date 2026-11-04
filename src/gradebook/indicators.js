@@ -352,7 +352,9 @@
     'cgp-has-status-badge', 'cgp-post-clear', 'cgp-pending-write', 'cgp-override'];
   P.clearCell = function (cell) {
     var dirty = cell.className.indexOf('cgp-') >= 0;
-    var leftovers = cell.querySelectorAll(':scope > .cgp-marks, :scope > .cgp-val');
+    var leftovers = cell.querySelectorAll(cell.getAttribute('data-cgp-col') === 'total'
+      ? ':scope > .cgp-marks, :scope > .cgp-val'
+      : ':scope > .cgp-marks, :scope > .cgp-val, :scope > .cgp-total-flag');
     if (!dirty && !leftovers.length && !cell.querySelector('[data-cgp-hid]')) return;
     for (var i = 0; i < leftovers.length; i++) leftovers[i].remove();
     // Native icons a Missing/Late badge hid stay hidden for whoever SlickGrid
@@ -593,6 +595,35 @@
 
   var PCT_ONLY = /^\s*-?\d+(?:[.,]\d+)?\s*%\s*$/;
 
+  /* The threshold icon beside a Total: an inline SVG in the threshold's
+   * colour (no emoji, so it looks the same in every browser). It sits
+   * directly in the cell, beside Canvas's own content, and is only touched
+   * when what it shows changes - so repainting an unchanged Total causes no
+   * DOM churn. If Canvas wipes the cell, the next paint puts it back. */
+  function paintTotalFlag(cell, icon, swatch, rule) {
+    var flags = cell.querySelectorAll(':scope > .cgp-total-flag');
+    for (var i = 1; i < flags.length; i++) flags[i].remove();
+    var flag = flags[0] || null;
+    if (!icon) { if (flag) flag.remove(); return; }
+    if (!flag) {
+      flag = document.createElement('span');
+      flag.className = 'cgp-total-flag';
+      cell.appendChild(flag);
+    }
+    if (flag.getAttribute('data-icon') !== icon.id) {
+      flag.setAttribute('data-icon', icon.id);
+      flag.innerHTML = CGP.totalIconSvg(icon.id, 16);
+    }
+    if (flag.getAttribute('data-color') !== swatch.edge) {
+      flag.style.color = swatch.edge;
+      flag.setAttribute('data-color', swatch.edge);
+    }
+    var label = 'Total at or below ' + (Math.round((rule.below - 0.1) * 10) / 10) + '%';
+    setAttr(flag, 'title', label);
+    setAttr(flag, 'aria-label', label);
+    setAttr(flag, 'role', 'img');
+  }
+
   /* The element holding Canvas's percentage: its own .percentage span, or
    * failing that the innermost element whose whole text is a percentage. */
   function totalValueEl(cell, tip) {
@@ -614,7 +645,8 @@
    * rounded value can never outlive the number it was made from, and until
    * the next pass Canvas's own text simply shows.
    *  - data-cgp-pct (value element): the percentage rounded to 0.1;
-   *  - data-cgp-band (cell): a threshold colour;
+   *  - data-cgp-band (cell): the threshold it falls under, with its icon in
+   *    a .cgp-total-flag beside Canvas's content (paintTotalFlag);
    *  - data-cgp-tip (cell): what the hover tooltip says. */
   P.paintTotal = function (cell) {
     var s = (this.settings && this.settings.values) || {};
@@ -632,18 +664,11 @@
       var rounded = s.roundTotals !== false && shownIsPct ? T.formatPercent(pct) : '';
       setAttr(valueEl, 'data-cgp-pct', rounded && rounded !== shown ? rounded : '');
     }
-    var band = s.totalHighlights ? T.highlightFor(pct, s.totalHighlightRules) : null;
-    var swatch = band ? CGP.highlightSwatch(band) : null;
+    var rule = s.totalHighlights ? T.highlightRuleFor(pct, s.totalHighlightRules) : null;
+    var swatch = rule ? CGP.highlightSwatch(rule.color) : null;
+    var icon = swatch ? CGP.totalIcon(rule.icon) || CGP.TOTAL_ICONS[0] : null;
     setAttr(cell, 'data-cgp-band', swatch ? swatch.id : '');
-    // The colours ride on the cell as custom properties the stylesheet reads,
-    // so a teacher's own "#rrggbb" works like a named colour.
-    if (swatch) {
-      if (cell.style.getPropertyValue('--cgp-band-bg') !== swatch.bg) cell.style.setProperty('--cgp-band-bg', swatch.bg);
-      if (cell.style.getPropertyValue('--cgp-band-edge') !== swatch.edge) cell.style.setProperty('--cgp-band-edge', swatch.edge);
-    } else if (cell.style.getPropertyValue('--cgp-band-bg')) {
-      cell.style.removeProperty('--cgp-band-bg');
-      cell.style.removeProperty('--cgp-band-edge');
-    }
+    paintTotalFlag(cell, icon, swatch, rule);
 
     // The tooltip: the letter grade, then points earned / possible (Canvas's
     // own tooltip text; when the Total is shown as points, the cell's).

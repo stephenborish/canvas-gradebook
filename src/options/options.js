@@ -489,7 +489,7 @@
     currentRosterPrefs = values.rosterPrefs;
   }
 
-  /* Total thresholds: one row per rule, "Totals at or below [72.4] % [Red-orange]".
+  /* Total thresholds: one row per rule, "At or below [72.4] % get [Alert] [Red-orange]".
    * Stored as { below: 72.5 }: the Total is compared after rounding to 0.1,
    * so "at or below 72.4" and "under 72.5" are the same rule; the form shows
    * the at-or-below number teachers think in. */
@@ -501,14 +501,19 @@
     return sw ? (sw.label === 'Custom' ? 'Custom (' + c + ')' : sw.label) : c;
   }
 
-  /* "Totals 72.4% or below: Red-orange · 72.5–82.4%: Golden yellow". */
+  function iconLabel(id) {
+    var ic = CGP.totalIcon(id);
+    return ic ? ic.label.toLowerCase() : 'icon';
+  }
+
+  /* "Totals 72.4% or below: red-orange alert · 72.5–82.4%: golden yellow warning". */
   function thresholdSummary(rules) {
     var sorted = rules.filter(function (r) { return isFinite(r.below); }).slice().sort(function (a, b) { return a.below - b.below; });
-    if (!sorted.length) return 'No Totals are colored.';
+    if (!sorted.length) return 'No Totals are flagged.';
     return 'Totals ' + sorted.map(function (r, i) {
       var top = tenth(r.below - 0.1);
       var range = i === 0 ? top + '% or below' : tenth(sorted[i - 1].below) + '–' + top + '%';
-      return range + ': ' + colorLabel(r.color);
+      return range + ': ' + colorLabel(r.color).toLowerCase() + ' ' + iconLabel(r.icon);
     }).join(' · ') + '.';
   }
 
@@ -526,8 +531,8 @@
   }
 
   function renderThresholds(list) {
-    currentThresholds = (Array.isArray(list) ? list : []).map(function (r) {
-      return { below: r.below, color: r.color };
+    currentThresholds = (Array.isArray(list) ? list : []).map(function (r, i) {
+      return { below: r.below, color: r.color, icon: CGP.totalIcon(r.icon) ? r.icon : (i === 0 ? 'alert' : 'warning') };
     });
     var box = $('totalHighlightList');
     if (!box) return;
@@ -543,18 +548,29 @@
       row.className = 'threshold-row';
       var swatch = document.createElement('span');
       swatch.className = 'threshold-row__swatch';
-      swatch.textContent = '85.0%';
+      var swatchIcon = document.createElement('span');
+      swatchIcon.className = 'threshold-row__icon';
+      swatch.appendChild(swatchIcon);
       var lead = document.createElement('span');
-      lead.textContent = 'Totals at or below';
+      lead.textContent = 'At or below';
       var num = document.createElement('input');
       num.type = 'number';
       num.min = '0'; num.max = '1000'; num.step = '0.1';
       num.value = tenth(rule.below - 0.1);
-      num.setAttribute('aria-label', 'Highest percentage that gets this color');
+      num.setAttribute('aria-label', 'Highest percentage that gets this icon');
       var pct = document.createElement('span');
-      pct.textContent = '% are';
+      pct.textContent = '% get';
+      var iconSel = document.createElement('select');
+      iconSel.setAttribute('aria-label', 'Icon');
+      CGP.TOTAL_ICONS.forEach(function (ic) {
+        var o = document.createElement('option');
+        o.value = ic.id;
+        o.textContent = ic.label;
+        if (ic.id === rule.icon) o.selected = true;
+        iconSel.appendChild(o);
+      });
       var sel = document.createElement('select');
-      sel.setAttribute('aria-label', 'Highlight color');
+      sel.setAttribute('aria-label', 'Icon color');
       var isCustom = !CGP.HIGHLIGHT_PALETTE.some(function (c) { return c.id === rule.color; });
       CGP.HIGHLIGHT_PALETTE.forEach(function (c) {
         var o = document.createElement('option');
@@ -576,8 +592,8 @@
       picker.hidden = !isCustom;
       var paintSwatch = function () {
         var sw = CGP.highlightSwatch(rule.color) || CGP.HIGHLIGHT_PALETTE[0];
-        swatch.style.background = sw.bg;
-        swatch.style.borderLeftColor = sw.edge;
+        swatchIcon.style.color = sw.edge;
+        swatchIcon.innerHTML = CGP.totalIconSvg(rule.icon, 16);
         updateSummary();
       };
       paintSwatch();
@@ -593,6 +609,7 @@
         if (sel.value === 'custom' && picker.showPicker) { try { picker.showPicker(); } catch (e) { /* ignore */ } }
       });
       picker.addEventListener('input', function () { rule.color = picker.value.toLowerCase(); paintSwatch(); });
+      iconSel.addEventListener('change', function () { rule.icon = iconSel.value; paintSwatch(); });
       var spacer = document.createElement('span');
       spacer.className = 'threshold-row__spacer';
       var del = document.createElement('button');
@@ -605,7 +622,7 @@
         currentThresholds.splice(i, 1);
         renderThresholds(currentThresholds);
       });
-      [swatch, lead, num, pct, sel, picker, spacer, del].forEach(function (n) { row.appendChild(n); });
+      [swatch, lead, num, pct, iconSel, sel, picker, spacer, del].forEach(function (n) { row.appendChild(n); });
       box.appendChild(row);
     });
     if (currentThresholds.length) box.appendChild(summary);
@@ -1012,7 +1029,7 @@
     var used = currentThresholds.map(function (r) { return r.color; });
     var color = CGP.HIGHLIGHT_COLORS.filter(function (c) { return used.indexOf(c) < 0; })[0] || 'gray';
     var top = currentThresholds.reduce(function (m, r) { return Math.max(m, Number(r.below) || 0); }, 0);
-    currentThresholds.push({ below: Math.min(100, top ? tenth(top + 10) : 72.5), color: color });
+    currentThresholds.push({ below: Math.min(100, top ? tenth(top + 10) : 72.5), color: color, icon: currentThresholds.length ? 'eye' : 'alert' });
     renderThresholds(currentThresholds);
   });
   $('resetTotalHighlights').addEventListener('click', function () {

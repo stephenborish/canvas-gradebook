@@ -240,9 +240,18 @@ suite('Total letter grades', (test) => {
   test('Total thresholds are sanitized; custom #rrggbb colors are kept; an empty list stays empty', () => {
     const s = CGP.sanitizeSettings({ totalHighlightRules: [{ below: '85', color: 'Blue' }, { below: 60, color: 'pink' },
       { below: 'x', color: 'red' }, { below: 50, color: 'red' }, { below: 70, color: '#12AB34' }, { below: 75, color: '#12ab3' }] });
-    a.deep(s.totalHighlightRules, [{ below: 50, color: 'red' }, { below: 70, color: '#12ab34' }, { below: 85, color: 'blue' }]);
+    a.deep(s.totalHighlightRules, [{ below: 50, color: 'red', icon: 'alert' }, { below: 70, color: '#12ab34', icon: 'warning' },
+      { below: 85, color: 'blue', icon: 'warning' }]);
     a.deep(CGP.sanitizeSettings({ totalHighlightRules: [] }).totalHighlightRules, []);
     a.deep(CGP.sanitizeSettings({ totalHighlightRules: 'bad' }).totalHighlightRules, CGP.DEFAULTS.totalHighlightRules);
+  });
+  test('Total thresholds keep a chosen icon; an unknown one falls back; the matching rule is returned', () => {
+    const s = CGP.sanitizeSettings({ totalHighlightRules: [{ below: 80, color: 'gold', icon: 'Eye' }, { below: 70, color: 'red', icon: 'emoji' }] });
+    a.deep(s.totalHighlightRules, [{ below: 70, color: 'red', icon: 'alert' }, { below: 80, color: 'gold', icon: 'eye' }]);
+    a.eq(CGP.totals.highlightRuleFor(75, s.totalHighlightRules).icon, 'eye');
+    a.eq(CGP.totals.highlightRuleFor(95, s.totalHighlightRules), null);
+    CGP.TOTAL_ICONS.forEach((ic) => a.ok(/^<svg [^>]*viewBox="0 0 20 20"/.test(CGP.totalIconSvg(ic.id)), ic.id));
+    a.eq(CGP.totalIconSvg('nope'), '');
   });
   test('threshold colors: named swatches, and a custom color tinted toward white', () => {
     a.eq(CGP.highlightSwatch('gold').label, 'Golden yellow');
