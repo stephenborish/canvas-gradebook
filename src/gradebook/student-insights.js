@@ -743,7 +743,7 @@
   P.openShare = function () {
     if (!this._root) return;
     this._share.open = true;
-    if (this._tab !== 'assignments') this.selectTab('assignments');
+    if (this._tab !== 'work') this.selectTab('work');
     this.refreshShare(true);
     var card = this._root.querySelector('.cgp-si__share');
     if (!card && this._last) CGP.ui.toast('Nothing is missing or late for this student right now.');
