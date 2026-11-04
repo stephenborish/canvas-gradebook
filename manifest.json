@@ -3,7 +3,7 @@
   "name": "Canvas Gradebook+",
   "version": "1.25.2",
   "author": "stephenborish",
-  "description": "Upgrades Canvas instructor Gradebook: instructor-comment indicators, keyboard shortcuts, instant post, and copying content to your other classes.",
+  "description": "Grade faster without leaving Canvas: feedback indicators, spreadsheet-style grading, one-click posting and instant score analysis.",
   "minimum_chrome_version": "116",
   "permissions": [
     "storage",

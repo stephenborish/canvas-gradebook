@@ -449,6 +449,10 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     a.eq(dupNumbers, null, 'no duplicate hardcoded step numbers inside strong tags');
   });
 
+  test('manifest description fits the Chrome Web Store limit of 132 characters', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'manifest.json'), 'utf8'));
+    a.ok(manifest.description.length <= 132, 'description is ' + manifest.description.length + ' characters');
+  });
   test('extension version is bumped to 1.25.2 and displayed directly above Save changes button', () => {
     const manifestPath = path.resolve(__dirname, '../manifest.json');
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
