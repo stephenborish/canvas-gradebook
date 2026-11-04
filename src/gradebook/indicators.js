@@ -614,7 +614,6 @@
    * rounded value can never outlive the number it was made from, and until
    * the next pass Canvas's own text simply shows.
    *  - data-cgp-pct (value element): the percentage rounded to 0.1;
-   *  - data-cgp-letter (value element): its letter, shown on hover;
    *  - data-cgp-band (cell): a threshold colour;
    *  - data-cgp-tip (cell): what the hover tooltip says. */
   P.paintTotal = function (cell) {
@@ -632,7 +631,6 @@
     if (valueEl) {
       var rounded = s.roundTotals !== false && shownIsPct ? T.formatPercent(pct) : '';
       setAttr(valueEl, 'data-cgp-pct', rounded && rounded !== shown ? rounded : '');
-      setAttr(valueEl, 'data-cgp-letter', letter || '');
     }
     var band = s.totalHighlights ? T.highlightFor(pct, s.totalHighlightRules) : null;
     var swatch = band ? CGP.highlightSwatch(band) : null;
@@ -647,13 +645,12 @@
       cell.style.removeProperty('--cgp-band-edge');
     }
 
+    // The tooltip: the letter grade, then points earned / possible (Canvas's
+    // own tooltip text; when the Total is shown as points, the cell's).
     var lines = [];
-    if (pct !== null) lines.push(T.formatPercent(pct) + (letter ? ' \u00b7 ' + letter : ''));
-    // Canvas's own tooltip: points earned / possible (or the percentage when
-    // the Total is shown as points).
+    if (letter) lines.push(letter);
     if (tipText && T.parsePercent(tipText) === null) lines.push(tipText + ' pts');
-    else if (!shownIsPct && shown) lines.push(shown);
-    if (pct !== null && Math.abs(T.roundTenth(pct) - pct) > 1e-9) lines.push('Exact: ' + (Math.round(pct * 100) / 100) + '%');
+    else if (!shownIsPct && shown) lines.push(shown + ' pts');
     setAttr(cell, 'data-cgp-tip', lines.join('\n'));
     if (this._tipCell === cell) this.showTotalTip(cell);
   };

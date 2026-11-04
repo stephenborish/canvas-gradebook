@@ -281,10 +281,9 @@ view without one), there is nothing to move.
 How the Total reads (Options → Appearance):
 - **Rounded to one decimal place**: 86.02% shows as 86.0% (half up - the same rounding the letter
   grade uses). Canvas's own number is untouched underneath; only what is painted changes.
-- **Hover for the letter grade**: the cell swaps to the letter (from your letter-grade scale)
-  while the pointer is on it, and a tooltip shows the percentage, letter, points earned / possible
-  and the exact percentage. The tooltip closes as soon as the pointer leaves the Total. Canvas's
-  own Total tooltip is hidden.
+- **Hover for the letter grade**: a tooltip shows the letter (from your letter-grade scale) and
+  the points earned / possible; the cell keeps showing the percentage. The tooltip closes as soon
+  as the pointer leaves the Total. Canvas's own Total tooltip is hidden.
 - **Color thresholds**: a Total at or below a percentage you set is tinted - by default
   **red-orange at 72.4% or below** and **golden yellow from 72.5% to 82.4%**, compared on the
   rounded Total. Under Options → Appearance, change each threshold, pick one of nine colors or any

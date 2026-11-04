@@ -1180,24 +1180,18 @@ html.cgp-on .slick-cell[class~="total_grade"] .gradebook-tooltip {
   display: none !important;
 }
 
-/* The Total rounded to 0.1 (data-cgp-pct), and its letter grade while the
- * pointer is on the cell (data-cgp-letter). Canvas's own text stays in the
- * DOM; only what is painted changes. The attribute selectors are repeated
- * to outrank the "every descendant inherits the grade size" rule above. */
-html.cgp-on .slick-cell[data-cgp-col="total"][data-cgp-col="total"] [data-cgp-pct][data-cgp-pct][data-cgp-pct],
-html.cgp-on .slick-cell[data-cgp-col="total"][data-cgp-col="total"]:hover [data-cgp-letter][data-cgp-letter][data-cgp-letter] {
+/* The Total rounded to 0.1 (data-cgp-pct), shown whether or not the
+ * pointer is on it - the letter grade goes in the hover tooltip. Canvas's
+ * own text stays in the DOM; only what is painted changes. The attribute
+ * selectors are repeated to outrank the "every descendant inherits the
+ * grade size" rule above. */
+html.cgp-on .slick-cell[data-cgp-col="total"][data-cgp-col="total"] [data-cgp-pct][data-cgp-pct][data-cgp-pct] {
   font-size: 0 !important;
   letter-spacing: 0 !important;
 }
 html.cgp-on .slick-cell[data-cgp-col="total"] [data-cgp-pct]::before {
   content: attr(data-cgp-pct);
   font-size: var(--cgp-grade-font, 16px);
-}
-html.cgp-on .slick-cell[data-cgp-col="total"]:hover [data-cgp-letter]::before {
-  content: attr(data-cgp-letter);
-  font-size: var(--cgp-grade-font, 16px);
-  font-weight: 800;
-  color: var(--cgp-brand-dark);
 }
 
 /* Thresholds (Options -> Appearance): the cell tinted, with a strip on its
@@ -1228,7 +1222,7 @@ html.cgp-on .cgp-total-tip {
   pointer-events: none;
 }
 html.cgp-on .cgp-total-tip[hidden] { display: none; }
-html.cgp-on .cgp-total-tip b { font-size: 14px; font-weight: 700; color: #fff; }
+html.cgp-on .cgp-total-tip b { font-size: 16px; font-weight: 700; color: #fff; }
 html.cgp-on .cgp-total-tip span { color: #d5dde3; }
 
 /* ------------------------------------------------------- student column */
