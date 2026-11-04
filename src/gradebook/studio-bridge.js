@@ -25,24 +25,23 @@
   var waiting = Object.create(null);
   var seq = 0;
   var cache = Object.create(null);   // course name -> {at, promise}
+  var noStudio = null;               // a launch that can't work here: don't retry it
+  var lastFailAt = 0;                // the last failed launch, to space retries
+  var RETRY_MS = 60 * 1000;
 
-  function isInside(win, root) {
-    function walk(w, depth) {
-      if (depth > 5) return false;
-      for (var i = 0; i < w.frames.length; i++) {
-        var f = w.frames[i];
-        if (f === win) return true;
-        try { if (walk(f, depth + 1)) return true; } catch (e) { /* ignore */ }
-      }
-      return false;
-    }
-    try { return root === win || walk(root, 0); } catch (e) { return false; }
+  /* Forget the hidden frame (Studio's sign-in ran out, or it never came up),
+   * so the next ask opens Studio afresh. */
+  function reset() {
+    studio = null;
+    opening = null;
+    if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+    frame = null;
   }
 
   window.addEventListener('message', function (e) {
     var d = e.data;
     if (!d || typeof d !== 'object' || !STUDIO_ORIGIN.test(e.origin) || !frame || !frame.contentWindow) return;
-    if (!e.source || !isInside(e.source, frame.contentWindow)) return;
+    if (!e.source || !CGP.util.isFrameWithin(e.source, frame.contentWindow)) return;
     if (d.source === 'cgp-studio-hello' && d.type === 'ready') {
       studio = { win: e.source, origin: e.origin };
       readyWaiters.splice(0).forEach(function (fn) { fn(); });
@@ -74,6 +73,8 @@
   function open(api, courseId) {
     if (studio) return Promise.resolve();
     if (opening) return opening;
+    if (noStudio) return Promise.reject(noStudio);
+    if (Date.now() - lastFailAt < RETRY_MS) return Promise.reject(Object.assign(new Error('Studio didn’t open in the background'), { code: 'timeout' }));
     opening = launchUrl(api, courseId).then(function (href) {
       if (!href) throw Object.assign(new Error('Studio isn’t set up in this Canvas'), { code: 'noStudio' });
       var u = new URL(href, location.origin);
@@ -91,9 +92,10 @@
         setTimeout(function () { reject(Object.assign(new Error('Studio didn’t open in the background'), { code: 'timeout' })); }, READY_WAIT_MS);
       });
     });
-    opening.catch(function () {
-      opening = null;
-      if (frame && frame.parentNode && !studio) { frame.parentNode.removeChild(frame); frame = null; }
+    opening.catch(function (err) {
+      if (err && err.code === 'noStudio') noStudio = err;
+      else lastFailAt = Date.now();
+      if (!studio) reset();
     });
     return opening;
   }
@@ -114,7 +116,14 @@
   function courseVideos(api, courseId, courseName) {
     var hit = cache[courseName];
     if (hit && Date.now() - hit.at < CACHE_MS) return hit.promise;
-    var p = open(api, courseId).then(function () { return ask(courseName); });
+    var p = open(api, courseId).then(function () {
+      return ask(courseName).catch(function (err) {
+        // A Studio page that has stopped answering (expired sign-in, gone):
+        // open a fresh one next time.
+        reset();
+        throw err;
+      });
+    });
     cache[courseName] = { at: Date.now(), promise: p };
     p.catch(function () { if (cache[courseName] && cache[courseName].promise === p) delete cache[courseName]; });
     return p;

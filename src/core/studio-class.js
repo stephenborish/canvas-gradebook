@@ -187,7 +187,6 @@
     if (views === null) views = pick(/views|plays/i);
     return {
       views: views,
-      secondsViewed: pick(/time_viewed|seconds_viewed|watch_time|time/i),
       uniqueViewers: pick(/unique/i),
       timeline: timeline
     };

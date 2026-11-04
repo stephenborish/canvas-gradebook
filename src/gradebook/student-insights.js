@@ -1169,8 +1169,10 @@
         '(it needs the “View usage reports” permission), so the pages, files and assignments they opened can’t be shown.</p>');
     }
     var self = this;
-    var filter = this._contentKind || 'all';
     var kinds = c.byKind.filter(function (k) { return k.kind !== 'area'; });
+    // The last student's filter, unless this student has nothing of that kind.
+    var filter = this._contentKind || 'all';
+    if (filter !== 'all' && !c.byKind.some(function (k) { return k.kind === filter; })) filter = 'all';
     var chips = [['all', 'All', c.items.length]].concat(c.byKind.map(function (k) { return [k.kind, KIND_PLURALS[k.kind] || k.label, k.items]; }));
     var hasTime = c.pageViewsKnown;
     var rows = c.items.map(function (i) {
@@ -1205,7 +1207,8 @@
       pages ? pages.items + (pages.items === 1 ? ' page' : ' pages') : '', files ? files.items + (files.items === 1 ? ' file' : ' files') : ''
     ].filter(Boolean).join(' · ');
     var timeNote = hasTime
-      ? '<p class="cgp-si__note">Time is how long a page was open and in use, from Canvas page views over the last ' + PAGE_VIEW_DAYS + ' days' +
+      ? '<p class="cgp-si__note">Time is how long a page was open and in use, from Canvas page views ' +
+        (c.pageViewsTruncated && c.pageViewsSince ? 'since ' + esc(fmtDate(c.pageViewsSince)) + ' (the most Canvas gives at once)' : 'over the last ' + PAGE_VIEW_DAYS + ' days') +
         (c.totalSeconds ? ' (' + esc(SI().duration(c.totalSeconds)) + ' in this course in all)' : '') + '. Views and first/last opened cover the whole course.</p>'
       : r.pageViewsLoading
         ? '<p class="cgp-si__note"><span class="cgp-si__spinner cgp-si__spinner--sm" aria-hidden="true"></span> Reading page views for time on each item…</p>'

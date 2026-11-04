@@ -762,7 +762,7 @@
     list.forEach(function (i) { i.views = Math.round(i.views); i.participations = Math.round(i.participations); });
 
     var pvKnown = Array.isArray(input.pageViews);
-    var since = null, totalSeconds = 0, unmatchedSeconds = 0, courseViews = 0;
+    var since = null, totalSeconds = 0;
     if (pvKnown) {
       // Wiki pages show up in page views by URL slug, not id; tie a slug to
       // the page whose title it was made from where that is unambiguous.
@@ -777,12 +777,11 @@
         var at = time(pv.created_at);
         if (at && (!since || at < since)) since = at;
         var secs = Math.max(0, num(pv.interaction_seconds) || 0);
-        courseViews++;
         totalSeconds += secs;
         var key = pageViewKey(pv, courseId);
         var item = key && byKey[key];
         if (!item && key && key.indexOf('page_url:') === 0) item = bySlug[key.slice(9).toLowerCase()] || null;
-        if (!item) { unmatchedSeconds += secs; return; }
+        if (!item) return;
         item.seconds = (item.seconds || 0) + secs;
         item.recentViews++;
         if (item.type === 'attachment') {
@@ -831,10 +830,9 @@
       notOpenedPastDue: notOpened.filter(function (n) { return n.dueAt && n.dueAt <= now; }).length,
       pageViewsKnown: pvKnown,
       pageViewsSince: since,
-      courseViews: courseViews,
       totalSeconds: pvKnown ? totalSeconds : null,
-      unmatchedSeconds: unmatchedSeconds,
-      truncated: !!input.accesses.truncated || !!(input.pageViews && input.pageViews.truncated),
+      // Page views stop at Canvas's page limit: then they reach back only to `since`.
+      pageViewsTruncated: !!(input.pageViews && input.pageViews.truncated),
       kindLabels: KIND_LABELS
     };
   }

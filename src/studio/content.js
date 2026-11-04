@@ -179,10 +179,19 @@
   function courseName() {
     var p = state.current && state.perspectives[state.current];
     if (p && p.name) return p.name;
-    var labels = document.querySelectorAll('label, span, div, h2, h3, h4, legend, p');
-    for (var i = 0; i < labels.length; i++) {
-      var el = labels[i];
-      if (el.childElementCount > 1 || !/^\s*select embed\s*$/i.test(el.textContent || '')) continue;
+    // Find Studio's "Select Embed" label once, then just re-read its box.
+    if ((!embedLabel || !embedLabel.isConnected) && Date.now() - embedScanAt > 10000) {
+      embedScanAt = Date.now();
+      embedLabel = null;
+      var labels = document.querySelectorAll('label, legend, h2, h3, h4, span, div');
+      for (var j = 0; j < labels.length && !embedLabel; j++) {
+        var cand = labels[j];
+        if (cand.childElementCount <= 1 && /^\s*select embed\s*$/i.test(cand.textContent || '')) embedLabel = cand;
+      }
+    }
+    var found = embedLabel ? [embedLabel] : [];
+    for (var i = 0; i < found.length; i++) {
+      var el = found[i];
       var box = el;
       for (var up = 0; up < 4 && box; up++) {
         box = box.parentElement;
@@ -197,6 +206,9 @@
     }
     return '';
   }
+
+  var embedLabel = null;
+  var embedScanAt = 0;
 
   function videoTitle() {
     var h = document.querySelector('h1');

@@ -26,20 +26,6 @@
     return String(s || '').toLowerCase().replace(/[‐-―]/g, '-').replace(/\s+/g, ' ').trim();
   }
 
-  /* Is `win` a frame somewhere inside this page? */
-  function isOurFrame(win) {
-    function walk(w, depth) {
-      if (depth > 4) return false;
-      for (var i = 0; i < w.frames.length; i++) {
-        var f = w.frames[i];
-        if (f === win) return true;
-        try { if (walk(f, depth + 1)) return true; } catch (e) { /* ignore */ }
-      }
-      return false;
-    }
-    try { return walk(window, 0); } catch (e) { return false; }
-  }
-
   function pageCourseId() {
     var m = /\/courses\/(\d+)(?:\/|$)/.exec(location.pathname);
     return m ? m[1] : null;
@@ -82,7 +68,7 @@
   window.addEventListener('message', function (e) {
     var d = e.data;
     if (!d || typeof d !== 'object' || d.source !== ASK || d.type !== 'roster') return;
-    if (!STUDIO_ORIGIN.test(e.origin) || !e.source || !isOurFrame(e.source)) return;
+    if (!STUDIO_ORIGIN.test(e.origin) || !e.source || e.source === window || !CGP.util || !CGP.util.isFrameWithin(e.source, window)) return;
     if (!CGP.CanvasApi) return;
     if (!api) api = new CGP.CanvasApi();
     var reply = function (msg) {
