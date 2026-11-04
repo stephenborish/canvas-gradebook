@@ -529,6 +529,26 @@
     return analyticsOrNull(this.get('/api/v1/courses/' + courseId + '/analytics/users/' + userId + '/activity'));
   };
 
+  /* One student's Access Report: every page, file, assignment, quiz and
+   * discussion they have opened in the course, with how many times and when
+   * first and last. The same data as the Access report page (People ->
+   * student -> Access Report); it needs the "View usage reports" permission
+   * teachers normally have, and answers null when it is refused. */
+  CanvasApi.prototype.studentContentAccess = function (courseId, userId) {
+    return analyticsOrNull(this.getAll('/courses/' + courseId + '/users/' + userId + '/usage', {}, { maxPages: 10 }));
+  };
+
+  /* One student's raw page views since `since` (each request, its URL and
+   * how many seconds the page was interacted with), newest first. Canvas
+   * only lets some roles see these (it is an account-level permission on
+   * many instances); a refusal answers null and the overview goes without
+   * time-on-page. */
+  CanvasApi.prototype.studentPageViews = function (userId, since) {
+    return analyticsOrNull(this.getAll('/api/v1/users/' + userId + '/page_views', {
+      start_time: since ? new Date(since).toISOString() : undefined
+    }, { maxPages: 15 }));
+  };
+
   /* Every student's page views, participations and on-time / late / missing
    * breakdown, so one student can be placed against the class. */
   CanvasApi.prototype.studentSummaries = function (courseId) {

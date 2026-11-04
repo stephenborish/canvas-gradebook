@@ -58,7 +58,7 @@
     this._query = '';
     // What "Copy List of Missing/Late Work" copies; kept from one student to
     // the next. open: the builder is expanded.
-    this._share = { missing: true, late: true, links: true, open: false };
+    this._share = { missing: true, late: false, links: true, open: false };
     this._shareExcluded = {};      // assignmentId -> true, this student only
     this._courseName = '';
     this._cache = new Map();       // uid -> {at, work, activity, enrollment}
@@ -186,12 +186,15 @@
       esc(student.fullName || student.name) + '’s work from Canvas…</div>');
 
     var data = this.studentData(uid);
-    var parts = { work: null, activity: undefined, enrollment: null, course: null, summaries: undefined, classReady: false };
+    var parts = { work: null, activity: undefined, enrollment: null, course: null, summaries: undefined, classReady: false,
+      content: undefined, pageViews: undefined };
     function draw() {
       if (gen !== self._gen || !self._root) return;
       if (!parts.work) return;
       self.renderAll(uid, parts);
     }
+    this._open = { uid: uid, gen: gen, parts: parts, draw: draw, data: data };
+    if (this._tab === 'activity') this.loadContent();
     var ready = this.model.ready ? Promise.resolve() : this.model.init();
     ready.then(function () {
       if (gen !== self._gen) return;
@@ -208,6 +211,54 @@
     }, function () {
       if (gen === self._gen) self.setBody('<div class="cgp-si__empty"><b>The gradebook hasn’t finished loading.</b><span>Try again in a moment.</span></div>');
     });
+  };
+
+  /* What the student opened in the course (Access Report) and, where
+   * Canvas allows, their page views: read only once the Activity tab is
+   * shown, since paging through page views costs several requests. */
+  var PAGE_VIEW_DAYS = 60;
+  P.loadContent = function () {
+    var o = this._open;
+    if (!o || o.gen !== this._gen) return;
+    var d = o.data;
+    if (!d.content) {
+      d.content = this.api.studentContentAccess(this.courseId, o.uid).catch(function () { return null; });
+      d.pageViews = this.api.studentPageViews(o.uid, Date.now() - PAGE_VIEW_DAYS * DAY).catch(function () { return null; });
+    }
+    if (o.loading) return;
+    o.loading = true;
+    d.content.then(function (c) { o.parts.content = c; o.draw(); });
+    d.pageViews.then(function (v) { o.parts.pageViews = v; o.draw(); });
+    this.loadStudio(o);
+  };
+
+  /* The course's Studio videos and who watched each (gradebook/
+   * studio-bridge.js opens Studio in the background for it). */
+  P.loadStudio = function (o) {
+    if (!CGP.studioBridge || !CGP.studioClass) { o.parts.studio = { off: true }; return; }
+    var self = this;
+    Promise.all([this.courseInfo(), this.rosterEmails()]).then(function () {
+      if (!self._courseName) throw new Error('Couldn’t read this course’s name');
+      return CGP.studioBridge.courseVideos(self.api, self.courseId, self._courseName);
+    }).then(function (res) {
+      o.parts.studio = res;
+    }, function (err) {
+      o.parts.studio = { error: (err && err.message) || 'Studio didn’t answer', code: err && err.code };
+    }).then(function () { o.draw(); });
+  };
+
+  /* Students' email addresses, to match them to Studio's viewers. */
+  P.rosterEmails = function () {
+    var self = this;
+    if (!this._emails) {
+      this._emails = this.api.courseRoster(this.courseId).then(function (users) {
+        var m = Object.create(null);
+        (users || []).forEach(function (u) { if (u && u.id !== undefined) m[String(u.id)] = u.email || u.login_id || ''; });
+        self._emailMap = m;
+        return m;
+      }, function () { self._emails = null; return Object.create(null); });
+    }
+    return this._emails;
   };
 
   P.step = function (dir) {
@@ -313,6 +364,14 @@
       this.refreshShare();
       return;
     }
+    var kind = t.closest('[data-si-kind]');
+    if (kind) {
+      var k = kind.getAttribute('data-si-kind');
+      this._contentKind = k;
+      this._root.querySelectorAll('[data-si-kind]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-si-kind') === k)); });
+      this._root.querySelectorAll('.cgp-si__table--content tbody tr[data-kind]').forEach(function (tr) { tr.hidden = !(k === 'all' || tr.getAttribute('data-kind') === k); });
+      return;
+    }
     var chip = t.closest('[data-si-filter-chip]');
     if (chip) { this.applyFilter(chip.getAttribute('data-si-filter-chip')); return; }
   };
@@ -329,6 +388,7 @@
       p.hidden = p.getAttribute('data-si-panel') !== name;
     });
     if (filter) this.applyFilter(filter);
+    if (name === 'activity') this.loadContent();
     var body = this._root.querySelector('.cgp-si__body');
     if (body) body.scrollTop = 0;
   };
@@ -341,13 +401,13 @@
     });
     var shown = 0;
     var q = this._query || '';
-    this._root.querySelectorAll('.cgp-si__table tbody tr').forEach(function (tr) {
+    this._root.querySelectorAll('[data-si-panel="work"] .cgp-si__table tbody tr').forEach(function (tr) {
       var tags = (tr.getAttribute('data-tags') || '').split(' ');
       var on = (f === 'all' || tags.indexOf(f) >= 0) && SI().matchesSearch(tr.getAttribute('data-search'), q);
       tr.hidden = !on;
       if (on) shown++;
     });
-    var empty = this._root.querySelector('.cgp-si__table-empty');
+    var empty = this._root.querySelector('[data-si-panel="work"] .cgp-si__table-empty');
     if (empty) empty.hidden = shown > 0;
   };
 
@@ -516,6 +576,18 @@
     r.analyticsKnown = parts.activity !== undefined;
     r.analyticsOff = parts.activity === null;
     r.summariesKnown = parts.summaries !== undefined;
+    r.contentKnown = parts.content !== undefined;
+    r.studio = this.studioFor(uid, student, parts.studio);
+    r.pageViewsLoading = parts.content !== undefined && parts.pageViews === undefined;
+    r.content = parts.content ? SI().contentActivity({
+      courseId: this.courseId,
+      accesses: parts.content,
+      pageViews: parts.pageViews || null,
+      assignments: assignments,
+      // Each assignment's due date for this student (overrides included).
+      dueFor: r.items.reduce(function (m, i) { m[i.id] = i.dueAt; return m; }, {}),
+      now: r.now
+    }) : null;
     this._last = r;
 
     this.renderHeader(student, r);
@@ -812,7 +884,7 @@
     var inc = this.shareInclude(r);
     var mode = inc.missing && inc.late ? 'both' : inc.missing ? 'missing' : inc.late ? 'late' : '';
     function seg(key, label, count, disabled) {
-      return '<button type="button" class="cgp-si__seg" data-si-share-mode="' + key + '" aria-pressed="' + (mode === key) + '"' +
+      return '<button type="button" class="cgp-si__pick" data-si-share-mode="' + key + '" aria-pressed="' + (mode === key) + '"' +
         (disabled ? ' disabled' : '') + '>' + label + (count === undefined ? '' : ' <b>' + count + '</b>') + '</button>';
     }
     function group(title, items, on) {
@@ -832,10 +904,10 @@
       '<div class="cgp-si__share-body" id="cgp-si-share-body">' +
         '<div class="cgp-si__share-pick">' +
           '<div class="cgp-si__share-label">Include</div>' +
-          '<div class="cgp-si__segs" role="group" aria-label="Which work to include">' +
-            seg('both', 'Both', L.missing.length + L.late.length, !L.missing.length || !L.late.length) +
+          '<div class="cgp-si__picks" role="group" aria-label="Which work to include">' +
             seg('missing', 'Missing', L.missing.length, !L.missing.length) +
             seg('late', 'Late', L.late.length, !L.late.length) +
+            seg('both', 'Both', L.missing.length + L.late.length, !L.missing.length || !L.late.length) +
           '</div>' +
           '<div class="cgp-si__share-items">' + group('Missing', L.missing, inc.missing) + group('Late', L.late, inc.late) + '</div>' +
           '<label class="cgp-si__check"><input type="checkbox" data-si-share="links"' + (sh.links ? ' checked' : '') + '>Include a link to each assignment</label>' +
@@ -999,6 +1071,8 @@
         section('By time of day', this.columns(a.byHour, hourLabels(), 'page views', 6)) +
         '</div>';
     }
+    out += this.studioPanel(r);
+    out += this.contentPanel(r);
     var t = r.timing;
     if (t.submitted) {
       var lead = t.medianLeadHours === null ? '–' : SI().duration(t.medianLeadHours * 3600);
@@ -1013,6 +1087,149 @@
       out += section('Feedback conversation', this.feedback(r));
     }
     return out;
+  };
+
+  /* ------------------------------------------------------ Studio videos */
+
+  P.studioFor = function (uid, student, s) {
+    if (s === undefined) return { loading: true };
+    if (!s || s.off) return null;
+    if (s.error) return { error: s.error, code: s.code };
+    if (!s.collection) return { none: true };
+    var email = '';
+    if (this._emailMap) email = this._emailMap[uid] || '';
+    return CGP.studioClass.studentVideos(s.videos, {
+      id: uid, name: student.name || student.fullName || '', sortable_name: student.sortableName || '', email: email
+    });
+  };
+
+  P.studioPanel = function (r) {
+    var s = r.studio;
+    if (!s) return '';
+    var title = 'Studio videos';
+    if (s.loading) {
+      return '<div class="cgp-si__card"><div class="cgp-si__card-head"><h3>' + title + '</h3></div>' +
+        '<div class="cgp-si__loading cgp-si__loading--inline" role="status"><span class="cgp-si__spinner" aria-hidden="true"></span>Opening Studio in the background…</div></div>';
+    }
+    if (s.error) {
+      if (s.code === 'noStudio') return '';
+      return section(title, '<p class="cgp-si__note">Couldn’t read Studio: ' + esc(s.error) +
+        '. Opening Studio once from Canvas’s left menu signs you in; then reopen this student.</p>');
+    }
+    if (s.none) return section(title, '<p class="cgp-si__note">Studio has no course named “' + esc(this._courseName) + '”, so there are no Studio videos to show.</p>');
+    if (!s.rows.length) return section(title, '<p class="cgp-si__note">No Studio videos have been added to this course.</p>');
+    var c = s.counts;
+    var labels = { none: 'Not watched', partial: 'Partly watched', watched: 'Watched', unknown: 'Unavailable' };
+    var rows = s.rows.map(function (v) {
+      if (v.status === 'unknown') {
+        return '<tr><td class="cgp-si__name-cell">' + esc(v.title) + '</td>' +
+          '<td><span class="cgp-si__vstatus cgp-si__vstatus--unknown" title="Studio didn’t give this video’s viewers">' + labels.unknown + '</span></td>' +
+          '<td class="cgp-si__muted">–</td><td class="cgp-si__muted">–</td></tr>';
+      }
+      var pct = v.completion === null ? 0 : Math.round(v.completion * 100);
+      return '<tr>' +
+        '<td class="cgp-si__name-cell">' + esc(v.title) + (v.duration ? ' <span class="cgp-si__muted">' + esc(SI().duration(v.duration)) + '</span>' : '') + '</td>' +
+        '<td><span class="cgp-si__vstatus cgp-si__vstatus--' + v.status + '">' + labels[v.status] + '</span></td>' +
+        '<td><div class="cgp-si__vmeter"><div class="cgp-si__track"><span class="cgp-si__fill" style="width:' + pct + '%"></span></div><b>' + pct + '%</b></div></td>' +
+        '<td class="cgp-si__muted" title="Students in the class who watched any of it">' + v.classWatched + ' in class</td>' +
+        '</tr>';
+    }).join('');
+    var table = '<div class="cgp-si__table-wrap cgp-si__table-wrap--content"><table class="cgp-si__table cgp-si__table--content"><thead><tr>' +
+      '<th>Video</th><th>Status</th><th>Watched</th><th>Class</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+    var aside = c.watched + ' watched · ' + c.partial + ' partly · ' + c.none + ' not watched' + (c.unknown ? ' · ' + c.unknown + ' unavailable' : '');
+    return section(title, table + '<p class="cgp-si__note">From Studio’s Insights for each video in this course. “Watched” is at least ' +
+      Math.round(CGP.studioClass.WATCHED_AT * 100) + '% of the video.</p>', esc(aside));
+  };
+
+  /* ----------------------------------------- what the student opened */
+
+  var KIND_PLURALS = { page: 'Pages', file: 'Files', assignment: 'Assignments', quiz: 'Quizzes', discussion: 'Discussions',
+    tool: 'External tools', module: 'Modules', area: 'Course areas', event: 'Events', other: 'Other' };
+
+  P.contentUrl = function (i) {
+    var base = '/courses/' + this.courseId;
+    switch (i.type) {
+      case 'wiki_page': return null; // Canvas links pages by slug, which the report doesn't carry
+      case 'attachment': return base + '/files/' + i.id;
+      case 'assignment': return base + '/assignments/' + i.id;
+      case 'quiz': return base + '/quizzes/' + i.id;
+      case 'discussion_topic': return base + '/discussion_topics/' + i.id;
+      default: return null;
+    }
+  };
+
+  P.contentPanel = function (r) {
+    if (!r.contentKnown) {
+      return '<div class="cgp-si__card"><div class="cgp-si__card-head"><h3>Course content opened</h3></div>' +
+        '<div class="cgp-si__loading cgp-si__loading--inline" role="status"><span class="cgp-si__spinner" aria-hidden="true"></span>Reading this student’s Access Report…</div></div>';
+    }
+    var c = r.content;
+    if (!c) {
+      return section('Course content opened', '<p class="cgp-si__note">Canvas didn’t share this student’s Access Report with your account ' +
+        '(it needs the “View usage reports” permission), so the pages, files and assignments they opened can’t be shown.</p>');
+    }
+    var self = this;
+    var kinds = c.byKind.filter(function (k) { return k.kind !== 'area'; });
+    // The last student's filter, unless this student has nothing of that kind.
+    var filter = this._contentKind || 'all';
+    if (filter !== 'all' && !c.byKind.some(function (k) { return k.kind === filter; })) filter = 'all';
+    var chips = [['all', 'All', c.items.length]].concat(c.byKind.map(function (k) { return [k.kind, KIND_PLURALS[k.kind] || k.label, k.items]; }));
+    var hasTime = c.pageViewsKnown;
+    var rows = c.items.map(function (i) {
+      var url = self.contentUrl(i);
+      var name = esc(i.name || '(untitled)');
+      var fileBits = i.type === 'attachment' && hasTime && (i.downloads || i.previews)
+        ? '<span class="cgp-si__pill" title="From page views in the last ' + PAGE_VIEW_DAYS + ' days">' +
+          (i.downloads ? 'downloaded' + (i.downloads > 1 ? ' ×' + i.downloads : '') : '') + (i.downloads && i.previews ? ' · ' : '') +
+          (i.previews ? 'previewed' + (i.previews > 1 ? ' ×' + i.previews : '') : '') + '</span>' : '';
+      return '<tr data-kind="' + esc(i.kind) + '"' + (filter === 'all' || filter === i.kind ? '' : ' hidden') + '>' +
+        '<td class="cgp-si__name-cell">' + (url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener">' + name + '</a>' : name) + fileBits + '</td>' +
+        '<td>' + esc(c.kindLabels[i.kind] || '') + '</td>' +
+        '<td class="cgp-si__num">' + i.views + '</td>' +
+        (hasTime ? '<td class="cgp-si__num">' + (i.seconds ? esc(SI().duration(i.seconds)) : i.recentViews ? '&lt; 1 min' : '–') + '</td>' : '') +
+        '<td>' + (i.firstAt ? esc(fmtDate(i.firstAt, true)) : '–') + '</td>' +
+        '<td>' + (i.lastAt ? esc(SI().relativeDay(i.lastAt, r.now)) : '–') + '</td>' +
+        '</tr>';
+    }).join('');
+    var head = '<div class="cgp-si__chips cgp-si__chips--content" role="group" aria-label="Show content of one kind">' + chips.map(function (ch) {
+      return '<button type="button" class="cgp-si__chip" data-si-kind="' + ch[0] + '" aria-pressed="' + (filter === ch[0]) + '">' + esc(ch[1]) + ' <b>' + ch[2] + '</b></button>';
+    }).join('') + '</div>';
+    var table = c.items.length
+      ? '<div class="cgp-si__table-wrap cgp-si__table-wrap--content"><table class="cgp-si__table cgp-si__table--content"><thead><tr><th>Item</th><th>Type</th>' +
+        '<th class="cgp-si__num" title="Times opened, all time (Access Report)">Views</th>' +
+        (hasTime ? '<th class="cgp-si__num" title="Time with the page open and in use, from page views in the last ' + PAGE_VIEW_DAYS + ' days">Time</th>' : '') +
+        '<th>First opened</th><th>Last opened</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+      : '<p class="cgp-si__note">This student hasn’t opened anything in the course yet.</p>';
+
+    var pages = kinds.filter(function (k) { return k.kind === 'page'; })[0];
+    var files = kinds.filter(function (k) { return k.kind === 'file'; })[0];
+    var summary = [
+      pages ? pages.items + (pages.items === 1 ? ' page' : ' pages') : '', files ? files.items + (files.items === 1 ? ' file' : ' files') : ''
+    ].filter(Boolean).join(' · ');
+    var timeNote = hasTime
+      ? '<p class="cgp-si__note">Time is how long a page was open and in use, from Canvas page views ' +
+        (c.pageViewsTruncated && c.pageViewsSince ? 'since ' + esc(fmtDate(c.pageViewsSince)) + ' (the most Canvas gives at once)' : 'over the last ' + PAGE_VIEW_DAYS + ' days') +
+        (c.totalSeconds ? ' (' + esc(SI().duration(c.totalSeconds)) + ' in this course in all)' : '') + '. Views and first/last opened cover the whole course.</p>'
+      : r.pageViewsLoading
+        ? '<p class="cgp-si__note"><span class="cgp-si__spinner cgp-si__spinner--sm" aria-hidden="true"></span> Reading page views for time on each item…</p>'
+        : '<p class="cgp-si__note">Canvas doesn’t let your account read this student’s page views, so time on each item and file downloads can’t be shown; views and first/last opened come from the Access Report.</p>';
+    var videoNote = '<p class="cgp-si__note">Canvas doesn’t record whether a video embedded straight from YouTube or another site was played; ' +
+      'Studio videos are shown under “Studio videos”.</p>';
+
+    var notOpened = '';
+    if (!c.notOpenedKnown) {
+      notOpened = section('Assignments never opened', '<p class="cgp-si__note">This student’s Access Report is too long to read in full, so which assignments they never opened can’t be said for sure.</p>');
+    } else if (c.notOpened.length) {
+      var shown = c.notOpened.slice(0, 12);
+      notOpened = section('Assignments never opened', '<ul class="cgp-si__todo">' + shown.map(function (n) {
+        var past = n.dueAt && n.dueAt <= r.now;
+        return '<li><a href="' + esc(self.assignmentUrl(n.id)) + '" target="_blank" rel="noopener">' + esc(n.name) + '</a>' +
+          '<span>' + (n.dueAt ? (past ? 'was due ' : 'due ') + esc(fmtDate(n.dueAt)) : 'No due date') + '</span><b></b></li>';
+      }).join('') + '</ul>' + (c.notOpened.length > shown.length ? '<p class="cgp-si__note">and ' + (c.notOpened.length - shown.length) + ' more</p>' : '') +
+        '<p class="cgp-si__note">The instructions page (or the quiz or discussion) was never viewed. Work handed in on paper or graded without a submission shows here too.</p>',
+        c.notOpenedPastDue ? c.notOpenedPastDue + ' past due' : '');
+    }
+    return section('Course content opened', head + table + timeNote + videoNote, esc(summary)) + notOpened;
   };
 
   function hourLabels() {

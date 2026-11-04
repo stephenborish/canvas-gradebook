@@ -233,12 +233,14 @@ suite('student overview: missing and late list to send', (test) => {
       links: true, urlFor: (i) => 'https://x.test/courses/5/assignments/' + i.id });
     a.eq(rep.count, 2);
     const t = rep.text;
-    a.ok(/^Missing and late work — Avery Chen\nChemistry · as of /.test(t), t);
+    a.ok(/^Chemistry · \w+day, \w+ \d+, \d{4}\n\nMissing \(1\)/.test(t), t);
+    a.not(/work —|Missing and late work/.test(t), 'no title line');
+    a.ok(rep.html.startsWith('<p><b>Chemistry</b><br><b>'), rep.html);
     a.ok(t.indexOf('Missing (1)') < t.indexOf('Late (1)'), 'missing first');
     a.ok(/• Lab <2> — due .+ — not turned in · 18 days overdue — worth 20 pts/.test(t), t);
     a.ok(/• A1 — due .+ — turned in .+ · 1 d 2 h late — 7 \/ 10 pts/.test(t), t);
     a.ok(t.includes('  https://x.test/courses/5/assignments/2'), 'links under each line');
-    a.ok(t.includes('Points not yet earned on missing work: 20'));
+    a.not(t.includes('Points not yet earned'));
     a.ok(rep.html.includes('<a href="https://x.test/courses/5/assignments/2">Lab &lt;2&gt;</a>'), 'names linked and escaped');
     a.not(rep.html.includes('<2>'), 'no raw markup from assignment names');
   });
@@ -246,14 +248,14 @@ suite('student overview: missing and late list to send', (test) => {
   test('just one kind, and no links', () => {
     const rep = si().workReport(record(), { include: { missing: false, late: true }, links: false, now: NOW });
     a.eq(rep.count, 1);
-    a.ok(/^Late work\n/.test(rep.text));
+    a.ok(/^\w+day, \w+ \d+, \d{4}\n\nLate \(1\)/.test(rep.text), rep.text);
     a.not(rep.text.includes('Missing'));
     a.not(rep.text.includes('http'));
   });
 
   test('no student name unless asked, and excluded assignments are left off', () => {
     const rep = si().workReport(record(), { courseName: 'Chemistry', now: NOW, exclude: { 2: true } });
-    a.ok(/^Late work\nChemistry · as of /.test(rep.text) || /^Missing and late work\nChemistry/.test(rep.text), rep.text);
+    a.ok(/^Chemistry · /.test(rep.text), rep.text);
     a.eq(rep.count, 1);
     a.not(rep.text.includes('Lab <2>'));
     a.not(rep.text.includes('Points not yet earned'));
@@ -378,5 +380,81 @@ suite('student overview: PR review fixes', (test) => {
       groups: [{ id: 1, name: 'Bonus' }], submissions: [sub(1, { score: 2, workflow_state: 'graded' })] });
     a.eq(r.groups[0].average, null);
     a.eq(r.overall, null);
+  });
+});
+
+suite('student overview: course content opened', (test) => {
+  const access = (code, extra) => ({ asset_user_access: Object.assign({ asset_code: code, view_score: 1, participate_score: 0,
+    created_at: new Date(NOW - 10 * D).toISOString(), last_access: new Date(NOW - 1 * D).toISOString() }, extra || {}) });
+
+  test('lists each item with views, first and last opened, and course areas by name', () => {
+    const c = si().contentActivity({ courseId: '5', now: NOW, pageViews: null, assignments: [], accesses: [
+      access('wiki_page_12', { readable_name: 'Unit 3 Notes', view_score: 4 }),
+      access('attachment_34', { display_name: 'lab.pdf', view_score: 2, last_access: new Date(NOW - 3 * D).toISOString() }),
+      access('grades:course_5', { readable_name: 'Course Grades', view_score: 9 })
+    ] });
+    a.eq(c.items.length, 3);
+    const page = c.items.find((i) => i.type === 'wiki_page');
+    a.eq(page.name, 'Unit 3 Notes');
+    a.eq(page.views, 4);
+    a.eq(page.kind, 'page');
+    a.eq(c.items.find((i) => i.kind === 'area').name, 'Grades');
+    a.eq(c.items[c.items.length - 1].type, 'attachment', 'most recently opened first');
+    a.eq(c.totalSeconds, null, 'no page views, no time');
+  });
+
+  test('page views add time per item and tell downloads from previews; other courses are ignored', () => {
+    const pv = (url, secs, extra) => Object.assign({ url, interaction_seconds: secs, created_at: new Date(NOW - D).toISOString(),
+      context_type: 'Course', links: { context: '5' } }, extra || {});
+    const c = si().contentActivity({ courseId: '5', now: NOW, assignments: [], accesses: [
+      access('wiki_page_12', { readable_name: 'Unit 3 Notes' }),
+      access('attachment_34', { display_name: 'lab.pdf' })
+    ], pageViews: [
+      pv('https://x.test/courses/5/pages/unit-3-notes', 120),
+      pv('https://x.test/courses/5/pages/unit-3-notes', 60),
+      pv('https://x.test/courses/5/files/34', 30),
+      pv('https://x.test/courses/5/files/34/download?download_frd=1', 0),
+      pv('https://x.test/courses/9/pages/unit-3-notes', 500, { links: { context: '9' } })
+    ] });
+    const page = c.items.find((i) => i.type === 'wiki_page');
+    a.eq(page.seconds, 180);
+    a.eq(page.recentViews, 2);
+    const file = c.items.find((i) => i.type === 'attachment');
+    a.eq(file.downloads, 1);
+    a.eq(file.previews, 1);
+    a.eq(c.totalSeconds, 210);
+  });
+
+  test('assignments whose instructions, quiz or discussion were never opened, past due first', () => {
+    const c = si().contentActivity({ courseId: '5', now: NOW, pageViews: null, accesses: [
+      access('assignment_1'), access('quizzes:quiz_77'), access('discussion_topic_88')
+    ], assignments: [
+      asg(1), asg(2, { quizId: '77' }), asg(3, { discussionTopicId: '88' }),
+      asg(4, { dueAt: new Date(NOW + 3 * D).toISOString() }), asg(5, { dueAt: new Date(NOW - 5 * D).toISOString() }),
+      asg(6, { published: false })
+    ] });
+    a.deep(c.notOpened.map((n) => n.id), ['5', '4']);
+    a.eq(c.notOpenedPastDue, 1);
+  });
+
+  test('no Access Report, nothing to show', () => {
+    a.eq(si().contentActivity({ courseId: '5', accesses: null }), null);
+  });
+});
+
+suite('student overview: never-opened review fixes', (test) => {
+  const access = (code) => ({ asset_user_access: { asset_code: code, view_score: 1 } });
+  test('uses the student’s own due date (an extension), not the course-wide one', () => {
+    const c = si().contentActivity({ courseId: '5', now: NOW, pageViews: null, accesses: [],
+      assignments: [asg(1, { dueAt: new Date(NOW - 2 * D).toISOString() })], dueFor: { 1: NOW + 3 * D } });
+    a.eq(c.notOpened[0].dueAt, NOW + 3 * D);
+    a.eq(c.notOpenedPastDue, 0);
+  });
+  test('a cut-short Access Report claims nothing was never opened', () => {
+    const accesses = [access('assignment_9')];
+    accesses.truncated = true;
+    const c = si().contentActivity({ courseId: '5', now: NOW, pageViews: null, accesses, assignments: [asg(1)] });
+    a.eq(c.notOpened.length, 0);
+    a.not(c.notOpenedKnown);
   });
 });

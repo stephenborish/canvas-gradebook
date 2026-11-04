@@ -209,6 +209,23 @@
   };
 
   /* Promise pool: bounds concurrent Canvas requests. */
+  /* Is `win` the window `root` or a frame anywhere inside it? Cross-origin
+   * frames can be walked (window.frames) though not read. */
+  util.isFrameWithin = function (win, root, maxDepth) {
+    var limit = maxDepth || 5;
+    function walk(w, depth) {
+      if (depth > limit) return false;
+      for (var i = 0; i < w.frames.length; i++) {
+        var f = w.frames[i];
+        if (f === win) return true;
+        try { if (walk(f, depth + 1)) return true; } catch (e) { /* ignore */ }
+      }
+      return false;
+    }
+    if (!win || !root) return false;
+    try { return root === win || walk(root, 0); } catch (e) { return false; }
+  };
+
   util.pool = function (limit) {
     var active = 0, queue = [];
     function next() {

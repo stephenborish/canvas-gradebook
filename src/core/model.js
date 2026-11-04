@@ -156,6 +156,11 @@
           toolUrl: (a.external_tool_tag_attributes && a.external_tool_tag_attributes.url) || null,
           groupId: a.assignment_group_id === undefined || a.assignment_group_id === null ? null : String(a.assignment_group_id),
           dueAt: a.due_at || null,
+          // The quiz or discussion behind a quiz / graded discussion
+          // assignment: a student opening it is logged against that, not the
+          // assignment (the student overview's content activity).
+          quizId: a.quiz_id !== undefined && a.quiz_id !== null ? String(a.quiz_id) : null,
+          discussionTopicId: a.discussion_topic && a.discussion_topic.id !== undefined ? String(a.discussion_topic.id) : null,
           hasMultipleDueDates: !!a.has_overrides || !!a.all_dates,
           // What Canvas will accept as a submission for this assignment. Drives
           // the in-cell submission marker: an assignment marked "on paper" or

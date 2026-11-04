@@ -515,3 +515,19 @@ suite('settings everywhere: one Canvas person', (test) => {
     a.eq((await values(A)).gradeFontSize, 19, 'nothing taken from it');
   });
 });
+
+suite('settings everywhere: an orphaned tab', (test) => {
+  test('after the extension reloads, a run resolves quietly instead of throwing "Extension context invalidated"', async () => {
+    const dead = () => { throw new Error('Extension context invalidated.'); };
+    const chromeStub = {
+      runtime: {},
+      storage: { sync: { get: dead, set: dead }, local: { get: dead, set: dead } }
+    };
+    const m = new (C().SettingsMirror)({ api: { customDataTimed: dead }, chrome: chromeStub, origin: 'https://s.instructure.com' });
+    const st = await m.run(false);
+    a.eq(st.skipped, 'orphaned');
+    chromeStub.runtime.id = 'abc';  // a get that throws even with an id
+    const st2 = await m.run(true);
+    a.eq(st2.skipped, 'orphaned');
+  });
+});
