@@ -209,7 +209,7 @@ suite('Total letter grades', (test) => {
   test('default scale uses half-up rounding to 0.1 and the highest matching threshold', () => {
     const L = (n) => CGP.totals.letterFor(n);
     a.eq(L(96.5), 'A+'); a.eq(L(96.45), 'A+'); a.eq(L(96.44), 'A');
-    a.eq(L(92.5), 'A'); a.eq(L(89.5), 'A-'); a.eq(L(89.44), 'B+');
+    a.eq(L(92.5), 'A'); a.eq(L(89.5), 'A\u2013'); a.eq(L(89.44), 'B+');
     a.eq(L(64.5), 'D'); a.eq(L(64.4), 'F'); a.eq(L(0), 'F'); a.eq(L(100), 'A+');
     a.eq(L(null), null);
   });
@@ -219,6 +219,47 @@ suite('Total letter grades', (test) => {
     a.eq(CGP.totals.letterFor(2, s.gradingScale), 'NP');
     a.deep(CGP.sanitizeSettings({ gradingScale: 'bad' }).gradingScale, CGP.DEFAULT_GRADING_SCALE);
     a.deep(CGP.totals.textToScale(CGP.totals.scaleToText(CGP.DEFAULT_GRADING_SCALE)), CGP.DEFAULT_GRADING_SCALE);
+  });
+  test('the Total rounds half-up to one decimal place', () => {
+    a.eq(CGP.totals.formatPercent(86.02), '86.0%');
+    a.eq(CGP.totals.formatPercent(100.14), '100.1%');
+    a.eq(CGP.totals.formatPercent(89.45), '89.5%');
+    a.eq(CGP.totals.formatPercent(null), '');
+    a.eq(CGP.totals.parsePercent('86.02%'), 86.02);
+    a.eq(CGP.totals.parsePercent('86,5 %'), 86.5);
+    a.eq(CGP.totals.parsePercent('304.5 / 354'), null);
+  });
+  test('Total thresholds: 72.4 or below red-orange, 72.5-82.4 golden yellow, on the rounded score', () => {
+    const rules = CGP.DEFAULTS.totalHighlightRules;
+    const H = (n) => CGP.totals.highlightFor(n, rules);
+    a.eq(H(50), 'redorange'); a.eq(H(72.4), 'redorange'); a.eq(H(72.44), 'redorange');
+    a.eq(H(72.45), 'gold', '72.45 shows as 72.5%'); a.eq(H(72.5), 'gold'); a.eq(H(82.4), 'gold');
+    a.eq(H(82.45), null, '82.45 shows as 82.5%'); a.eq(H(82.5), null); a.eq(H(95), null);
+    a.eq(H(null), null);
+  });
+  test('Total thresholds are sanitized; custom #rrggbb colors are kept; an empty list stays empty', () => {
+    const s = CGP.sanitizeSettings({ totalHighlightRules: [{ below: '85', color: 'Blue' }, { below: 60, color: 'pink' },
+      { below: 'x', color: 'red' }, { below: 50, color: 'red' }, { below: 70, color: '#12AB34' }, { below: 75, color: '#12ab3' }] });
+    a.deep(s.totalHighlightRules, [{ below: 50, color: 'red' }, { below: 70, color: '#12ab34' }, { below: 85, color: 'blue' }]);
+    a.deep(CGP.sanitizeSettings({ totalHighlightRules: [] }).totalHighlightRules, []);
+    a.deep(CGP.sanitizeSettings({ totalHighlightRules: 'bad' }).totalHighlightRules, CGP.DEFAULTS.totalHighlightRules);
+  });
+  test('threshold colors: named swatches, and a custom color tinted toward white', () => {
+    a.eq(CGP.highlightSwatch('gold').label, 'Golden yellow');
+    const c = CGP.highlightSwatch('#000000');
+    a.eq(c.edge, '#000000'); a.eq(c.bg, '#bfbfbf');
+    a.eq(CGP.highlightSwatch('nope'), null);
+  });
+  test('the default letter scale is the school scale', () => {
+    a.deep(CGP.DEFAULT_GRADING_SCALE.map((r) => r.letter + ' ' + r.min).join(', '),
+      'A+ 96.5, A 92.5, A\u2013 89.5, B+ 86.5, B 82.5, B\u2013 79.5, C+ 76.5, C 72.5, C\u2013 69.5, D 64.5, F 0');
+    a.eq(CGP.totals.letterFor(96.4), 'A'); a.eq(CGP.totals.letterFor(96.45), 'A+');
+  });
+  test('a minus shows as a dash, even in a scale saved with a plain hyphen', () => {
+    a.eq(CGP.totals.letterFor(80), 'B\u2013');
+    const s = CGP.sanitizeSettings({ gradingScale: [{ letter: 'B-', min: 80 }, { letter: 'C\u2212', min: 0 }] });
+    a.deep(s.gradingScale.map((r) => r.letter), ['B\u2013', 'C\u2013']);
+    a.eq(CGP.dashLetter('A-'), 'A\u2013'); a.eq(CGP.dashLetter('A+'), 'A+'); a.eq(CGP.dashLetter(null), null);
   });
   test('malformed scale lines are reported, not dropped', () => {
     a.deep(CGP.totals.badScaleLines('P: 60\nF: zero\n\n'), ['F: zero']);

@@ -911,6 +911,12 @@
     headers.forEach(function (h) {
       if (!h.el) return;
       var oldLabel = h.el.querySelector(':scope > .cgp-header-label');
+      // A header cell Canvas reuses for another kind of column keeps no
+      // label built for the old one.
+      if (oldLabel && !!oldLabel.querySelector('.cgp-header-total') !== (h.type === 'total')) {
+        oldLabel.remove();
+        oldLabel = null;
+      }
       if (h.type === 'assignment' && h.assignmentId) {
         var a = model ? model.assignment(h.assignmentId) : null;
         if (a) {
@@ -951,6 +957,17 @@
             if (dueEl.hidden !== !dueText) dueEl.hidden = !dueText;
           }
         }
+      } else if (h.type === 'total') {
+        // Canvas cuts its own title to "To..." in a narrow column; draw the
+        // whole word over it, like the assignment titles. Not a link: a
+        // click falls through to Canvas's header (sort, its "..." menu).
+        if (!oldLabel) {
+          oldLabel = document.createElement('div');
+          oldLabel.className = 'cgp-header-label';
+          oldLabel.innerHTML = '<span class="cgp-header-total">Total</span>';
+          h.el.appendChild(oldLabel);
+        }
+        if (h.el.getAttribute('title') !== 'Total') h.el.setAttribute('title', 'Total');
       } else if (oldLabel) {
         oldLabel.remove();
       }

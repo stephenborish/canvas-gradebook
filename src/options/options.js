@@ -480,12 +480,136 @@
     BOOLS.forEach(function (k) { var el = $(k); if (el) el.checked = !!values[k]; });
     NUMS.forEach(function (k) { var el = $(k); if (el) el.value = values[k]; });
     $('gradingScale').value = CGP.totals.scaleToText(values.gradingScale);
+    renderThresholds(values.totalHighlightRules);
     var snips = Array.isArray(values.snippets) ? values.snippets.slice() : [];
     renderSnippetCards(snips);
     $('snippets').value = snippetsToText(snips);
     renderTimeShortcuts(values.timeShortcuts);
     renderSectionGroups(values.sectionGroups);
     currentRosterPrefs = values.rosterPrefs;
+  }
+
+  /* Total thresholds: one row per rule, "Totals at or below [72.4] % [Red-orange]".
+   * Stored as { below: 72.5 }: the Total is compared after rounding to 0.1,
+   * so "at or below 72.4" and "under 72.5" are the same rule; the form shows
+   * the at-or-below number teachers think in. */
+  var currentThresholds = [];
+
+  function tenth(n) { return Math.round(n * 10) / 10; }
+  function colorLabel(c) {
+    var sw = CGP.highlightSwatch(c);
+    return sw ? (sw.label === 'Custom' ? 'Custom (' + c + ')' : sw.label) : c;
+  }
+
+  /* "Totals 72.4% or below: Red-orange · 72.5–82.4%: Golden yellow". */
+  function thresholdSummary(rules) {
+    var sorted = rules.filter(function (r) { return isFinite(r.below); }).slice().sort(function (a, b) { return a.below - b.below; });
+    if (!sorted.length) return 'No Totals are colored.';
+    return 'Totals ' + sorted.map(function (r, i) {
+      var top = tenth(r.below - 0.1);
+      var range = i === 0 ? top + '% or below' : tenth(sorted[i - 1].below) + '–' + top + '%';
+      return range + ': ' + colorLabel(r.color);
+    }).join(' · ') + '.';
+  }
+
+  /* What sanitizeSettings would silently drop from the threshold rows. */
+  function thresholdProblems(rules) {
+    var seen = {};
+    for (var i = 0; i < rules.length; i++) {
+      var b = rules[i].below;
+      if (!isFinite(b) || b < 0.1 || b > 1000) return 'a Total threshold needs a number from 0 to 999.9 - fill it in or remove that row.';
+      if (seen[b]) return 'two Total thresholds are both "at or below ' + tenth(b - 0.1) + '%" - change or remove one.';
+      seen[b] = true;
+    }
+    if (rules.length > 8) return 'at most 8 Total thresholds can be saved.';
+    return '';
+  }
+
+  function renderThresholds(list) {
+    currentThresholds = (Array.isArray(list) ? list : []).map(function (r) {
+      return { below: r.below, color: r.color };
+    });
+    var box = $('totalHighlightList');
+    if (!box) return;
+    box.innerHTML = '';
+    var summary = document.createElement('p');
+    summary.className = 'threshold-summary';
+    var updateSummary = function () { summary.textContent = thresholdSummary(currentThresholds); };
+    if (!currentThresholds.length) {
+      box.innerHTML = '<p class="threshold-empty">No thresholds. Click <strong>+ Add threshold</strong>.</p>';
+    }
+    currentThresholds.forEach(function (rule, i) {
+      var row = document.createElement('div');
+      row.className = 'threshold-row';
+      var swatch = document.createElement('span');
+      swatch.className = 'threshold-row__swatch';
+      swatch.textContent = '85.0%';
+      var lead = document.createElement('span');
+      lead.textContent = 'Totals at or below';
+      var num = document.createElement('input');
+      num.type = 'number';
+      num.min = '0'; num.max = '1000'; num.step = '0.1';
+      num.value = tenth(rule.below - 0.1);
+      num.setAttribute('aria-label', 'Highest percentage that gets this color');
+      var pct = document.createElement('span');
+      pct.textContent = '% are';
+      var sel = document.createElement('select');
+      sel.setAttribute('aria-label', 'Highlight color');
+      var isCustom = !CGP.HIGHLIGHT_PALETTE.some(function (c) { return c.id === rule.color; });
+      CGP.HIGHLIGHT_PALETTE.forEach(function (c) {
+        var o = document.createElement('option');
+        o.value = c.id;
+        o.textContent = c.label;
+        if (c.id === rule.color) o.selected = true;
+        sel.appendChild(o);
+      });
+      var co = document.createElement('option');
+      co.value = 'custom';
+      co.textContent = 'Custom color…';
+      if (isCustom) co.selected = true;
+      sel.appendChild(co);
+      var picker = document.createElement('input');
+      picker.type = 'color';
+      picker.className = 'threshold-row__picker';
+      picker.setAttribute('aria-label', 'Custom color');
+      picker.value = isCustom && /^#[0-9a-f]{6}$/i.test(rule.color) ? rule.color : '#e0531f';
+      picker.hidden = !isCustom;
+      var paintSwatch = function () {
+        var sw = CGP.highlightSwatch(rule.color) || CGP.HIGHLIGHT_PALETTE[0];
+        swatch.style.background = sw.bg;
+        swatch.style.borderLeftColor = sw.edge;
+        updateSummary();
+      };
+      paintSwatch();
+      num.addEventListener('input', function () {
+        var v = Number(num.value);
+        rule.below = num.value === '' || !isFinite(v) ? NaN : tenth(v + 0.1);
+        updateSummary();
+      });
+      sel.addEventListener('change', function () {
+        picker.hidden = sel.value !== 'custom';
+        rule.color = sel.value === 'custom' ? picker.value.toLowerCase() : sel.value;
+        paintSwatch();
+        if (sel.value === 'custom' && picker.showPicker) { try { picker.showPicker(); } catch (e) { /* ignore */ } }
+      });
+      picker.addEventListener('input', function () { rule.color = picker.value.toLowerCase(); paintSwatch(); });
+      var spacer = document.createElement('span');
+      spacer.className = 'threshold-row__spacer';
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'threshold-row__delete';
+      del.title = 'Remove threshold';
+      del.setAttribute('aria-label', 'Remove threshold');
+      del.textContent = '×';
+      del.addEventListener('click', function () {
+        currentThresholds.splice(i, 1);
+        renderThresholds(currentThresholds);
+      });
+      [swatch, lead, num, pct, sel, picker, spacer, del].forEach(function (n) { row.appendChild(n); });
+      box.appendChild(row);
+    });
+    if (currentThresholds.length) box.appendChild(summary);
+    updateSummary();
   }
 
   // Chosen in the gradebook's Copy Roster panel, not here; carried as is.
@@ -531,6 +655,7 @@
     patch.snippets = readRawSnippets();
     patch.timeShortcuts = readRawTimeShortcuts();
     patch.gradingScale = CGP.totals.textToScale($('gradingScale').value);
+    patch.totalHighlightRules = currentThresholds.slice();
     patch.sectionGroups = currentGroups;
     if (currentRosterPrefs) patch.rosterPrefs = currentRosterPrefs;
     return CGP.sanitizeSettings(patch);
@@ -678,6 +803,8 @@
         badLines.join('; ') + '. Fix or remove them, then save again.', { error: true });
       return Promise.resolve();
     }
+    var thresholdProblem = thresholdProblems(currentThresholds);
+    if (thresholdProblem) { status('Not saved: ' + thresholdProblem, { error: true }); return Promise.resolve(); }
     var timeProblems = timeShortcutProblems(readRawTimeShortcuts());
     if (timeProblems.length) {
       status('Not saved: ' + timeProblems.join(' ') + ' Fix or remove those time shortcuts, then save again.', { error: true });
@@ -880,6 +1007,18 @@
   }
 
   /* ---------------------------------------------------------------- wiring */
+
+  $('addTotalHighlight').addEventListener('click', function () {
+    var used = currentThresholds.map(function (r) { return r.color; });
+    var color = CGP.HIGHLIGHT_COLORS.filter(function (c) { return used.indexOf(c) < 0; })[0] || 'gray';
+    var top = currentThresholds.reduce(function (m, r) { return Math.max(m, Number(r.below) || 0); }, 0);
+    currentThresholds.push({ below: Math.min(100, top ? tenth(top + 10) : 72.5), color: color });
+    renderThresholds(currentThresholds);
+  });
+  $('resetTotalHighlights').addEventListener('click', function () {
+    renderThresholds(CGP.DEFAULTS.totalHighlightRules);
+    status('Default thresholds restored above \u2014 click Save changes to keep them.');
+  });
 
   $('resetGradingScale').addEventListener('click', function () {
     $('gradingScale').value = CGP.totals.scaleToText(CGP.DEFAULT_GRADING_SCALE);

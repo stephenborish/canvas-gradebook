@@ -85,6 +85,9 @@
     this.loadFailures = new Map();
     this.commentFailures = new Map();
     this._hoverIcon = null;
+    this._tipEl = null;
+    this._tipCell = null;
+    this._tipBound = false;
   }
 
   var P = IndicatorController.prototype;
@@ -382,6 +385,11 @@
       }
       return;
     }
+    if (info.columnType === 'total') {
+      this.clearCell(cell);
+      this.paintTotal(cell);
+      return;
+    }
     if (info.columnType !== 'assignment' || !info.assignmentId || !info.studentId) {
       // Identity unknown (or not a grade cell): a recycled node must not keep
       // the previous occupant's marks.
@@ -573,6 +581,150 @@
     }, true);
   };
 
+  /* ------------------------------------------------------- Total cells */
+
+  function setAttr(el, name, value) {
+    if (value === null || value === undefined || value === '') {
+      if (el.hasAttribute(name)) el.removeAttribute(name);
+    } else if (el.getAttribute(name) !== value) {
+      el.setAttribute(name, value);
+    }
+  }
+
+  var PCT_ONLY = /^\s*-?\d+(?:[.,]\d+)?\s*%\s*$/;
+
+  /* The element holding Canvas's percentage: its own .percentage span, or
+   * failing that the innermost element whose whole text is a percentage. */
+  function totalValueEl(cell, tip) {
+    var el = cell.querySelector('.percentage');
+    if (el) return el;
+    var all = cell.querySelectorAll('span, div');
+    for (var i = all.length - 1; i >= 0; i--) {
+      var n = all[i];
+      if (tip && (n === tip || tip.contains(n))) continue;
+      if (n.closest && n.closest('.cgp-marks')) continue;
+      if (PCT_ONLY.test(n.textContent || '')) return n;
+    }
+    return null;
+  }
+
+  /* Canvas's own Total, drawn by Canvas and never rewritten: everything here
+   * is attributes the stylesheet reads. They sit on the elements Canvas
+   * builds, which Canvas replaces whenever the Total changes - so a stale
+   * rounded value can never outlive the number it was made from, and until
+   * the next pass Canvas's own text simply shows.
+   *  - data-cgp-pct (value element): the percentage rounded to 0.1;
+   *  - data-cgp-band (cell): a threshold colour;
+   *  - data-cgp-tip (cell): what the hover tooltip says. */
+  P.paintTotal = function (cell) {
+    var s = (this.settings && this.settings.values) || {};
+    var T = CGP.totals;
+    var tip = cell.querySelector('.gradebook-tooltip');
+    var valueEl = totalValueEl(cell, tip);
+    var shown = valueEl ? (valueEl.textContent || '').trim() : '';
+    var tipText = tip ? (tip.textContent || '').trim() : '';
+    var pct = T.parsePercent(shown);
+    var shownIsPct = pct !== null && PCT_ONLY.test(shown);
+    if (pct === null) pct = T.parsePercent(tipText);   // Total shown as points
+    var letter = pct === null ? null : T.letterFor(pct, s.gradingScale);
+
+    if (valueEl) {
+      var rounded = s.roundTotals !== false && shownIsPct ? T.formatPercent(pct) : '';
+      setAttr(valueEl, 'data-cgp-pct', rounded && rounded !== shown ? rounded : '');
+    }
+    var band = s.totalHighlights ? T.highlightFor(pct, s.totalHighlightRules) : null;
+    var swatch = band ? CGP.highlightSwatch(band) : null;
+    setAttr(cell, 'data-cgp-band', swatch ? swatch.id : '');
+    // The colours ride on the cell as custom properties the stylesheet reads,
+    // so a teacher's own "#rrggbb" works like a named colour.
+    if (swatch) {
+      if (cell.style.getPropertyValue('--cgp-band-bg') !== swatch.bg) cell.style.setProperty('--cgp-band-bg', swatch.bg);
+      if (cell.style.getPropertyValue('--cgp-band-edge') !== swatch.edge) cell.style.setProperty('--cgp-band-edge', swatch.edge);
+    } else if (cell.style.getPropertyValue('--cgp-band-bg')) {
+      cell.style.removeProperty('--cgp-band-bg');
+      cell.style.removeProperty('--cgp-band-edge');
+    }
+
+    // The tooltip: the letter grade, then points earned / possible (Canvas's
+    // own tooltip text; when the Total is shown as points, the cell's).
+    var lines = [];
+    if (letter) lines.push(letter);
+    if (tipText && T.parsePercent(tipText) === null) lines.push(tipText + ' pts');
+    else if (!shownIsPct && shown) lines.push(shown + ' pts');
+    setAttr(cell, 'data-cgp-tip', lines.join('\n'));
+    if (this._tipCell === cell) this.showTotalTip(cell);
+  };
+
+  /* The Total's hover tooltip. Canvas's own one is hidden: inside the frozen
+   * Total it was drawn dark-on-dark, and it stayed open on the active cell
+   * until the teacher clicked somewhere else. This one lives on <body>, so no
+   * pane clips it, and is closed as soon as the pointer is not over a Total. */
+  P.bindTotalTip = function () {
+    if (this._tipBound || typeof document === 'undefined' || !document.addEventListener) return;
+    this._tipBound = true;
+    var self = this;
+    document.addEventListener('mouseover', function (e) {
+      var t = e.target;
+      var cell = t && t.closest ? t.closest('.slick-cell[data-cgp-col="total"]') : null;
+      if (cell) self.showTotalTip(cell);
+      else if (self._tipCell) self.hideTotalTip();
+    }, true);
+    var hide = function () { if (self._tipCell) self.hideTotalTip(); };
+    document.addEventListener('scroll', hide, true);
+    document.addEventListener('mousedown', hide, true);
+    document.addEventListener('keydown', hide, true);
+    // Leaving the window fires no mouseover anywhere: a mouseout with no
+    // element to go to is the pointer leaving the page.
+    document.addEventListener('mouseout', function (e) { if (!e.relatedTarget) hide(); }, true);
+    if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('blur', hide);
+  };
+
+  P.showTotalTip = function (cell) {
+    var text = cell.getAttribute('data-cgp-tip');
+    if (!text || !cell.isConnected) { this.hideTotalTip(); return; }
+    var el = this._tipEl;
+    if (!el) {
+      el = this._tipEl = document.createElement('div');
+      el.className = 'cgp-total-tip';
+      el.setAttribute('role', 'tooltip');
+      document.body.appendChild(el);
+    }
+    this._tipCell = cell;
+    var lines = text.split('\n');
+    if (el.getAttribute('data-text') !== text) {
+      el.setAttribute('data-text', text);
+      el.textContent = '';
+      lines.forEach(function (line, i) {
+        var row = document.createElement(i ? 'span' : 'b');
+        row.textContent = line;
+        el.appendChild(row);
+      });
+    }
+    el.hidden = false;
+    var r = cell.getBoundingClientRect();
+    var w = el.offsetWidth || 140, h = el.offsetHeight || 48;
+    var vw = window.innerWidth || 1200, vh = window.innerHeight || 800;
+    var left = Math.max(8, Math.min(vw - w - 8, r.left + r.width / 2 - w / 2));
+    var top = r.bottom + 6 + h > vh - 8 ? r.top - h - 6 : r.bottom + 6;
+    el.style.left = Math.round(left) + 'px';
+    el.style.top = Math.round(Math.max(8, top)) + 'px';
+  };
+
+  P.hideTotalTip = function () {
+    this._tipCell = null;
+    if (this._tipEl) this._tipEl.hidden = true;
+  };
+
+  /* A repaint can swap the hovered cell out from under the pointer without
+   * any mouse event; the tooltip must not stay pinned to a cell that left. */
+  P.checkTotalTip = function () {
+    var cell = this._tipCell;
+    if (!cell) return;
+    var hovered = false;
+    try { hovered = cell.isConnected && cell.matches(':hover'); } catch (e) { hovered = false; }
+    if (!hovered) this.hideTotalTip();
+  };
+
   P.canvasCellText = function (cell) {
     var clone = cell.cloneNode(true);
     Array.prototype.slice.call(clone.querySelectorAll('.cgp-marks, .cgp-val')).forEach(function (n) { n.remove(); });
@@ -588,6 +740,8 @@
       this._hoverIcon = null;
       this.onCommentLeave();   // soft: the pointer may by now be on the preview itself
     }
+    this.bindTotalTip();
+    this.checkTotalTip();
     if (!this.model.ready) {
       // Still tag columns so alignment/centering works before data arrives.
       var early = this.adapter.visibleCells();
@@ -597,7 +751,8 @@
         if (info.columnType && info.el.getAttribute('data-cgp-col') !== info.columnType) {
           info.el.setAttribute('data-cgp-col', info.columnType);
         }
-        void self0;
+        // The Total needs nothing from the model: it is Canvas's own text.
+        if (info.columnType === 'total') self0.paintTotal(info.el);
       });
       return;
     }

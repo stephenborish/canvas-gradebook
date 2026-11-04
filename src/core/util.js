@@ -12,11 +12,68 @@
   /* Default letter-grade scale: the lowest rounded percentage (to 0.1) that
    * earns each letter. The last entry is the floor and always has min 0. */
   CGP.DEFAULT_GRADING_SCALE = [
-    { letter: 'A+', min: 96.5 }, { letter: 'A', min: 92.5 }, { letter: 'A-', min: 89.5 },
-    { letter: 'B+', min: 86.5 }, { letter: 'B', min: 82.5 }, { letter: 'B-', min: 79.5 },
-    { letter: 'C+', min: 76.5 }, { letter: 'C', min: 72.5 }, { letter: 'C-', min: 69.5 },
+    { letter: 'A+', min: 96.5 }, { letter: 'A', min: 92.5 }, { letter: 'A\u2013', min: 89.5 },
+    { letter: 'B+', min: 86.5 }, { letter: 'B', min: 82.5 }, { letter: 'B\u2013', min: 79.5 },
+    { letter: 'C+', min: 76.5 }, { letter: 'C', min: 72.5 }, { letter: 'C\u2013', min: 69.5 },
     { letter: 'D', min: 64.5 }, { letter: 'F', min: 0 }
   ];
+
+  /* The named colours a teacher can pick for a Total threshold: the cell's
+   * tint and the strip on its leading edge. A threshold can also use any
+   * custom colour as "#rrggbb" (see highlightSwatch). */
+  CGP.HIGHLIGHT_PALETTE = [
+    { id: 'redorange', label: 'Red-orange', bg: '#fdd9cd', edge: '#e0531f' },
+    { id: 'red', label: 'Red', bg: '#fde2df', edge: '#d1453b' },
+    { id: 'orange', label: 'Orange', bg: '#fde8d4', edge: '#dd7a1f' },
+    { id: 'gold', label: 'Golden yellow', bg: '#fcecb0', edge: '#c99a06' },
+    { id: 'yellow', label: 'Yellow', bg: '#fdf5c9', edge: '#e0b800' },
+    { id: 'green', label: 'Green', bg: '#dcf3e5', edge: '#1f9254' },
+    { id: 'blue', label: 'Blue', bg: '#dcebf8', edge: '#0374b5' },
+    { id: 'purple', label: 'Purple', bg: '#ebe2f6', edge: '#6b3fa0' },
+    { id: 'gray', label: 'Gray', bg: '#e9ecef', edge: '#6b7780' }
+  ];
+  CGP.HIGHLIGHT_COLORS = CGP.HIGHLIGHT_PALETTE.map(function (c) { return c.id; });
+  var HEX_RE = /^#[0-9a-f]{6}$/;
+
+  /* { bg, edge, label } for a threshold colour: a named one from the palette,
+   * or a custom "#rrggbb" - its strip in that colour, its tint the colour
+   * mixed 75% toward white so the grade on it stays readable. */
+  CGP.highlightSwatch = function (color) {
+    var c = String(color || '').toLowerCase();
+    for (var i = 0; i < CGP.HIGHLIGHT_PALETTE.length; i++) {
+      if (CGP.HIGHLIGHT_PALETTE[i].id === c) return CGP.HIGHLIGHT_PALETTE[i];
+    }
+    if (!HEX_RE.test(c)) return null;
+    var mix = function (at) {
+      var v = parseInt(c.slice(at, at + 2), 16);
+      return ('0' + Math.round(v + (255 - v) * 0.75).toString(16)).slice(-2);
+    };
+    return { id: c, label: 'Custom', bg: '#' + mix(1) + mix(3) + mix(5), edge: c };
+  };
+
+  /* Total thresholds ({ below: 72.5, color: 'redorange' }: a Total that
+   * rounds to under 72.5 - 72.4 or less - gets that colour): usable rules
+   * only, lowest threshold first, one rule per threshold. null when not a
+   * list at all. */
+  CGP.sanitizeHighlights = function (list) {
+    if (!Array.isArray(list)) return null;
+    var seen = Object.create(null);
+    return list.map(function (r) {
+      var below = Number(r && r.below);
+      var color = String((r && r.color) || '').toLowerCase().trim();
+      return { below: isFinite(below) ? Math.max(0, Math.min(1000, Math.round(below * 10) / 10)) : NaN, color: color };
+    }).filter(function (r) {
+      if (!isFinite(r.below) || !CGP.highlightSwatch(r.color) || seen[r.below]) return false;
+      seen[r.below] = true;
+      return true;
+    }).sort(function (a, b) { return a.below - b.below; }).slice(0, 8);
+  };
+
+  /* A letter grade's minus as a dash: "B-" (or "B\u2212") reads as "B\u2013",
+   * because a plain hyphen is easy to miss at a glance. */
+  CGP.dashLetter = function (letter) {
+    return letter === null || letter === undefined ? letter : String(letter).replace(/[-\u2212]$/, '\u2013');
+  };
 
   CGP.DEFAULTS = {
     // layout
@@ -27,6 +84,12 @@
     maximizeHeight: true,
     frozenTotal: true,
     gradingScale: CGP.DEFAULT_GRADING_SCALE,
+    // The Total column: shown rounded to 0.1, its letter grade on hover, and
+    // tinted when it falls below a teacher's threshold.
+    roundTotals: true,
+    totalHighlights: true,
+    // 72.4% or below red-orange, 72.5-82.4% golden yellow.
+    totalHighlightRules: [{ below: 72.5, color: 'redorange' }, { below: 82.5, color: 'gold' }],
     centerAssignmentColumns: true,
     showAssignmentDueDate: true,
     hideTestStudent: true,
@@ -350,13 +413,19 @@
         // Unusable values fall back to the default scale rather than leaving
         // the Total hover without any letter grade.
         var rows = Array.isArray(v) ? v.map(function (r) {
-          return { letter: String((r && r.letter) || '').trim().slice(0, 6), min: Number(r && r.min) };
+          return { letter: CGP.dashLetter(String((r && r.letter) || '').trim().slice(0, 6)), min: Number(r && r.min) };
         }).filter(function (r) { return r.letter && isFinite(r.min); }).slice(0, 20) : [];
         if (!rows.length) { out[k] = d[k]; return; }
         rows.forEach(function (r) { r.min = Math.max(0, Math.min(1000, Math.round(r.min * 10) / 10)); });
         rows.sort(function (a, b) { return b.min - a.min; });
         rows[rows.length - 1].min = 0;   // every score maps to some letter
         out[k] = rows;
+        return;
+      }
+      if (k === 'totalHighlightRules') {
+        // An empty list is a real choice (no thresholds); junk is not.
+        var rules = CGP.sanitizeHighlights(v);
+        out[k] = rules || d[k];
         return;
       }
       if (k === 'timeShortcuts') {

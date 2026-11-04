@@ -278,6 +278,19 @@ Canvas's own "Move to End". Canvas saves either move as your column-order prefer
 course. If Canvas isn't showing a Total at all (hidden in its View options, or a grading-period
 view without one), there is nothing to move.
 
+How the Total reads (Options → Appearance):
+- **Rounded to one decimal place**: 86.02% shows as 86.0% (half up - the same rounding the letter
+  grade uses). Canvas's own number is untouched underneath; only what is painted changes.
+- **Hover for the letter grade**: a tooltip shows the letter (from your letter-grade scale) and
+  the points earned / possible; the cell keeps showing the percentage. The tooltip closes as soon
+  as the pointer leaves the Total. Canvas's own Total tooltip is hidden.
+- **Color thresholds**: a Total at or below a percentage you set is tinted - by default
+  **red-orange at 72.4% or below** and **golden yellow from 72.5% to 82.4%**, compared on the
+  rounded Total. Under Options → Appearance, change each threshold, pick one of nine colors or any
+  **Custom color…**, add or remove thresholds, or turn coloring off; a summary line spells out
+  which ranges get which color. When a Total falls under more than one threshold, the lowest wins.
+- The **Total** header always shows the whole word, however narrow the column.
+
 ### The hidden Test Student stays out of your averages
 
 Canvas's Student View "Test Student" is a real enrollment, and whatever sits in its row counts
@@ -407,7 +420,8 @@ link. **←** / **→** step to the previous / next student without closing; **E
 
 **Overview**
 - Their current grade (Canvas's own current score and letter) in the header, with when they were
-  last active and how long they have spent in the course.
+  last active (with the time, e.g. "Last active today at 7:50 PM") and how long they have spent
+  in the course.
 - Tiles for **Missing** (and the points outstanding), **Late** (and what share of submitted work
   that is), **on-time rate**, **average score** against the class median, **needs grading** and
   **last active**. Each tile jumps to the details.
@@ -421,12 +435,14 @@ link. **←** / **→** step to the previous / next student without closing; **E
   median in that category.
 
 **Assignments**
-- **Send missing & late work**: tick Missing, Late or both (and whether to include links), check
-  the preview, and press **Copy list**. Each assignment is listed with its name, due date and time,
-  how many days overdue (or when it was turned in and how late), and the points. It pastes as a
-  table with linked assignment names into Gmail, Outlook, Docs and Word, and as plain lines into a
-  text or Canvas message, ready for a parent, a counselor or the student. **Copy missing & late
-  work** in the panel's footer does the same from any tab.
+- **Copy List of Missing/Late Work**: a single button that opens to show exactly what will be
+  copied. Pick **Both**, **Missing** or **Late**, untick any assignment to leave it off, choose
+  whether to include links, check the preview, and press **Copy**. Each assignment is listed with
+  its name, due date and time, how many days overdue (or when it was turned in and how late), and
+  the points; the student's name is left off, so it reads naturally under your own greeting. It
+  pastes as a table with linked assignment names into Gmail, Outlook, Docs and Word, and as plain
+  lines into a text or Canvas message, ready for a parent, a counselor or the student. **Copy list
+  of missing/late work** in the panel's footer opens it from any tab.
 - Missing work, each with its due date, how many days overdue and the points at stake.
 - Late work, each with how late it was, plus how many late submissions were under an hour, up to
   a day, 1–3 days, 3–7 days or over a week late.
@@ -935,7 +951,7 @@ src/core/                         pure logic - no DOM, no chrome.* at load time
   clipboard-matrix.js             TSV / column / spaced-column clipboard parsing
   comment-analysis.js             "did I author this comment" logic and thread analysis
   grid-map.js                     cell <-> (student_id, assignment_id) mapping maths
-  totals.js                       letter-grade scale for Analyze Scores
+  totals.js                       letter-grade scale, Total rounding and color thresholds
   roster-format.js                roster -> email list / TSV / HTML table / CSV
   snippets.js                     /trigger + Tab expansion
   time-shortcuts.js               period key -> start time lookup and formatting

@@ -722,3 +722,58 @@ input.switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2p
 .sync-conflict { border: 1px solid #f0c36d; background: #fff8eb; border-radius: 8px; padding: 10px 14px; margin: 8px 0 12px; }
 .sync-conflict ul { margin: 6px 0 10px 18px; padding: 0; }
 .sync-conflict code { font-size: 12px; background: #fff; padding: 1px 4px; border-radius: 3px; }
+
+/* Total thresholds */
+.setting--stack { flex-direction: column; align-items: stretch; gap: 10px; padding-top: 0; }
+.threshold-list { display: grid; gap: 8px; }
+.threshold-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 14px;
+  color: var(--ink-soft);
+}
+.threshold-row:focus-within { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
+.threshold-row input[type="number"] {
+  width: 80px;
+  padding: 5px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.threshold-row select { padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; background: #fff; }
+.threshold-row__swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 28px;
+  border-radius: 5px;
+  border-left: 4px solid transparent;
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1a232b;
+  font-variant-numeric: tabular-nums;
+}
+.threshold-row__picker { width: 36px; height: 30px; padding: 0 2px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; }
+.threshold-row__picker[hidden] { display: none; }
+.threshold-summary { margin: 2px 2px 0; font-size: 13px; color: var(--muted); }
+.threshold-row__spacer { flex: 1 1 auto; }
+.threshold-row__delete {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.threshold-row__delete:hover { color: #b91c1c; background: var(--bg); }
+.threshold-actions { display: flex; gap: 8px; }
+.threshold-empty { color: var(--muted); font-size: 13px; margin: 0; }

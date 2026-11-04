@@ -56,7 +56,10 @@
     this._tab = 'overview';
     this._filter = 'all';
     this._query = '';
-    this._share = { missing: true, late: true, links: true };
+    // What "Copy List of Missing/Late Work" copies; kept from one student to
+    // the next. open: the builder is expanded.
+    this._share = { missing: true, late: true, links: true, open: false };
+    this._shareExcluded = {};      // assignmentId -> true, this student only
     this._courseName = '';
     this._cache = new Map();       // uid -> {at, work, activity, enrollment}
     this._course = null;           // promise: {groups, weighted}
@@ -172,6 +175,7 @@
     this._uid = uid;
     // The previous student's summary must not feed Copy while this one loads.
     this._last = null;
+    this._shareExcluded = {};
     this._filter = 'all';
     this._query = '';
     var gen = ++this._gen;
@@ -237,7 +241,13 @@
     root.addEventListener('change', function (e) {
       var t = e.target;
       var key = t && t.getAttribute && t.getAttribute('data-si-share');
-      if (key) { self._share[key] = !!t.checked; self.refreshPreview(); }
+      if (key) { self._share[key] = !!t.checked; self.refreshShare(); return; }
+      var item = t && t.getAttribute && t.getAttribute('data-si-share-item');
+      if (item) {
+        if (t.checked) delete self._shareExcluded[item];
+        else self._shareExcluded[item] = true;
+        self.refreshShare();
+      }
     });
     root.addEventListener('mouseover', function (e) { self.onTip(e); });
     root.addEventListener('focusin', function (e) { self.onTip(e); });
@@ -293,6 +303,16 @@
     var tab = t.closest('[data-si-tab]');
     if (tab) { this.selectTab(tab.getAttribute('data-si-tab'), tab.getAttribute('data-si-filter')); return; }
     if (t.closest('[data-si-copy]')) { this.copyReport(); return; }
+    if (t.closest('[data-si-share-open]')) { this.openShare(); return; }
+    if (t.closest('[data-si-share-toggle]')) { this._share.open = !this._share.open; this.refreshShare(true); return; }
+    var mode = t.closest('[data-si-share-mode]');
+    if (mode && !mode.disabled) {
+      var m = mode.getAttribute('data-si-share-mode');
+      this._share.missing = m !== 'late';
+      this._share.late = m !== 'missing';
+      this.refreshShare();
+      return;
+    }
     var chip = t.closest('[data-si-filter-chip]');
     if (chip) { this.applyFilter(chip.getAttribute('data-si-filter-chip')); return; }
   };
@@ -413,12 +433,12 @@
     var list = this.roster();
     var pos = list.indexOf(this._uid);
     var score = student.currentScore;
-    var letter = student.currentGrade || (score !== null && score !== undefined
+    var letter = CGP.dashLetter(student.currentGrade) || (score !== null && score !== undefined
       ? CGP.totals.letterFor(score, this.settings.values.gradingScale) : null);
     var tone = score === null || score === undefined ? '' : score >= 89.5 ? 'a' : score >= 79.5 ? 'b' : score >= 69.5 ? 'c' : 'd';
     var meta = [];
-    if (r && r.engagement.lastActivityAt) meta.push('Last active ' + SI().relativeDay(r.engagement.lastActivityAt, r.now));
-    else if (student.lastActivityAt) meta.push('Last active ' + SI().relativeDay(Date.parse(student.lastActivityAt), Date.now()));
+    if (r && r.engagement.lastActivityAt) meta.push('Last active ' + SI().lastActiveText(r.engagement.lastActivityAt, r.now));
+    else if (student.lastActivityAt) meta.push('Last active ' + SI().lastActiveText(Date.parse(student.lastActivityAt), Date.now()));
     if (student.totalActivityTime) meta.push(hoursText(student.totalActivityTime) + ' in the course');
     if (pos >= 0) meta.push('Student ' + (pos + 1) + ' of ' + list.length);
     this._root.querySelector('.cgp-si__head').innerHTML =
@@ -447,7 +467,7 @@
       '<a class="cgp-si__link" href="/conversations?context_id=course_' + esc(this.courseId) + '&amp;user_id=' + esc(uid) +
         '&amp;user_name=' + encodeURIComponent(name) + '" target="_blank" rel="noopener">Message student</a>' +
       '<a class="cgp-si__link" href="' + base + '/users/' + esc(uid) + '/usage" target="_blank" rel="noopener">Access report</a>' +
-      '<button type="button" class="cgp-si__link cgp-si__link--btn" data-si-copy title="Copy this student’s missing and late work as a list">Copy missing &amp; late work</button>' +
+      '<button type="button" class="cgp-si__link cgp-si__link--btn" data-si-share-open title="Choose what to include, preview it and copy it">Copy list of missing/late work</button>' +
       '<span class="cgp-si__hint">← → next student · Esc to close</span>';
   };
 
@@ -691,18 +711,30 @@
 
   /* ------------------------------------------- sharing missing / late work */
 
+  /* Missing / Late as chosen, but never a kind this student has none of:
+   * the choice carries over from the last student, and "Missing" for one
+   * who only has late work would otherwise leave nothing to copy. */
+  P.shareInclude = function (r) {
+    var L = r.lists;
+    var missing = !!this._share.missing && L.missing.length > 0;
+    var late = !!this._share.late && L.late.length > 0;
+    if (!missing && !late) { missing = L.missing.length > 0; late = L.late.length > 0; }
+    return { missing: missing, late: late };
+  };
+
   P.report = function () {
     var r = this._last;
     if (!r) return null;
     var self = this;
-    var student = this.model.students.get(this._uid) || {};
     var origin = (typeof location !== 'undefined' && location.origin) || '';
+    // No student name in the list: it goes to that student or their family,
+    // and is pasted under a greeting that already says who it is about.
     return SI().workReport(r, {
-      studentName: student.fullName || student.name || '',
       courseName: this._courseName || '',
       now: r.now,
-      include: { missing: this._share.missing, late: this._share.late },
+      include: this.shareInclude(r),
       links: this._share.links,
+      exclude: this._shareExcluded,
       urlFor: function (i) { return origin + self.assignmentUrl(i.id); }
     });
   };
@@ -710,41 +742,114 @@
   P.copyReport = function () {
     var rep = this.report();
     if (!rep) { CGP.ui.toast('Still reading this student’s work from Canvas…'); return; }
-    if (!this._share.missing && !this._share.late) { CGP.ui.error('Pick Missing, Late or both first.'); return; }
+    if (!rep.count) { CGP.ui.error('Nothing is selected to copy - tick at least one assignment.'); return; }
     var n = rep.count;
     CGP.ui.copy(rep.text, rep.html).then(function () {
-      CGP.ui.toast(n ? n + (n === 1 ? ' assignment' : ' assignments') + ' copied — paste into an email, message or document'
-        : 'Copied — nothing is missing or late right now');
+      CGP.ui.toast(n + (n === 1 ? ' assignment' : ' assignments') + ' copied — paste into an email, message or document');
     }, function () { CGP.ui.error('Couldn’t copy to the clipboard.'); });
   };
 
-  P.refreshPreview = function () {
+  /* The footer's "Copy list of missing/late work": straight to the builder. */
+  P.openShare = function () {
     if (!this._root) return;
-    var pre = this._root.querySelector('.cgp-si__preview');
-    var rep = this.report();
-    if (pre && rep) pre.textContent = rep.text;
+    this._share.open = true;
+    if (this._tab !== 'work') this.selectTab('work');
+    this.refreshShare(true);
+    var card = this._root.querySelector('.cgp-si__share');
+    if (!card && this._last) CGP.ui.toast('Nothing is missing or late for this student right now.');
+    if (card && card.scrollIntoView) { try { card.scrollIntoView({ block: 'nearest' }); } catch (e) { /* ignore */ } }
   };
 
+  /* Redraw the builder in place after a choice changes. focusToggle: put the
+   * focus back on the open/close button the teacher just pressed. */
+  P.refreshShare = function (focusToggle) {
+    if (!this._root || !this._last) return;
+    var old = this._root.querySelector('.cgp-si__share');
+    if (!old) return;
+    var focusedItem = document.activeElement && document.activeElement.getAttribute &&
+      (document.activeElement.getAttribute('data-si-share-item') || document.activeElement.getAttribute('data-si-share') ||
+        document.activeElement.getAttribute('data-si-share-mode'));
+    // The item list and the preview scroll on their own; a redraw keeps
+    // them where the teacher had them.
+    var scrolls = ['.cgp-si__share-items', '.cgp-si__preview'].map(function (sel) {
+      var el = old.querySelector(sel);
+      return el ? el.scrollTop : 0;
+    });
+    var holder = document.createElement('div');
+    holder.innerHTML = this.sharePanel(this._last);
+    var next = holder.firstChild;
+    old.parentNode.replaceChild(next, old);
+    ['.cgp-si__share-items', '.cgp-si__preview'].forEach(function (sel, i) {
+      var el = next.querySelector(sel);
+      if (el && scrolls[i]) el.scrollTop = scrolls[i];
+    });
+    var target = focusToggle ? next.querySelector('[data-si-share-toggle]')
+      : focusedItem ? next.querySelector('[data-si-share-item="' + focusedItem + '"], [data-si-share="' + focusedItem + '"], [data-si-share-mode="' + focusedItem + '"]') : null;
+    if (target && target.focus) { try { target.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }
+  };
+
+  var COPY_ICON = '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><rect x="6.5" y="6.5" width="10" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
+    '<path d="M13.5 4.5V4a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 4v9A1.5 1.5 0 0 0 5 14.5h.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
+
+  /* "Copy List of Missing/Late Work": a single button until the teacher
+   * opens it; open, it shows what to include (missing, late or both, and
+   * each assignment), the exact text that will be copied, and the Copy
+   * button. */
   P.sharePanel = function (r) {
     var sh = this._share;
     var L = r.lists;
-    function box(key, label, count) {
-      return '<label class="cgp-si__check"><input type="checkbox" data-si-share="' + key + '"' + (sh[key] ? ' checked' : '') + '>' +
-        label + (count === undefined ? '' : ' <b>' + count + '</b>') + '</label>';
+    var ex = this._shareExcluded;
+    var summary = [L.missing.length ? L.missing.length + ' missing' : '', L.late.length ? L.late.length + ' late' : '']
+      .filter(Boolean).join(' · ');
+    var toggle = '<button type="button" class="cgp-si__share-toggle" data-si-share-toggle aria-expanded="' + !!sh.open + '" aria-controls="cgp-si-share-body">' +
+      '<span class="cgp-si__share-icon">' + COPY_ICON + '</span>' +
+      '<span class="cgp-si__share-title">Copy List of Missing/Late Work' +
+        '<small>' + esc(summary) + ' · for a parent, counselor or the student</small></span>' +
+      '<svg class="cgp-si__share-chev" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="m5 7.5 5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+      '</button>';
+    if (!sh.open) return '<div class="cgp-si__card cgp-si__share">' + toggle + '</div>';
+
+    var inc = this.shareInclude(r);
+    var mode = inc.missing && inc.late ? 'both' : inc.missing ? 'missing' : inc.late ? 'late' : '';
+    function seg(key, label, count, disabled) {
+      return '<button type="button" class="cgp-si__seg" data-si-share-mode="' + key + '" aria-pressed="' + (mode === key) + '"' +
+        (disabled ? ' disabled' : '') + '>' + label + (count === undefined ? '' : ' <b>' + count + '</b>') + '</button>';
+    }
+    function group(title, items, on) {
+      if (!items.length) return '';
+      return '<fieldset class="cgp-si__share-group"' + (on ? '' : ' disabled') + '><legend>' + title + '</legend>' + items.map(function (i) {
+        var id = String(i.id);
+        var detail = title === 'Missing'
+          ? (i.dueAt ? 'Due ' + fmtDate(i.dueAt) : 'No due date')
+          : SI().duration(i.secondsLate) + ' late';
+        return '<label class="cgp-si__share-item"><input type="checkbox" data-si-share-item="' + esc(id) + '"' + (on && !ex[id] ? ' checked' : '') + '>' +
+          '<span>' + esc(i.name) + '</span><em>' + esc(detail) + '</em></label>';
+      }).join('') + '</fieldset>';
     }
     var rep = this.report();
-    return '<div class="cgp-si__card cgp-si__share">' +
-      '<div class="cgp-si__card-head"><h3>Send missing &amp; late work</h3>' +
-        '<span class="cgp-si__aside">For a parent, counselor or the student</span></div>' +
-      '<div class="cgp-si__share-row">' +
-        '<div class="cgp-si__share-opts">' + box('missing', 'Missing', L.missing.length) + box('late', 'Late', L.late.length) +
-          box('links', 'Include links') + '</div>' +
-        '<button type="button" class="cgp-si__btn cgp-si__btn--copy" data-si-copy>' +
-          '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><rect x="6.5" y="6.5" width="10" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
-          '<path d="M13.5 4.5V4a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 4v9A1.5 1.5 0 0 0 5 14.5h.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>Copy list</button>' +
+    var n = rep ? rep.count : 0;
+    return '<div class="cgp-si__card cgp-si__share is-open">' + toggle +
+      '<div class="cgp-si__share-body" id="cgp-si-share-body">' +
+        '<div class="cgp-si__share-pick">' +
+          '<div class="cgp-si__share-label">Include</div>' +
+          '<div class="cgp-si__segs" role="group" aria-label="Which work to include">' +
+            seg('both', 'Both', L.missing.length + L.late.length, !L.missing.length || !L.late.length) +
+            seg('missing', 'Missing', L.missing.length, !L.missing.length) +
+            seg('late', 'Late', L.late.length, !L.late.length) +
+          '</div>' +
+          '<div class="cgp-si__share-items">' + group('Missing', L.missing, inc.missing) + group('Late', L.late, inc.late) + '</div>' +
+          '<label class="cgp-si__check"><input type="checkbox" data-si-share="links"' + (sh.links ? ' checked' : '') + '>Include a link to each assignment</label>' +
+        '</div>' +
+        '<div class="cgp-si__share-out">' +
+          '<div class="cgp-si__share-label">Preview <span>— exactly what will be copied</span></div>' +
+          '<pre class="cgp-si__preview" aria-label="What will be copied" aria-live="polite">' + esc(rep ? rep.text : '') + '</pre>' +
+          '<div class="cgp-si__share-foot">' +
+            '<p class="cgp-si__note">Pastes as a table with linked assignment names in Gmail, Outlook, Docs and Word; as plain lines in a text or Canvas message.</p>' +
+            '<button type="button" class="cgp-si__btn cgp-si__btn--copy" data-si-copy' + (n ? '' : ' disabled') + '>' + COPY_ICON +
+              (n ? 'Copy ' + n + (n === 1 ? ' assignment' : ' assignments') : 'Nothing selected') + '</button>' +
+          '</div>' +
+        '</div>' +
       '</div>' +
-      '<pre class="cgp-si__preview" aria-label="What will be copied">' + esc(rep ? rep.text : '') + '</pre>' +
-      '<p class="cgp-si__note">Pastes as a table (with linked assignment names) in Gmail, Outlook, Docs and Word, and as plain lines in a text or Canvas message.</p>' +
       '</div>';
   };
 

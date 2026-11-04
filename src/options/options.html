@@ -108,8 +108,27 @@
             </label>
             <input id="frozenTotal" type="checkbox" class="switch">
           </div>
+          <div class="setting">
+            <label class="setting__label" for="roundTotals">Round the Total to one decimal place
+              <span class="hint">Shows 86.02% as 86.0% (rounded half up, the same rounding the letter grade uses). Hover a Total for its letter grade and points.</span>
+            </label>
+            <input id="roundTotals" type="checkbox" class="switch">
+          </div>
+          <div class="setting">
+            <label class="setting__label" for="totalHighlights">Color a Total at or below a threshold
+              <span class="hint">A student's Total at or below a percentage you set is tinted that color, compared on the rounded Total you see. When a Total falls under more than one threshold, the lowest one wins: by default 72.4% or below is red-orange and 72.5&ndash;82.4% golden yellow. Pick any color with <strong>Custom color&hellip;</strong>.</span>
+            </label>
+            <input id="totalHighlights" type="checkbox" class="switch">
+          </div>
+          <div class="setting setting--stack" id="totalHighlightSetting">
+            <div class="threshold-list" id="totalHighlightList"></div>
+            <div class="threshold-actions">
+              <button id="addTotalHighlight" type="button" class="btn btn--sm">+ Add threshold</button>
+              <button id="resetTotalHighlights" type="button" class="btn btn--sm btn--quiet">Restore defaults</button>
+            </div>
+          </div>
           <div class="setting setting--field">
-            <label class="setting__label" for="gradingScale">Letter-grade scale for Analyze Scores
+            <label class="setting__label" for="gradingScale">Letter-grade scale for the Total hover and Analyze Scores
               <span class="hint">One per line as "Letter: minimum %", highest first. The percentage is rounded to the nearest 0.1 first; the last line is the floor (0).</span>
             </label>
             <div class="setting__control">
