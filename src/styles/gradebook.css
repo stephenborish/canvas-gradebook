@@ -1198,13 +1198,11 @@ html.cgp-on .slick-cell[data-cgp-col="total"] [data-cgp-pct]::before {
  * the Total's leading edge - the cell itself keeps its normal background, so
  * row hover, selection and the focus ring all read as usual. indicators.js
  * draws the icon as inline SVG (.cgp-total-flag) and sets its colour. The
- * cell gains a little leading padding so a centered Total never runs under
- * the icon. The flag is left out of the grade font rules with :where(), so
- * leaving it out adds no specificity: those rules must stay weaker than the
- * one that hides Canvas's unrounded text, or "86.0% 86.02%" both show. */
-html.cgp-on .slick-cell[data-cgp-col="total"][data-cgp-band] {
-  padding-left: 24px !important;
-}
+ * icon is absolutely positioned in the cell's left margin and takes no room
+ * of its own: a flagged Total stays centered exactly like every other Total
+ * in the column. The flag is left out of the grade font rules with :where(),
+ * so leaving it out adds no specificity: those rules must stay weaker than
+ * the one that hides Canvas's unrounded text, or "86.0% 86.02%" both show. */
 html.cgp-on .slick-cell[data-cgp-col="total"] > .cgp-total-flag {
   position: absolute !important;
   left: 6px !important;
@@ -1222,6 +1220,15 @@ html.cgp-on .slick-cell[data-cgp-col="total"] > .cgp-total-flag svg {
   width: 16px !important;
   height: 16px !important;
   overflow: visible;
+}
+/* A Total column dragged down to its narrowest leaves less margin than the
+ * icon needs: there it shrinks and moves to the very edge, so it never
+ * covers the number. The cell's width is set by SlickGrid, never by its
+ * content, so measuring it as a container changes nothing about its size. */
+html.cgp-on .slick-cell[data-cgp-col="total"][data-cgp-band] { container-type: inline-size; }
+@container (max-width: 104px) {
+  html.cgp-on .slick-cell[data-cgp-col="total"] > .cgp-total-flag { left: 3px !important; width: 12px !important; height: 12px !important; margin-top: -6px !important; }
+  html.cgp-on .slick-cell[data-cgp-col="total"] > .cgp-total-flag svg { width: 12px !important; height: 12px !important; }
 }
 
 /* The Total hover tooltip, on <body> so no grid pane clips it. */

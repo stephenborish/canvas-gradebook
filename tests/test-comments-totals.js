@@ -260,6 +260,12 @@ suite('Total letter grades', (test) => {
     a.ok(!/:not\(\.cgp-total-flag/.test(css), 'excluded with :not(:where(...)), never a bare :not(.cgp-total-flag)');
     a.ok(css.includes(':not(:where(.cgp-total-flag, .cgp-total-flag *))'), 'the icon is still excluded, so it keeps its colour');
   });
+  test('a flagged Total stays centered with the rest of the column: the icon takes no room', () => {
+    const css = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'styles', 'gradebook.css'), 'utf8');
+    const banded = css.split('}').filter((r) => /\[data-cgp-col="total"\]\[data-cgp-band\]\s*\{/.test(r));
+    banded.forEach((r) => a.ok(!/padding/.test(r), 'no padding on a flagged Total cell: ' + r.trim().slice(0, 80)));
+    a.ok(/> \.cgp-total-flag \{[^}]*position: absolute/.test(css), 'the icon is absolutely positioned');
+  });
   test('threshold colors: named swatches, and a custom color tinted toward white', () => {
     a.eq(CGP.highlightSwatch('gold').label, 'Golden yellow');
     const c = CGP.highlightSwatch('#000000');
