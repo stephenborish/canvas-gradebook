@@ -1098,7 +1098,7 @@ html.cgp-on .slick-cell[data-cgp-col="student"] {
   line-height: 1.25 !important;
 }
 html.cgp-on .slick-cell[data-cgp-col="assignment"] > *:not(.cgp-marks):not(.cgp-val),
-html.cgp-on .slick-cell[data-cgp-col="total"] > *:not(.cgp-marks):not(.cgp-val):not(.cgp-total-flag),
+html.cgp-on .slick-cell[data-cgp-col="total"] > *:not(.cgp-marks):not(.cgp-val):not(:where(.cgp-total-flag)),
 html.cgp-on .slick-cell[data-cgp-col="group"] > *:not(.cgp-marks):not(.cgp-val),
 html.cgp-on .slick-cell[data-cgp-col="student"] > *:not(.cgp-marks):not(.cgp-val) {
   flex: 0 0 auto;
@@ -1144,8 +1144,8 @@ html.cgp-on .slick-cell[class~="total_grade"] .Grid__GradeCell__Content {
  * and some of them carry a font-size or color of their own that would otherwise win
  * against the cell's. The markers this extension paints keep their own sizes and colors. */
 html.cgp-on .slick-cell[data-cgp-col="assignment"]:not(:has(input:not([type="hidden"]))) *:not(.cgp-marks):not(.cgp-marks *),
-html.cgp-on .slick-cell[data-cgp-col="total"]:not(:has(input:not([type="hidden"]))) *:not(.cgp-marks):not(.cgp-marks *):not(.cgp-total-flag):not(.cgp-total-flag *),
-html.cgp-on .slick-cell[class~="total_grade"]:not(:has(input:not([type="hidden"]))) *:not(.cgp-marks):not(.cgp-marks *):not(.cgp-total-flag):not(.cgp-total-flag *) {
+html.cgp-on .slick-cell[data-cgp-col="total"]:not(:has(input:not([type="hidden"]))) *:not(.cgp-marks):not(.cgp-marks *):not(:where(.cgp-total-flag, .cgp-total-flag *)),
+html.cgp-on .slick-cell[class~="total_grade"]:not(:has(input:not([type="hidden"]))) *:not(.cgp-marks):not(.cgp-marks *):not(:where(.cgp-total-flag, .cgp-total-flag *)) {
   font-size: inherit !important;
   color: var(--cgp-ink-strong, #1a232b) !important;
   font-weight: 600 !important;
@@ -1199,7 +1199,9 @@ html.cgp-on .slick-cell[data-cgp-col="total"] [data-cgp-pct]::before {
  * row hover, selection and the focus ring all read as usual. indicators.js
  * draws the icon as inline SVG (.cgp-total-flag) and sets its colour. The
  * cell gains a little leading padding so a centered Total never runs under
- * the icon. */
+ * the icon. The flag is left out of the grade font rules with :where(), so
+ * leaving it out adds no specificity: those rules must stay weaker than the
+ * one that hides Canvas's unrounded text, or "86.0% 86.02%" both show. */
 html.cgp-on .slick-cell[data-cgp-col="total"][data-cgp-band] {
   padding-left: 24px !important;
 }
