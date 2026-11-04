@@ -26,6 +26,7 @@ const CORE_FILES = [
   'src/core/totals.js',
   'src/core/score-stats.js',
   'src/core/student-insights.js',
+  'src/core/studio-class.js',
   'src/core/roster-format.js',
   'src/core/snippets.js',
   'src/core/time-shortcuts.js',

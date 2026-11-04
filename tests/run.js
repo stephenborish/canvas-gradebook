@@ -35,6 +35,7 @@ require('./test-test-student');
 require('./test-time-shortcuts');
 require('./test-score-stats');
 require('./test-student-insights');
+require('./test-studio-class');
 require('./test-roster-format');
 require('./test-settings-sync');
 require('./test-settings-gear-totals');
