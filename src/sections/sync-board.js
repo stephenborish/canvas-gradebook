@@ -155,7 +155,6 @@
       if (b.filter === 'attention') return self.rowNeedsAttention(r);
       return true;
     });
-    rows.sort(function (x, y) { return TYPE_ORDER.indexOf(x.item.type) - TYPE_ORDER.indexOf(y.item.type); });
     return rows;
   };
 
@@ -515,6 +514,8 @@
     if (on) parts.push('publish ' + on + (on === 1 ? ' copy' : ' copies'));
     if (off) parts.push('unpublish ' + off + (off === 1 ? ' copy' : ' copies'));
     var msg = 'Match this class’s publishing: ' + parts.join(' and ') + ' in your other classes?' +
+      (fixes.some(function (f) { return f.type === 'module'; })
+        ? '\n\nA module is published or unpublished with everything in it, as on the Modules page.' : '') +
       (off ? '\n\nCanvas keeps work that students have already submitted published.' : '');
     if (!window.confirm(msg)) return;
     b.busy = true;

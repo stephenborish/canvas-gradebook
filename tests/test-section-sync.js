@@ -1512,3 +1512,30 @@ suite('keeping classes in step: PR review', (test) => {
     a.not(scan.items.find((i) => i.type === 'page').htmlLoaded, 'the copy dialog reads it again');
   });
 });
+
+suite('keeping classes in step: code review', (test) => {
+  test('a shared copy Canvas fails as a whole is tried item by item, so only the bad one fails', async () => {
+    let api;
+    api = fakeCanvas({ onComplete: (dest, m) => {
+      landCopy(api, dest, '705', '<p>Do the lab.</p>');
+      api.db.mappings[dest].pages = { '7': '807' };
+      api.db.items[`${dest}:page:807`] = { page_id: '807', title: 'Notes', body: '<p>Notes</p>', published: true };
+    } });
+    const poll = api.contentMigration;
+    api.contentMigration = (dest, id) => poll(dest, id).then((m) => {
+      const mig = api.db.migrations[dest].find((x) => x.id === String(id));
+      // Canvas fails any copy that carries page 7.
+      if ((mig.body.select.pages || []).indexOf('7') >= 0) { mig.workflow_state = 'failed'; return Object.assign(m, { workflow_state: 'failed' }); }
+      return m;
+    });
+    const tasks = [
+      { srcCourseId: '11', destCourseId: '22', item: ASSIGNMENT, mode: 'copy', dates: {}, publish: 'match' },
+      { srcCourseId: '11', destCourseId: '22', item: { type: 'page', id: '7', title: 'Notes', published: true, html: '', noDates: true }, mode: 'copy', dates: {}, publish: 'match' }
+    ];
+    const results = new Map();
+    await copier(api).runPlan(tasks, null, (t, r) => results.set(t, r));
+    a.ok(results.get(tasks[0]).ok, JSON.stringify(results.get(tasks[0])));
+    a.not(results.get(tasks[1]).ok);
+    a.eq(api.calls.filter((x) => x[0] === 'copy').length, 3, 'the shared copy, then one each');
+  });
+});

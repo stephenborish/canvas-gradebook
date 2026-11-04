@@ -479,7 +479,10 @@
       return self.saveJob(job).then(function () { return self.continueJob(job, results, onStep); });
     }, function (err) {
       var msg = describe(err, 'Canvas refused to start the copy');
-      results.forEach(function (r) { r.error = msg; });
+      // One item Canvas cannot take must not sink the rest: a refused
+      // request (not a refused person) is tried again item by item.
+      var alone = tasks.length > 1 && !(err && (err.status === 401 || err.status === 403));
+      results.forEach(function (r) { r.error = msg; if (alone) r.retryAlone = true; });
       return results;
     }).then(null, function (err) {
       // Never reached by design; a bug here must still not leave a caller waiting.
@@ -516,6 +519,15 @@
         var chain = S().batchTasks(list).reduce(function (p, b) {
           return p.then(function () {
             return self.runBatch(b, function (i, step) { onStep(b.tasks[i], step); }).then(function (rs) {
+              // A shared copy Canvas failed as a whole: each item on its
+              // own, so only the one Canvas cannot take is reported.
+              if (rs.length > 1 && rs.every(function (r) { return r.retryAlone; })) {
+                return b.tasks.reduce(function (q, t) {
+                  return q.then(function () {
+                    return self.runBatch({ tasks: [t] }, function (i, step) { onStep(t, step); }).then(function (one) { onResult(t, one[0]); });
+                  });
+                }, Promise.resolve());
+              }
               rs.forEach(function (r, i) { onResult(b.tasks[i], r); });
             });
           });
@@ -592,7 +604,7 @@
       if (state !== 'completed') {
         return self.issues(dest, job.migrationId).then(function (issues) {
           var msg = 'Canvas could not copy it' + (issues.length ? ': ' + issues.slice(0, 2).join(' ') : '.');
-          all(function (r) { r.error = msg; });
+          all(function (r) { r.error = msg; if (tasks.length > 1) r.retryAlone = true; });
           return self.dropJob(job).then(function () { return results; });
         });
       }
@@ -1044,9 +1056,14 @@
     opts = opts || {};
     var progress = opts.onProgress || function () {};
     var done = 0;
+    // Fresh: copies made into this class from another one since (the
+    // reverse mappings) must show too.
+    this.forgetCopies(srcCourseId);
+    // chrome.storage.local, read once for every class's copy records.
+    var local = this.store.get(null).then(function (all) { return all || {}; }, function () { return {}; });
     return Promise.all([
       this.courseLists(srcCourseId),
-      this.allRecords(srcCourseId)
+      this.allRecords(srcCourseId, local)
     ]).then(function (r) {
       var src = r[0];
       var recs = r[1];
@@ -1057,7 +1074,7 @@
       var gate = CGP.util.pool(2);
       return Promise.all(destIds.map(function (d) {
         return gate(function () {
-          return self.scanOne(srcCourseId, String(d), src, recs).then(function (out) {
+          return self.scanOne(srcCourseId, String(d), src, recs, local).then(function (out) {
             progress(++done, destIds.length);
             return out;
           });
@@ -1135,13 +1152,13 @@
   /* Every record of a copy made from srcCourseId, all items and all
    * classes, in one read: {"type:id": {destCourseId: rec}}. Canvas's
    * record counts where both exist, as in record(). */
-  P.allRecords = function (srcCourseId) {
+  P.allRecords = function (srcCourseId, localRead) {
     var self = this;
     var prefix = FP_PREFIX + S().trackKey(this.origin, srcCourseId, 'x', 'x', 'x').replace(/x:x>x$/, '');
     var canvas = this.api && this.api.customData
       ? this.api.customData('fp/' + encodeURIComponent(String(srcCourseId))).then(function (v) { return v || {}; }, function () { return {}; })
       : Promise.resolve({});
-    var local = this.store.get(null).then(function (all) { return all || {}; }, function () { return {}; });
+    var local = localRead || this.store.get(null).then(function (all) { return all || {}; }, function () { return {}; });
     return Promise.all([canvas, local]).then(function (r) {
       var out = {};
       Object.keys(r[0] || {}).forEach(function (k) {
@@ -1166,9 +1183,9 @@
     });
   };
 
-  function safeDecode(s) { try { return decodeURIComponent(s); } catch (e) { return s; } }
+  function safeDecode(s) { return S().safeDecode(s); }
 
-  P.scanOne = function (srcCourseId, destId, src, recs) {
+  P.scanOne = function (srcCourseId, destId, src, recs, local) {
     var self = this;
     var sync = S();
     var out = { courseId: destId, error: null, cells: {}, orphans: [] };
@@ -1180,7 +1197,7 @@
       this.courseLists(destId),
       // The other way: items here that are that class's copies.
       this.mappingFor(srcCourseId, destId).catch(function () { return null; }),
-      this.allRecords(destId)
+      this.allRecords(destId, local)
     ]).then(function (r) {
       var mapping = r[0] || {};
       var dest = r[1];

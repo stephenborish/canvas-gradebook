@@ -1132,6 +1132,7 @@
     settingsDiff: settingsDiff,
     compareFull: compareFull,
     moduleDrift: moduleDrift,
+    safeDecode: safeDecode,
     migrationState: migrationState,
     latestCopyFrom: latestCopyFrom,
     destIdFor: destIdFor,

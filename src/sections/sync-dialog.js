@@ -1075,7 +1075,8 @@
         (bits.length ? '<div class="cgp-stats__note">' + bits.join(' ') + '</div>' : '') +
         // An unticked class shows only what is there: its boxes would
         // be ignored anyway, and a long list reads faster without them.
-        (on ? choice + dateRows + note : '') + '</div>';
+        // (The compact view keeps its due date boxes: nothing starts ticked there.)
+        (on || st.quick ? choice + dateRows + note : '') + '</div>';
     }).join('');
     var extra = [];
     if (it.hasOverrides) extra.push('It has dates for particular students or sections in this course; copies get only the dates set below.');
