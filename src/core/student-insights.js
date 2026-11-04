@@ -80,7 +80,7 @@
   var KNOWN_TOOLS = [
     [/turnitin/i, 'Turnitin'],
     [/edpuzzle/i, 'Edpuzzle'],
-    [/assignments\.google|google\.com\/.*assignments|classroom\.google|googleusercontent|\bgoogle\b/i, 'Google Assignments'],
+    [/assignments\.google|google\.com\/.*assignments|classroom\.google|googleusercontent/i, 'Google Assignments'],
     [/deltamath/i, 'DeltaMath'],
     [/khanacademy/i, 'Khan Academy'],
     [/pear(deck)?\.com|peardeck/i, 'Pear Deck'],
@@ -95,7 +95,7 @@
     [/mcgraw|connect\.mheducation/i, 'McGraw Hill Connect'],
     [/pearson|mylab|mastering/i, 'Pearson'],
     [/webassign/i, 'WebAssign'],
-    [/youtube|playposit/i, 'PlayPosit']
+    [/playposit/i, 'PlayPosit']
   ];
 
   /* A readable name for the tool behind a launch URL ("Turnitin"), or the
@@ -255,6 +255,8 @@
    *   now              ms
    *   studentId        string
    *   instructorId     string | null
+   *   classmateIds     [string]   (optional) - other students, whose comments
+   *                    (peer review) are neither the student's nor a teacher's
    *   assignments      [{id, name, pointsPossible, dueAt, groupId, published, omitFromFinal, submissionTypes}]
    *   submissions      raw Canvas submissions for this student
    *   groups           [{id, name, group_weight}]   (optional)
@@ -411,13 +413,17 @@
 
     // Feedback conversation.
     var iid = input.instructorId ? String(input.instructorId) : null;
+    var classmates = new Set((input.classmateIds || []).map(String));
+    var authorOf = CGP.commentAnalysis && CGP.commentAnalysis.authorId;
     var feedback = { fromYou: 0, fromTeachers: 0, fromStudent: 0, unanswered: [] };
     items.forEach(function (i) {
       var lastTeacher = null, lastStudent = null;
       i.comments.forEach(function (c) {
         if (!c || c.draft === true) return;
-        var author = c.author_id === undefined || c.author_id === null ? '' : String(c.author_id);
+        var author = authorOf ? (authorOf(c) || '')
+          : (c.author_id === undefined || c.author_id === null ? '' : String(c.author_id));
         var t = time(c.created_at) || 0;
+        if (author !== sid && classmates.has(author)) return;   // a peer reviewer
         if (author === sid) {
           feedback.fromStudent++;
           if (lastStudent === null || t > lastStudent) lastStudent = t;
@@ -635,11 +641,7 @@
 
   /* ------------------------------------------------ missing / late list */
 
-  function escHtml(s) {
-    return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
-  }
+  function escHtml(s) { return CGP.util.escapeHtml(s); }
 
   function longDate(t, withTime) {
     if (!t) return '';

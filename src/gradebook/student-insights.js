@@ -123,7 +123,6 @@
         self._courseName = (r[1] && (r[1].name || r[1].course_code)) || '';
         return { groups: r[0] || [], weighted: !!(r[1] && r[1].apply_assignment_group_weights) };
       });
-      this._course.catch(function () { self._course = null; });
     }
     return this._course;
   };
@@ -171,6 +170,8 @@
     var self = this;
     uid = String(uid);
     this._uid = uid;
+    // The previous student's summary must not feed Copy while this one loads.
+    this._last = null;
     this._filter = 'all';
     this._query = '';
     var gen = ++this._gen;
@@ -462,12 +463,20 @@
     var roster = this.roster();
     var assignments = model.assignmentOrder.map(function (id) { return model.assignments.get(id); }).filter(Boolean);
     var cellOf = function (aid, sid) { return model.cell(aid, sid); };
-    var medians = SI().classMedians(cellOf, assignments, roster);
-    var groupMedians = SI().classGroupMedians(cellOf, assignments, roster);
+    // The class's medians only move once every column has loaded; the other
+    // partial redraws (analytics, enrollment, course) reuse them.
+    if (!parts.medians || parts.mediansReady !== parts.classReady) {
+      parts.medians = SI().classMedians(cellOf, assignments, roster);
+      parts.groupMedians = SI().classGroupMedians(cellOf, assignments, roster);
+      parts.mediansReady = parts.classReady;
+    }
+    var medians = parts.medians;
+    var groupMedians = parts.groupMedians;
     var r = SI().summarize({
       now: Date.now(),
       studentId: uid,
       instructorId: model.instructorId,
+      classmateIds: roster.filter(function (id) { return id !== uid; }),
       assignments: assignments,
       submissions: parts.work,
       groups: parts.course ? parts.course.groups : [],
@@ -475,7 +484,12 @@
       classMedians: medians,
       classGroupMedians: groupMedians,
       student: student,
-      classActivityTimes: roster.map(function (id) { var s = model.students.get(id); return s && s.totalActivityTime; }),
+      // This student's figure is the fresh one from their enrollment, the
+      // same value the percentile is taken for.
+      classActivityTimes: roster.map(function (id) {
+        if (id === uid) return student.totalActivityTime;
+        var s = model.students.get(id); return s && s.totalActivityTime;
+      }),
       activity: parts.activity || null,
       summaries: parts.summaries || null
     });

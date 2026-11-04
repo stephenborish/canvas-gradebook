@@ -217,8 +217,7 @@
       // (gradebook/student-insights.js): when the student last did anything
       // in the course, and how long they have spent in it, in seconds.
       lastActivityAt: e.last_activity_at || (prev ? prev.lastActivityAt : null) || null,
-      totalActivityTime: e.total_activity_time === undefined ? (prev ? prev.totalActivityTime : null) : e.total_activity_time,
-      sectionId: e.course_section_id === undefined ? (prev ? prev.sectionId : null) : String(e.course_section_id)
+      totalActivityTime: e.total_activity_time === undefined ? (prev ? prev.totalActivityTime : null) : e.total_activity_time
     };
     if (!prev) this.studentOrder.push(uid);
     this.students.set(uid, rec);
