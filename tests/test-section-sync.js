@@ -1135,3 +1135,343 @@ suite('copy to sections: existing copies without a date', (test) => {
     a.eq(S().resolveInline(['due_at'], src, { due_at: { date: '', time: '' } }, TZ, []).iso.due_at, '2026-11-03T13:55:00Z', 'a new copy: blank is this class’s');
   });
 });
+
+/* ------------------------------------------------ keeping classes in step */
+
+suite('keeping classes in step: batches', (test) => {
+  test('several items into one class are one Canvas copy', () => {
+    const b = S().copyRequestMany('11', [
+      { type: 'assignment', id: 5 }, { type: 'assignment', id: 6 }, { type: 'page', id: 7 }, { type: 'assignment', id: 5 }
+    ]);
+    a.deep(b.select, { assignments: ['5', '6'], pages: ['7'] });
+    a.deep(b.settings, { source_course_id: '11' });
+    a.eq(S().copyRequestMany('11', [{ type: 'quiz', id: 1 }], { assignmentGroupId: 9 }).settings.move_to_assignment_group_id, '9');
+  });
+
+  test('updates share a copy; module placements get their own; same-group first copies share one; kept copies copy nothing', () => {
+    const t = (type, id, extra) => Object.assign({ mode: 'copy', item: { type, id } }, extra);
+    const batches = S().batchTasks([
+      t('module', 1, { module: { id: 9 } }),            // a module is never placed: plain
+      t('page', 2, { module: { id: 90, position: 1 } }),
+      t('assignment', 3, { assignmentGroupId: '7' }),
+      t('assignment', 4),
+      t('quiz', 5, { assignmentGroupId: '7' }),
+      t('assignment', 6, { mode: 'keep' }),
+      t('assignment', 8, { module: { id: 91 }, assignmentGroupId: '7' })
+    ]);
+    a.deep(batches.map((b) => b.tasks.map((x) => x.item.id)), [[1, 4], [3, 5], [2], [8]]);
+    a.eq(batches[1].assignmentGroupId, '7');
+    a.eq(batches[2].module.id, 90);
+  });
+
+  test('a batch: one copy, every item found by mapping and dated, the job cleared', async () => {
+    let api;
+    api = fakeCanvas({ onComplete: (dest) => {
+      landCopy(api, dest, '705', '<p>Do the lab.</p>');
+      api.db.mappings[dest].pages = { '7': '807' };
+      api.db.items[`${dest}:page:807`] = { page_id: '807', title: 'Notes', body: '<p>Notes</p>', published: false };
+    } });
+    const store = memStore();
+    const c = copier(api, store);
+    const steps = [];
+    const rs = await c.runBatch({ tasks: [
+      { srcCourseId: '11', destCourseId: '22', item: ASSIGNMENT, mode: 'copy', dates: { due_at: '2026-03-03T17:45:00.000Z', unlock_at: null, lock_at: null }, publish: 'match' },
+      { srcCourseId: '11', destCourseId: '22', item: { type: 'page', id: '7', title: 'Notes', published: true, html: '<p>Notes</p>', noDates: true }, mode: 'copy', dates: {}, publish: 'match' }
+    ] }, (i, s) => steps.push(i + ':' + s));
+    a.ok(rs[0].ok && rs[1].ok, JSON.stringify(rs));
+    a.eq(rs[1].url, '/courses/22/pages/page_id:807');
+    const copies = api.calls.filter((x) => x[0] === 'copy');
+    a.eq(copies.length, 1, 'one Canvas copy');
+    a.deep(copies[0][2].select, { assignments: ['5'], pages: ['7'] });
+    a.ok(api.calls.some((x) => x[0] === 'publish' && x[3] === '807' && x[4] === true), 'the page follows this class’s publishing');
+    a.eq(Object.keys(store.mem).filter((k) => k.indexOf('cgp.sections.job.') === 0).length, 0);
+    a.eq(Object.keys(store.mem).filter((k) => k.indexOf('cgp.sections.fp.') === 0).length, 2, 'both copies remembered');
+    a.ok(steps.indexOf('1:Canvas is copying') >= 0);
+  });
+
+  test('runPlan: per class, the fewest copies; a kept copy only gets dates', async () => {
+    let api;
+    api = fakeCanvas({ onComplete: (dest) => landCopy(api, dest, '705', '<p>Do the lab.</p>', { mapping: { quizzes: { '6': '706' } } }) });
+    api.db.items['22:quiz:706'] = { id: '706', title: 'Q', description: '', published: true };
+    api.db.details['22:quiz:706'] = { due_at: null, unlock_at: null, lock_at: null };
+    api.db.items['22:assignment:88'] = { id: '88', name: 'Kept', description: '<p>mine</p>', published: true };
+    api.db.details['22:assignment:88'] = { due_at: null, unlock_at: null, lock_at: null };
+    const results = new Map();
+    const tasks = [
+      { srcCourseId: '11', destCourseId: '22', item: ASSIGNMENT, mode: 'copy', dates: {}, publish: 'match' },
+      { srcCourseId: '11', destCourseId: '22', item: { type: 'quiz', id: '6', title: 'Q', published: true, html: '' }, mode: 'copy', dates: {}, publish: 'match', module: { id: '90', position: 1 } },
+      { srcCourseId: '11', destCourseId: '22', item: { type: 'assignment', id: '8', title: 'Kept', html: '' }, mode: 'keep', destId: '88', dates: { due_at: '2026-03-03T17:45:00.000Z', unlock_at: null, lock_at: null }, publish: 'match' }
+    ];
+    await copier(api).runPlan(tasks, null, (t, r) => results.set(t, r));
+    a.eq(results.size, 3);
+    tasks.forEach((t) => a.ok(results.get(t).ok, JSON.stringify(results.get(t))));
+    const copies = api.calls.filter((x) => x[0] === 'copy');
+    a.eq(copies.length, 2, 'the shared copy and the module placement');
+    a.eq(copies[1][2].settings.insert_into_module_id, '90');
+    a.ok(api.calls.some((x) => x[0] === 'putDates' && x[3] === '88'), 'the kept copy got its dates');
+  });
+
+  test('a tab closed half way through a batch: only what is left is finished later', async () => {
+    let api;
+    let nqPolls = 0;
+    api = fakeCanvas({ pollsUntilDone: 0, onComplete: (dest) => {
+      landCopy(api, dest, '705', '<p>Do the lab.</p>');
+      api.db.mappings[dest].assignments['9'] = '709';
+      api.db.items[`${dest}:assignment:709`] = { id: '709', name: 'NQ', description: '', published: false, workflow_state: 'importing' };
+      api.db.details[`${dest}:assignment:709`] = { due_at: null, unlock_at: null, lock_at: null };
+    } });
+    const get = api.sectionItem;
+    api.sectionItem = (c, t, id) => {
+      if (id === '709' && ++nqPolls > 3) api.db.items[`${c}:assignment:709`].workflow_state = 'unpublished';
+      return get(c, t, id);
+    };
+    const store = memStore();
+    const c = copier(api, store);
+    c.maxWaitMs = 0;
+    let t = Date.now();
+    c.now = () => (t += 1000);
+    const nq = { type: 'assignment', id: '9', title: 'NQ', newQuiz: true, published: true, html: '' };
+    const rs = await c.runBatch({ tasks: [
+      { srcCourseId: '11', destCourseId: '22', item: nq, mode: 'copy', dates: { due_at: '2026-03-04T17:45:00.000Z', unlock_at: null, lock_at: null }, publish: 'match' },
+      { srcCourseId: '11', destCourseId: '22', item: ASSIGNMENT, mode: 'copy', dates: {}, publish: 'match' }
+    ] });
+    a.ok(rs[1].ok, 'the ordinary item is done');
+    a.ok(rs[0].pending, 'the New Quiz is still importing');
+    const jobs = Object.keys(store.mem).filter((k) => k.indexOf('cgp.sections.job.') === 0);
+    a.eq(jobs.length, 1);
+    a.deep(store.mem[jobs[0]].tasks.map((x) => x.item.id), ['9'], 'only the New Quiz is left in the saved job');
+    // The next page: the claim has expired, and the quiz has finished importing.
+    const later = copier(api, store);
+    later.now = () => Date.now() + 10 * 60 * 1000;
+    const done = await later.resumePending();
+    a.eq(done.length, 1);
+    a.ok(done[0].result.ok, JSON.stringify(done[0].result));
+    a.eq(done[0].job.task.item.id, '9');
+    a.ok(api.calls.some((x) => x[0] === 'putDates' && x[3] === '709'));
+    a.eq(Object.keys(store.mem).filter((k) => k.indexOf('cgp.sections.job.') === 0).length, 0);
+  });
+
+  test('a job saved by the earlier version (one task) is still finished', async () => {
+    let api;
+    api = fakeCanvas({ onComplete: (dest) => landCopy(api, dest, '705', '<p>Do the lab.</p>') });
+    const store = memStore();
+    await api.startCourseCopy('22', S().copyRequest('11', ASSIGNMENT));
+    store.mem['cgp.sections.job.22-500'] = {
+      id: '22-500', origin: 'https://school.instructure.com', startedAt: Date.now(), migrationId: '500',
+      task: { srcCourseId: '11', destCourseId: '22', destName: 'P4', mode: 'copy', item: ASSIGNMENT, dates: {}, children: [], note: '', publish: 'match' }
+    };
+    const done = await copier(api, store).resumePending();
+    a.eq(done.length, 1);
+    a.ok(done[0].result.ok, JSON.stringify(done[0].result));
+    a.eq(Object.keys(store.mem).filter((k) => k.indexOf('cgp.sections.job.') === 0).length, 0);
+  });
+});
+
+suite('keeping classes in step: what changed', (test) => {
+  const base = { points_possible: 10, grading_type: 'points', submission_types: ['online_upload'], allowed_attempts: -1 };
+  const st = (o) => S().settingsOf('assignment', Object.assign({}, base, o));
+
+  test('settings a copy carries are compared; the assignment group is not', () => {
+    a.eq(S().settingsSig(st({})), S().settingsSig(st({ assignment_group_id: 99 })));
+    a.ok(S().settingsSig(st({})) !== S().settingsSig(st({ points_possible: 20 })));
+    a.eq(S().settingsOf('assignment', { id: 1 }), null, 'a list that left them out says nothing');
+    a.deep(S().settingsDiff(st({}), st({ points_possible: 20 })), ['Points: 10 here, 20 there']);
+    a.eq(S().settingsSig(S().settingsOf('quiz', { points_possible: 5, question_count: 4 })) !== S().settingsSig(S().settingsOf('quiz', { points_possible: 5, question_count: 5 })), true, 'a quiz question added');
+  });
+
+  test('which side changed the settings, from the record of the copy', () => {
+    const html = '<p>Do the lab.</p>';
+    const fp = S().fingerprint(html);
+    const sig10 = S().settingsSig(st({}));
+    const cmp = (srcPts, destPts, rec) => S().compareFull({ html, settings: st({ points_possible: srcPts }) }, { html, settings: st({ points_possible: destPts }) }, rec);
+    a.eq(cmp(10, 10, null).status, 'same');
+    a.eq(cmp(20, 10, { fp, sig: sig10 }).status, 'stale', 'changed here: their copy is out of date');
+    a.eq(cmp(10, 20, { fp, sig: sig10 }).status, 'edited', 'changed there');
+    a.eq(cmp(20, 10, null).status, 'differs', 'no record: unknown');
+    a.eq(cmp(20, 10, { fp }).status, 'differs', 'an older record with no settings, and the same text');
+    const older = S().compareFull({ html: '<p>New text</p>', settings: st({ points_possible: 20 }) }, { html, settings: st({}) }, { fp });
+    a.eq(older.status, 'stale', 'an older record: the copy untouched there, so the original moved on');
+    a.deep(cmp(20, 10, { fp, sig: sig10 }).diffs, ['Points: 20 here, 10 there']);
+  });
+
+  test('a module’s copy missing items added here, found through Canvas’s record or by title', () => {
+    const src = [{ id: 1, type: 'Page', title: 'Intro' }, { id: 2, type: 'Assignment', title: 'Lab' }, { id: 3, type: 'SubHeader', title: 'Week 2' }, { id: 4, type: 'Quiz', title: 'Check' }];
+    const dest = [{ id: 11, type: 'Page', title: 'Intro (renamed there)' }, { id: 12, type: 'Assignment', title: 'Lab' }, { id: 19, type: 'ExternalUrl', title: 'Their video' }];
+    const d = S().moduleDrift(src, dest, { module_items: { '1': '11' } });
+    a.deep(d.missing, ['Week 2', 'Check']);
+    a.deep(d.extra, ['Their video']);
+    a.not(d.reordered);
+    a.ok(S().moduleDrift(src.slice(0, 2), [dest[1], dest[0]], { module_items: { '1': '11' } }).reordered);
+  });
+
+  test('the survey says a copy is out of date when only its points changed here, and why', async () => {
+    const api = fakeCanvas();
+    api.db.migrations['22'] = [{ id: '1', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '11' } }];
+    landCopy(api, '22', '705', '<p>Do the lab.</p>');
+    Object.assign(api.db.items['22:assignment:705'], base);
+    const c = copier(api);
+    await c.remember('11', ASSIGNMENT, '22', '705', '<p>Do the lab.</p>', st({}));
+    const src = Object.assign({}, ASSIGNMENT, { htmlLoaded: true, settings: st({ points_possible: 20 }) });
+    const out = await c.survey('11', [src], ['22'], {});
+    const info = out.dests[0].items['assignment:5'];
+    a.eq(info.status, 'stale');
+    a.deep(info.diffs, ['Points: 20 here, 10 there']);
+  });
+
+  test('a copy’s record keeps its settings; bringing text back keeps the earlier settings record', async () => {
+    let api;
+    api = fakeCanvas({ onComplete: (dest) => { landCopy(api, dest, '705', '<p>Do the lab.</p>'); Object.assign(api.db.items[`${dest}:assignment:705`], base); } });
+    const store = memStore();
+    const c = copier(api, store);
+    await c.run({ srcCourseId: '11', destCourseId: '22', item: ASSIGNMENT, mode: 'copy', dates: {}, publish: 'match' });
+    const k = Object.keys(store.mem).find((x) => x.indexOf('cgp.sections.fp.') === 0);
+    a.eq(store.mem[k].sig, S().settingsSig(st({})));
+  });
+
+  test('a module already there that is missing items added here is out of date', async () => {
+    const api = fakeCanvas();
+    api.db.migrations['22'] = [{ id: '1', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '11' } }];
+    api.db.mappings['22'] = { modules: { '3': '303' }, module_items: { '31': '331' } };
+    api.db.items['22:module:303'] = { id: '303', name: 'Unit 1', unlock_at: null };
+    api.moduleItems = (c, id) => Promise.resolve(c === '22'
+      ? [{ id: 331, type: 'Page', title: 'Intro' }]
+      : [{ id: 31, type: 'Page', title: 'Intro' }, { id: 32, type: 'Page', title: 'Reading' }]);
+    const out = await copier(api).survey('11', [{ type: 'module', id: '3', title: 'Unit 1', children: [] }], ['22'], {});
+    const info = out.dests[0].items['module:3'];
+    a.eq(info.status, 'stale');
+    a.deep(info.drift.missing, ['Reading']);
+    a.ok(S().defaultReplace(info.status), 'copied again by default (that adds the missing item)');
+  });
+
+  test('an item that is that class’s copy is never copied back (that would make a second one)', async () => {
+    const api = fakeCanvas();
+    // 11's assignment 5 came from 22's 705.
+    api.db.migrations['11'] = [{ id: '2', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '22' } }];
+    const mapFor = api.assetIdMapping;
+    api.assetIdMapping = (dest, id) => dest === '11' ? Promise.resolve({ assignments: { '705': '5' } }) : mapFor(dest, id);
+    api.db.items['22:assignment:705'] = { id: '705', name: 'Lab 4', description: '<p>Do the lab.</p>', published: true };
+    const out = await copier(api).survey('11', [Object.assign({}, ASSIGNMENT, { htmlLoaded: true })], ['22'], {});
+    const info = out.dests[0].items['assignment:5'];
+    a.eq(info.status, 'origin');
+    a.eq(info.origin.srcId, '705');
+  });
+});
+
+suite('keeping classes in step: Compare classes', (test) => {
+  /* 11 is this class; 22 another. 5: copied, same. 6: copied, its points
+   * changed here since. 7: never copied. Page 8: 22 has its own "Notes".
+   * Module 3: copied, an item added here since. 22's assignment 709 came
+   * from 11's deleted assignment 99. 11's assignment 40 is 22's copy (of 22's 400). */
+  function scenario() {
+    const sig10 = S().settingsSig(S().settingsOf('assignment', { points_possible: 10, grading_type: 'points', submission_types: ['online_upload'] }));
+    const asg = (id, name, extra) => Object.assign({ id, name, description: '<p>' + name + '</p>', published: true, points_possible: 10, grading_type: 'points', submission_types: ['online_upload'] }, extra);
+    const lists = {
+      '11:assignment': [asg(5, 'Lab 4'), asg(6, 'Lab 5', { points_possible: 20 }), asg(7, 'Lab 6'), asg(40, 'Essay', { description: '<p>Essay, revised here</p>' })],
+      '22:assignment': [asg(705, 'Lab 4', { published: false }), asg(706, 'Lab 5'), asg(709, 'Old lab'), asg(400, 'Essay')],
+      '11:quiz': [], '22:quiz': [], '11:discussion': [], '22:discussion': []
+    };
+    const api = fakeCanvas({ lists });
+    api.pagesWithBodies = (c) => Promise.resolve(c === '11'
+      ? [{ page_id: 8, url: 'notes', title: 'Notes', body: '<p>Notes</p>', published: true }]
+      : [{ page_id: 88, url: 'notes', title: 'Notes', body: '<p>Their notes</p>', published: true }]);
+    api.modulesWithItems = (c) => Promise.resolve(c === '11'
+      ? [{ id: 3, name: 'Unit 1', published: true, items: [{ id: 31, type: 'Assignment', title: 'Lab 4' }, { id: 32, type: 'Page', title: 'Notes' }] }]
+      : [{ id: 303, name: 'Unit 1', published: true, items: [{ id: 331, type: 'Assignment', title: 'Lab 4' }] }]);
+    api.db.migrations['22'] = [{ id: '1', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '11' } }];
+    api.db.migrations['11'] = [{ id: '2', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '22' } }];
+    api.db.mappings['22'] = { assignments: { '5': '705', '6': '706', '99': '709' }, modules: { '3': '303' }, module_items: { '31': '331' } };
+    api.db.mappings['11'] = { assignments: { '400': '40' } };
+    const cd = {
+      'fp/11': { assignment_6: { '22': { fp: S().fingerprint('<p>Lab 5</p>'), sig: sig10 } } },
+      'fp/22': { assignment_400: { '11': { fp: S().fingerprint('<p>Essay</p>') } } }
+    };
+    api.customData = (scope) => Promise.resolve(cd[scope] || null);
+    return api;
+  }
+
+  test('every item against every class, from list reads, writing nothing', async () => {
+    const api = scenario();
+    const c = copier(api);
+    const progress = [];
+    const scan = await c.scan('11', ['22'], { onProgress: (d, n) => progress.push(d + '/' + n) });
+    const cells = scan.dests[0].cells;
+    a.eq(cells['assignment:5'].status, 'same');
+    a.ok(cells['assignment:5'].publishMismatch, 'published here, not there');
+    a.eq(cells['assignment:6'].status, 'stale');
+    a.deep(cells['assignment:6'].diffs, ['Points: 20 here, 10 there']);
+    a.eq(cells['assignment:7'].status, 'new');
+    a.eq(cells['page:8'].status, 'lookalike');
+    a.eq(cells['module:3'].status, 'stale');
+    a.deep(cells['module:3'].drift.missing, ['Notes']);
+    a.deep(scan.dests[0].orphans.map((o) => o.title), ['Old lab']);
+    const origin = scan.dests[0].origins['assignment:40'];
+    a.eq(origin.srcId, '400');
+    a.eq(origin.status, 'edited', 'this class’s copy was changed here since it was copied from 22');
+    a.deep(progress, ['0/1', '1/1']);
+    a.not(api.calls.some((x) => ['copy', 'putDates', 'html', 'publish', 'put', 'get'].indexOf(x[0]) >= 0), 'list reads only, nothing written');
+  });
+
+  function board(scan) {
+    if (!globalThis.CGP.SectionCopyController) vm.runInThisContext(fs.readFileSync(path.join(__dirname, '../src/sections/sync-dialog.js'), 'utf8'));
+    if (!globalThis.CGP.SectionCopyController.prototype.openBoard) vm.runInThisContext(fs.readFileSync(path.join(__dirname, '../src/sections/sync-board.js'), 'utf8'));
+    const b = Object.create(globalThis.CGP.SectionCopyController.prototype);
+    b.courseId = '11';
+    b.courseName = (id) => 'Block ' + id;
+    b.state = { view: 'board', courses: [], board: { scan, filter: 'attention', type: 'all', q: '', sel: {}, dests: ['22'] } };
+    return b;
+  }
+
+  test('the board lists what needs attention, ticks by kind, and matches publishing', async () => {
+    const scan = await copier(scenario()).scan('11', ['22']);
+    const b = board(scan);
+    const keys = b.boardRows().map((r) => r.key);
+    a.deep(keys, ['assignment:5', 'assignment:6', 'assignment:7', 'assignment:40', 'page:8', 'module:3']);
+    a.deep(b.cellsWith(['new']), ['assignment:7>22']);
+    a.deep(b.cellsWith(['stale']), ['assignment:6>22', 'module:3>22']);
+    a.deep(b.publishFixes().map((f) => [f.destId, f.want]), [['705', true]]);
+    const c = b.boardCounts();
+    a.eq(c['new'], 1);
+    a.eq(c.stale, 2);
+    a.eq(c.origin, 1);
+    const html = b.renderBoardTable();
+    a.ok(html.includes('data-board-sel="assignment:7&gt;22"') || html.includes('data-board-sel="assignment:7>22"'), 'a missing copy can be ticked');
+    a.not(/data-board-sel="page:8/.test(html), 'a class with its own same-titled page cannot be ticked');
+    a.ok(html.includes('Changed here'), 'the copy here, against the class it came from');
+    b.state.board.filter = 'all';
+    a.eq(b.boardRows().length, 6);
+    b.state.board.type = 'module';
+    a.deep(b.boardRows().map((r) => r.key), ['module:3']);
+  });
+
+  test('ticked cells open the copy dialog with exactly those pairs', async () => {
+    const scan = await copier(scenario()).scan('11', ['22']);
+    const b = board(scan);
+    let opened = null;
+    b.open = (opts) => { opened = opts; };
+    b.state.board.sel = { 'assignment:7>22': true, 'assignment:6>22': true };
+    b.copyFromBoard();
+    a.deep(opened.items.map((i) => i.id).sort(), ['6', '7']);
+    a.deep(opened.dests, ['22']);
+    a.ok(opened.full);
+    a.deep(Object.keys(opened.only).sort(), ['assignment:6>22', 'assignment:7>22']);
+  });
+
+  test('the dialog opened from the board ticks only those pairs, and never an item that came from there', () => {
+    const b = board(null);
+    b.state = {
+      items: [{ type: 'assignment', id: '6', title: 'Lab 5', dates: {} }, { type: 'assignment', id: '40', title: 'Essay', dates: {} }],
+      dests: ['22', '33'], courses: [], tz: 'UTC', cells: {}, seed: {}, include: {}, replace: {}, notes: {}, publish: 'match', placeInModules: true,
+      only: { 'assignment:6>22': true, 'assignment:40>22': true },
+      survey: { dests: [
+        { courseId: '22', items: { 'assignment:6': { status: 'stale', destId: '706' }, 'assignment:40': { status: 'origin', origin: { srcId: '400' } } } },
+        { courseId: '33', items: { 'assignment:6': { status: 'new' }, 'assignment:40': { status: 'new' } } }
+      ] }
+    };
+    b.seedCells();
+    const tasks = b.buildTasks().tasks;
+    a.deep(tasks.map((t) => t.item.id + '>' + t.destCourseId), ['6>22']);
+    a.eq(tasks[0].mode, 'copy', 'out of date: updated');
+    b.state.include['assignment:40>22'] = true;
+    a.eq(b.buildTasks().tasks.length, 1, 'even ticked, a copy back to where it came from is not made');
+  });
+});

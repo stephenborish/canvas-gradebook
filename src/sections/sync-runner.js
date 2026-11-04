@@ -121,7 +121,11 @@
     if (!S().TYPES[item.type].body || item.htmlLoaded) return Promise.resolve(item);
     return this.api.sectionItem(srcCourseId, item.type, item.id).then(function (o) {
       var full = S().toItem(item.type === 'announcement' ? 'discussion' : item.type, o);
-      if (full) item.html = full.html;
+      if (full) {
+        item.html = full.html;
+        // The settings a copy carries (points, attempts...), compared too.
+        if (full.settings !== undefined) item.settings = full.settings;
+      }
       item.htmlLoaded = true;
       return item;
     }, function () { return item; });
@@ -145,6 +149,9 @@
       return self.api.assetIdMapping(destId, last.id).then(function (m) { mapping = m || {}; });
     }).then(function () {
       var reads = [];
+      // Items here that are that class's copies: copying one back would
+      // give that class a second one (Canvas's copy only goes one way).
+      reads.push(self.mappingFor(srcCourseId, destId).then(function (m) { out.back = m || {}; }, function () { out.back = {}; }));
       if (src.moduleIndex) reads.push(listOf('module').then(function (mods) { out.modules = mods; }));
       if (src.groups) reads.push(self.api.assignmentGroups(destId).then(function (g) { out.groups = g || []; }, function () { out.groups = null; }));
       return Promise.all(reads);
@@ -192,6 +199,23 @@
 
     var destId = sync.destIdFor(mapping, item.type, item.id);
     if (item.type === 'module' && destId) return this.surveyModule(srcCourseId, item, destCourseId, destId, mapping, info);
+    var cameFrom = !destId && item.type !== 'module' ? sync.srcIdFor(dest.back, item.type, item.id) : null;
+    var originCheck = !cameFrom ? Promise.resolve(false) : this.api.sectionItem(destCourseId, item.type, cameFrom).then(function (o) {
+      return !!o && o.workflow_state !== 'deleted';
+    }, function () { return false; });
+    return originCheck.then(function (isCopy) {
+      if (isCopy) {
+        info.status = 'origin';
+        info.origin = { srcId: String(cameFrom) };
+        return info;
+      }
+      return self.surveyCopy(srcCourseId, item, destCourseId, destId, mapping, info, listOf);
+    });
+  };
+
+  P.surveyCopy = function (srcCourseId, item, destCourseId, destId, mapping, info, listOf) {
+    var self = this;
+    var sync = S();
     if (!destId) {
       return listOf(item.type).then(function (list) {
         var mine = (list || []).map(function (o) { return sync.toItem(item.type, o) || { title: o.title || o.name }; });
@@ -221,8 +245,12 @@
       if (!sync.TYPES[item.type].body) { info.status = 'same'; return pageDates.then(function () { return info; }); }
       var split = sync.splitNote(d.html || '');
       info.note = split.note;
-      return pageDates.then(function () { return self.baseline(srcCourseId, item, destCourseId); }).then(function (fp) {
-        info.status = sync.compareCopy(item.html || '', d.html || '', fp);
+      return pageDates.then(function () { return self.record(srcCourseId, item, destCourseId); }).then(function (rec) {
+        var cmp = sync.compareFull({ html: item.html || '', settings: item.settings }, { html: d.html || '', settings: d.settings }, rec);
+        info.status = cmp.status;
+        info.textStatus = cmp.text;
+        info.settingsStatus = cmp.settings;
+        info.diffs = cmp.diffs;
         return info;
       });
     }, function (err) {
@@ -268,12 +296,32 @@
         info.changedChildren = changed.map(function (c) { return c.title; });
         info.status = !changed.length ? 'same'
           : (changed.some(function (c) { return c.status === 'edited'; }) ? 'edited' : 'differs');
-        return info;
+        return self.moduleShape(srcCourseId, item, destCourseId, destId, mapping).then(function (drift) {
+          if (!drift) return info;
+          info.drift = drift;
+          // Items added here since the module was copied: copying it again
+          // adds them there (and leaves anything that class added alone).
+          if (drift.missing.length && info.status === 'same') info.status = 'stale';
+          return info;
+        });
       });
     }, function (err) {
       if (err && err.status === 404) { info.status = 'restore'; return info; }
       throw err;
     });
+  };
+
+  /* A module's items here against its copy's there (moduleDrift), or null
+   * when either list cannot be read. */
+  P.moduleShape = function (srcCourseId, item, destCourseId, destId, mapping) {
+    var api = this.api;
+    if (!api.moduleItems) return Promise.resolve(null);
+    var src = item.moduleItems || item.items;
+    var srcRead = Array.isArray(src) ? Promise.resolve(src) : api.moduleItems(srcCourseId, item.id);
+    return Promise.all([srcRead, api.moduleItems(destCourseId, destId)]).then(function (r) {
+      if (!Array.isArray(r[0]) || !Array.isArray(r[1])) return null;
+      return S().moduleDrift(r[0], r[1], mapping);
+    }, function () { return null; });
   };
 
   /* ---------------------------------------------------- copy fingerprints */
@@ -330,10 +378,12 @@
     return this.record(srcCourseId, item, destCourseId).then(function (rec) { return (rec && rec.fp) || null; });
   };
 
-  P.remember = function (srcCourseId, item, destCourseId, destId, html) {
-    var self = this;
-    var k = this.trackKey(srcCourseId, item, destCourseId);
+  /* settings: the copy's settings as copied (settingsOf), so a later look
+   * can tell which side changed its points or attempts, as for its text. */
+  P.remember = function (srcCourseId, item, destCourseId, destId, html, settings) {
     var rec = { fp: S().fingerprint(html || ''), destId: String(destId), at: this.now() };
+    var sig = S().settingsSig(settings);
+    if (sig !== null && sig !== '') rec.sig = sig;
     return this.putRecord(srcCourseId, item, destCourseId, rec);
   };
 
@@ -372,62 +422,134 @@
    * }
    * Resolves {ok, destId, url, warnings, pending, error}; never rejects. */
   P.run = function (task, onStep) {
-    var self = this;
     onStep = onStep || function () {};
-    var result = { ok: false, destId: null, url: null, warnings: [], pending: false, error: null };
+    if (task.mode === 'keep') return this.runKeep(task, onStep);
+    return this.runBatch({ tasks: [task] }, function (i, step) { onStep(step); }).then(function (r) { return r[0]; });
+  };
 
-    if (task.mode === 'keep') {
-      if (!task.destId) { result.error = 'There is no copy in this class to update.'; return Promise.resolve(result); }
-      onStep('Updating dates');
-      return this.finish(task, task.destId, task.mapping || {}, result, onStep).then(function () { return result; }, function (err) {
-        result.ok = false;
-        result.error = 'Something went wrong: ' + String(err && err.message);
-        return result;
-      });
-    }
+  function freshResult() {
+    return { ok: false, destId: null, url: null, warnings: [], pending: false, error: null };
+  }
 
-    var body;
-    try {
-      body = S().copyRequest(task.srcCourseId, task.item, {
-        module: task.module, assignmentGroupId: task.assignmentGroupId
-      });
-    } catch (e) { result.error = String(e.message); return Promise.resolve(result); }
-
-    onStep('Starting Canvas’s copy');
-    return this.api.startCourseCopy(task.destCourseId, body).then(function (mig) {
-      if (!mig || !mig.id) {
-        result.error = 'Canvas did not start the copy.';
-        return result;
-      }
-      var job = self.jobFor(task, mig.id);
-      self.forgetCopies(task.destCourseId);
-      return self.saveJob(job).then(function () { return self.continueJob(job, result, onStep); });
-    }, function (err) {
-      result.error = describe(err, 'Canvas refused to start the copy');
-      return result;
-    }).then(null, function (err) {
-      // Never reached by design; a bug here must still not leave a caller waiting.
+  /* A copy kept as that section's own: nothing is copied, only its dates
+   * (and note, and an explicit publishing choice) change. */
+  P.runKeep = function (task, onStep) {
+    var result = freshResult();
+    onStep = onStep || function () {};
+    if (!task.destId) { result.error = 'There is no copy in this class to update.'; return Promise.resolve(result); }
+    onStep('Updating dates');
+    return this.finish(task, task.destId, task.mapping || {}, result, onStep).then(function () { return result; }, function (err) {
       result.ok = false;
-      result.error = result.error || ('Something went wrong: ' + String(err && err.message));
+      result.error = 'Something went wrong: ' + String(err && err.message);
       return result;
     });
   };
 
-  P.jobFor = function (task, migrationId) {
+  /* Several items into ONE section through one Canvas course copy
+   * (section-sync.js batchTasks says which may share one). batch:
+   * {tasks, assignmentGroupId}. onStep(i, step) for the i-th task.
+   * Resolves one result per task, in order; never rejects. */
+  P.runBatch = function (batch, onStep) {
+    var self = this;
+    var tasks = batch.tasks || [];
+    onStep = onStep || function () {};
+    var results = tasks.map(function () { return freshResult(); });
+    if (!tasks.length) return Promise.resolve(results);
+    var each = function (step) { tasks.forEach(function (t, i) { onStep(i, step); }); };
+    var body;
+    try {
+      body = tasks.length === 1
+        ? S().copyRequest(tasks[0].srcCourseId, tasks[0].item, { module: tasks[0].module, assignmentGroupId: tasks[0].assignmentGroupId })
+        : S().copyRequestMany(tasks[0].srcCourseId, tasks.map(function (t) { return t.item; }), { assignmentGroupId: batch.assignmentGroupId });
+    } catch (e) {
+      results.forEach(function (r) { r.error = String(e.message); });
+      return Promise.resolve(results);
+    }
+    each(tasks.length === 1 ? 'Starting Canvas’s copy' : 'Starting Canvas’s copy of ' + tasks.length + ' items');
+    var dest = tasks[0].destCourseId;
+    return this.api.startCourseCopy(dest, body).then(function (mig) {
+      if (!mig || !mig.id) {
+        results.forEach(function (r) { r.error = 'Canvas did not start the copy.'; });
+        return results;
+      }
+      var job = self.jobFor(tasks, mig.id);
+      self.forgetCopies(dest);
+      return self.saveJob(job).then(function () { return self.continueJob(job, results, onStep); });
+    }, function (err) {
+      var msg = describe(err, 'Canvas refused to start the copy');
+      results.forEach(function (r) { r.error = msg; });
+      return results;
+    }).then(null, function (err) {
+      // Never reached by design; a bug here must still not leave a caller waiting.
+      results.forEach(function (r) {
+        r.ok = false;
+        r.error = r.error || ('Something went wrong: ' + String(err && err.message));
+      });
+      return results;
+    });
+  };
+
+  /* Every task, run with the fewest Canvas copies that can carry them: per
+   * section, one copy for everything that may share one, a copy of its own
+   * for each first copy placed in a module, nothing for a kept copy. Up to
+   * three sections at once; inside a section one after another (Canvas
+   * queues copies into one course behind each other anyway).
+   * onStep(task, step), onResult(task, result). Resolves when all are done;
+   * never rejects. */
+  P.runPlan = function (tasks, onStep, onResult) {
+    var self = this;
+    onStep = onStep || function () {};
+    onResult = onResult || function () {};
+    var byDest = {};
+    var order = [];
+    (tasks || []).forEach(function (t) {
+      var d = String(t.destCourseId);
+      if (!byDest[d]) { byDest[d] = []; order.push(d); }
+      byDest[d].push(t);
+    });
+    var gate = CGP.util.pool(3);
+    return Promise.all(order.map(function (d) {
+      return gate(function () {
+        var list = byDest[d];
+        var chain = S().batchTasks(list).reduce(function (p, b) {
+          return p.then(function () {
+            return self.runBatch(b, function (i, step) { onStep(b.tasks[i], step); }).then(function (rs) {
+              rs.forEach(function (r, i) { onResult(b.tasks[i], r); });
+            });
+          });
+        }, Promise.resolve());
+        return list.filter(function (t) { return t.mode === 'keep'; }).reduce(function (p, t) {
+          return p.then(function () {
+            return self.runKeep(t, function (step) { onStep(t, step); }).then(function (r) { onResult(t, r); });
+          });
+        }, chain);
+      });
+    })).then(function () { return null; }, function (err) {
+      CGP.diag.error('sections.planFailed', { message: String(err && err.message) });
+      return null;
+    });
+  };
+
+  function jobTasks(job) { return (job && (job.tasks || (job.task ? [job.task] : []))) || []; }
+
+  P.jobFor = function (tasks, migrationId) {
+    tasks = [].concat(tasks);
     return {
-      id: task.destCourseId + '-' + migrationId,
+      id: tasks[0].destCourseId + '-' + migrationId,
       origin: this.origin,
       startedAt: this.now(),
       migrationId: String(migrationId),
-      task: {
-        srcCourseId: String(task.srcCourseId), destCourseId: String(task.destCourseId),
-        destName: task.destName || '', mode: 'copy',
-        item: { type: task.item.type, id: String(task.item.id), title: task.item.title || '', graded: !!task.item.graded,
-          published: !!task.item.published, html: task.item.html || '', noDates: !!task.item.noDates,
-          newQuiz: !!task.item.newQuiz, url: task.item.url || '' },
-        dates: task.dates || {}, children: task.children || [], childNotes: task.childNotes || {},
-        note: task.note || '', publish: task.publish || 'match'
-      }
+      tasks: tasks.map(function (task) {
+        return {
+          srcCourseId: String(task.srcCourseId), destCourseId: String(task.destCourseId),
+          destName: task.destName || '', mode: 'copy',
+          item: { type: task.item.type, id: String(task.item.id), title: task.item.title || '', graded: !!task.item.graded,
+            published: !!task.item.published, html: task.item.html || '', noDates: !!task.item.noDates,
+            newQuiz: !!task.item.newQuiz, url: task.item.url || '' },
+          dates: task.dates || {}, children: task.children || [], childNotes: task.childNotes || {},
+          note: task.note || '', publish: task.publish || 'match'
+        };
+      })
     };
   };
 
@@ -443,60 +565,126 @@
     return this.store.remove(JOB_PREFIX + job.id).catch(function () { return null; });
   };
 
-  /* Wait for Canvas's copy job, find the copy, apply the section's settings. */
-  P.continueJob = function (job, result, onStep, opts) {
+  /* Wait for Canvas's copy job, find each copy, apply its section's
+   * settings. results: one per task of the job (filled in). A task whose
+   * copy is done is taken off the saved job at once, so a tab closed half
+   * way through a batch leaves only what is left to do. */
+  P.continueJob = function (job, results, onStep, opts) {
     var self = this;
-    var task = job.task;
+    var tasks = jobTasks(job);
     opts = opts || {};
-    onStep('Canvas is copying');
-    return this.waitFor(task.destCourseId, job.migrationId, opts.maxWaitMs || this.maxWaitMs, job).then(function (mig) {
+    onStep = onStep || function () {};
+    var each = function (step) { tasks.forEach(function (t, i) { onStep(i, step); }); };
+    var all = function (fn) { results.forEach(fn); return results; };
+    if (!tasks.length) return this.dropJob(job).then(function () { return results; });
+    var dest = tasks[0].destCourseId;
+    each('Canvas is copying');
+    return this.waitFor(dest, job.migrationId, opts.maxWaitMs || this.maxWaitMs, job).then(function (mig) {
       var state = S().migrationState(mig);
       if (state === 'running') {
-        result.pending = true;
-        result.error = 'Canvas is still copying this. Gradebook+ will finish setting its dates the next time you open a Canvas course page.';
-        return result;
+        return all(function (r) {
+          r.pending = true;
+          r.error = 'Canvas is still copying this. Gradebook+ will finish setting its dates the next time you open a Canvas course page.';
+        });
       }
       if (state !== 'completed') {
-        return self.issues(task.destCourseId, job.migrationId).then(function (issues) {
-          result.error = 'Canvas could not copy it' + (issues.length ? ': ' + issues.slice(0, 2).join(' ') : '.');
-          return self.dropJob(job).then(function () { return result; });
+        return self.issues(dest, job.migrationId).then(function (issues) {
+          var msg = 'Canvas could not copy it' + (issues.length ? ': ' + issues.slice(0, 2).join(' ') : '.');
+          all(function (r) { r.error = msg; });
+          return self.dropJob(job).then(function () { return results; });
         });
       }
-      onStep('Finding the copy');
+      each('Finding the copy');
       // A migration list read while this copy was still running (an item
       // page in another tab, say) must not hide the finished copy.
-      self.forgetCopies(task.destCourseId);
-      return self.api.assetIdMapping(task.destCourseId, job.migrationId).then(function (mapping) {
-        var destId = S().destIdFor(mapping, task.item.type, task.item.id);
-        if (!destId) {
-          result.error = 'Canvas finished, but did not report where the copy is. Check this class before copying again.';
-          return self.dropJob(job).then(function () { return result; });
-        }
-        return self.settled(task, destId, opts.maxWaitMs || self.maxWaitMs, job).then(function (ready) {
-          if (ready === 'failed') {
-            result.error = 'Canvas could not finish importing the copy (its New Quizzes step failed). Check this class.';
-            return self.dropJob(job).then(function () { return result; });
-          }
-          if (ready !== 'ready') {
-            result.pending = true;
-            result.error = 'Canvas is still importing this copy. Gradebook+ will finish setting its dates the next time you open a Canvas course page.';
-            return result;
-          }
-          return self.issues(task.destCourseId, job.migrationId).then(function (issues) {
-            issues.forEach(function (t) { result.warnings.push('Canvas: ' + t); });
-            return self.finish(task, destId, mapping, result, onStep);
-          }).then(function () { return self.dropJob(job); }).then(function () { return result; });
+      self.forgetCopies(dest);
+      return Promise.all([
+        self.api.assetIdMapping(dest, job.migrationId),
+        self.issues(dest, job.migrationId)
+      ]).then(function (r) {
+        var mapping = r[0];
+        var issues = shareIssues(r[1], tasks);
+        var left = tasks.slice();
+        var settle = function (i, keepJob) {
+          if (keepJob) return Promise.resolve();
+          left = left.filter(function (t) { return t !== tasks[i]; });
+          if (!left.length) return self.dropJob(job);
+          job.tasks = left;
+          delete job.task;
+          return self.saveJob(job);
+        };
+        // New Quizzes last: their import can go on for minutes after the copy.
+        var idx = tasks.map(function (t, i) { return i; }).sort(function (x, y) {
+          return ((tasks[x].item.newQuiz ? 1 : 0) - (tasks[y].item.newQuiz ? 1 : 0)) || (x - y);
         });
+        return idx.reduce(function (p, i) {
+          return p.then(function () {
+            var task = tasks[i];
+            var result = results[i];
+            var step = function (s) { onStep(i, s); };
+            var destId = S().destIdFor(mapping, task.item.type, task.item.id);
+            if (!destId) {
+              result.error = 'Canvas finished, but did not report where the copy is. Check this class before copying again.';
+              return settle(i, false);
+            }
+            return self.settled(task, destId, opts.maxWaitMs || self.maxWaitMs, job).then(function (ready) {
+              if (ready === 'failed') {
+                result.error = 'Canvas could not finish importing the copy (its New Quizzes step failed). Check this class.';
+                return settle(i, false);
+              }
+              if (ready !== 'ready') {
+                result.pending = true;
+                result.error = 'Canvas is still importing this copy. Gradebook+ will finish setting its dates the next time you open a Canvas course page.';
+                return settle(i, true);
+              }
+              (issues[i] || []).forEach(function (t) { result.warnings.push('Canvas: ' + t); });
+              return self.finish(task, destId, mapping, result, step).then(function () { return settle(i, false); }, function (err) {
+                // finish() reports Canvas's refusals as warnings; anything
+                // reaching here is a bug, and must not stop the other items.
+                result.ok = false;
+                result.error = 'Something went wrong: ' + String(err && err.message);
+                return settle(i, false);
+              });
+            }, function (err) {
+              // The copy could not be read to see whether it is ready: this
+              // one waits for a later page, the others carry on.
+              result.pending = true;
+              result.error = describe(err, 'Lost track of the copy') + ' Gradebook+ will check on it again later.';
+              return settle(i, true);
+            });
+          });
+        }, Promise.resolve()).then(function () { return results; });
       });
     }).then(null, function (err) {
       // Canvas could not be asked (a network failure, a throttle, the job's
       // state or mapping refused): the job stays saved to try again later.
-      result.ok = false;
-      result.pending = true;
-      result.error = describe(err, 'Lost track of Canvas’s copy job') + ' Gradebook+ will check on it again later.';
-      return result;
+      var msg = describe(err, 'Lost track of Canvas’s copy job') + ' Gradebook+ will check on it again later.';
+      return all(function (r) {
+        if (r.ok || r.error) return;
+        r.pending = true;
+        r.error = msg;
+      });
     });
   };
+
+  /* Canvas's warnings for one copy of several items, each given to the
+   * item it names (Canvas names the item in most of them), the rest to the
+   * first item. -> [[text]] by task. */
+  function shareIssues(issues, tasks) {
+    var out = tasks.map(function () { return []; });
+    (issues || []).forEach(function (text) {
+      var low = String(text).toLowerCase();
+      var hit = -1;
+      if (tasks.length > 1) {
+        tasks.forEach(function (t, i) {
+          var title = String(t.item.title || '').trim().toLowerCase();
+          if (hit < 0 && title && low.indexOf(title) >= 0) hit = i;
+        });
+      }
+      out[hit < 0 ? 0 : hit].push(text);
+    });
+    return out;
+  }
 
   /* A New Quiz (an assignment) is still being filled in by Canvas's quiz
    * service after the course copy itself reports completed: the copy sits
@@ -668,12 +856,13 @@
     var self = this;
     var sync = S();
     return this.api.sectionItem(task.destCourseId, child.type, destId).then(function (o) {
-      var html = (sync.toItem(child.type, o) || {}).html || '';
+      var copied = sync.toItem(child.type, o) || {};
+      var html = copied.html || '';
       var next = sync.withNote(html, (task.childNotes || {})[child.type + ':' + child.id] || '');
       var write = next === html ? Promise.resolve() : self.api.setItemHtml(task.destCourseId, child.type, destId, next).then(null, function (err) {
         result.warnings.push('“' + (child.title || '') + '”: the other class’s note could not be removed. ' + describe(err, 'Canvas refused'));
       });
-      return write.then(function () { return self.remember(task.srcCourseId, child, task.destCourseId, destId, html); });
+      return write.then(function () { return self.remember(task.srcCourseId, child, task.destCourseId, destId, html, copied.settings); });
     }, function () { return null; });
   };
 
@@ -702,7 +891,7 @@
       }
       if (task.mode === 'copy') {
         steps = steps.then(function () {
-          return self.remember(task.srcCourseId, item, task.destCourseId, destId, html);
+          return self.remember(task.srcCourseId, item, task.destCourseId, destId, html, d.settings);
         });
       }
       // "Same as this section" on a copy kept as that section's own leaves
@@ -832,6 +1021,256 @@
     }, function () { return { side: null }; });
   };
 
+  /* ------------------------------------------------- the whole course */
+
+  /* Compare classes: every assignment, quiz, discussion, page and module of
+   * this course against its copy in each linked class, from a handful of
+   * list reads per class (never one read per item), so a course of two
+   * hundred items is checked in seconds. Read only.
+   *
+   * -> { items: [item], dests: [{ courseId, error, cells: {itemKey: cell},
+   *      orphans: [{type, title, destId, url}] }] }
+   * cell: { status: 'same' | 'stale' | 'edited' | 'differs' | 'new' |
+   *         'restore' | 'lookalike' | 'unknown',
+   *         destId, url, published, publishMismatch, diffs, drift, lookalike }
+   * opts.onProgress(done, total) as each class is read. */
+  var SCAN_TYPES = ['assignment', 'quiz', 'discussion', 'page', 'module'];
+
+  P.scan = function (srcCourseId, destIds, opts) {
+    var self = this;
+    var sync = S();
+    opts = opts || {};
+    var progress = opts.onProgress || function () {};
+    var done = 0;
+    return Promise.all([
+      this.courseLists(srcCourseId),
+      this.allRecords(srcCourseId)
+    ]).then(function (r) {
+      var src = r[0];
+      var recs = r[1];
+      if (src.error) throw src.error;
+      var items = [];
+      SCAN_TYPES.forEach(function (t) { (src.items[t] || []).forEach(function (it) { items.push(it); }); });
+      progress(0, destIds.length);
+      var gate = CGP.util.pool(2);
+      return Promise.all(destIds.map(function (d) {
+        return gate(function () {
+          return self.scanOne(srcCourseId, String(d), src, recs).then(function (out) {
+            progress(++done, destIds.length);
+            return out;
+          });
+        });
+      })).then(function (dests) { return { items: items, dests: dests, truncated: src.truncated }; });
+    });
+  };
+
+  /* One course's items of every scanned kind, as dialog items, with their
+   * instructions. {items: {type: [item]}, byId: {type: {id: item}},
+   * truncated: {type: true}, error}. */
+  P.courseLists = function (courseId) {
+    var self = this;
+    var sync = S();
+    var api = this.api;
+    var out = { items: {}, byId: {}, truncated: {}, error: null };
+    function keep(type, list, raw) {
+      out.items[type] = list;
+      out.byId[type] = {};
+      list.forEach(function (it) { out.byId[type][String(it.id)] = it; });
+      if (raw && raw.truncated) out.truncated[type] = true;
+    }
+    var reads = [
+      api.courseItems(courseId, 'assignment').then(function (l) {
+        keep('assignment', (l || []).map(function (o) { return sync.toItem('assignment', o); }).filter(Boolean), l);
+      }),
+      api.courseItems(courseId, 'quiz').then(function (l) {
+        keep('quiz', (l || []).map(function (o) { return sync.toItem('quiz', o); }).filter(Boolean), l);
+      }),
+      api.courseItems(courseId, 'discussion').then(function (l) {
+        keep('discussion', (l || []).map(function (o) { return sync.toItem('discussion', o); })
+          .filter(function (it) { return it && it.type === 'discussion'; }), l);
+      }),
+      (api.pagesWithBodies ? api.pagesWithBodies(courseId) : api.courseItems(courseId, 'page')).then(function (l) {
+        return self.pageBodies(courseId, l || []).then(function (full) {
+          keep('page', full.map(function (o) { return sync.toItem('page', o); }).filter(Boolean), l);
+        });
+      }),
+      (api.modulesWithItems ? api.modulesWithItems(courseId) : api.courseItems(courseId, 'module')).then(function (l) {
+        keep('module', (l || []).map(function (o) {
+          var it = sync.toItem('module', o);
+          if (it) it.moduleItems = Array.isArray(o.items) ? o.items : null;
+          return it;
+        }).filter(Boolean), l);
+      })
+    ];
+    return Promise.all(reads).then(function () {
+      Object.keys(out.items).forEach(function (t) { out.items[t].forEach(function (it) { it.htmlLoaded = true; }); });
+      return out;
+    }, function (err) { out.error = err; return out; });
+  };
+
+  /* Pages from a Canvas whose pages list ignored include[]=body: each one
+   * read on its own (four at a time), so no page is compared on an empty
+   * body. */
+  P.pageBodies = function (courseId, list) {
+    var api = this.api;
+    if (!list.length || list.some(function (o) { return o && o.body !== undefined; })) return Promise.resolve(list);
+    var gate = CGP.util.pool(4);
+    return Promise.all(list.map(function (o) {
+      return gate(function () {
+        return api.sectionItem(courseId, 'page', o.page_id).then(function (full) { return full || o; }, function () { return o; });
+      });
+    }));
+  };
+
+  /* Every record of a copy made from srcCourseId, all items and all
+   * classes, in one read: {"type:id": {destCourseId: rec}}. Canvas's
+   * record counts where both exist, as in record(). */
+  P.allRecords = function (srcCourseId) {
+    var self = this;
+    var prefix = FP_PREFIX + S().trackKey(this.origin, srcCourseId, 'x', 'x', 'x').replace(/x:x>x$/, '');
+    var canvas = this.api && this.api.customData
+      ? this.api.customData('fp/' + encodeURIComponent(String(srcCourseId))).then(function (v) { return v || {}; }, function () { return {}; })
+      : Promise.resolve({});
+    var local = this.store.get(null).then(function (all) { return all || {}; }, function () { return {}; });
+    return Promise.all([canvas, local]).then(function (r) {
+      var out = {};
+      Object.keys(r[0] || {}).forEach(function (k) {
+        var m = /^([a-z]+)_(.+)$/.exec(k);
+        var box = r[0][k];
+        if (!m || !box || typeof box !== 'object') return;
+        var key = m[1] + ':' + safeDecode(m[2]);
+        out[key] = out[key] || {};
+        Object.keys(box).forEach(function (d) { out[key][safeDecode(d)] = box[d]; });
+      });
+      Object.keys(r[1]).forEach(function (k) {
+        if (k.indexOf(prefix) !== 0) return;
+        var m = /^([a-z]+):(.+)>([^>]+)$/.exec(k.slice(prefix.length));
+        if (!m) return;
+        var key = m[1] + ':' + m[2];
+        var mine = r[1][k];
+        out[key] = out[key] || {};
+        var theirs = out[key][m[3]];
+        if (theirs === undefined || (mine && mine.unshared)) out[key][m[3]] = mine;
+      });
+      return out;
+    });
+  };
+
+  function safeDecode(s) { try { return decodeURIComponent(s); } catch (e) { return s; } }
+
+  P.scanOne = function (srcCourseId, destId, src, recs) {
+    var self = this;
+    var sync = S();
+    var out = { courseId: destId, error: null, cells: {}, orphans: [] };
+    // Fresh: a copy made from another tab or computer since must show.
+    this.forgetCopies(destId);
+    out.origins = {};
+    return Promise.all([
+      this.mappingFor(destId, srcCourseId),
+      this.courseLists(destId),
+      // The other way: items here that are that class's copies.
+      this.mappingFor(srcCourseId, destId).catch(function () { return null; }),
+      this.allRecords(destId)
+    ]).then(function (r) {
+      var mapping = r[0] || {};
+      var dest = r[1];
+      var back = r[2] || {};
+      var backRecs = r[3] || {};
+      if (dest.error) throw dest.error;
+      SCAN_TYPES.forEach(function (type) {
+        (src.items[type] || []).forEach(function (item) {
+          var key = type + ':' + item.id;
+          out.cells[key] = self.scanCell(srcCourseId, item, destId, mapping, dest, recs);
+          var from = type === 'module' ? null : sync.srcIdFor(back, type, item.id);
+          var orig = from ? (dest.byId[type] || {})[String(from)] : null;
+          if (!orig) return;
+          // This item is a copy of that class's: compared the other way
+          // round, with the record of THAT copy. 'stale' = the original
+          // there moved on; 'edited' = this copy was changed here.
+          var rec = ((backRecs[type + ':' + from] || {})[String(srcCourseId)]) || null;
+          var cmp = sync.compareFull({ html: orig.html, settings: orig.settings }, { html: item.html, settings: item.settings }, rec);
+          out.origins[key] = {
+            courseId: destId, srcId: String(from), status: cmp.status, diffs: sync.settingsDiff(item.settings, orig.settings),
+            url: sync.itemHtmlPath(destId, type, from), item: orig
+          };
+        });
+        // Copies whose original is no longer here (deleted, or this list
+        // was cut short - then nothing is said).
+        if (src.truncated[type]) return;
+        var box = mapping[sync.TYPES[type].map] || {};
+        Object.keys(box).forEach(function (srcId) {
+          var v = box[srcId];
+          if (typeof v !== 'string' && typeof v !== 'number') return;
+          if ((src.byId[type] || {})[String(srcId)]) return;
+          var there = (dest.byId[type] || {})[String(v)];
+          if (!there) return;
+          out.orphans.push({ type: type, title: there.title, destId: String(v), url: sync.itemHtmlPath(destId, type, v) });
+        });
+      });
+      return out;
+    }).then(null, function (err) {
+      out.error = CGP.util.isPermissionDeniedError(err)
+        ? 'You can’t read this class’s content in Canvas (your role there may not allow it, or the course has concluded).'
+        : describe(err, 'Couldn’t read this class from Canvas');
+      return out;
+    });
+  };
+
+  P.scanCell = function (srcCourseId, item, destCourseId, mapping, dest, recs) {
+    var sync = S();
+    var type = item.type;
+    var cell = { status: 'new', destId: null, url: null, published: null, publishMismatch: false, diffs: [], drift: null, lookalike: null };
+    var destId = sync.destIdFor(mapping, type, item.id);
+    if (!destId) {
+      var hit = sync.lookalike(dest.items[type] || [], item.title);
+      if (hit) { cell.status = 'lookalike'; cell.lookalike = { id: hit.id, title: hit.title, url: sync.itemHtmlPath(destCourseId, type, hit.id) }; }
+      return cell;
+    }
+    cell.destId = destId;
+    var there = (dest.byId[type] || {})[String(destId)];
+    if (!there) {
+      // Not in that class's list: deleted there (copying brings it back),
+      // unless the list was cut short and it may just not be on it.
+      cell.status = dest.truncated[type] ? 'unknown' : 'restore';
+      return cell;
+    }
+    cell.url = sync.itemHtmlPath(destCourseId, type, destId);
+    cell.published = !!there.published;
+    cell.publishMismatch = !!item.published !== !!there.published;
+    cell.title = there.title;
+    if (type === 'module') {
+      if (Array.isArray(item.moduleItems) && Array.isArray(there.moduleItems)) {
+        cell.drift = sync.moduleDrift(item.moduleItems, there.moduleItems, mapping);
+        cell.status = cell.drift.missing.length ? 'stale' : 'same';
+      } else cell.status = 'same';
+      return cell;
+    }
+    var rec = ((recs || {})[type + ':' + item.id] || {})[String(destCourseId)] || null;
+    var cmp = sync.compareFull({ html: item.html, settings: item.settings }, { html: there.html, settings: there.settings }, rec);
+    cell.status = cmp.status;
+    cell.textStatus = cmp.text;
+    cell.diffs = cmp.diffs;
+    return cell;
+  };
+
+  /* Make copies published (or not) like their originals. list: [{courseId,
+   * type, destId, want, title}]. Resolves [{ok, error}] in order; never
+   * rejects. Canvas keeps work that students have submitted published. */
+  P.setPublishing = function (list) {
+    var self = this;
+    var gate = CGP.util.pool(3);
+    return Promise.all((list || []).map(function (x) {
+      return gate(function () {
+        var write = x.type === 'module'
+          ? self.api.updateSectionItem(x.courseId, 'module', x.destId, { module: { published: !!x.want } })
+          : self.api.setItemPublished(x.courseId, x.type, x.destId, !!x.want);
+        return write.then(function () { return { ok: true, error: null }; }, function (err) {
+          return { ok: false, error: describe(err, 'Canvas refused') };
+        });
+      });
+    }));
+  };
+
   /* ------------------------------------------- bringing a change back */
 
   var BACKUP_PREFIX = 'cgp.sections.backup.';
@@ -910,6 +1349,7 @@
     var origRef = { type: plan.type, id: plan.origId };
     var written = false;
     var titleWritten = false;
+    var prevSig = null;
     return files.then(function () {
       // The original as it is NOW - not as it was when the review opened -
       // is what is backed up, and if it changed meanwhile (another tab, a
@@ -926,6 +1366,7 @@
       }
       var next = sync.withNoteBlock(html, plan.origNoteBlock || '');
       return self.record(plan.origCourse, origRef, plan.copyCourse).then(function (prevRec) {
+        prevSig = prevRec && prevRec.sig ? prevRec.sig : null;
         onStep('Saving a backup');
         // `after`: what this writes, so Undo can tell whether the original
         // was edited again since (and then refuse rather than discard that).
@@ -972,7 +1413,11 @@
           });
         }).then(function () {
           // The copy now matches its original again: that is its new record.
-          return self.remember(plan.origCourse, origRef, plan.copyCourse, plan.copyId, plan.copy.html);
+          // Only the text came back: the settings keep the record they had,
+          // so a copy whose points were changed there still counts as such.
+          var rec = { fp: sync.fingerprint(plan.copy.html || ''), destId: String(plan.copyId), at: self.now() };
+          if (prevSig) rec.sig = prevSig;
+          return self.putRecord(plan.origCourse, origRef, plan.copyCourse, rec);
         });
       }).then(function () {
         plan.missingLinks.forEach(function (l) {
@@ -1072,7 +1517,7 @@
       var jobs = Object.keys(all || {}).filter(function (k) { return k.indexOf(JOB_PREFIX) === 0; }).map(function (k) { return all[k]; });
       var now = self.now();
       var mine = jobs.filter(function (j) {
-        return j && j.task && String(j.origin) === String(self.origin) && !(j.claimedAt && now - j.claimedAt < CLAIM_MS && j.claimedBy !== self.tabId);
+        return j && (j.task || (j.tasks && j.tasks.length)) && String(j.origin) === String(self.origin) && !(j.claimedAt && now - j.claimedAt < CLAIM_MS && j.claimedBy !== self.tabId);
       });
       var stale = jobs.filter(function (j) { return j && now - (j.startedAt || 0) > JOB_MAX_AGE_MS; });
       // Cached migration lists and mappings past their time are never read
@@ -1087,9 +1532,13 @@
         return mine.filter(function (j) { return stale.indexOf(j) < 0; }).reduce(function (p, job) {
           return p.then(function (done) {
             return self.saveJob(job).then(function () {
-              var result = { ok: false, destId: null, url: null, warnings: [], pending: false, error: null };
-              return self.continueJob(job, result, function () {}, { maxWaitMs: 1 }).then(function (r) {
-                if (!r.pending) done.push({ job: job, result: r });
+              // A job from an earlier version holds one task; a batch, several.
+              var list = jobTasks(job).slice();
+              var results = list.map(function () { return freshResult(); });
+              return self.continueJob(job, results, function () {}, { maxWaitMs: 1 }).then(function (rs) {
+                rs.forEach(function (r, i) {
+                  if (!r.pending) done.push({ job: { id: job.id, task: list[i] }, result: r });
+                });
                 return done;
               });
             });
