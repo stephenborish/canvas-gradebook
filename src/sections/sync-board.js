@@ -354,7 +354,7 @@
     if (c.drift && c.drift.missing.length) details.push('Missing there: ' + c.drift.missing.slice(0, 4).join(', ') + (c.drift.missing.length > 4 ? '…' : ''));
     if (c.drift && c.drift.extra.length) details.push('Only there: ' + c.drift.extra.slice(0, 4).join(', ') + (c.drift.extra.length > 4 ? '…' : ''));
     if (c.lookalike) details.push('“' + c.lookalike.title + '” there was not copied from here; copying would add a second one.');
-    if (c.status === 'unknown') details.push('That class has too many of these to read at once.');
+    if (c.status === 'unknown') details.push(c.unreadable ? 'Canvas did not send this page’s text, so it was not compared. Check again.' : 'That class has too many of these to read at once.');
     var pub = c.publishMismatch ? '<span class="cgp-board__pub" title="' + esc(it.published ? 'Published here, not there' : 'Not published here, published there') + '">' +
       (it.published ? 'unpublished there' : 'published there') + '</span>' : '';
     var box = spec.pick

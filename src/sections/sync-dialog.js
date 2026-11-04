@@ -642,7 +642,7 @@
       return Promise.all(kids.map(function (k) {
         return self.api.sectionItem(self.courseId, k.type, k.id).then(function (o) {
           var full = S().toItem(k.type, o);
-          if (full) { k.title = full.title || k.title; k.dates = full.dates; k.graded = full.graded; k.html = full.html; }
+          if (full) { k.title = full.title || k.title; k.dates = full.dates; k.graded = full.graded; k.html = full.html; k.settings = full.settings; }
           return k;
         }, function () { k.dates = {}; return k; });
       })).then(function (list) { item.children = list; });

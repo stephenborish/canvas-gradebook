@@ -286,8 +286,10 @@
           }, function () { /* the item's own fields stand */ });
           var note = sync.splitNote(d.html || '').note;
           if (note) (info.childNotes = info.childNotes || {})[c.type + ':' + c.id] = note;
-          return dates.then(function () { return self.baseline(srcCourseId, c, destCourseId); }).then(function (fp) {
-            var st = sync.compareCopy(c.html || '', d.html || '', fp);
+          // Text AND settings: copying the module again overwrites both, so
+          // points or attempts changed there must stop it as surely as text.
+          return dates.then(function () { return self.record(srcCourseId, c, destCourseId); }).then(function (rec) {
+            var st = sync.compareFull({ html: c.html || '', settings: c.settings }, { html: d.html || '', settings: d.settings }, rec).status;
             return (st === 'edited' || st === 'differs') ? { title: c.title, status: st } : null;
           });
         }, function () { return null; });
@@ -1091,7 +1093,11 @@
       }),
       (api.pagesWithBodies ? api.pagesWithBodies(courseId) : api.courseItems(courseId, 'page')).then(function (l) {
         return self.pageBodies(courseId, l || []).then(function (full) {
-          keep('page', full.map(function (o) { return sync.toItem('page', o); }).filter(Boolean), l);
+          keep('page', full.map(function (o) {
+            var it = sync.toItem('page', o);
+            if (it && o.cgpUnreadable) it.unreadable = true;
+            return it;
+          }).filter(Boolean), l);
         });
       }),
       (api.modulesWithItems ? api.modulesWithItems(courseId) : api.courseItems(courseId, 'module')).then(function (l) {
@@ -1103,7 +1109,8 @@
       })
     ];
     return Promise.all(reads).then(function () {
-      Object.keys(out.items).forEach(function (t) { out.items[t].forEach(function (it) { it.htmlLoaded = true; }); });
+      // An unreadable page is read again by the copy dialog's own survey.
+      Object.keys(out.items).forEach(function (t) { out.items[t].forEach(function (it) { it.htmlLoaded = !it.unreadable; }); });
       return out;
     }, function (err) { out.error = err; return out; });
   };
@@ -1117,7 +1124,10 @@
     var gate = CGP.util.pool(4);
     return Promise.all(list.map(function (o) {
       return gate(function () {
-        return api.sectionItem(courseId, 'page', o.page_id).then(function (full) { return full || o; }, function () { return o; });
+        // A page that cannot be read is marked so, never compared as empty.
+        return api.sectionItem(courseId, 'page', o.page_id).then(function (full) {
+          return full || Object.assign({}, o, { cgpUnreadable: true });
+        }, function () { return Object.assign({}, o, { cgpUnreadable: true }); });
       });
     }));
   };
@@ -1183,7 +1193,7 @@
           out.cells[key] = self.scanCell(srcCourseId, item, destId, mapping, dest, recs);
           var from = type === 'module' ? null : sync.srcIdFor(back, type, item.id);
           var orig = from ? (dest.byId[type] || {})[String(from)] : null;
-          if (!orig) return;
+          if (!orig || orig.unreadable || item.unreadable) return;
           // This item is a copy of that class's: compared the other way
           // round, with the record of THAT copy. 'stale' = the original
           // there moved on; 'edited' = this copy was changed here.
@@ -1243,6 +1253,11 @@
         cell.drift = sync.moduleDrift(item.moduleItems, there.moduleItems, mapping);
         cell.status = cell.drift.missing.length ? 'stale' : 'same';
       } else cell.status = 'same';
+      return cell;
+    }
+    if (item.unreadable || there.unreadable) {
+      cell.status = 'unknown';
+      cell.unreadable = true;
       return cell;
     }
     var rec = ((recs || {})[type + ':' + item.id] || {})[String(destCourseId)] || null;

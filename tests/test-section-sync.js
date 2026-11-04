@@ -1475,3 +1475,40 @@ suite('keeping classes in step: Compare classes', (test) => {
     a.eq(b.buildTasks().tasks.length, 1, 'even ticked, a copy back to where it came from is not made');
   });
 });
+
+suite('keeping classes in step: PR review', (test) => {
+  test('a module whose item’s points were changed there is not replaced by default, even with items missing', async () => {
+    const api = fakeCanvas();
+    const pts = (n) => ({ points_possible: n, grading_type: 'points', submission_types: ['online_upload'], allowed_attempts: -1 });
+    api.db.migrations['22'] = [{ id: '1', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '11' } }];
+    api.db.mappings['22'] = { modules: { '3': '303' }, assignments: { '5': '705' }, module_items: { '31': '331' } };
+    api.db.items['22:module:303'] = { id: '303', name: 'Unit 1', unlock_at: null };
+    landCopy(api, '22', '705', '<p>Do the lab.</p>', { mapping: { modules: { '3': '303' }, module_items: { '31': '331' } } });
+    Object.assign(api.db.items['22:assignment:705'], pts(25));
+    api.moduleItems = (c) => Promise.resolve(c === '22'
+      ? [{ id: 331, type: 'Assignment', title: 'Lab 4' }]
+      : [{ id: 31, type: 'Assignment', title: 'Lab 4' }, { id: 32, type: 'Page', title: 'Reading' }]);
+    const c = copier(api);
+    const child = { type: 'assignment', id: '5', title: 'Lab 4', html: '<p>Do the lab.</p>', settings: S().settingsOf('assignment', pts(10)) };
+    await c.remember('11', child, '22', '705', '<p>Do the lab.</p>', S().settingsOf('assignment', pts(10)));
+    const out = await c.survey('11', [{ type: 'module', id: '3', title: 'Unit 1', children: [child] }], ['22'], {});
+    const info = out.dests[0].items['module:3'];
+    a.eq(info.status, 'edited');
+    a.deep(info.changedChildren, ['Lab 4']);
+    a.not(S().defaultReplace(info.status));
+  });
+
+  test('a page whose text could not be read is not compared as an empty page', async () => {
+    const api = fakeCanvas({ lists: { '11:assignment': [], '22:assignment': [], '11:quiz': [], '22:quiz': [], '11:discussion': [], '22:discussion': [] } });
+    api.pagesWithBodies = (c) => Promise.resolve([{ page_id: c === '11' ? 8 : 88, url: 'notes', title: 'Notes', published: true }]);
+    api.modulesWithItems = () => Promise.resolve([]);
+    api.db.migrations['22'] = [{ id: '1', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '11' } }];
+    api.db.mappings['22'] = { pages: { '8': '88' } };
+    api.customData = () => Promise.resolve(null);
+    const scan = await copier(api).scan('11', ['22']);   // every page read answers 404
+    const cell = scan.dests[0].cells['page:8'];
+    a.eq(cell.status, 'unknown');
+    a.ok(cell.unreadable);
+    a.not(scan.items.find((i) => i.type === 'page').htmlLoaded, 'the copy dialog reads it again');
+  });
+});
