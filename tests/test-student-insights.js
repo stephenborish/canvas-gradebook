@@ -441,3 +441,20 @@ suite('student overview: course content opened', (test) => {
     a.eq(si().contentActivity({ courseId: '5', accesses: null }), null);
   });
 });
+
+suite('student overview: never-opened review fixes', (test) => {
+  const access = (code) => ({ asset_user_access: { asset_code: code, view_score: 1 } });
+  test('uses the student’s own due date (an extension), not the course-wide one', () => {
+    const c = si().contentActivity({ courseId: '5', now: NOW, pageViews: null, accesses: [],
+      assignments: [asg(1, { dueAt: new Date(NOW - 2 * D).toISOString() })], dueFor: { 1: NOW + 3 * D } });
+    a.eq(c.notOpened[0].dueAt, NOW + 3 * D);
+    a.eq(c.notOpenedPastDue, 0);
+  });
+  test('a cut-short Access Report claims nothing was never opened', () => {
+    const accesses = [access('assignment_9')];
+    accesses.truncated = true;
+    const c = si().contentActivity({ courseId: '5', now: NOW, pageViews: null, accesses, assignments: [asg(1)] });
+    a.eq(c.notOpened.length, 0);
+    a.not(c.notOpenedKnown);
+  });
+});

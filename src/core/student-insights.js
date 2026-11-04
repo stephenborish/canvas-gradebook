@@ -667,7 +667,8 @@
    * preview.
    *
    * input: { courseId, accesses: [...]|null, pageViews: [...]|null,
-   *          assignments: [model assignments], now }
+   *          assignments: [model assignments], dueFor: {assignmentId: due ms},
+ *          now }
    * Answers null when there is no Access Report to read. */
   var KINDS = {
     wiki_page: 'page', attachment: 'file', assignment: 'assignment', quiz: 'quiz',
@@ -793,14 +794,19 @@
 
     // Assignments, quizzes and graded discussions the student has never
     // opened (instructions never read), most urgent first.
+    // Not when the Access Report came back cut short: an assignment missing
+    // from a partial report may well have been opened.
     var notOpened = [];
-    (input.assignments || []).forEach(function (a) {
+    var dueFor = input.dueFor || {};
+    if (!input.accesses.truncated) (input.assignments || []).forEach(function (a) {
       if (!a || a.published === false) return;
       var keys = ['assignment_' + a.id];
       if (a.quizId) keys.push('quiz_' + a.quizId);
       if (a.discussionTopicId) keys.push('discussion_topic_' + a.discussionTopicId);
       var seen = keys.some(function (k) { return byKey[k]; });
-      if (!seen) notOpened.push({ id: String(a.id), name: a.name || '', dueAt: time(a.dueAt) });
+      // This student's own due date (an extension) where the submission has one.
+      var due = Object.prototype.hasOwnProperty.call(dueFor, String(a.id)) ? dueFor[String(a.id)] : time(a.dueAt);
+      if (!seen) notOpened.push({ id: String(a.id), name: a.name || '', dueAt: due || null });
     });
     notOpened.sort(function (x, y) {
       var xa = x.dueAt || Infinity, ya = y.dueAt || Infinity;
@@ -821,6 +827,7 @@
       items: list,
       byKind: Object.keys(byKind).map(function (k) { return byKind[k]; }).sort(function (x, y) { return y.views - x.views; }),
       notOpened: notOpened,
+      notOpenedKnown: !input.accesses.truncated,
       notOpenedPastDue: notOpened.filter(function (n) { return n.dueAt && n.dueAt <= now; }).length,
       pageViewsKnown: pvKnown,
       pageViewsSince: since,

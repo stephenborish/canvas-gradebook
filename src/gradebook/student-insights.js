@@ -584,6 +584,8 @@
       accesses: parts.content,
       pageViews: parts.pageViews || null,
       assignments: assignments,
+      // Each assignment's due date for this student (overrides included).
+      dueFor: r.items.reduce(function (m, i) { m[i.id] = i.dueAt; return m; }, {}),
       now: r.now
     }) : null;
     this._last = r;
@@ -1207,7 +1209,9 @@
       'Studio videos are shown under “Studio videos”.</p>';
 
     var notOpened = '';
-    if (c.notOpened.length) {
+    if (!c.notOpenedKnown) {
+      notOpened = section('Assignments never opened', '<p class="cgp-si__note">This student’s Access Report is too long to read in full, so which assignments they never opened can’t be said for sure.</p>');
+    } else if (c.notOpened.length) {
       var shown = c.notOpened.slice(0, 12);
       notOpened = section('Assignments never opened', '<ul class="cgp-si__todo">' + shown.map(function (n) {
         var past = n.dueAt && n.dueAt <= r.now;
