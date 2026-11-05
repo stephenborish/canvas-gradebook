@@ -457,4 +457,33 @@ suite('student overview: never-opened review fixes', (test) => {
     a.eq(c.notOpened.length, 0);
     a.not(c.notOpenedKnown);
   });
+  test('course index: each item’s modules, and Studio videos embedded anywhere in the course', () => {
+    const studio = (id) => '<iframe title="Vid ' + id + '" src="/courses/9/external_tools/retrieve?url=https%3A%2F%2Fs.instructuremedia.com%2Flti%2Flaunch%3Fcustom_arc_media_id%3D' + id + '"></iframe>';
+    const idx = globalThis.CGP.studentInsights.courseIndex({
+      courseId: '9',
+      assignments: [
+        { id: 1, name: 'HW - Isotopes', description: '<p>Watch</p>' + studio('aaaaaa-1') },
+        { id: 2, name: 'Quiz 1', quiz_id: 50, description: '' },
+        { id: 3, name: 'No video', description: '<p>Read pp. 8-9</p>' }
+      ],
+      quizzes: [{ id: 50, title: 'Quiz 1', description: studio('bbbbbb-2') }],
+      discussions: [{ id: 70, title: 'Talk', message: studio('cccccc-3') }],
+      pages: [{ page_id: 80, url: 'notes', title: 'Notes', body: studio('aaaaaa-1') }],
+      modules: [
+        { name: 'Unit 2: Atoms', items: [
+          { type: 'Assignment', content_id: 1 }, { type: 'Quiz', content_id: 50 }, { type: 'Page', page_url: 'notes' },
+          { type: 'ExternalTool', title: 'Bonding video', external_url: 'https://s.instructuremedia.com/lti/launch?custom_arc_media_id=dddddd-4' }
+        ] }
+      ]
+    });
+    a.deep(idx.modules.assignment_1, ['Unit 2: Atoms']);
+    a.deep(idx.modules.assignment_2, ['Unit 2: Atoms'], 'a quiz’s assignment takes the quiz’s module');
+    a.deep(idx.modules.wiki_page_80, ['Unit 2: Atoms']);
+    a.eq(idx.modules.assignment_3, undefined);
+    const ids = idx.embeds.map((e) => e.uuid);
+    a.deep(ids, ['aaaaaa-1', 'cccccc-3', 'aaaaaa-1', 'dddddd-4'], 'the quiz’s description is read once, through its assignment (empty here)');
+    a.deep(idx.embeds[0].place, { kind: 'Assignment', name: 'HW - Isotopes', url: '/courses/9/assignments/1', modules: ['Unit 2: Atoms'] });
+    a.eq(idx.embeds[2].place.kind, 'Page');
+    a.eq(idx.embeds[3].place.kind, 'Module');
+  });
 });

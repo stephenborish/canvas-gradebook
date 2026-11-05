@@ -451,8 +451,9 @@ link. **←** / **→** step to the previous / next student without closing; **E
 - What is coming up in the next two weeks and not yet submitted.
 - Every assignment in one table — due date, status, when it was submitted (and how early or late),
   score and the class median with the difference — filterable to Missing, Late, Submitted, Needs
-  grading, Upcoming or Resubmitted, and searchable by name or by date however you type it
-  (`lab`, `Oct 12`, `October 12`, `10/12`, `2026-10-12`, `Monday`).
+  grading, Upcoming or Resubmitted, and searchable by name, module, assignment group or date
+  however you type it (`lab`, `Unit 2`, `Homework`, `Oct 12`, `10/12`, `2026-10-12`, `Monday`).
+  Each row shows the module(s) and group it sits in.
 - An assignment's name opens the assignment itself. The button at the end of each row goes to the
   student's work, wherever it lives:
   - handed in to Canvas: **View work** opens their submission in SpeedGrader;
@@ -472,6 +473,15 @@ link. **←** / **→** step to the previous / next student without closing; **E
   and how much lands in the last two hours.
 - The feedback conversation: your comments, the student's, resubmissions, and any student reply
   still waiting on you.
+- **Studio videos**: every video in the course's Studio list *and* every Studio video embedded in an
+  assignment, quiz, discussion or page (or added to a module as a Studio link), with what share of
+  each this student watched. Each video says where it is embedded and in which module. An embed
+  copied in from another class is included too; its "in class" count only counts this class.
+- **Course content opened**: everything from the student's Access Report, each with its module.
+- One search box at the top of the tab finds videos and course content by name, type
+  (`video`, `file`, `quiz`), module, or the assignment a video is embedded in. While searching, the
+  charts step aside so the matches sit right under the box. The query carries over to the
+  Assignments tab's search and back.
 
 Statuses are Canvas's own (`missing`, `late`, or a status a teacher applied). Excused work is left
 out of every rate and average, and a blank is never a zero. The average shown is points earned over
@@ -614,8 +624,10 @@ the copy in the background, so completion time depends on Canvas.
 
 **Where the button is.** It sits beside what it copies, not in the breadcrumb:
 
-- On an assignment, quiz, discussion, announcement or page: **Copy to other classes**, next to
-  Canvas's **Edit**. It copies that item. (Not on edit pages: what is copied is the saved version.)
+- On an assignment, quiz, discussion, announcement or page: a copy icon next to Canvas's **Edit**
+  (hover for *Copy to other classes*). It copies that item. It is icon-only there so the item's
+  title keeps its width; if the title and buttons still don't fit, the buttons wrap under the title.
+  (Not on edit pages: what is copied is the saved version.)
 - On the course home: **Copy to other classes** in the sidebar, under *Import Existing Content*, its
   mirror image. It opens the item picker. **Compare classes** sits right under it.
 - On the Modules page: beside **+ Module**. It opens the item picker. **Compare classes** sits next to it.

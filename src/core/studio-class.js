@@ -217,28 +217,118 @@
   }
 
   /* One student's line for each of a course's videos, newest first:
-   * videos [{uuid, title, duration, createdAt, viewers}] (viewers from
-   * viewersFrom), student {name, sortable_name, email}. */
-  function studentVideos(videos, student) {
+   * videos [{uuid, title, duration, createdAt, viewers, places}] (viewers
+   * from viewersFrom), student {name, sortable_name, email}.
+   * opts.classEmails: the class's emails; when given, "in class" counts
+   * only those viewers (an embed copied from another class is watched by
+   * that class too). */
+  function studentVideos(videos, student, opts) {
+    var classEmails = opts && opts.classEmails;
+    var inClass = classEmails && Object.keys(classEmails).length ? function (x) { return !!(x.email && classEmails[x.email]); } : function () { return true; };
     var rows = (videos || []).filter(function (v) { return v && !v.archived; }).map(function (v) {
+      var base = { uuid: v.uuid, title: v.title, duration: v.duration, thumbnail: v.thumbnail, createdAt: v.createdAt,
+        places: v.places || [], embeddedOnly: !!v.embeddedOnly };
       // Studio didn't give this video's viewers: unknown, not "not watched".
       if (v.error) {
-        return { uuid: v.uuid, title: v.title, duration: v.duration, thumbnail: v.thumbnail, createdAt: v.createdAt,
-          completion: null, status: 'unknown', watchedSeconds: null, classWatched: null };
+        return Object.assign(base, { completion: null, status: 'unknown', watchedSeconds: null, classWatched: null });
       }
       var r = classList([student], v.viewers || []).rows[0];
-      return {
-        uuid: v.uuid, title: v.title, duration: v.duration, thumbnail: v.thumbnail, createdAt: v.createdAt,
+      return Object.assign(base, {
         completion: r ? r.completion : null,
         status: r ? r.status : 'none',
         watchedSeconds: r && r.completion !== null && v.duration ? r.completion * v.duration : null,
-        classWatched: (v.viewers || []).filter(function (x) { return !x.teacher && statusOf(x.completion) !== 'none'; }).length
-      };
+        classWatched: (v.viewers || []).filter(function (x) { return !x.teacher && inClass(x) && statusOf(x.completion) !== 'none'; }).length
+      });
     });
     rows.sort(function (a, b) { return String(b.createdAt || '').localeCompare(String(a.createdAt || '')); });
     var counts = { total: rows.length, watched: 0, partial: 0, none: 0, unknown: 0 };
     rows.forEach(function (r) { counts[r.status]++; });
     return { rows: rows, counts: counts };
+  }
+
+  /* ------------------------------------- Studio videos inside Canvas */
+
+  function decodeEntities(s) {
+    return String(s || '').replace(/&(#x[0-9a-f]+|#\d+|amp|quot|apos|#39|lt|gt);/gi, function (m, e) {
+      var k = e.toLowerCase();
+      if (k === 'amp') return '&';
+      if (k === 'quot') return '"';
+      if (k === 'apos' || k === '#39') return "'";
+      if (k === 'lt') return '<';
+      if (k === 'gt') return '>';
+      var n = k.charAt(1) === 'x' ? parseInt(k.slice(2), 16) : parseInt(k.slice(1), 10);
+      return isFinite(n) ? String.fromCharCode(n) : m;
+    });
+  }
+
+  /* The Studio embed (perspective) id in one link or frame address, or
+   * null. Canvas wraps Studio's launch in its own external_tools address,
+   * URL-encoded once or twice:
+   *   /courses/1/external_tools/retrieve?display=borderless&url=https%3A%2F%2F
+   *     x.instructuremedia.com%2Flti%2Flaunch%3Fcustom_arc_media_id%3D<id>...
+   * and a share link is https://x.instructuremedia.com/embed/<id>. */
+  function embedIdFromUrl(url) {
+    var u = decodeEntities(url);
+    for (var i = 0; i < 4; i++) {
+      var m = /custom_arc_media_id=([A-Za-z0-9_-]{6,})/.exec(u) ||
+        /instructuremedia\.com\/(?:embed|media|lti\/launch\/embed)\/([A-Za-z0-9_-]{6,})/.exec(u);
+      if (m) return m[1];
+      var next;
+      try { next = decodeURIComponent(u); } catch (e) { return null; }
+      if (next === u) return null;
+      u = next;
+    }
+    return null;
+  }
+
+  function attr(tag, name) {
+    var m = new RegExp('\\s' + name + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s>]+))', 'i').exec(tag);
+    return m ? decodeEntities(m[1] !== undefined ? m[1] : m[2] !== undefined ? m[2] : m[3]) : '';
+  }
+
+  /* The Studio videos embedded in a piece of Canvas HTML (an assignment's
+   * description, a page's body, a discussion's message): [{uuid, title}],
+   * each video once. */
+  function embedsFromHtml(html) {
+    var out = [], seen = Object.create(null);
+    var re = /<(iframe|a|embed|object)\b[^>]*>/gi, m;
+    var text = String(html || '');
+    while ((m = re.exec(text))) {
+      var tag = m[0];
+      var id = embedIdFromUrl(attr(tag, 'src')) || embedIdFromUrl(attr(tag, 'href')) || embedIdFromUrl(attr(tag, 'data-src')) ||
+        embedIdFromUrl(attr(tag, 'data'));
+      if (!id || seen[id]) continue;
+      seen[id] = true;
+      var title = (attr(tag, 'title') || attr(tag, 'aria-label') || '').replace(/^\s*(video player for|embedded video:?)\s*/i, '').trim();
+      out.push({ uuid: id, title: title });
+    }
+    return out;
+  }
+
+  /* Joins the course's Studio videos with where each one is embedded in
+   * Canvas. embeds: [{uuid, title, place: {kind, name, url, modules}}].
+   * Returns {videos, missing}: the videos with `places` added, and the
+   * embedded ones Studio's course list doesn't have (copied from another
+   * class, or added from someone else's library) as [{uuid, title, places}]. */
+  function joinEmbeds(videos, embeds) {
+    var byId = Object.create(null);
+    var list = (videos || []).map(function (v) {
+      var c = Object.assign({}, v, { places: (v.places || []).slice() });
+      byId[c.uuid] = c;
+      return c;
+    });
+    var missing = [], missingById = Object.create(null);
+    (embeds || []).forEach(function (e) {
+      if (!e || !e.uuid) return;
+      var target = byId[e.uuid] || missingById[e.uuid];
+      if (!target) {
+        target = missingById[e.uuid] = { uuid: e.uuid, title: e.title || '', places: [] };
+        missing.push(target);
+      }
+      if (!target.title && e.title) target.title = e.title;
+      if (e.place && !target.places.some(function (p) { return p.kind === e.place.kind && p.name === e.place.name; })) target.places.push(e.place);
+    });
+    return { videos: list, missing: missing };
   }
 
   /* Plain text for pasting: one name per line, "First Last". */
@@ -258,6 +348,9 @@
     videosFromTiles: videosFromTiles,
     findCollection: findCollection,
     studentVideos: studentVideos,
+    embedIdFromUrl: embedIdFromUrl,
+    embedsFromHtml: embedsFromHtml,
+    joinEmbeds: joinEmbeds,
     plainName: plainName,
     normName: normName
   };

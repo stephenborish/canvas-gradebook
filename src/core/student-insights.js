@@ -922,6 +922,91 @@
     return { text: text.join('\n').replace(/\n+$/, '') + '\n', html: html, count: total };
   }
 
+  /* --------------------------------------------- where things live */
+
+  /* What the course holds, for search and for finding Studio videos:
+   * which module(s) each item sits in, and every Studio video embedded in
+   * an assignment, quiz, discussion or page (or added to a module as a
+   * Studio link).
+   *
+   * input: { courseId, assignments, quizzes, discussions, pages, modules }
+   * as Canvas's API gives them (pages with bodies, modules with items).
+   * Item keys match the Access Report's: assignment_<id>, quiz_<id>,
+   * discussion_topic_<id>, wiki_page_<id>, attachment_<id>.
+   * Returns { modules: {key: [module names]}, embeds: [{uuid, title, place}] }
+   * where place is {kind, name, url, modules}. */
+  function courseIndex(input) {
+    input = input || {};
+    var SC = CGP.studioClass;
+    var base = '/courses/' + String(input.courseId || '');
+    var modules = Object.create(null);
+    var pageIdBySlug = Object.create(null);
+    (input.pages || []).forEach(function (p) {
+      if (p && p.url && p.page_id !== undefined) pageIdBySlug[String(p.url)] = String(p.page_id);
+    });
+    function addModule(key, name) {
+      if (!key || !name) return;
+      var list = modules[key] = modules[key] || [];
+      if (list.indexOf(name) < 0) list.push(name);
+    }
+    var moduleEmbeds = [];
+    (input.modules || []).forEach(function (m) {
+      if (!m) return;
+      var mname = String(m.name || '').trim();
+      (m.items || []).forEach(function (it) {
+        if (!it) return;
+        var cid = it.content_id === undefined || it.content_id === null ? null : String(it.content_id);
+        switch (it.type) {
+          case 'Assignment': addModule(cid && 'assignment_' + cid, mname); break;
+          case 'Quiz': addModule(cid && 'quiz_' + cid, mname); break;
+          case 'Discussion': addModule(cid && 'discussion_topic_' + cid, mname); break;
+          case 'File': addModule(cid && 'attachment_' + cid, mname); break;
+          case 'Page':
+            var pid = (it.page_url && pageIdBySlug[it.page_url]) || cid;
+            addModule(pid && 'wiki_page_' + pid, mname);
+            if (it.page_url) addModule('page_url:' + it.page_url, mname);
+            break;
+          case 'ExternalTool':
+          case 'ExternalUrl':
+            var id = SC && SC.embedIdFromUrl(it.external_url || it.url || it.html_url || '');
+            if (id) moduleEmbeds.push({ uuid: id, title: String(it.title || ''), place: { kind: 'Module', name: mname || String(it.title || ''), url: base + '/modules', modules: mname ? [mname] : [] } });
+            break;
+          default: break;
+        }
+      });
+    });
+    var embeds = [];
+    function scan(html, kind, name, url, key) {
+      if (!SC || !html) return;
+      SC.embedsFromHtml(html).forEach(function (e) {
+        embeds.push({ uuid: e.uuid, title: e.title, place: { kind: kind, name: String(name || ''), url: url, modules: (key && modules[key]) || [] } });
+      });
+    }
+    var quizSeen = Object.create(null), topicSeen = Object.create(null);
+    (input.assignments || []).forEach(function (a) {
+      if (!a || a.id === undefined) return;
+      var key = 'assignment_' + a.id;
+      // A quiz's or graded discussion's assignment sits in the module as the quiz or discussion.
+      if (a.quiz_id) { (modules['quiz_' + a.quiz_id] || []).forEach(function (n) { addModule(key, n); }); quizSeen[a.quiz_id] = true; }
+      var tid = a.discussion_topic && a.discussion_topic.id;
+      if (tid) { (modules['discussion_topic_' + tid] || []).forEach(function (n) { addModule(key, n); }); topicSeen[tid] = true; }
+      scan(a.description, a.quiz_id ? 'Quiz' : tid ? 'Discussion' : 'Assignment', a.name, base + '/assignments/' + a.id, key);
+    });
+    (input.quizzes || []).forEach(function (q) {
+      if (!q || q.id === undefined || quizSeen[q.id]) return;
+      scan(q.description, 'Quiz', q.title, base + '/quizzes/' + q.id, 'quiz_' + q.id);
+    });
+    (input.discussions || []).forEach(function (d) {
+      if (!d || d.id === undefined || topicSeen[d.id]) return;
+      scan(d.message, 'Discussion', d.title, base + '/discussion_topics/' + d.id, 'discussion_topic_' + d.id);
+    });
+    (input.pages || []).forEach(function (p) {
+      if (!p || !p.url) return;
+      scan(p.body, 'Page', p.title, base + '/pages/' + encodeURIComponent(p.url), p.page_id !== undefined ? 'wiki_page_' + p.page_id : 'page_url:' + p.url);
+    });
+    return { modules: modules, embeds: embeds.concat(moduleEmbeds) };
+  }
+
   /* Every way a teacher might type a date, so a search for "10/12",
    * "Oct 12", "october 12", "2026-10-12" or "monday" finds it. */
   function dateSearchText(t) {
@@ -959,6 +1044,7 @@
     insights: insights,
     activity: activity,
     contentActivity: contentActivity,
+    courseIndex: courseIndex,
     classMedians: classMedians,
     classGroupMedians: classGroupMedians,
     duration: duration,

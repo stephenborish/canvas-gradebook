@@ -2534,6 +2534,16 @@ html.cgp-on .cgp-copyto:hover { background: #e9ecee; color: var(--cgp-ink-strong
 html.cgp-on .cgp-copyto:focus-visible { outline: none; box-shadow: var(--cgp-focus-ring); }
 html.cgp-on .cgp-copyto__glyph { width: 16px; height: 16px; display: block; flex: 0 0 auto; }
 html.cgp-on .cgp-copyto--modules { margin: 0 8px 0 0; }
+/* On an item's page the button sits in the title's row, beside Published,
+ * Assign To and Edit: icon-only there (its name is its tooltip), so the
+ * title keeps its width. The row may wrap instead of squeezing the title. */
+html.cgp-on .cgp-copyto--item { padding: 0 11px; }
+html.cgp-on .cgp-copyto--item .cgp-copyto__label {
+  position: absolute !important; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+html.cgp-on .cgp-copyto-row { flex-wrap: wrap; row-gap: 8px; }
+html.cgp-on .cgp-copyto-title { flex: 1 1 16rem !important; min-width: min(16rem, 100%) !important; overflow-wrap: normal; word-break: normal; }
 /* Course home: a full-width sidebar button, like Import Existing Content. */
 html.cgp-on .cgp-copyto--home { display: flex !important; width: 100%; margin: 0 0 8px 0; justify-content: flex-start; }
 html.cgp-on .cgp-copyto-bar { display: flex; justify-content: flex-end; margin: 0 0 10px 0; }
@@ -3626,6 +3636,11 @@ html.cgp-on .cgp-si__search input {
   box-shadow: none;
 }
 html.cgp-on .cgp-si__search input:focus { outline: none; border-color: var(--cgp-brand); box-shadow: var(--cgp-focus-ring); }
+html.cgp-on .cgp-si__search--activity { margin-bottom: 14px; }
+/* Where an item lives: its module (and group), or where a video is embedded. */
+html.cgp-on .cgp-si__where { display: block; margin-top: 2px; font-size: 11.5px; color: var(--cgp-muted); }
+html.cgp-on .cgp-si__where a { color: inherit; text-decoration: underline; text-decoration-color: rgba(0, 0, 0, 0.25); }
+html.cgp-on .cgp-si__where a:hover { color: var(--cgp-brand); }
 html.cgp-on .cgp-si__act { text-align: right; white-space: nowrap; }
 html.cgp-on .cgp-si__work {
   display: inline-block;

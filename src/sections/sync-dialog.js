@@ -78,8 +78,12 @@
     btn.className = 'cgp-copyto cgp-copyto--' + spot.kind + (spot.kind === 'home' ? ' btn button-sidebar-wide' : '');
     btn.title = spot.tip;
     btn.innerHTML = COPY_GLYPH + '<span class="cgp-copyto__label">' + esc(spot.label) + '</span>';
+    // Beside an item's Edit it is icon-only (gradebook.css), so its name
+    // goes on the button itself as well.
+    if (spot.kind === 'item') { btn.setAttribute('aria-label', spot.label); btn.title = spot.label + ': ' + spot.tip; }
     spot.at.insertAdjacentElement(spot.where, btn);
     this.button = btn;
+    if (spot.kind === 'item') this.spareTitle(btn);
     var self2 = this;
     btn.addEventListener('click', function (e) {
       e.preventDefault();
@@ -104,6 +108,8 @@
   };
 
   P.unmount = function () {
+    document.querySelectorAll('.cgp-copyto-row').forEach(function (el) { el.classList.remove('cgp-copyto-row'); });
+    document.querySelectorAll('.cgp-copyto-title').forEach(function (el) { el.classList.remove('cgp-copyto-title'); });
     if (this.button && this.button.parentNode) this.button.parentNode.removeChild(this.button);
     if (this.compareButton && this.compareButton.parentNode) this.compareButton.parentNode.removeChild(this.compareButton);
     this.compareButton = null;
@@ -170,6 +176,29 @@
     var at = found;
     for (var k = 0; k < 3 && at.parentElement && at.parentElement !== root && at.parentElement.children.length === 1; k++) at = at.parentElement;
     return at;
+  };
+
+  /* Canvas draws an item's title and its buttons (Published, Assign To,
+   * Edit, ⋮) in one row that doesn't wrap: one more button there squeezed
+   * the title into a narrow column, a few letters a line. The row is let
+   * wrap, and the title keeps a readable width, so the buttons move under
+   * it when there isn't room for both. */
+  P.spareTitle = function (btn) {
+    var root = document.querySelector('#content') || document.body;
+    var el = btn.parentElement;
+    for (var i = 0; i < 6 && el && el !== root; i++, el = el.parentElement) {
+      var cs;
+      try { cs = getComputedStyle(el); } catch (e) { return; }
+      if (!/flex/.test(cs.display) || cs.flexDirection.indexOf('column') === 0) continue;
+      var heading = el.querySelector('h1, h2');
+      if (!heading || heading.contains(btn)) continue;
+      var cell = heading;
+      while (cell.parentElement && cell.parentElement !== el) cell = cell.parentElement;
+      if (cell.contains(btn)) continue;
+      el.classList.add('cgp-copyto-row');
+      cell.classList.add('cgp-copyto-title');
+      return;
+    }
   };
 
   P.fallbackBar = function () {

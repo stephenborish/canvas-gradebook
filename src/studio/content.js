@@ -71,6 +71,7 @@
   var CANVAS_ASK = 'cgp-canvas-ask';
   var HELLO = 'cgp-studio-hello';
   var MAX_VIDEOS = 80;
+  var MAX_EMBEDS = 60;
   var studioUserId = null;
   var pending = Object.create(null);
   var seq = 0;
@@ -116,31 +117,44 @@
   }
 
   /* Every video in the Studio course named after a Canvas course, with who
-   * watched each one. A few at a time, so Studio isn't flooded. */
-  function courseVideos(courseName) {
+   * watched each one, plus the videos embedded in the course's assignments,
+   * pages and discussions that Studio's course list doesn't have (`extra`:
+   * [{uuid, title}], an embed copied from another class, say). A few at a
+   * time, so Studio isn't flooded. */
+  function courseVideos(courseName, extra) {
     return allPages('/api/media_management/collections', {
       user_id: studioUserId || undefined, type: 'course_wide', with_concluded_courses: 'true'
     }, 'collections', 10).then(function (cols) {
       var col = SC().findCollection(cols, courseName);
-      if (!col) return { collection: null, videos: [] };
+      if (!col) return { col: null, tiles: [] };
       return allPages('/api/media_management/collections/' + col.id + '/tiles', {
         sort_by: 'created_at', order: 'desc', 'filter[]': ['perspectives']
-      }, 'tiles', 4).then(function (tiles) {
-        var videos = SC().videosFromTiles({ tiles: tiles }).filter(function (v) { return !v.archived; }).slice(0, MAX_VIDEOS);
-        var i = 0;
-        function worker() {
-          if (i >= videos.length) return Promise.resolve();
-          var v = videos[i++];
-          return studioGet('/api/media_management/perspectives/' + encodeURIComponent(v.uuid) + '/insights/users').then(function (data) {
-            v.viewers = SC().viewersFrom(data);
-          }, function (err) {
-            v.viewers = [];
-            v.error = err && err.status === 403 ? 'no insights' : 'unavailable';
-          }).then(worker);
-        }
-        return Promise.all([worker(), worker(), worker()]).then(function () {
-          return { collection: { id: col.id, name: col.name }, videos: videos };
-        });
+      }, 'tiles', 4).then(function (tiles) { return { col: col, tiles: tiles }; });
+    }).then(function (found) {
+      var col = found.col;
+      var videos = SC().videosFromTiles({ tiles: found.tiles }).filter(function (v) { return !v.archived; }).slice(0, MAX_VIDEOS);
+      var have = Object.create(null);
+      videos.forEach(function (v) { have[v.uuid] = true; });
+      (Array.isArray(extra) ? extra : []).slice(0, MAX_EMBEDS).forEach(function (e) {
+        var uuid = e && /^[A-Za-z0-9_-]{6,80}$/.test(String(e.uuid || '')) ? String(e.uuid) : null;
+        if (!uuid || have[uuid]) return;
+        have[uuid] = true;
+        videos.push({ uuid: uuid, title: String(e.title || '').slice(0, 300) || 'Studio video', duration: null, thumbnail: null,
+          createdAt: null, archived: false, embeddedOnly: true });
+      });
+      var i = 0;
+      function worker() {
+        if (i >= videos.length) return Promise.resolve();
+        var v = videos[i++];
+        return studioGet('/api/media_management/perspectives/' + encodeURIComponent(v.uuid) + '/insights/users').then(function (data) {
+          v.viewers = SC().viewersFrom(data);
+        }, function (err) {
+          v.viewers = [];
+          v.error = err && err.status === 403 ? 'no insights' : 'unavailable';
+        }).then(worker);
+      }
+      return Promise.all([worker(), worker(), worker()]).then(function () {
+        return { collection: col ? { id: col.id, name: col.name } : null, videos: videos };
       });
     });
   }
@@ -152,7 +166,7 @@
       try { window.top.postMessage(Object.assign({ source: 'cgp-studio-videos', id: String(d.id || '') }, msg), origin); } catch (e) { /* ignore */ }
     };
     if (!SC()) { reply({ ok: false, error: 'not ready' }); return; }
-    courseVideos(String(d.courseName || '').slice(0, 300)).then(function (r) {
+    courseVideos(String(d.courseName || '').slice(0, 300), Array.isArray(d.embeds) ? d.embeds : []).then(function (r) {
       reply({ ok: true, collection: r.collection, videos: r.videos });
     }, function (err) {
       reply({ ok: false, error: String((err && err.message) || err) });
