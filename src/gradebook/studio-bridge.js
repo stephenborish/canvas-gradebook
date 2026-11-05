@@ -116,7 +116,12 @@
    * ([{uuid, title}], Studio videos embedded in the course's assignments,
    * pages and discussions) that Studio doesn't list under that course. */
   function courseVideos(api, courseId, courseName, embeds) {
-    var list = (embeds || []).map(function (e) { return { uuid: String(e.uuid), title: String(e.title || '') }; });
+    var seen = {};
+    var list = (embeds || []).filter(function (e) {
+      if (!e || !e.uuid || seen[e.uuid]) return false;
+      seen[e.uuid] = true;
+      return true;
+    }).map(function (e) { return { uuid: String(e.uuid), title: String(e.title || '') }; });
     var key = courseName + '|' + list.map(function (e) { return e.uuid; }).sort().join(',');
     var hit = cache[key];
     if (hit && Date.now() - hit.at < CACHE_MS) return hit.promise;

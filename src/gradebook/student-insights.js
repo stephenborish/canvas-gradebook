@@ -142,13 +142,27 @@
         soft(api.assignments(cid)),
         soft(api.courseItems(cid, 'quiz')),
         soft(api.courseItems(cid, 'discussion')),
-        soft(api.pagesWithBodies(cid)),
+        soft(api.pagesWithBodies(cid).then(function (list) { return self.pageBodies(list || []); })),
         soft(api.modulesWithItems(cid))
       ]).then(function (r) {
         return SI().courseIndex({ courseId: cid, assignments: r[0], quizzes: r[1], discussions: r[2], pages: r[3], modules: r[4] });
       }).catch(function () { self._index = null; return null; });
     }
     return this._index;
+  };
+
+  /* A Canvas whose pages list ignores include[]=body: each page read on
+   * its own (four at a time), so a video embedded only in a page is still
+   * found. A page that can't be read is left as it was. */
+  P.pageBodies = function (list) {
+    var api = this.api, cid = this.courseId;
+    if (!list.length || list.some(function (o) { return o && o.body !== undefined; })) return Promise.resolve(list);
+    var gate = CGP.util.pool(4);
+    return Promise.all(list.map(function (o) {
+      return gate(function () {
+        return api.sectionItem(cid, 'page', o.page_id).then(function (full) { return full || o; }, function () { return o; });
+      });
+    }));
   };
 
   P.summaries = function () {

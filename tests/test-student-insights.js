@@ -481,9 +481,24 @@ suite('student overview: never-opened review fixes', (test) => {
     a.deep(idx.modules.wiki_page_80, ['Unit 2: Atoms']);
     a.eq(idx.modules.assignment_3, undefined);
     const ids = idx.embeds.map((e) => e.uuid);
-    a.deep(ids, ['aaaaaa-1', 'cccccc-3', 'aaaaaa-1', 'dddddd-4'], 'the quiz’s description is read once, through its assignment (empty here)');
+    a.deep(ids, ['aaaaaa-1', 'bbbbbb-2', 'cccccc-3', 'aaaaaa-1', 'dddddd-4'], 'a quiz’s own description is read even when its assignment’s is empty');
+    a.eq(idx.embeds[1].place.url, '/courses/9/assignments/2', 'the quiz is linked through its assignment');
     a.deep(idx.embeds[0].place, { kind: 'Assignment', name: 'HW - Isotopes', url: '/courses/9/assignments/1', modules: ['Unit 2: Atoms'] });
-    a.eq(idx.embeds[2].place.kind, 'Page');
-    a.eq(idx.embeds[3].place.kind, 'Module');
+    a.eq(idx.embeds[3].place.kind, 'Page');
+    a.eq(idx.embeds[4].place.kind, 'Module');
+  });
+  test('pages list without bodies: each page is read on its own, an unreadable one left as it was', async () => {
+    const vm = require('vm');
+    if (!globalThis.CGP.StudentInsightsController) vm.runInThisContext(require('fs').readFileSync(require('path').join(__dirname, '../src/gradebook/student-insights.js'), 'utf8'));
+    const reads = [];
+    const api = { sectionItem: (cid, type, id) => { reads.push(id); return id === 2 ? Promise.reject(new Error('403')) : Promise.resolve({ page_id: id, url: 'p' + id, body: '<p>' + id + '</p>' }); } };
+    const c = new globalThis.CGP.StudentInsightsController({ model: {}, api, adapter: {}, settings: { values: {} }, courseId: 9 });
+    const full = await c.pageBodies([{ page_id: 1, url: 'p1' }, { page_id: 2, url: 'p2' }]);
+    a.deep(reads.sort(), [1, 2]);
+    a.eq(full[0].body, '<p>1</p>');
+    a.deep(full[1], { page_id: 2, url: 'p2' });
+    reads.length = 0;
+    await c.pageBodies([{ page_id: 3, url: 'p3', body: '' }]);
+    a.eq(reads.length, 0, 'bodies already there: nothing more read');
   });
 });

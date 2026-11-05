@@ -135,10 +135,14 @@
       var videos = SC().videosFromTiles({ tiles: found.tiles }).filter(function (v) { return !v.archived; }).slice(0, MAX_VIDEOS);
       var have = Object.create(null);
       videos.forEach(function (v) { have[v.uuid] = true; });
-      (Array.isArray(extra) ? extra : []).slice(0, MAX_EMBEDS).forEach(function (e) {
+      // Only new videos count toward the limit: repeated embeds and videos
+      // already in the course's list don't use it up.
+      var added = 0;
+      (Array.isArray(extra) ? extra : []).forEach(function (e) {
         var uuid = e && /^[A-Za-z0-9_-]{6,80}$/.test(String(e.uuid || '')) ? String(e.uuid) : null;
-        if (!uuid || have[uuid]) return;
+        if (!uuid || have[uuid] || added >= MAX_EMBEDS) return;
         have[uuid] = true;
+        added++;
         videos.push({ uuid: uuid, title: String(e.title || '').slice(0, 300) || 'Studio video', duration: null, thumbnail: null,
           createdAt: null, archived: false, embeddedOnly: true });
       });

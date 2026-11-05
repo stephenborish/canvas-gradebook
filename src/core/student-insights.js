@@ -976,29 +976,36 @@
       });
     });
     var embeds = [];
+    var placed = Object.create(null);    // one entry per video per place
     function scan(html, kind, name, url, key) {
       if (!SC || !html) return;
       SC.embedsFromHtml(html).forEach(function (e) {
+        var k = e.uuid + '|' + url;
+        if (placed[k]) return;
+        placed[k] = true;
         embeds.push({ uuid: e.uuid, title: e.title, place: { kind: kind, name: String(name || ''), url: url, modules: (key && modules[key]) || [] } });
       });
     }
-    var quizSeen = Object.create(null), topicSeen = Object.create(null);
+    // A quiz or graded discussion is listed once, under its assignment's
+    // address; its own text (which may differ from the assignment's) is
+    // read too.
+    var quizAt = Object.create(null), topicAt = Object.create(null);
     (input.assignments || []).forEach(function (a) {
       if (!a || a.id === undefined) return;
       var key = 'assignment_' + a.id;
       // A quiz's or graded discussion's assignment sits in the module as the quiz or discussion.
-      if (a.quiz_id) { (modules['quiz_' + a.quiz_id] || []).forEach(function (n) { addModule(key, n); }); quizSeen[a.quiz_id] = true; }
+      if (a.quiz_id) { (modules['quiz_' + a.quiz_id] || []).forEach(function (n) { addModule(key, n); }); quizAt[a.quiz_id] = base + '/assignments/' + a.id; }
       var tid = a.discussion_topic && a.discussion_topic.id;
-      if (tid) { (modules['discussion_topic_' + tid] || []).forEach(function (n) { addModule(key, n); }); topicSeen[tid] = true; }
+      if (tid) { (modules['discussion_topic_' + tid] || []).forEach(function (n) { addModule(key, n); }); topicAt[tid] = base + '/assignments/' + a.id; }
       scan(a.description, a.quiz_id ? 'Quiz' : tid ? 'Discussion' : 'Assignment', a.name, base + '/assignments/' + a.id, key);
     });
     (input.quizzes || []).forEach(function (q) {
-      if (!q || q.id === undefined || quizSeen[q.id]) return;
-      scan(q.description, 'Quiz', q.title, base + '/quizzes/' + q.id, 'quiz_' + q.id);
+      if (!q || q.id === undefined) return;
+      scan(q.description, 'Quiz', q.title, quizAt[q.id] || base + '/quizzes/' + q.id, 'quiz_' + q.id);
     });
     (input.discussions || []).forEach(function (d) {
-      if (!d || d.id === undefined || topicSeen[d.id]) return;
-      scan(d.message, 'Discussion', d.title, base + '/discussion_topics/' + d.id, 'discussion_topic_' + d.id);
+      if (!d || d.id === undefined) return;
+      scan(d.message, 'Discussion', d.title, topicAt[d.id] || base + '/discussion_topics/' + d.id, 'discussion_topic_' + d.id);
     });
     (input.pages || []).forEach(function (p) {
       if (!p || !p.url) return;
