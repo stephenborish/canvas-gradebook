@@ -136,4 +136,45 @@ suite('Studio videos for one student', (test) => {
     a.eq(r.rows[0].completion, null);
     a.deep(r.counts, { total: 1, watched: 0, partial: 0, none: 0, unknown: 1 });
   });
+  // A Studio video embedded with Canvas's editor: Canvas's own launch
+  // address with Studio's, URL-encoded, inside.
+  const EMBED = '<p>Watch the full video about isotopes below.</p>' +
+    '<p><iframe class="lti-embed" style="width: 720px; height: 405px;" title="Isotopes &amp; Average Atomic Mass" ' +
+    'src="/courses/376/external_tools/retrieve?display=borderless&amp;url=https%3A%2F%2Fmalvernprep.instructuremedia.com%2Flti%2Flaunch%3F' +
+    'custom_arc_launch_type%3Dbare_embed%26custom_arc_media_id%3Dd9b3c1aa-1111-4a2b-9c3d-abcdef012345%26custom_arc_start_at%3D0" ' +
+    'allowfullscreen="allowfullscreen"></iframe></p>';
+
+  test('finds a Studio video embedded in an assignment’s description, with its title', () => {
+    a.deep(sc().embedsFromHtml(EMBED), [{ uuid: 'd9b3c1aa-1111-4a2b-9c3d-abcdef012345', title: 'Isotopes & Average Atomic Mass' }]);
+  });
+
+  test('also a twice-encoded launch, a share link, and each video once', () => {
+    const twice = '<iframe src="/courses/1/external_tools/retrieve?url=https%253A%252F%252Fx.instructuremedia.com%252Flti%252Flaunch%253Fcustom_arc_media_id%253Dabc123-xyz"></iframe>';
+    const share = '<a href="https://x.instructuremedia.com/embed/0f0f0f0f-2222">Watch</a><iframe title="Video player for Cells" src="https://x.instructuremedia.com/embed/0f0f0f0f-2222"></iframe>';
+    a.deep(sc().embedsFromHtml(twice).map((e) => e.uuid), ['abc123-xyz']);
+    a.deep(sc().embedsFromHtml(share), [{ uuid: '0f0f0f0f-2222', title: '' }]);
+    a.deep(sc().embedsFromHtml('<iframe src="https://www.youtube.com/embed/xyz"></iframe>'), [], 'YouTube is not Studio');
+  });
+
+  test('joins where each video is embedded; embedded videos not in Studio’s course list come back apart', () => {
+    const videos = sc().videosFromTiles(TILES);
+    const place = { kind: 'Assignment', name: 'HW - Isotopes', url: '/courses/1/assignments/7749', modules: ['Unit 2'] };
+    const j = sc().joinEmbeds(videos, [
+      { uuid: videos[0].uuid, title: '', place },
+      { uuid: 'not-in-studio-list', title: 'Isotopes', place },
+      { uuid: 'not-in-studio-list', title: 'Isotopes', place }
+    ]);
+    a.deep(j.videos[0].places, [place]);
+    a.eq(j.missing.length, 1);
+    a.eq(j.missing[0].places.length, 1, 'the same place once');
+  });
+
+  test('"in class" counts only this class’s viewers when the class is known', () => {
+    const videos = [{ uuid: 'u1', title: 'Copied embed', viewers: sc().viewersFrom(USERS) }];
+    const all = sc().studentVideos(videos, { name: 'Avery Adams', email: 'aadams@school.org' });
+    const mine = sc().studentVideos(videos, { name: 'Avery Adams', email: 'aadams@school.org' },
+      { classEmails: { 'ttegler07@school.org': true, 'aadams@school.org': true } });
+    a.eq(all.rows[0].classWatched, 4);
+    a.eq(mine.rows[0].classWatched, 1);
+  });
 });
