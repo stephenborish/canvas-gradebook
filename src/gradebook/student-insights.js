@@ -330,8 +330,9 @@
         api.userStudentEnrollments(uid).catch(none),
         shared('_teaching', function () { return api.teachingCourses(); }),
         // The course's recent_students list only when the student's own record
-        // doesn't say when they last logged in.
-        user.then(function (u) { return u && 'last_login' in u ? null : shared('_recent', function () { return api.recentStudents(cid); }); })
+        // doesn't give a login time (Canvas answers last_login: null on
+        // course user records even for students who log in every day).
+        user.then(function (u) { return u && u.last_login ? null : shared('_recent', function () { return api.recentStudents(cid); }); })
       ]).then(function (r) {
         return { user: r[0], observers: r[1], sections: r[2], emails: r[3], profile: r[4], enrollments: r[5], courses: r[6], recent: r[7] };
       });
@@ -1374,8 +1375,10 @@
       { text: user.sis_user_id, label: 'their SIS id' }
     ], Date.now());
     // When they last signed in to Canvas anywhere: from their user record,
-    // else the course's recent_students list.
-    var studentLogin = 'last_login' in user ? (user.last_login || null) : undefined;
+    // else the course's recent_students list. A null on the user record isn't
+    // "never": Canvas leaves it null there when it didn't look the login up,
+    // so only recent_students (which does) can say they never have.
+    var studentLogin = user.last_login || undefined;
     if (studentLogin === undefined && p.recent) {
       var rec = p.recent.filter(function (s) { return s && String(s.id) === uid; })[0];
       if (rec) studentLogin = rec.last_login || null;
