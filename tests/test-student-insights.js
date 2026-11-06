@@ -559,7 +559,8 @@ suite('student overview: profile tab', (test) => {
     a.ok(yr && html.includes('Grade ' + yr.grade + ' · Class of 2030'), 'grade level');
     a.ok(html.includes('Pat &lt;Billings&gt;'), 'guardian name, escaped');
     a.ok(!html.includes('mailto:pat@home.net,sam@home.net') && !html.includes('Email both'), 'no Email both link');
-    a.ok(html.includes('data-si-copytext="pat@home.net, sam@home.net">Copy all'), 'Copy all guardians');
+    a.ok(/<span class="cgp-si__aside"><button[^>]*data-si-copytext="pat@home.net, sam@home.net"[^>]*>Copy all<\/button><\/span>/.test(html), 'Copy all guardians, in the card’s corner');
+    a.ok(!html.includes('Phone numbers and home addresses'), 'no SIS note');
     a.ok(html.includes('Block 3') && html.includes('S1001') && html.includes('he/him'), 'section, SIS id, pronouns');
     a.ok(html.includes('Current grade</dt><dd>86% · B'), 'current grade with its letter');
     a.ok(!html.includes('Counting ungraded') && !html.includes('71.2%'), 'no grade counting ungraded work as 0');
@@ -572,7 +573,7 @@ suite('student overview: profile tab', (test) => {
     a.ok(html.includes('AP Biology - 1') && html.includes('/courses/331/grades/7') && !html.includes('/courses/999/'), 'other classes with this teacher only');
 
     a.ok(html.includes('Not shared with you by Canvas'), 'student login: unknown');
-    a.ok(html.includes('didn’t share when these parents last logged in'), 'parent logins: unknown');
+    a.ok(!html.includes('didn’t share when'), 'no note about unknown parent logins');
 
     // Last Canvas login: the student's own record, else recent_students; parents' from their records.
     const login = '2026-11-02T13:05:00Z';
@@ -585,7 +586,7 @@ suite('student overview: profile tab', (test) => {
     a.ok(h2.includes('Last Canvas login</dt><dd>' + when), 'student login shown');
     a.ok(h2.includes('Last Canvas login: ' + when), 'a parent’s login');
     a.ok(!h2.includes('Never'), 'a null last_login is not shown as Never');
-    a.ok(h2.includes('didn’t share when these parents'), 'the parent without a time is noted as unknown');
+    a.ok(!h2.includes('didn’t share when'), 'the parent without a time gets no note');
     withLogins.profile.observers[1].last_login = login;
     a.ok(!c.profilePanel('7', { name: 'A' }, withLogins).includes('didn’t share when'), 'no note when every parent is known');
     const nullUser = JSON.parse(JSON.stringify(parts));
@@ -603,6 +604,33 @@ suite('student overview: profile tab', (test) => {
     a.ok(none.includes('didn’t let you see'), 'observers refused');
     a.ok(!none.includes('Also in your classes'));
     a.ok(c.profilePanel('7', { name: 'A' }, {}).includes('Reading this student’s profile'), 'loading');
+  });
+
+  test('Every assignment sorts by the header clicked, again to flip, blanks last', () => {
+    const Ctl = C();
+    const c = new Ctl({ model: {}, api: {}, adapter: {}, settings: { values: {} }, courseId: 9 });
+    const mk = (i, name, due, score, status) => ({ attrs: { 'data-sort-i': String(i), 'data-sort-name': name, 'data-sort-due': due, 'data-sort-score': score, 'data-sort-status': status },
+      getAttribute(k) { return this.attrs[k] === undefined ? null : this.attrs[k]; } });
+    const rows = [mk(0, 'quiz b', '300', '', '0'), mk(1, 'lab a', '200', '90', '4'), mk(2, 'hw c', '', '75', '1')];
+    const order = [];
+    const body = { querySelectorAll: () => rows.slice(), appendChild(tr) { order.push(tr.attrs['data-sort-name']); } };
+    const ths = ['name', 'due', 'score'].map((k) => {
+      const b = { getAttribute: () => k };
+      return { aria: 'none', querySelector: () => b, setAttribute(n, v) { this.aria = v; } };
+    });
+    const table = { querySelector: () => body, querySelectorAll: () => ths };
+    c._root = { querySelector: () => table };
+    const click = (key) => { order.length = 0; c.onPanelClick({ target: { closest: (sel) => (sel === '[data-si-sort]' ? { getAttribute: () => key } : null) } }); return order.slice(); };
+    a.deep(click('name'), ['hw c', 'lab a', 'quiz b'], 'names A to Z first');
+    a.eq(ths[0].aria, 'ascending');
+    a.deep(click('name'), ['quiz b', 'lab a', 'hw c'], 'again: Z to A');
+    a.eq(ths[0].aria, 'descending');
+    a.deep(click('score'), ['lab a', 'hw c', 'quiz b'], 'highest score first, no score last');
+    a.eq(ths[0].aria, 'none');
+    a.deep(click('score'), ['hw c', 'lab a', 'quiz b'], 'lowest first, no score still last');
+    a.deep(click('due'), ['quiz b', 'lab a', 'hw c'], 'newest due first, no due date last');
+    c._sort = null; order.length = 0; c.sortWork();
+    a.deep(order, ['quiz b', 'lab a', 'hw c'], 'no sort: the usual order');
   });
 
   test('Studio videos: where each is posted, filter chips, and each assignment’s video status', () => {

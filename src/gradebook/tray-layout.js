@@ -6,14 +6,15 @@
  * section eats half the tray and a typed comment's Submit is off the bottom
  * of the screen. With `trayLayout` on:
  *
- *  - the Status options sit side by side as one row of pills (wrapping onto a
- *    second row only when there are too many to fit), each pill a single
- *    click target; the checked one is outlined. When Late is picked and its
- *    "days late" box appears, that pill takes the whole row so the box fits.
- *  - the comment form's buttons move ABOVE the editor as a slim toolbar
- *    joined to its top edge (a quiet Cancel, a compact blue Submit), the
- *    editor is made shorter, and the RCE's word count is hidden, so the box
- *    stays in view and an added comment is easy to spot.
+ *  - the Status options sit side by side as one row of equal pills - a
+ *    segmented control - each pill a single click target, tinted in its
+ *    status colour (Canvas's own, darkened into an accent) once checked.
+ *    Late's "days late" box, which Canvas puts inside the Late option, is
+ *    shown as a strip UNDER the row, so the four pills stay on one line.
+ *  - the comment box is one card: its Cancel / Submit as a slim bar on top,
+ *    a single compact row of formatting buttons (the "more" drawer opens as
+ *    one row too), a shorter editing area, and no status bar under it (the
+ *    element path, word count and accessibility checker button).
  *
  * Nothing is moved in the DOM: the tray is React's, and moving its nodes
  * would break its next render. Elements are only tagged with data-cgp-tray-*
@@ -132,6 +133,20 @@
     var pills = radios.map(function (r) {
       return (r.closest && r.closest('.SubmissionTray__RadioInput')) || r;
     });
+    pills.forEach(function (pill, n) {
+      if (pill.tagName === 'INPUT') return;
+      setAttr(pill, 'data-cgp-tray-value', String(radios[n].value || radios[n].getAttribute('value') || '').toLowerCase());
+      paintAccent(pill);
+      // Late's "days late" box: the part of the option holding a field
+      // other than the radio.
+      toArray(pill.children).forEach(function (child) {
+        var field = toArray(child.querySelectorAll('input')).filter(function (i) {
+          var t = (i.getAttribute('type') || 'text').toLowerCase();
+          return t !== 'radio' && t !== 'hidden';
+        })[0];
+        if (field && !child.contains(radios[n])) setAttr(child, 'data-cgp-tray-days', '');
+      });
+    });
     var row = commonAncestor(pills);
     if (!row) return;
     setAttr(row, 'data-cgp-tray-status', '');
@@ -145,6 +160,58 @@
       // When the radio itself is all there is, the column it sits in is the pill.
       setAttr(pill.tagName === 'INPUT' ? child : pill, 'data-cgp-tray-pill', '');
     });
+  }
+
+  /* Canvas paints each status option in its status colour - pale tints
+   * (late blue, missing red, excused yellow, or the teacher's own choices).
+   * The same hue, darkened into a readable accent, becomes the pill's
+   * --cgp-tray-accent: its underline, and its border and text once checked.
+   * A custom property is the one thing set in a style: React only rewrites
+   * the style properties it manages, so this survives its renders. */
+  function paintAccent(pill) {
+    var bg = (pill.style && pill.style.backgroundColor) || '';
+    if (pill.getAttribute('data-cgp-tray-bg') === bg) return;
+    setAttr(pill, 'data-cgp-tray-bg', bg);
+    var accent = accentFor(bg);
+    if (!pill.style || typeof pill.style.setProperty !== 'function') return;
+    if (accent) pill.style.setProperty('--cgp-tray-accent', accent);
+    else if (pill.style.removeProperty) pill.style.removeProperty('--cgp-tray-accent');
+  }
+
+  /* A pale status colour as a strong accent of the same hue, or null when
+   * there is no colour to speak of (white, transparent, grey). */
+  function accentFor(color) {
+    var rgb = parseColor(color);
+    if (!rgb) return null;
+    var r = rgb[0] / 255, g = rgb[1] / 255, b = rgb[2] / 255;
+    var max = Math.max(r, g, b), min = Math.min(r, g, b);
+    var d = max - min;
+    if (d < 0.02) return null;
+    var l = (max + min) / 2;
+    var sat = d / (1 - Math.abs(2 * l - 1));
+    var h;
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h = Math.round(h * 60 + 360) % 360;
+    // Yellows and oranges need to be darker than blues to read on white.
+    var light = h >= 30 && h <= 75 ? 32 : 40;
+    return 'hsl(' + h + ', ' + Math.round(Math.max(sat, 0.6) * 100) + '%, ' + light + '%)';
+  }
+
+  function parseColor(c) {
+    var s = String(c || '').trim().toLowerCase();
+    var m = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:[\s,/]+([\d.]+%?))?\s*\)$/.exec(s);
+    if (m) {
+      if (m[4] !== undefined && parseFloat(m[4]) === 0) return null;
+      return [+m[1], +m[2], +m[3]];
+    }
+    m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/.exec(s);
+    if (m) {
+      var hex = m[1].length === 3 ? m[1].replace(/./g, '$&$&') : m[1];
+      return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
+    }
+    return null;
   }
 
   /* -------------------------------------------------------------- comments */
@@ -165,8 +232,13 @@
     });
     editors.forEach(function (editor) {
       tagCommentForm(editor, tray);
-      // Once found, the word count is not searched for again.
-      if (editor.tagName !== 'TEXTAREA' && !editor.querySelector('[data-cgp-tray-hide]')) tagWordCount(editor);
+      if (editor.tagName === 'TEXTAREA') return;
+      setAttr(editor, 'data-cgp-tray-rce', '');
+      // The whole status bar where it can be told apart; else just its word
+      // count. Found once, then not searched for again (every keystroke's
+      // word count update rescans the tray).
+      if (editor.querySelector('[data-cgp-tray-hide]')) return;
+      if (!tagStatusBar(editor)) tagWordCount(editor);
     });
   }
 
@@ -200,6 +272,34 @@
         setAttr(prev, 'data-cgp-tray-hide', '');
       }
     });
+  }
+
+  /* The RCE's status bar under the editing area - the element path ("p"),
+   * the word count, the accessibility checker and the HTML / fullscreen
+   * buttons. Canvas's test id where it has one; otherwise, beside the
+   * TinyMCE box at any level up to the RCE wrapper, a part with buttons and
+   * nothing to type in. */
+  function tagStatusBar(rce) {
+    var bars = toArray(rce.querySelectorAll('[data-testid="RCEStatusBar"]'));
+    if (!bars.length) {
+      var tox = matchesTox(rce) ? null : rce.querySelector('.tox-tinymce');
+      var node = tox;
+      while (node && node !== rce) {
+        var sibs = node.parentElement ? toArray(node.parentElement.children) : [];
+        sibs.slice(sibs.indexOf(node) + 1).forEach(function (sib) {
+          if (sib.querySelector && sib.querySelector('button, [role="button"]') &&
+              !sib.querySelector('textarea, iframe, input:not([type="hidden"]), [contenteditable="true"]')) bars.push(sib);
+        });
+        node = node.parentElement;
+      }
+    }
+    bars = bars.filter(function (b) { return b !== rce; });
+    bars.forEach(function (b) { setAttr(b, 'data-cgp-tray-hide', ''); });
+    return bars.length > 0;
+  }
+
+  function matchesTox(el) {
+    return (' ' + (el.className || '') + ' ').indexOf(' tox-tinymce ') >= 0;
   }
 
   function outermostRce(el, tray) {

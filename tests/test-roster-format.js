@@ -111,7 +111,7 @@ suite('roster export: Student Name menu', (test) => {
     a.ok(ctrl._lastTrigger > 0);
   });
 
-  test('Student Name menu grows Copy Roster after "Secondary info", once, with no submenu flag', () => {
+  test('Student Name menu grows Copy Roster at the top, once, with no submenu flag', () => {
     const C = loadRoster();
     const doc = domshim.install();
     const menu = studentMenu(doc, domshim.FakeElement);
@@ -121,7 +121,7 @@ suite('roster export: Student Name menu', (test) => {
     ctrl.decorateMenu(menu);
     const added = menu.querySelectorAll('.cgp-roster-item');
     a.eq(added.length, 1, 'added once');
-    a.eq(menu.children.indexOf(added[0]), 3, 'after Secondary info');
+    a.eq(menu.children.indexOf(added[0]), 0, 'first, above Sort by');
     a.eq(added[0].getAttribute('aria-haspopup'), null, 'opens no submenu');
     a.eq(added[0].getAttribute('aria-label'), 'Copy Roster');
   });

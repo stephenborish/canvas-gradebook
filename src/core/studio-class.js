@@ -371,40 +371,97 @@
    * carries another embed id (perspective) than the one in Studio's list
    * for this course - an embed copied with the course from another class,
    * or added from the teacher's own library - and Studio records this
-   * class's watching under the course's own perspective. Each such embed
-   * is folded into the course's video it belongs to: aliasOf
-   * ({embedUuid: courseVideoUuid}, from the media's list of perspectives),
-   * else - only for an embed whose viewers Studio didn't give - the one
-   * course video with exactly its title. The video keeps the embed ids as
-   * `aliases`, and the viewers of both. */
+   * class's watching under the course's own perspective. Studio's course
+   * list can also hold the same media twice (added to the course twice).
+   * Each copy is folded into one video:
+   *   1. an embed Studio names as another perspective of a course video
+   *      (aliasOf: {embedUuid: courseVideoUuid}, from the media's list of
+   *      perspectives);
+   *   2. course videos of the same media (mediaId);
+   *   3. videos with the same title and the same length. A copy whose
+   *      length isn't known (an embed Studio gave nothing for) joins the
+   *      one length its title has; with two lengths under one title they
+   *      are different videos and nothing is guessed.
+   * The video kept is the course's own (else a readable one); it keeps the
+   * others' embed ids as `aliases`, so their places land on it, and the
+   * viewers of all of them. */
   function foldEmbeds(videos, aliasOf) {
     aliasOf = aliasOf || {};
-    var byId = Object.create(null), byTitle = Object.create(null);
-    (videos || []).forEach(function (v) {
-      if (!v || v.embeddedOnly) return;
-      byId[v.uuid] = v;
-      var t = normName(v.title);
-      if (t) byTitle[t] = byTitle[t] === undefined ? v : null;
-    });
-    var out = [];
-    (videos || []).forEach(function (v) {
-      if (!v) return;
-      if (!v.embeddedOnly) { out.push(v); return; }
-      var target = byId[aliasOf[v.uuid]] || null;
-      if (!target && v.error) target = byTitle[normName(v.title)] || null;
-      if (!target) { out.push(v); return; }
-      target.aliases = (target.aliases || []).concat([v.uuid]);
-      if (!v.error) {
-        if (target.error) {
-          target.viewers = (v.viewers || []).slice();
-          delete target.error;
-          delete target.errorStatus;
-        } else {
-          target.viewers = mergeViewers(target.viewers, v.viewers);
-        }
+    var list = (videos || []).filter(Boolean);
+    var byId = Object.create(null);
+    list.forEach(function (v) { if (!v.embeddedOnly) byId[v.uuid] = v; });
+    var dropped = new Set();
+
+    function absorb(target, v) {
+      if (target === v || dropped.has(v)) return;
+      dropped.add(v);
+      target.aliases = (target.aliases || []).concat([v.uuid], v.aliases || []);
+      if (target.duration === null || target.duration === undefined) target.duration = v.duration === undefined ? null : v.duration;
+      if (!target.mediaId && v.mediaId) target.mediaId = v.mediaId;
+      if (!target.createdAt && v.createdAt) target.createdAt = v.createdAt;
+      if (v.error) return;
+      if (target.error) {
+        target.viewers = (v.viewers || []).slice();
+        delete target.error;
+        delete target.errorStatus;
+      } else {
+        target.viewers = mergeViewers(target.viewers, v.viewers);
       }
+    }
+    // The copy to keep: the course's own, then a readable one, then the first.
+    function primary(group) {
+      return group.slice().sort(function (a, b) {
+        return (!!a.embeddedOnly - !!b.embeddedOnly) || (!!a.error - !!b.error) || (list.indexOf(a) - list.indexOf(b));
+      })[0];
+    }
+    function known(d) { return d !== null && d !== undefined && isFinite(d) && d > 0; }
+
+    // 1. Embeds Studio says are the course's video.
+    list.forEach(function (v) {
+      var t = v.embeddedOnly ? byId[aliasOf[v.uuid]] : null;
+      if (t) absorb(t, v);
     });
-    return out;
+    // 2. The same media twice.
+    var byMedia = Object.create(null);
+    list.forEach(function (v) {
+      if (dropped.has(v) || !v.mediaId) return;
+      (byMedia[v.mediaId] = byMedia[v.mediaId] || []).push(v);
+    });
+    Object.keys(byMedia).forEach(function (k) {
+      var g = byMedia[k];
+      if (g.length < 2) return;
+      var p = primary(g);
+      g.forEach(function (v) { absorb(p, v); });
+    });
+    // 3. The same title and length.
+    var byTitle = Object.create(null);
+    list.forEach(function (v) {
+      if (dropped.has(v)) return;
+      var t = normName(v.title);
+      if (!t || t === 'studio video' || t === 'untitled video') return;
+      (byTitle[t] = byTitle[t] || []).push(v);
+    });
+    Object.keys(byTitle).forEach(function (t) {
+      var g = byTitle[t];
+      if (g.length < 2) return;
+      var lengths = [];   // [[videos of one length]]
+      var unknown = [];
+      g.forEach(function (v) {
+        if (!known(v.duration)) { unknown.push(v); return; }
+        var c = lengths.filter(function (l) { return Math.abs(l[0].duration - v.duration) <= 2; })[0];
+        if (c) c.push(v); else lengths.push([v]);
+      });
+      if (lengths.length === 1) lengths[0] = lengths[0].concat(unknown);
+      // No length known at all: embeds join the title's one course video;
+      // two course videos with no length to tell them apart stay apart.
+      else if (!lengths.length && unknown.filter(function (v) { return !v.embeddedOnly; }).length <= 1) lengths.push(unknown);
+      lengths.forEach(function (c) {
+        if (c.length < 2) return;
+        var p = primary(c);
+        c.forEach(function (v) { absorb(p, v); });
+      });
+    });
+    return list.filter(function (v) { return !dropped.has(v); });
   }
 
   /* Plain text for pasting: one name per line, "First Last". */

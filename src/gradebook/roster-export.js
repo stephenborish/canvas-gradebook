@@ -1,8 +1,8 @@
 /* Canvas Gradebook+ - "Copy Roster" in the Student Name column's "..." menu.
  *
  * Canvas has no way to get a class list out of the gradebook short of an
- * export of every grade. This adds one item to the Student Name column's own
- * menu (Sort by, Display as, Secondary info, Show). Choosing it opens a small
+ * export of every grade. This adds one item, at the top, to the Student Name
+ * column's own menu (Sort by, Display as, Secondary info, Show). Choosing it opens a small
  * panel that reads the course's students - names and email addresses - from
  * Canvas, and lets the teacher:
  *   - copy every email address at once, ready for a To: or Bcc: field
@@ -196,7 +196,14 @@
     item.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' || e.key === ' ') choose(e);
     }, true);
-    unit.parentNode.insertBefore(clone, unit.nextSibling);
+    // First in the menu, above Canvas's own "Sort by".
+    var first = menu.querySelector('[role="menuitem"]') || anchor;
+    var top = first;
+    if (top.parentElement && top.parentElement !== menu &&
+        (top.parentElement.getAttribute('role') === 'none' || top.parentElement.tagName === 'LI')) {
+      top = top.parentElement;
+    }
+    top.parentNode.insertBefore(clone, top);
   };
 
   P.closeMenu = function (menu) {

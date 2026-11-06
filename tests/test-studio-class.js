@@ -200,9 +200,47 @@ suite('Studio videos for one student', (test) => {
     a.eq(joined.videos[0].places[0].name, 'HW');
   });
 
-  test('two course videos with the same title: an unreadable embed is not guessed into either', () => {
-    const out = sc().foldEmbeds([{ uuid: 'a', title: 'Intro' }, { uuid: 'b', title: 'Intro' }, { uuid: 'x', title: 'Intro', embeddedOnly: true, error: 'unavailable' }], {});
+  test('two course videos with the same title but different lengths: an unreadable embed is not guessed into either', () => {
+    const out = sc().foldEmbeds([{ uuid: 'a', title: 'Intro', duration: 300 }, { uuid: 'b', title: 'Intro', duration: 420 },
+      { uuid: 'x', title: 'Intro', embeddedOnly: true, error: 'unavailable' }], {});
     a.eq(out.length, 3);
+  });
+
+  test('a course video and an embed of it under another embed id are one row, placed where the embed is', () => {
+    // Studio's course list has the video (not embedded anywhere under its
+    // own id); the page embeds a copy whose viewers Studio didn't give and
+    // whose perspectives lookup found nothing.
+    const course = { uuid: 'course-g', mediaId: 7, title: 'Genes, proteins, and traits | Khan Academy', duration: 300,
+      viewers: [{ id: '1', name: 'Avery Adams', email: 'aadams@school.org', roles: ['Student'], teacher: false, completion: 1 }] };
+    const embed = { uuid: 'embed-g', title: 'Genes, proteins, and traits | Khan Academy', embeddedOnly: true, duration: null, viewers: [], error: 'unavailable', errorStatus: 404 };
+    const readable = { uuid: 'embed-h', title: 'genes proteins and traits khan academy', embeddedOnly: true, duration: null,
+      viewers: [{ id: '2', name: 'Blake Brown', email: 'bbrown@school.org', roles: ['Student'], teacher: false, completion: 0.4 }] };
+    const out = sc().foldEmbeds([course, embed, readable], {});
+    a.deep(out.map((v) => v.uuid), ['course-g'], 'one row, the course’s own');
+    a.deep(out[0].viewers.map((v) => v.email).sort(), ['aadams@school.org', 'bbrown@school.org'], 'viewers of every copy');
+    const j = sc().joinEmbeds(out, [{ uuid: 'embed-g', title: 'x', place: { kind: 'Page', name: 'DNA Structure', url: '/courses/1/pages/dna', modules: [] } }]);
+    a.eq(j.missing.length, 0);
+    a.eq(j.videos[0].places[0].name, 'DNA Structure', 'not “Not posted in Canvas”');
+    const rows = sc().studentVideos(j.videos, { name: 'Avery Adams', email: 'aadams@school.org' });
+    a.eq(rows.rows.length, 1);
+    a.eq(rows.rows[0].status, 'watched', 'not “Unavailable”');
+  });
+
+  test('the same media added to the course twice is one row', () => {
+    const out = sc().foldEmbeds([
+      { uuid: 'p1', mediaId: 9, title: 'Gel Electrophoresis', duration: 480, viewers: [], error: 'unavailable' },
+      { uuid: 'p2', mediaId: 9, title: 'Gel electrophoresis (copy)', duration: 480, viewers: [] }
+    ], {});
+    a.deep(out.map((v) => v.uuid), ['p2'], 'the readable copy is kept');
+    a.deep(out[0].aliases, ['p1']);
+  });
+
+  test('similar titles with different lengths stay two videos', () => {
+    const out = sc().foldEmbeds([
+      { uuid: 't', title: 'Genes, proteins, and traits | Middle school biology', duration: 300, viewers: [] },
+      { uuid: 'c', title: 'Genes, proteins, and cells | High school biology', duration: 420, viewers: [] }
+    ], {});
+    a.eq(out.length, 2);
   });
 
   test('the same video under the same title in two modules is two places', () => {
