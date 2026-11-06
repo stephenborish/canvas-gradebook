@@ -34,11 +34,13 @@
   var RADIO_SELECTOR = 'input[name="SubmissionTrayRadioInput"], .SubmissionTray__RadioInput input[type="radio"]';
   var RCE_SELECTOR = '.rce-wrapper, [data-testid="RCEWrapper"], .tox-tinymce';
   var ROOT_CLASS = 'cgp-tray-tidy';
+  var GRID_SELECTOR = '.slick-viewport, .grid-canvas';
 
   function TrayLayoutController(ctx) {
     var self = this;
     this.settings = ctx.settings;
     this.observer = null;
+    this.tray = null;   // the tray dialog last seen, while it is on the page
     this.scheduleScan = CGP.util.rafBatch(function () { self.scan(); }, 'trayLayout');
   }
 
@@ -69,7 +71,7 @@
     }
     var self = this;
     // childList only: the attributes set by scan() never re-trigger it.
-    this.observer = new MutationObserver(function () { self.scheduleScan(); });
+    this.observer = new MutationObserver(function (records) { self.onMutations(records); });
     this.observer.observe(document.body, { childList: true, subtree: true });
     this.scan();
   };
@@ -79,17 +81,47 @@
     this.observer = null;
   };
 
-  /** Tags the tray currently on the page, if any. Safe to call repeatedly. */
-  P.scan = function (root) {
-    var doc = root || document;
-    var radios = toArray(doc.querySelectorAll(RADIO_SELECTOR));
+  /* The observer sees every mutation on the page, and SlickGrid rewrites
+   * rows on every scroll frame, so this filter must stay cheap: no scan is
+   * scheduled unless the mutation could concern the tray.
+   *  - While a tray is open, only mutations inside it count.
+   *  - Otherwise, only added nodes outside the grid that hold a status radio
+   *    (the tray mounting, or its content arriving in an empty shell). */
+  P.onMutations = function (records) {
+    if (this.tray && !this.tray.isConnected) this.tray = null;
+    for (var i = 0; i < records.length; i++) {
+      var rec = records[i];
+      if (this.tray) {
+        if (this.tray.contains(rec.target)) { this.scheduleScan(); return true; }
+        continue;
+      }
+      var added = rec.addedNodes || [];
+      for (var j = 0; j < added.length; j++) {
+        if (mightHoldTray(added[j])) { this.scheduleScan(); return true; }
+      }
+    }
+    return false;
+  };
+
+  function mightHoldTray(node) {
+    if (!node || node.nodeType !== 1) return false;
+    if (node.closest && node.closest(GRID_SELECTOR)) return false;
+    if (node.closest && node.closest(RADIO_SELECTOR) === node) return true;
+    return !!(node.querySelector && node.querySelector(RADIO_SELECTOR));
+  }
+
+  /** Tags the tray currently on the page, if any. Safe to call repeatedly.
+   * Looks only inside the known tray when there is one. */
+  P.scan = function () {
+    if (this.tray && !this.tray.isConnected) this.tray = null;
+    var radios = toArray((this.tray || document).querySelectorAll(RADIO_SELECTOR));
     if (radios.length < 2) return false;
     tagStatuses(radios);
     // Comment forms are only looked for inside the tray itself: falling back
     // to the whole page would restyle any other textarea + buttons on it
     // (the gradebook's own comment popover, say).
-    var tray = trayFor(radios[0]);
-    if (tray) tagCommentForms(tray);
+    this.tray = trayFor(radios[0]);
+    if (this.tray) tagCommentForms(this.tray);
     return true;
   };
 
@@ -133,7 +165,8 @@
     });
     editors.forEach(function (editor) {
       tagCommentForm(editor, tray);
-      if (editor.tagName !== 'TEXTAREA') tagWordCount(editor);
+      // Once found, the word count is not searched for again.
+      if (editor.tagName !== 'TEXTAREA' && !editor.querySelector('[data-cgp-tray-hide]')) tagWordCount(editor);
     });
   }
 
@@ -158,8 +191,11 @@
       while (target.parentElement && target.parentElement !== editor &&
              target.parentElement.children.length === 1) target = target.parentElement;
       setAttr(target, 'data-cgp-tray-hide', '');
-      var prev = target.previousElementSibling;
+      var sibs = target.parentElement ? toArray(target.parentElement.children) : [];
+      var prev = sibs[sibs.indexOf(target) - 1] || null;
+      // Never an aria-live region: it is empty until it has something to say.
       if (prev && !String(prev.textContent || '').trim() &&
+          !prev.getAttribute('aria-live') && !/^(status|alert|log)$/.test(prev.getAttribute('role') || '') &&
           !(prev.querySelector && prev.querySelector('button, svg, input, img'))) {
         setAttr(prev, 'data-cgp-tray-hide', '');
       }
@@ -189,7 +225,7 @@
       var kids = toArray(form.children);
       var at = kids.indexOf(child);
       for (var i = at + 1; i < kids.length; i++) {
-        if (isButtonBar(kids[i])) {
+        if (isButtonBar(kids[i]) && holdsOnly(form, [child, kids[i]])) {
           setAttr(form, 'data-cgp-tray-comment', '');
           setAttr(child, 'data-cgp-tray-comment-editor', '');
           setAttr(kids[i], 'data-cgp-tray-comment-actions', '');
@@ -210,12 +246,23 @@
     return false;
   }
 
+  /** True when every button and radio in `form` sits inside one of `parts`:
+   * a comment form is its editor and its buttons, nothing else - so a
+   * section that also holds the earlier comments, the statuses or a footer
+   * is never mistaken for one. */
+  function holdsOnly(form, parts) {
+    var stray = toArray(form.querySelectorAll('button, input[type="radio"]')).filter(function (b) {
+      return !parts.some(function (p) { return p.contains(b); });
+    });
+    return !stray.length;
+  }
+
   /** A row of a few buttons and nothing that takes input. */
   function isButtonBar(el) {
     var buttons = el.tagName === 'BUTTON' ? [el] : toArray(el.querySelectorAll('button'));
     if (!buttons.length || buttons.length > 3) return false;
-    if (el.querySelector && el.querySelector('textarea, input:not([type="hidden"]), iframe, ' + RCE_SELECTOR)) return false;
-    return true;
+    var fields = toArray(el.querySelectorAll('textarea, input, iframe, ' + RCE_SELECTOR));
+    return !fields.some(function (f) { return !(f.tagName === 'INPUT' && f.getAttribute('type') === 'hidden'); });
   }
 
   /* --------------------------------------------------------------- helpers */
