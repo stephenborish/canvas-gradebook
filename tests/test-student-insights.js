@@ -521,7 +521,7 @@ suite('student overview: profile tab', (test) => {
     a.eq(g[0].email, 'pat@home.net');
     a.eq(g[1].email, '');
     a.eq(g[0].lastLogin, undefined, 'Canvas didn’t say');
-    a.eq(si().guardiansFor([{ id: 1, name: 'P', last_login: null, observed_users: [{ id: 7 }] }], 7)[0].lastLogin, null, 'never logged in');
+    a.eq(si().guardiansFor([{ id: 1, name: 'P', last_login: null, observed_users: [{ id: 7 }] }], 7)[0].lastLogin, undefined, 'a null from Canvas is not "never"');
     a.deep(si().guardiansFor(null, 7), []);
   });
 
@@ -575,8 +575,18 @@ suite('student overview: profile tab', (test) => {
     const h2 = c.profilePanel('7', { name: 'Andrew Billings' }, withLogins);
     const when = si().lastActiveText(Date.parse(login), Date.now());
     a.ok(h2.includes('Last Canvas login</dt><dd>' + when), 'student login shown');
-    a.ok(h2.includes('Last Canvas login: ' + when) && h2.includes('Last Canvas login: Never'), 'each parent’s login');
-    a.ok(!h2.includes('didn’t share when'), 'no note when every parent is known');
+    a.ok(h2.includes('Last Canvas login: ' + when), 'a parent’s login');
+    a.ok(!h2.includes('Never'), 'a null last_login is not shown as Never');
+    a.ok(h2.includes('didn’t share when these parents'), 'the parent without a time is noted as unknown');
+    withLogins.profile.observers[1].last_login = login;
+    a.ok(!c.profilePanel('7', { name: 'A' }, withLogins).includes('didn’t share when'), 'no note when every parent is known');
+    const nullUser = JSON.parse(JSON.stringify(parts));
+    nullUser.profile.user.last_login = null;
+    a.ok(nullUser && c.profilePanel('7', { name: 'A' }, nullUser).includes('Not shared with you by Canvas'), 'student null without recent_students: unknown, not Never');
+    nullUser.profile.recent = [{ id: 7, last_login: login }];
+    a.ok(c.profilePanel('7', { name: 'A' }, nullUser).includes('Last Canvas login</dt><dd>' + when), 'student null record falls back to recent_students');
+    nullUser.profile.recent = [{ id: 7, last_login: null }];
+    a.ok(c.profilePanel('7', { name: 'A' }, nullUser).includes('Last Canvas login</dt><dd>Never'), 'Never only when recent_students says so');
     const viaRecent = JSON.parse(JSON.stringify(parts));
     viaRecent.profile.recent = [{ id: 8, last_login: '2026-01-01T00:00:00Z' }, { id: 7, last_login: login }];
     a.ok(c.profilePanel('7', { name: 'A' }, viaRecent).includes('Last Canvas login</dt><dd>' + when), 'from recent_students');
