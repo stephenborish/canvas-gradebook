@@ -123,7 +123,13 @@
         this.api.assignmentGroups(this.courseId).catch(function () { return []; }),
         this.api.course(this.courseId).catch(function () { return null; })
       ]).then(function (r) {
-        self._courseName = (r[1] && (r[1].name || r[1].course_code)) || '';
+        // Studio names its course after the Canvas course's real name;
+        // `name` is the teacher's nickname for the course when one is set.
+        var c = r[1] || {};
+        self._courseNames = [c.original_name, c.name, c.course_code].filter(function (n, i, all) {
+          return n && all.indexOf(n) === i;
+        });
+        self._courseName = self._courseNames[0] || '';
         return { groups: r[0] || [], weighted: !!(r[1] && r[1].apply_assignment_group_weights) };
       });
     }
@@ -276,7 +282,7 @@
     Promise.all([this.courseInfo(), this.rosterEmails(), this.courseIndex()]).then(function (r) {
       if (!self._courseName) throw new Error('Couldn’t read this course’s name');
       var embeds = r[2] ? r[2].embeds : [];
-      return CGP.studioBridge.courseVideos(self.api, self.courseId, self._courseName, embeds).then(function (res) {
+      return CGP.studioBridge.courseVideos(self.api, self.courseId, self._courseNames, embeds).then(function (res) {
         // Where each video sits in Canvas, and the embedded ones Studio's
         // course list doesn't have.
         var joined = CGP.studioClass.joinEmbeds(res.videos || [], embeds);
@@ -1252,7 +1258,7 @@
     var rows = s.rows.map(function (v) {
       if (v.status === 'unknown') {
         return '<tr data-search="' + searchOf(v) + '"><td class="cgp-si__name-cell">' + esc(v.title) + placeHtml(v) + '</td>' +
-          '<td><span class="cgp-si__vstatus cgp-si__vstatus--unknown" title="Studio didn’t give this video’s viewers">' + labels.unknown + '</span></td>' +
+          '<td><span class="cgp-si__vstatus cgp-si__vstatus--unknown" title="Studio didn’t give this video’s viewers' + (v.errorStatus ? ' (Studio answered ' + esc(v.errorStatus) + ')' : '') + '">' + labels.unknown + '</span></td>' +
           '<td class="cgp-si__muted">–</td><td class="cgp-si__muted">–</td></tr>';
       }
       var pct = v.completion === null ? 0 : Math.round(v.completion * 100);
@@ -1272,7 +1278,9 @@
     return searchableSection(title, table + '<p class="cgp-si__note">From Studio’s Insights for each video in this course' +
       ', including videos embedded in its assignments, quizzes, discussions and pages' +
       (embedded ? ' (' + embedded + (embedded === 1 ? ' isn’t' : ' aren’t') + ' in Studio’s list for this course, e.g. copied from another class)' : '') +
-      '. “Watched” is at least ' + Math.round(CGP.studioClass.WATCHED_AT * 100) + '% of the video.' + esc(indexNote) + '</p>', esc(aside));
+      '. “Watched” is at least ' + Math.round(CGP.studioClass.WATCHED_AT * 100) + '% of the video.' +
+      (s.noCollection ? ' Studio has no course named “' + esc(this._courseName) + '”, so only the embedded videos are listed.' : '') +
+      esc(indexNote) + '</p>', esc(aside));
   };
 
   /* ----------------------------------------- what the student opened */

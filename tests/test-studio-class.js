@@ -104,6 +104,9 @@ suite('Studio videos for one student', (test) => {
     a.eq(sc().findCollection(COLLECTIONS, 'AP Biology - 1').id, 252);
     a.eq(sc().findCollection(COLLECTIONS, 'ap biology – 1').id, 252, 'case and dash style ignored');
     a.eq(sc().findCollection(COLLECTIONS, 'Chemistry'), null);
+    a.eq(sc().findCollection(COLLECTIONS, ['AP Biology - 1', 'AP Biology (Block 6)']).id, 252, 'real name first');
+    a.eq(sc().findCollection(COLLECTIONS, ['Chemistry', 'AP Biology - 1']).id, 252, 'falls back to the next name');
+    a.eq(sc().findCollection(COLLECTIONS, ['', null, 'Chemistry']), null);
   });
 
   test('reads a course’s videos from its tiles', () => {
