@@ -36,9 +36,10 @@
   var ROOT_CLASS = 'cgp-tray-tidy';
 
   function TrayLayoutController(ctx) {
+    var self = this;
     this.settings = ctx.settings;
     this.observer = null;
-    this.pending = false;
+    this.scheduleScan = CGP.util.rafBatch(function () { self.scan(); }, 'trayLayout');
   }
 
   var P = TrayLayoutController.prototype;
@@ -78,23 +79,17 @@
     this.observer = null;
   };
 
-  P.scheduleScan = function () {
-    if (this.pending) return;
-    this.pending = true;
-    var self = this;
-    var run = function () { self.pending = false; self.scan(); };
-    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
-    else setTimeout(run, 16);
-  };
-
   /** Tags the tray currently on the page, if any. Safe to call repeatedly. */
   P.scan = function (root) {
     var doc = root || document;
     var radios = toArray(doc.querySelectorAll(RADIO_SELECTOR));
     if (radios.length < 2) return false;
-    var tray = trayFor(radios[0]) || doc.body || doc;
     tagStatuses(radios);
-    tagCommentForms(tray);
+    // Comment forms are only looked for inside the tray itself: falling back
+    // to the whole page would restyle any other textarea + buttons on it
+    // (the gradebook's own comment popover, say).
+    var tray = trayFor(radios[0]);
+    if (tray) tagCommentForms(tray);
     return true;
   };
 
@@ -208,7 +203,7 @@
       }
       // Anything else after the editor at this level (a heading, the list of
       // earlier comments) means the buttons are not in this form's reach.
-      if (form === tray) break;
+      if (at < kids.length - 1 || form === tray) break;
       child = form;
       form = form.parentElement;
     }

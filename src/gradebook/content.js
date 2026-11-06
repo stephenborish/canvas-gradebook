@@ -164,7 +164,12 @@
 
     var requestPaint = function () { paint(); };
 
-    if (CGP.TrayLayoutController) new CGP.TrayLayoutController({ settings: settings }).start();
+    // Cosmetic only: a failure here must not stop the controllers below.
+    if (CGP.TrayLayoutController) {
+      try { new CGP.TrayLayoutController({ settings: settings }).start(); } catch (e) {
+        CGP.diag.error('trayLayout.startFailed', { message: String(e && e.message) });
+      }
+    }
 
     var cellActions = new CGP.CellActionsController({ adapter: adapter, settings: settings, courseId: courseId });
 
