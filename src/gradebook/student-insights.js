@@ -236,6 +236,7 @@
     }
     this._open = { uid: uid, gen: gen, parts: parts, draw: draw, data: data };
     if (this._tab === 'activity') this.loadContent();
+    if (this._tab === 'profile') this.loadProfile();
     var ready = this.model.ready ? Promise.resolve() : this.model.init();
     ready.then(function () {
       if (gen !== self._gen) return;
@@ -299,6 +300,38 @@
     }, function (err) {
       o.parts.studio = { error: (err && err.message) || 'Studio didn’t answer', code: err && err.code };
     }).then(function () { o.draw(); });
+  };
+
+  /* The Profile tab's facts, read once that tab is first shown: the
+   * student's Canvas user, their parents and guardians (the course's
+   * observers), the course's sections, their profile where Canvas allows,
+   * and their other classes with this teacher. Course-wide reads are shared
+   * by every student. A read Canvas refuses comes back null. */
+  P.loadProfile = function () {
+    var o = this._open;
+    if (!o || o.gen !== this._gen) return;
+    var d = o.data;
+    var api = this.api, cid = this.courseId, uid = o.uid;
+    var none = function () { return null; };
+    if (!this._observers) this._observers = api.courseObservers(cid).catch(none);
+    if (!this._sections) this._sections = api.courseSections(cid).catch(none);
+    if (!this._teaching) this._teaching = api.teachingCourses().catch(none);
+    if (!d.profile) {
+      d.profile = Promise.all([
+        api.courseUser(cid, uid).catch(none),
+        this._observers,
+        this._sections,
+        this.rosterEmails(),
+        api.userProfile(uid).catch(none),
+        api.userStudentEnrollments(uid).catch(none),
+        this._teaching
+      ]).then(function (r) {
+        return { user: r[0], observers: r[1], sections: r[2], emails: r[3], profile: r[4], enrollments: r[5], courses: r[6] };
+      });
+    }
+    if (o.profileLoading) return;
+    o.profileLoading = true;
+    d.profile.then(function (p) { o.parts.profile = p; o.draw(); });
   };
 
   /* Students' email addresses, to match them to Studio's viewers. */
@@ -414,6 +447,12 @@
     var tab = t.closest('[data-si-tab]');
     if (tab) { this.selectTab(tab.getAttribute('data-si-tab'), tab.getAttribute('data-si-filter')); return; }
     if (t.closest('[data-si-copy]')) { this.copyReport(); return; }
+    var copyText = t.closest('[data-si-copytext]');
+    if (copyText) {
+      var what = copyText.getAttribute('data-si-copytext');
+      CGP.ui.copy(what).then(function () { CGP.ui.toast('Copied ' + what); }, function () { CGP.ui.error('Couldn’t copy to the clipboard.'); });
+      return;
+    }
     if (t.closest('[data-si-share-open]')) { this.openShare(); return; }
     if (t.closest('[data-si-share-toggle]')) { this._share.open = !this._share.open; this.refreshShare(true); return; }
     var mode = t.closest('[data-si-share-mode]');
@@ -449,6 +488,7 @@
     });
     if (filter) this.applyFilter(filter);
     if (name === 'activity') this.loadContent();
+    if (name === 'profile') this.loadProfile();
     var body = this._root.querySelector('.cgp-si__body');
     if (body) body.scrollTop = 0;
   };
@@ -690,7 +730,8 @@
     var tabs = [
       ['overview', 'Overview', ''],
       ['work', 'Assignments', c.missing ? '<span class="cgp-si__badge cgp-si__badge--missing">' + c.missing + '</span>' : ''],
-      ['activity', 'Activity', '']
+      ['activity', 'Activity', ''],
+      ['profile', 'Profile', '']
     ];
     this._root.querySelector('.cgp-si__tabs').innerHTML = tabs.map(function (t) {
       var on = self._tab === t[0];
@@ -701,7 +742,8 @@
     body.innerHTML =
       this.panel('overview', this.overview(r)) +
       this.panel('work', this.work(r)) +
-      this.panel('activity', this.activityPanel(r));
+      this.panel('activity', this.activityPanel(r)) +
+      this.panel('profile', this.profilePanel(uid, student, parts));
     this.applyFilter(this._filter);
     body.scrollTop = keepScroll;
     if (searching) {
@@ -1281,6 +1323,102 @@
       '. “Watched” is at least ' + Math.round(CGP.studioClass.WATCHED_AT * 100) + '% of the video.' +
       (s.noCollection ? ' Studio has no course named “' + esc(this._courseName) + '”, so only the embedded videos are listed.' : '') +
       esc(indexNote) + '</p>', esc(aside));
+  };
+
+  /* ------------------------------------------------------ profile tab */
+
+  function mailLink(email) {
+    return '<a href="mailto:' + esc(email) + '">' + esc(email) + '</a>' +
+      ' <button type="button" class="cgp-si__copy" data-si-copytext="' + esc(email) + '" aria-label="Copy ' + esc(email) + '">Copy</button>';
+  }
+
+  function facts(rows) {
+    rows = rows.filter(function (r) { return r && r[1]; });
+    if (!rows.length) return '';
+    return '<dl class="cgp-si__facts">' + rows.map(function (r) {
+      return '<dt>' + esc(r[0]) + '</dt><dd>' + r[1] + '</dd>';
+    }).join('') + '</dl>';
+  }
+
+  function pct(n) { return typeof n === 'number' && isFinite(n) ? (Math.round(n * 10) / 10) + '%' : ''; }
+
+  P.profilePanel = function (uid, student, parts) {
+    var p = parts.profile;
+    if (p === undefined) {
+      return '<div class="cgp-si__loading" role="status"><span class="cgp-si__spinner" aria-hidden="true"></span>Reading this student’s profile from Canvas…</div>';
+    }
+    var user = p.user || {};
+    var prof = p.profile || {};
+    var cid = String(this.courseId);
+    var email = (p.emails && p.emails[uid]) || prof.primary_email || user.email || '';
+    var login = user.login_id || prof.login_id || '';
+    var year = SI().classYear([
+      { text: email, label: 'their school email' },
+      { text: login, label: 'their Canvas login' },
+      { text: user.sis_user_id, label: 'their SIS id' }
+    ], Date.now());
+    var sectionName = {};
+    (p.sections || []).forEach(function (s) { if (s && s.id !== undefined) sectionName[String(s.id)] = s.name || ''; });
+    var here = (user.enrollments || []).filter(function (e) { return e && String(e.course_id) === cid && e.type === 'StudentEnrollment'; });
+    var sections = here.map(function (e) { return sectionName[String(e.course_section_id)]; })
+      .filter(function (n, i, all) { return n && all.indexOf(n) === i; });
+    var since = here.map(function (e) { return e.created_at; }).filter(Boolean).sort()[0];
+    var fmtDate = function (iso) {
+      var t = Date.parse(iso);
+      return isFinite(t) ? new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+    };
+
+    var studentCard = section('Student', facts([
+      ['Name', esc(student.fullName || student.name || user.name || '') +
+        (student.sortableName && student.sortableName !== (student.fullName || student.name) ? ' <span class="cgp-si__muted">(' + esc(student.sortableName) + ')</span>' : '')],
+      ['Pronouns', esc(user.pronouns || prof.pronouns || '')],
+      ['Email', email ? mailLink(email) : ''],
+      ['Grade level', year ? 'Grade ' + year.grade + ' · Class of ' + year.classYear + ' <span class="cgp-si__muted">(read from ' + esc(year.from) + ')</span>' : ''],
+      ['Section', esc(sections.join(', '))],
+      ['Login', login && login !== email ? esc(login) : ''],
+      ['SIS ID', esc(user.sis_user_id || '')],
+      ['In course since', esc(fmtDate(since))],
+      ['Time zone', esc(prof.time_zone || '')],
+      ['Bio', esc(prof.bio || user.bio || '')]
+    ]) || '<p class="cgp-si__note">Canvas didn’t share this student’s details.</p>');
+
+    var guardians = p.observers ? SI().guardiansFor(p.observers, uid) : null;
+    var withEmail = (guardians || []).filter(function (g) { return g.email; }).map(function (g) { return g.email; });
+    var gBody;
+    if (guardians === null) gBody = '<p class="cgp-si__note">Canvas didn’t let you see this course’s parents and guardians (observers).</p>';
+    else if (!guardians.length) gBody = '<p class="cgp-si__note">No parent or guardian is paired with this student in Canvas. They appear here once paired as an observer.</p>';
+    else {
+      gBody = '<ul class="cgp-si__people">' + guardians.map(function (g) {
+        return '<li><b>' + esc(g.name) + '</b>' + (g.pronouns ? ' <span class="cgp-si__muted">(' + esc(g.pronouns) + ')</span>' : '') +
+          '<span>' + (g.email ? mailLink(g.email) : '<span class="cgp-si__muted">No email shown in Canvas</span>') + '</span></li>';
+      }).join('') + '</ul>' +
+        (withEmail.length > 1 ? '<p class="cgp-si__line"><a href="mailto:' + esc(withEmail.join(',')) + '">' + (withEmail.length === 2 ? 'Email both' : 'Email all ' + withEmail.length) + '</a>' +
+          ' <button type="button" class="cgp-si__copy" data-si-copytext="' + esc(withEmail.join(', ')) + '">Copy all</button></p>' : '');
+    }
+    gBody += '<p class="cgp-si__note">Phone numbers and home addresses stay in the school’s student information system; Canvas doesn’t give them to teachers.</p>';
+    var guardianCard = section('Parents & guardians', gBody, guardians && guardians.length ? String(guardians.length) : '');
+
+    var g = (parts.enrollment && parts.enrollment.grades) || (here[0] && here[0].grades) || {};
+    var active = student.lastActivityAt ? SI().lastActiveText(Date.parse(student.lastActivityAt), Date.now()) : '';
+    var gradeCard = section('In this course', facts([
+      ['Current grade', g.current_score !== undefined && g.current_score !== null ? esc(pct(g.current_score)) + (g.current_grade ? ' · ' + esc(CGP.dashLetter(g.current_grade)) : '') : ''],
+      ['Counting ungraded work as 0', g.final_score !== undefined && g.final_score !== null ? esc(pct(g.final_score)) + (g.final_grade ? ' · ' + esc(CGP.dashLetter(g.final_grade)) : '') : ''],
+      ['Last active', esc(active || '')],
+      ['Time in course', student.totalActivityTime ? esc(SI().duration(student.totalActivityTime)) : '']
+    ]) || '<p class="cgp-si__note">No grade yet.</p>');
+
+    var names = {};
+    (p.courses || []).forEach(function (c) { if (c && c.id !== undefined) names[String(c.id)] = c.name || c.course_code || ''; });
+    var others = (p.enrollments || []).filter(function (e) { return e && String(e.course_id) !== cid && names[String(e.course_id)]; })
+      .filter(function (e, i, all) { return all.findIndex(function (x) { return String(x.course_id) === String(e.course_id); }) === i; });
+    var otherCard = others.length ? section('Also in your classes', '<ul class="cgp-si__people">' + others.map(function (e) {
+      var s = e.grades && e.grades.current_score;
+      return '<li><a href="/courses/' + esc(e.course_id) + '/grades/' + esc(uid) + '" target="_blank" rel="noopener">' + esc(names[String(e.course_id)]) + '</a>' +
+        '<span class="cgp-si__muted">' + (s !== undefined && s !== null ? esc(pct(s)) + (e.grades.current_grade ? ' · ' + esc(CGP.dashLetter(e.grades.current_grade)) : '') : 'No grade yet') + '</span></li>';
+    }).join('') + '</ul>') : '';
+
+    return '<div class="cgp-si__grid2 cgp-si__grid2--top">' + studentCard + guardianCard + '</div>' +
+      '<div class="cgp-si__grid2' + (otherCard ? '' : ' cgp-si__grid2--one') + '">' + gradeCard + otherCard + '</div>';
   };
 
   /* ----------------------------------------- what the student opened */
