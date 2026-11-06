@@ -1225,14 +1225,14 @@ html.cgp-on .slick-cell[data-cgp-col="total"] > .cgp-total-flag svg {
   overflow: visible;
   filter: drop-shadow(0 0 0.6px rgba(0, 0, 0, 0.75)) drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.3));
 }
-/* A Total column dragged down to its narrowest leaves less margin than the
- * icon needs: there it shrinks and moves to the very edge, so it never
- * covers the number. The cell's width is set by SlickGrid, never by its
- * content, so measuring it as a container changes nothing about its size. */
+/* A narrow Total column (a smaller screen, or one dragged narrow) leaves
+ * less margin than the icon needs. The icon keeps its size and place, the
+ * same on every computer, and the number there moves right, clear of it.
+ * The cell's width is set by SlickGrid, never by its content, so measuring
+ * it as a container changes nothing about its size. */
 html.cgp-on .slick-cell[data-cgp-col="total"][data-cgp-band] { container-type: inline-size; }
 @container (max-width: 104px) {
-  html.cgp-on .slick-cell[data-cgp-col="total"] > .cgp-total-flag { left: 2px !important; width: 13px !important; height: 13px !important; margin-top: -6.5px !important; }
-  html.cgp-on .slick-cell[data-cgp-col="total"] > .cgp-total-flag svg { width: 13px !important; height: 13px !important; }
+  html.cgp-on .slick-cell[data-cgp-col="total"]:has(> .cgp-total-flag) > .cgp-val { box-sizing: border-box !important; padding-left: 24px !important; }
 }
 
 /* The Total hover tooltip, on <body> so no grid pane clips it. */
