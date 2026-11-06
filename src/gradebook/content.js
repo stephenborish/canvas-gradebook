@@ -164,6 +164,8 @@
 
     var requestPaint = function () { paint(); };
 
+    if (CGP.TrayLayoutController) new CGP.TrayLayoutController({ settings: settings }).start();
+
     var cellActions = new CGP.CellActionsController({ adapter: adapter, settings: settings, courseId: courseId });
 
     var popover = new CGP.CommentPopoverController({
