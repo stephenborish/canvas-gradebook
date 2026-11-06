@@ -197,4 +197,44 @@ suite('CourseSwitcher & assignment breadcrumb integration', (test) => {
       globalThis.location = prevLocation;
     }
   });
+
+  test('Find student off the gradebook: beside Switch course, and a pick opens the gradebook even for this course', () => {
+    const CGP = loadGradebookDom();
+    const doc = domshim.install();
+    const FakeElement = domshim.FakeElement;
+    const prevLocation = globalThis.location;
+    const loc = { pathname: '/courses/379/assignments', origin: 'https://x.instructure.com', href: '' };
+    globalThis.location = loc;
+    const prevWindow = globalThis.window;
+    globalThis.window = Object.assign(Object.create(prevWindow || null), { location: loc });
+    try {
+      const nav = new FakeElement('nav');
+      nav.id = 'breadcrumbs';
+      doc.body.appendChild(nav);
+      const li0 = new FakeElement('li');
+      const a0 = new FakeElement('a');
+      a0.setAttribute('href', '/courses/379');
+      li0.appendChild(a0);
+      nav.appendChild(li0);
+      const settings = { values: { courseSwitcher: true, studentSearch: true } };
+      new CGP.CourseSwitcher({ api: {}, courseId: '379', settings, isGradebookPage: false }).start();
+      const search = new CGP.StudentSearch({ api: {}, courseId: '379', settings, isGradebookPage: false });
+      search.start();
+      const btn = doc.querySelector('.cgp-find-student');
+      a.ok(btn, 'Find student mounted on a non-gradebook course page');
+      const toggles = li0.querySelectorAll('.cgp-crumb-toggle');
+      a.ok(toggles.length === 2 && toggles[1] === btn, 'to the right of Switch course');
+      let revealed = false;
+      CGP.revealStudent = () => { revealed = true; };
+      search.go({ userId: '7', courseId: '379', name: 'A' });
+      a.not(revealed, 'not a scroll: there is no grid on this page');
+      a.eq(loc.href, '/courses/379/gradebook#cgp-student=7', 'the gradebook, scrolled to the student');
+      search.start();
+      a.eq(doc.querySelectorAll('.cgp-find-student').length, 1, 'starting again mounts nothing new');
+    } finally {
+      globalThis.location = prevLocation;
+      globalThis.window = prevWindow;
+      delete globalThis.CGP.revealStudent;
+    }
+  });
 });

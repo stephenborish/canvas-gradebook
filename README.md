@@ -350,8 +350,9 @@ exact submission rather than doing nothing.
 
 ### Find a student across every course you teach
 
-Next to the course switcher in the Canvas breadcrumb: **Find student**. Type a name, pick the
-student — the list shows which course each match is in — and Canvas opens that course's
+Next to the course switcher in the Canvas breadcrumb, on every page inside a course (the
+gradebook, Assignments, Modules, a page, the course home, ...): **Find student**. Type a name, pick
+the student — the list shows which course each match is in — and Canvas opens that course's
 gradebook with their row scrolled to and briefly highlighted. If the student is in the gradebook
 you're already looking at, it just scrolls there without reloading anything.
 
