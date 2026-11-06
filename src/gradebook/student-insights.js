@@ -236,6 +236,7 @@
     }
     this._open = { uid: uid, gen: gen, parts: parts, draw: draw, data: data };
     if (this._tab === 'activity') this.loadContent();
+    if (this._tab === 'work') this.ensureStudio();
     if (this._tab === 'profile') this.loadProfile();
     var ready = this.model.ready ? Promise.resolve() : this.model.init();
     ready.then(function () {
@@ -272,6 +273,15 @@
     o.loading = true;
     d.content.then(function (c) { o.parts.content = c; o.draw(); });
     d.pageViews.then(function (v) { o.parts.pageViews = v; o.draw(); });
+    this.ensureStudio();
+  };
+
+  /* Studio's videos, once per student shown: for the Activity tab's
+   * Studio videos and the Assignments tab's video column. */
+  P.ensureStudio = function () {
+    var o = this._open;
+    if (!o || o.gen !== this._gen || o.studioLoading) return;
+    o.studioLoading = true;
     this.loadStudio(o);
   };
 
@@ -479,6 +489,14 @@
       this.applyActivitySearch();
       return;
     }
+    var vplace = t.closest('[data-si-vplace]');
+    if (vplace) {
+      var vp = vplace.getAttribute('data-si-vplace');
+      this._videoPlace = vp;
+      this._root.querySelectorAll('[data-si-vplace]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-si-vplace') === vp)); });
+      this.applyActivitySearch();
+      return;
+    }
     var chip = t.closest('[data-si-filter-chip]');
     if (chip) { this.applyFilter(chip.getAttribute('data-si-filter-chip')); return; }
   };
@@ -496,6 +514,7 @@
     });
     if (filter) this.applyFilter(filter);
     if (name === 'activity') this.loadContent();
+    if (name === 'work') this.ensureStudio();
     if (name === 'profile') this.loadProfile();
     var body = this._root.querySelector('.cgp-si__body');
     if (body) body.scrollTop = 0;
@@ -527,6 +546,7 @@
     if (!this._root) return;
     var q = this._query || '';
     var kind = this._contentKind || 'all';
+    var vplace = this._videoPlace || 'all';
     var panel = this._root.querySelector('[data-si-panel="activity"]');
     if (!panel) return;
     panel.querySelectorAll('[data-si-nosearch]').forEach(function (el) { el.hidden = !!q.trim(); });
@@ -534,7 +554,9 @@
       var shown = 0;
       card.querySelectorAll('tbody tr[data-search]').forEach(function (tr) {
         var k = tr.getAttribute('data-kind');
-        var on = (!k || kind === 'all' || k === kind) && SI().matchesSearch(tr.getAttribute('data-search'), q);
+        var vp = tr.getAttribute('data-vplace');
+        var on = (!k || kind === 'all' || k === kind) && (vp === null || vplace === 'all' || vp.split(' ').indexOf(vplace) >= 0) &&
+          SI().matchesSearch(tr.getAttribute('data-search'), q);
         tr.hidden = !on;
         if (on) shown++;
       });
@@ -1075,6 +1097,10 @@
     var self = this;
     var uid = this._uid;
     var L = r.lists;
+    var videos = this.videosByAssignment(r);
+    var unwatched = function (i) {
+      return (videos[String(i.id)] || []).some(function (v) { return v.status === 'none' || v.status === 'partial'; });
+    };
     var chips = [
       ['all', 'All', r.items.length],
       ['missing', 'Missing', L.missing.length],
@@ -1082,7 +1108,8 @@
       ['submitted', 'Submitted', r.items.filter(function (i) { return i.submittedAt; }).length],
       ['needs', 'Needs grading', L.needsGrading.length],
       ['upcoming', 'Upcoming', r.counts.upcoming],
-      ['resub', 'Resubmitted', L.resubmitted.length]
+      ['resub', 'Resubmitted', L.resubmitted.length],
+      ['video', 'Video not watched', r.items.filter(unwatched).length]
     ];
     var chipHtml = '<div class="cgp-si__chips" role="toolbar" aria-label="Filter assignments">' + chips.map(function (c) {
       return '<button type="button" class="cgp-si__chip" data-si-filter-chip="' + c[0] + '" aria-pressed="' + (self._filter === c[0]) + '"' +
@@ -1096,7 +1123,8 @@
 
     var rows = r.items.slice().reverse().map(function (i) {
       var tags = [i.status === 'missing' ? 'missing' : '', i.status === 'late' ? 'late' : '', i.needsGrading ? 'needs' : '',
-        i.status === 'upcoming' ? 'upcoming' : '', i.attempt > 1 ? 'resub' : '', i.submittedAt ? 'submitted' : ''].filter(Boolean).join(' ');
+        i.status === 'upcoming' ? 'upcoming' : '', i.attempt > 1 ? 'resub' : '', i.submittedAt ? 'submitted' : '',
+        unwatched(i) ? 'video' : ''].filter(Boolean).join(' ');
       var st = STATUS[i.status];
       var submitted = i.submittedAt
         ? esc(fmtDate(i.submittedAt, true)) + (i.status === 'late' ? '<span class="cgp-si__sub cgp-si__sub--late">' + esc(SI().duration(i.secondsLate)) + ' late</span>'
@@ -1111,7 +1139,14 @@
         : fmtPct(i.classMedian, 0) + (diff === null ? '' : '<span class="cgp-si__delta cgp-si__delta--' + (diff >= 2 ? 'up' : diff <= -2 ? 'down' : 'flat') + '">' +
           (diff > 0 ? '+' : diff < 0 ? '−' : '±') + Math.abs(diff) + '</span>');
       var flags = '' + (i.needsGrading ? '<span class="cgp-si__pill cgp-si__pill--needs">Needs grading</span>' : '') +
-        (i.attempt > 1 ? '<span class="cgp-si__pill">Attempt ' + i.attempt + '</span>' : '');
+        (i.attempt > 1 ? '<span class="cgp-si__pill">Attempt ' + i.attempt + '</span>' : '') +
+        (videos[String(i.id)] || []).map(function (v) {
+          var pct = v.completion === null || v.completion === undefined ? null : Math.round(v.completion * 100);
+          var text = v.status === 'watched' ? 'Video watched' : v.status === 'partial' ? 'Video ' + pct + '% watched'
+            : v.status === 'none' ? 'Video not watched' : 'Video: no Studio data';
+          return '<span class="cgp-si__vstatus cgp-si__vstatus--' + v.status + ' cgp-si__vstatus--sm" title="' +
+            esc('Studio video “' + v.title + '”: ' + VIDEO_LABELS[v.status] + (pct !== null && v.status !== 'unknown' ? ' (' + pct + '%)' : '')) + '">' + esc(text) + '</span>';
+        }).join('');
       var link = self.workLink(i);
       var action = link
         ? '<a class="cgp-si__work' + (link.primary ? '' : ' cgp-si__work--quiet') + '" href="' + esc(link.href) + '" target="_blank" rel="noopener" title="' +
@@ -1276,6 +1311,25 @@
     return out;
   };
 
+  var VIDEO_LABELS = { none: 'Not watched', partial: 'Partly watched', watched: 'Watched', unknown: 'Unavailable' };
+
+  /* The Studio videos embedded in each assignment (its own description, or
+   * its quiz's or graded discussion's): {assignmentId: [video rows]}. */
+  P.videosByAssignment = function (r) {
+    var out = {};
+    var s = r.studio;
+    if (!s || !s.rows) return out;
+    s.rows.forEach(function (v) {
+      (v.places || []).forEach(function (p) {
+        var m = /\/assignments\/(\d+)$/.exec(p.url || '');
+        if (!m) return;
+        var list = out[m[1]] = out[m[1]] || [];
+        if (list.indexOf(v) < 0) list.push(v);
+      });
+    });
+    return out;
+  };
+
   P.studioPanel = function (r) {
     var s = r.studio;
     if (!s) return '';
@@ -1293,43 +1347,77 @@
     if (s.none) return section(title, '<p class="cgp-si__note">Studio has no course named ' + names + ', so there are no Studio videos to show.</p>');
     if (!s.rows.length) return section(title, '<p class="cgp-si__note">No Studio videos have been added to this course.</p>');
     var c = s.counts;
-    var labels = { none: 'Not watched', partial: 'Partly watched', watched: 'Watched', unknown: 'Unavailable' };
+    var labels = VIDEO_LABELS;
+    var ASSIGNED = { Assignment: 1, Quiz: 1, Discussion: 1 };
+    var placeTags = function (v) {
+      if (!r.indexKnown && (!v.places || !v.places.length)) return ['pending'];
+      var tags = [];
+      (v.places || []).forEach(function (p) {
+        var t = ASSIGNED[p.kind] ? 'assigned' : 'module';
+        if (tags.indexOf(t) < 0) tags.push(t);
+      });
+      return tags.length ? tags : ['unposted'];
+    };
     var placeHtml = function (v) {
-      if (!v.places || !v.places.length) return '';
-      return '<span class="cgp-si__where">In ' + v.places.slice(0, 3).map(function (p) {
-        var label = p.kind + ': ' + p.name + (p.modules && p.modules.length ? ' (' + p.modules.join(', ') + ')' : '');
-        return p.url ? '<a href="' + esc(p.url) + '" target="_blank" rel="noopener">' + esc(label) + '</a>' : esc(label);
-      }).join('; ') + (v.places.length > 3 ? '; +' + (v.places.length - 3) + ' more' : '') + '</span>';
+      if ((!v.places || !v.places.length) && !r.indexKnown) return '<span class="cgp-si__muted">Looking…</span>';
+      if (!v.places || !v.places.length) return '<span class="cgp-si__muted" title="In Studio’s list for this course, but not embedded in any assignment, quiz, discussion, page or module">Not posted in Canvas</span>';
+      return v.places.slice(0, 4).map(function (p) {
+        var name = esc(p.name || p.kind);
+        return '<span class="cgp-si__vplace"><span class="cgp-si__vkind">' + esc(p.kind) + '</span> ' +
+          (p.url ? '<a href="' + esc(p.url) + '" target="_blank" rel="noopener">' + name + '</a>' : name) +
+          (p.modules && p.modules.length && !(p.kind === 'Module' && p.modules.join(', ') === p.name) ? '<span class="cgp-si__where">' + esc(p.modules.join(', ')) + '</span>' : '') +
+          '</span>';
+      }).join('') + (v.places.length > 4 ? '<span class="cgp-si__muted">+' + (v.places.length - 4) + ' more</span>' : '');
     };
     var searchOf = function (v) {
       var bits = [v.title, 'video', 'studio', labels[v.status] || ''];
       (v.places || []).forEach(function (p) { bits.push(p.kind, p.name, (p.modules || []).join(' | ')); });
+      if (!v.places || !v.places.length) bits.push('not posted');
       return esc(bits.join(' | ').toLowerCase());
     };
-    var rows = s.rows.map(function (v) {
+    var tally = { all: s.rows.length, assigned: 0, module: 0, unposted: 0, pending: 0 };
+    var tagsOf = s.rows.map(function (v) { var t = placeTags(v); t.forEach(function (x) { tally[x]++; }); return t; });
+    var chips = [['all', 'All'], ['assigned', 'In assignments'], ['module', 'In modules & pages'], ['unposted', 'Not posted']].filter(function (ch) {
+      return ch[0] === 'all' || tally[ch[0]];
+    });
+    var showChips = chips.length > 2 || (chips.length === 2 && tally[chips[1][0]] !== tally.all);
+    // The last filter, unless its chip isn't shown here (nothing of that kind).
+    var vfilter = this._videoPlace || 'all';
+    if (!showChips || !chips.some(function (ch) { return ch[0] === vfilter; })) vfilter = this._videoPlace = 'all';
+    var rows = s.rows.map(function (v, n) {
+      var tags = tagsOf[n];
+      var on = vfilter === 'all' || tags.indexOf(vfilter) >= 0;
+      var open = '<tr data-vplace="' + tags.join(' ') + '" data-search="' + searchOf(v) + '"' + (on ? '' : ' hidden') + '>';
+      var where = '<td class="cgp-si__vplaces">' + placeHtml(v) + '</td>';
       if (v.status === 'unknown') {
-        return '<tr data-search="' + searchOf(v) + '"><td class="cgp-si__name-cell">' + esc(v.title) + placeHtml(v) + '</td>' +
+        return open + '<td class="cgp-si__name-cell">' + esc(v.title) + '</td>' + where +
           '<td><span class="cgp-si__vstatus cgp-si__vstatus--unknown" title="Studio didn’t give this video’s viewers' + (v.errorStatus ? ' (Studio answered ' + esc(v.errorStatus) + ')' : '') + '">' + labels.unknown + '</span></td>' +
           '<td class="cgp-si__muted">–</td><td class="cgp-si__muted">–</td></tr>';
       }
       var pct = v.completion === null ? 0 : Math.round(v.completion * 100);
-      return '<tr data-search="' + searchOf(v) + '">' +
-        '<td class="cgp-si__name-cell">' + esc(v.title) + (v.duration ? ' <span class="cgp-si__muted">' + esc(SI().duration(v.duration)) + '</span>' : '') + placeHtml(v) + '</td>' +
+      return open +
+        '<td class="cgp-si__name-cell">' + esc(v.title) + (v.duration ? ' <span class="cgp-si__muted">' + esc(SI().duration(v.duration)) + '</span>' : '') + '</td>' + where +
         '<td><span class="cgp-si__vstatus cgp-si__vstatus--' + v.status + '">' + labels[v.status] + '</span></td>' +
         '<td><div class="cgp-si__vmeter"><div class="cgp-si__track"><span class="cgp-si__fill" style="width:' + pct + '%"></span></div><b>' + pct + '%</b></div></td>' +
         '<td class="cgp-si__muted" title="Students in the class who watched any of it">' + v.classWatched + ' in class</td>' +
         '</tr>';
     }).join('');
-    var table = '<div class="cgp-si__table-wrap cgp-si__table-wrap--content"><table class="cgp-si__table cgp-si__table--content"><thead><tr>' +
-      '<th>Video</th><th>Status</th><th>Watched</th><th>Class</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+    var chipHtml = showChips
+      ? '<div class="cgp-si__chips cgp-si__chips--content" role="group" aria-label="Show videos by where they’re posted">' + chips.map(function (ch) {
+        return '<button type="button" class="cgp-si__chip" data-si-vplace="' + ch[0] + '" aria-pressed="' + (vfilter === ch[0]) + '">' + esc(ch[1]) + ' <b>' + tally[ch[0]] + '</b></button>';
+      }).join('') + '</div>'
+      : '';
+    var table = chipHtml + '<div class="cgp-si__table-wrap cgp-si__table-wrap--content"><table class="cgp-si__table cgp-si__table--content"><thead><tr>' +
+      '<th>Video</th><th>Posted in</th><th>Status</th><th>Watched</th><th>Class</th></tr></thead><tbody>' + rows + '</tbody></table>' +
       '<p class="cgp-si__table-empty cgp-si__note" hidden>No videos match.</p></div>';
     var aside = c.watched + ' watched · ' + c.partial + ' partly · ' + c.none + ' not watched' + (c.unknown ? ' · ' + c.unknown + ' unavailable' : '');
     var embedded = s.rows.filter(function (v) { return v.embeddedOnly; }).length;
     var indexNote = !r.indexKnown ? ' Looking for videos embedded in assignments and pages…' : '';
     return searchableSection(title, table + '<p class="cgp-si__note">From Studio’s Insights for each video in this course' +
-      ', including videos embedded in its assignments, quizzes, discussions and pages' +
+      ', including videos embedded in its assignments, quizzes, discussions, pages and modules' +
       (embedded ? ' (' + embedded + (embedded === 1 ? ' isn’t' : ' aren’t') + ' in Studio’s list for this course, e.g. copied from another class)' : '') +
       '. “Watched” is at least ' + Math.round(CGP.studioClass.WATCHED_AT * 100) + '% of the video.' +
+      (c.unknown ? ' “Unavailable” means Studio didn’t give that video’s viewers.' : '') +
       (s.noCollection ? ' Studio has no course named ' + names + ', so only the embedded videos are listed.' : '') +
       esc(indexNote) + '</p>', esc(aside));
   };
@@ -1394,18 +1482,31 @@
       return isFinite(t) ? new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
     };
 
+    // The student's name as Canvas has it, with the name they go by
+    // (Canvas's display name) in brackets when it differs.
+    var fullName = student.fullName || user.name || student.name || '';
+    var nick = user.short_name || student.name || '';
+    var norm = CGP.studioClass ? CGP.studioClass.normName : function (n) { return String(n || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
+    // Not when every word of it is already in the name ("Thomas (Tommy) Tegler").
+    var fullWords = norm(fullName).split(' ');
+    var showNick = !!norm(nick) && !norm(nick).split(' ').every(function (w) { return fullWords.indexOf(w) >= 0; });
+
+    var g = (parts.enrollment && parts.enrollment.grades) || (here[0] && here[0].grades) || {};
+    var active = student.lastActivityAt ? SI().lastActiveText(Date.parse(student.lastActivityAt), Date.now()) : '';
     var studentCard = section('Student', facts([
-      ['Name', esc(student.fullName || student.name || user.name || '') +
-        (student.sortableName && student.sortableName !== (student.fullName || student.name) ? ' <span class="cgp-si__muted">(' + esc(student.sortableName) + ')</span>' : '')],
-      ['Pronouns', esc(user.pronouns || prof.pronouns || '')],
-      ['Last Canvas login', studentLogin === undefined ? '<span class="cgp-si__muted">Not shared with you by Canvas</span>' : esc(loginText(studentLogin))],
+      ['Name', esc(fullName) + (showNick ? ' <span class="cgp-si__muted">(' + esc(nick) + ')</span>' : '')],
       ['Email', email ? mailLink(email) : ''],
-      ['Grade level', year ? 'Grade ' + year.grade + ' · Class of ' + year.classYear + ' <span class="cgp-si__muted">(read from ' + esc(year.from) + ')</span>' : ''],
       ['Section', esc(sections.join(', '))],
-      ['Login', login && login !== email ? esc(login) : ''],
-      ['SIS ID', esc(user.sis_user_id || '')],
       ['In course since', esc(fmtDate(since))],
       ['Time zone', esc(prof.time_zone || '')],
+      ['Last Canvas login', studentLogin === undefined ? '<span class="cgp-si__muted">Not shared with you by Canvas</span>' : esc(loginText(studentLogin))],
+      ['Last active in course', esc(active || '')],
+      ['Current grade', g.current_score !== undefined && g.current_score !== null ? esc(pct(g.current_score)) + (g.current_grade ? ' · ' + esc(CGP.dashLetter(g.current_grade)) : '') : ''],
+      ['Total time in course', student.totalActivityTime ? esc(SI().duration(student.totalActivityTime)) : ''],
+      ['Pronouns', esc(user.pronouns || prof.pronouns || '')],
+      ['Grade level', year ? 'Grade ' + year.grade + ' · Class of ' + year.classYear + ' <span class="cgp-si__muted">(read from ' + esc(year.from) + ')</span>' : ''],
+      ['Login', login && login !== email ? esc(login) : ''],
+      ['SIS ID', esc(user.sis_user_id || '')],
       ['Bio', esc(prof.bio || user.bio || '')]
     ]) || '<p class="cgp-si__note">Canvas didn’t share this student’s details.</p>');
 
@@ -1422,20 +1523,10 @@
       }).join('') + '</ul>' +
         (guardians.some(function (x) { return x.lastLogin === undefined; }) ? '<p class="cgp-si__note">Canvas didn’t share when ' +
           (guardians.length === 1 ? 'this parent' : 'these parents') + ' last logged in.</p>' : '') +
-        (withEmail.length > 1 ? '<p class="cgp-si__line"><a href="mailto:' + esc(withEmail.join(',')) + '">' + (withEmail.length === 2 ? 'Email both' : 'Email all ' + withEmail.length) + '</a>' +
-          ' <button type="button" class="cgp-si__copy" data-si-copytext="' + esc(withEmail.join(', ')) + '">Copy all</button></p>' : '');
+        (withEmail.length > 1 ? '<p class="cgp-si__line"><button type="button" class="cgp-si__copy" data-si-copytext="' + esc(withEmail.join(', ')) + '">Copy all</button></p>' : '');
     }
     gBody += '<p class="cgp-si__note">Phone numbers and home addresses stay in the school’s student information system; Canvas doesn’t give them to teachers.</p>';
     var guardianCard = section('Parents & guardians', gBody, guardians && guardians.length ? String(guardians.length) : '');
-
-    var g = (parts.enrollment && parts.enrollment.grades) || (here[0] && here[0].grades) || {};
-    var active = student.lastActivityAt ? SI().lastActiveText(Date.parse(student.lastActivityAt), Date.now()) : '';
-    var gradeCard = section('In this course', facts([
-      ['Current grade', g.current_score !== undefined && g.current_score !== null ? esc(pct(g.current_score)) + (g.current_grade ? ' · ' + esc(CGP.dashLetter(g.current_grade)) : '') : ''],
-      ['Counting ungraded work as 0', g.final_score !== undefined && g.final_score !== null ? esc(pct(g.final_score)) + (g.final_grade ? ' · ' + esc(CGP.dashLetter(g.final_grade)) : '') : ''],
-      ['Last active', esc(active || '')],
-      ['Time in course', student.totalActivityTime ? esc(SI().duration(student.totalActivityTime)) : '']
-    ]) || '<p class="cgp-si__note">No grade yet.</p>');
 
     var names = {};
     (p.courses || []).forEach(function (c) { if (c && c.id !== undefined) names[String(c.id)] = c.name || c.course_code || ''; });
@@ -1447,8 +1538,7 @@
         '<span class="cgp-si__muted">' + (s !== undefined && s !== null ? esc(pct(s)) + (e.grades.current_grade ? ' · ' + esc(CGP.dashLetter(e.grades.current_grade)) : '') : 'No grade yet') + '</span></li>';
     }).join('') + '</ul>') : '';
 
-    return '<div class="cgp-si__grid2 cgp-si__grid2--top">' + studentCard + guardianCard + '</div>' +
-      '<div class="cgp-si__grid2' + (otherCard ? '' : ' cgp-si__grid2--one') + '">' + gradeCard + otherCard + '</div>';
+    return '<div class="cgp-si__grid2 cgp-si__grid2--top">' + studentCard + guardianCard + '</div>' + otherCard;
   };
 
   /* ----------------------------------------- what the student opened */

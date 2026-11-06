@@ -3,7 +3,8 @@
  * The problem this solves: a teacher knows a student's name but not which of
  * their six gradebooks that student is in, so finding one grade to fix means
  * opening courses one at a time until the name turns up. Here they type the
- * name once, in the breadcrumb next to the course switcher, and pick the
+ * name once, in the breadcrumb next to the course switcher (on any course
+ * page, not only the gradebook), and pick the
  * student-in-a-course they want; Canvas loads that gradebook and the row is
  * scrolled to and briefly highlighted on arrival.
  *
@@ -37,6 +38,9 @@
     this.api = ctx.api;
     this.courseId = String(ctx.courseId);
     this.settings = ctx.settings;
+    // Off the gradebook (Assignments, Modules, a course's home...), picking a
+    // student always loads their gradebook, this course's included.
+    this.isGradebookPage = ctx.isGradebookPage !== false;
     this.menu = null;
     this.toggle = null;
     this.index = null;        // [{userId, name, sortName, courseId, courseName, term}]
@@ -51,9 +55,23 @@
 
   P.start = function () {
     if (!this.settings.values.studentSearch) return;
-    var anchor = this.findAnchor();
-    if (!anchor) { CGP.diag.warn('studentSearch.noBreadcrumb'); return; }
     if (document.querySelector('.cgp-find-student')) return;
+    var anchor = this.findAnchor();
+    if (!anchor) {
+      // About five seconds, as for the course switcher: a course home page
+      // mounts its breadcrumb later than the gradebook does.
+      this._retryCount = (this._retryCount || 0) + 1;
+      if (this._retryCount <= 20) {
+        var selfRetry = this;
+        setTimeout(function () { selfRetry.start(); }, 250);
+        return;
+      }
+      // A later start() (the setting turned back on) gets a fresh five seconds.
+      this._retryCount = 0;
+      CGP.diag.warn('studentSearch.noBreadcrumb');
+      return;
+    }
+    this._retryCount = 0;
 
     var btn = document.createElement('button');
     btn.type = 'button';
@@ -93,6 +111,7 @@
     for (var i = 0; i < links.length; i++) {
       var href = (links[i].getAttribute('href') || '').split(/[?#]/)[0];
       if (/\/courses\/\d+\/?$/.test(href)) {
+        if (isSwitcher(links[i].nextElementSibling)) return links[i].nextElementSibling;
         // Course switcher is off, so nothing has tagged this crumb yet - do
         // it here instead. See course-switcher.js for why: without it, this
         // button can wrap onto its own line, out of alignment with the
@@ -111,8 +130,18 @@
         return links[i];
       }
     }
+    // The course home page: the course name is the current crumb, as plain text.
+    var home = CGP.CourseSwitcher && CGP.CourseSwitcher.prototype.findHomeCrumb
+      ? CGP.CourseSwitcher.prototype.findHomeCrumb.call(this) : null;
+    if (home) {
+      return isSwitcher(home.nextElementSibling) ? home.nextElementSibling : home;
+    }
     return links.length ? links[0] : null;
   };
+
+  function isSwitcher(el) {
+    return !!(el && el.classList && el.classList.contains('cgp-crumb-toggle') && !el.classList.contains('cgp-find-student'));
+  }
 
   P.isOpen = function () { return !!(this.menu && this.menu.classList.contains('cgp-course-menu--on')); };
 
@@ -334,7 +363,7 @@
         '<span class="cgp-course-menu__name">' + esc(row.name) + '</span>' +
         '<span class="cgp-course-menu__term">' + esc(row.courseName) +
         (row.term ? ' \u00b7 ' + esc(row.term) : '') +
-        (here ? ' \u00b7 this gradebook' : '') + '</span>' +
+        (here ? (self.isGradebookPage ? ' \u00b7 this gradebook' : ' \u00b7 this course') : '') + '</span>' +
         '</div>';
     }).join('') + noteHtml;
     var active = box.querySelector('.is-active');
@@ -345,7 +374,7 @@
     this.close();
     var target = '/courses/' + encodeURIComponent(hit.courseId) + '/gradebook' + HASH_PREFIX + encodeURIComponent(hit.userId);
     CGP.diag.bump('studentSearch.jumps');
-    if (hit.courseId === this.courseId) {
+    if (hit.courseId === this.courseId && this.isGradebookPage) {
       // Already here: no reason to reload the whole gradebook just to scroll.
       if (CGP.revealStudent) CGP.revealStudent(hit.userId);
       else window.location.href = target;

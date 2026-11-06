@@ -626,7 +626,7 @@
 
   /* Every other page inside a course - Assignments, Modules, Discussions, a
    * single student's Grades, wherever - gets only the breadcrumb course
-   * switcher, not the gradebook grid. Canvas already renders the same
+   * switcher and Find student, not the gradebook grid. Canvas already renders the same
    * course-name breadcrumb on every one of these pages, so the same "Switch
    * course" control belongs on all of them, not only on the gradebook: a
    * teacher moving between courses is just as often starting from an
@@ -683,7 +683,12 @@
     // and does nothing at all while the setting is off) so flipping the
     // setting on in the options page takes effect without a reload, the same
     // way the full gradebook page already behaves on a settings change.
-    CGP.settings.onChange(function () { switcher.start(); });
+    // Find student, beside Switch course, on every course page too; picking a
+    // student opens their gradebook. Started after the switcher so it seats
+    // to the right of it.
+    var studentSearch = CGP.StudentSearch ? new CGP.StudentSearch({ api: api, courseId: courseId, settings: settings, isGradebookPage: false }) : null;
+    if (studentSearch) studentSearch.start();
+    CGP.settings.onChange(function () { switcher.start(); if (studentSearch) studentSearch.start(); });
     startSectionCopy(api, courseId);
     startSettingsMirror(api);
     // Period shortcuts in Canvas's Assign To "Time" boxes. Always listening;

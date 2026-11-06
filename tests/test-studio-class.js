@@ -180,4 +180,39 @@ suite('Studio videos for one student', (test) => {
     a.eq(all.rows[0].classWatched, 4);
     a.eq(mine.rows[0].classWatched, 1);
   });
+
+  test('an embed that is the same video as one in Studio’s course list is folded into it, not listed twice', () => {
+    const viewers = sc().viewersFrom(USERS);
+    const course = { uuid: 'course-p', mediaId: 41, title: 'Biological Molecules', viewers: viewers.slice(0, 2) };
+    const viaMedia = { uuid: 'embed-x', title: 'Biological Molecules', embeddedOnly: true,
+      viewers: [{ id: '234', name: 'Thomas (Tommy) Tegler', email: 'ttegler07@school.org', roles: ['Student'], teacher: false, completion: 0.5 },
+        { id: '466', name: 'Zach', email: 'zfellman09@school.org', roles: ['Student'], teacher: false, completion: 0.95 }] };
+    const errored = { uuid: 'embed-y', title: 'biological molecules', embeddedOnly: true, viewers: [], error: 'unavailable', errorStatus: 404 };
+    const other = { uuid: 'embed-z', title: 'Something else', embeddedOnly: true, viewers: [], error: 'unavailable' };
+    const out = sc().foldEmbeds([course, viaMedia, errored, other], { 'embed-x': 'course-p' });
+    a.deep(out.map((v) => v.uuid), ['course-p', 'embed-z'], 'the media’s own embed, and an unreadable one with the same title, fold in');
+    a.deep(out[0].aliases, ['embed-x', 'embed-y']);
+    const by = Object.fromEntries(out[0].viewers.map((v) => [v.email, v.completion]));
+    a.eq(by['ttegler07@school.org'], 1, 'the most watched in either embed');
+    a.eq(by['zfellman09@school.org'], 0.95, 'a viewer only in the embed is kept');
+    const joined = sc().joinEmbeds(out, [{ uuid: 'embed-x', title: 'Biological Molecules', place: { kind: 'Assignment', name: 'HW', url: '/courses/1/assignments/5', modules: [] } }]);
+    a.eq(joined.missing.length, 0, 'an alias places the course video');
+    a.eq(joined.videos[0].places[0].name, 'HW');
+  });
+
+  test('two course videos with the same title: an unreadable embed is not guessed into either', () => {
+    const out = sc().foldEmbeds([{ uuid: 'a', title: 'Intro' }, { uuid: 'b', title: 'Intro' }, { uuid: 'x', title: 'Intro', embeddedOnly: true, error: 'unavailable' }], {});
+    a.eq(out.length, 3);
+  });
+
+  test('the same video under the same title in two modules is two places', () => {
+    const place = (url, mod) => ({ uuid: 'v1', title: 'Review video', place: { kind: 'Module', name: 'Review video', url, modules: [mod] } });
+    const j = sc().joinEmbeds([{ uuid: 'v1', title: 'Review video' }], [
+      place('/courses/1/modules/items/10', 'Unit 1'), place('/courses/1/modules/items/20', 'Unit 2'),
+      place('/courses/1/modules/items/20', 'Unit 2')
+    ]);
+    a.deep(j.videos[0].places.map((p) => p.modules[0]), ['Unit 1', 'Unit 2'], 'both modules kept, a repeat once');
+    const noIds = sc().joinEmbeds([{ uuid: 'v1', title: 'Review video' }], [place('/courses/1/modules', 'Unit 1'), place('/courses/1/modules', 'Unit 2')]);
+    a.deep(noIds.videos[0].places.map((p) => p.modules), [['Unit 1', 'Unit 2']], 'one address: its modules merged');
+  });
 });

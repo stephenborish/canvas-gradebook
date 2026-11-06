@@ -118,7 +118,8 @@
   var ALLOWED = [
     /^\/api\/media_management\/collections$/,
     /^\/api\/media_management\/collections\/\d+\/tiles$/,
-    /^\/api\/media_management\/perspectives\/[A-Za-z0-9_-]+\/insights\/users$/
+    /^\/api\/media_management\/perspectives\/[A-Za-z0-9_-]+\/insights\/users$/,
+    /^\/api\/media_management\/media\/\d+\/perspectives$/
   ];
   var ASK = 'cgp-studio-req';
   var ANSWER = 'cgp-studio-res';

@@ -159,9 +159,39 @@
         }).then(worker);
       }
       return Promise.all([worker(), worker(), worker()]).then(function () {
-        return { collection: col ? { id: col.id, name: col.name } : null, videos: videos };
+        return embedAliases(videos);
+      }).then(function (aliasOf) {
+        return { collection: col ? { id: col.id, name: col.name } : null, videos: SC().foldEmbeds(videos, aliasOf) };
       });
     });
+  }
+
+  /* Which of the course's own videos each embedded-only video is: the
+   * embed ids (perspectives) of every course video's media, read only while
+   * some embed is still unplaced. {embedUuid: courseVideoUuid}; a read
+   * Studio refuses is skipped. */
+  function embedAliases(videos) {
+    var aliasOf = Object.create(null);
+    var open = Object.create(null), left = 0;
+    videos.forEach(function (v) { if (v.embeddedOnly && !open[v.uuid]) { open[v.uuid] = true; left++; } });
+    // The course videos titled like an unplaced embed first: usually the match.
+    var titles = Object.create(null);
+    videos.forEach(function (v) { if (v.embeddedOnly) titles[SC().normName(v.title)] = true; });
+    var course = videos.filter(function (v) { return !v.embeddedOnly && v.mediaId; });
+    course = course.filter(function (v) { return titles[SC().normName(v.title)]; })
+      .concat(course.filter(function (v) { return !titles[SC().normName(v.title)]; }));
+    if (!left || !course.length) return Promise.resolve(aliasOf);
+    var i = 0;
+    function worker() {
+      if (i >= course.length || !left) return Promise.resolve();
+      var v = course[i++];
+      return studioGet('/api/media_management/media/' + encodeURIComponent(v.mediaId) + '/perspectives').then(function (data) {
+        SC().perspectivesFrom(data).forEach(function (p) {
+          if (open[p.uuid] && !aliasOf[p.uuid]) { aliasOf[p.uuid] = v.uuid; left--; }
+        });
+      }, function () { /* skip */ }).then(worker);
+    }
+    return Promise.all([worker(), worker(), worker()]).then(function () { return aliasOf; });
   }
 
   function onCanvasAsk(d) {

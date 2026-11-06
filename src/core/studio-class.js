@@ -199,6 +199,7 @@
       var d = t.data, m = d.media || {};
       return {
         uuid: String(d.id),
+        mediaId: num(m.id) || num(d.media_id),
         title: String(d.title || m.title || 'Untitled video'),
         duration: num(m.duration),
         thumbnail: m.thumbnail_url || null,
@@ -323,6 +324,8 @@
     var list = (videos || []).map(function (v) {
       var c = Object.assign({}, v, { places: (v.places || []).slice() });
       byId[c.uuid] = c;
+      // Embeds folded into this video (foldEmbeds) are placed on it too.
+      (c.aliases || []).forEach(function (a) { if (!byId[a]) byId[a] = c; });
       return c;
     });
     var missing = [], missingById = Object.create(null);
@@ -334,9 +337,74 @@
         missing.push(target);
       }
       if (!target.title && e.title) target.title = e.title;
-      if (e.place && !target.places.some(function (p) { return p.kind === e.place.kind && p.name === e.place.name; })) target.places.push(e.place);
+      if (!e.place) return;
+      // One entry per place: the same kind, name and address. Two module
+      // items with the same title in different modules are two places; the
+      // same place reached twice keeps every module it sits in.
+      var same = target.places.filter(function (p) {
+        return p.kind === e.place.kind && p.name === e.place.name && (p.url || '') === (e.place.url || '');
+      })[0];
+      if (!same) { target.places.push(Object.assign({}, e.place, { modules: (e.place.modules || []).slice() })); return; }
+      (e.place.modules || []).forEach(function (m) {
+        same.modules = same.modules || [];
+        if (same.modules.indexOf(m) < 0) same.modules.push(m);
+      });
     });
     return { videos: list, missing: missing };
+  }
+
+  /* Two viewer lists of the same video as one: each person once, with the
+   * most of it they watched in either. */
+  function mergeViewers(a, b) {
+    var out = [], at = Object.create(null);
+    (a || []).concat(b || []).forEach(function (v) {
+      if (!v) return;
+      var k = v.email ? 'e:' + v.email : v.id ? 'i:' + v.id : 'n:' + plainName(v.name);
+      var have = at[k];
+      if (!have) { at[k] = Object.assign({}, v); out.push(at[k]); return; }
+      if (v.completion !== null && (have.completion === null || v.completion > have.completion)) have.completion = v.completion;
+    });
+    return out;
+  }
+
+  /* The same video, once. A video embedded in an assignment or module often
+   * carries another embed id (perspective) than the one in Studio's list
+   * for this course - an embed copied with the course from another class,
+   * or added from the teacher's own library - and Studio records this
+   * class's watching under the course's own perspective. Each such embed
+   * is folded into the course's video it belongs to: aliasOf
+   * ({embedUuid: courseVideoUuid}, from the media's list of perspectives),
+   * else - only for an embed whose viewers Studio didn't give - the one
+   * course video with exactly its title. The video keeps the embed ids as
+   * `aliases`, and the viewers of both. */
+  function foldEmbeds(videos, aliasOf) {
+    aliasOf = aliasOf || {};
+    var byId = Object.create(null), byTitle = Object.create(null);
+    (videos || []).forEach(function (v) {
+      if (!v || v.embeddedOnly) return;
+      byId[v.uuid] = v;
+      var t = normName(v.title);
+      if (t) byTitle[t] = byTitle[t] === undefined ? v : null;
+    });
+    var out = [];
+    (videos || []).forEach(function (v) {
+      if (!v) return;
+      if (!v.embeddedOnly) { out.push(v); return; }
+      var target = byId[aliasOf[v.uuid]] || null;
+      if (!target && v.error) target = byTitle[normName(v.title)] || null;
+      if (!target) { out.push(v); return; }
+      target.aliases = (target.aliases || []).concat([v.uuid]);
+      if (!v.error) {
+        if (target.error) {
+          target.viewers = (v.viewers || []).slice();
+          delete target.error;
+          delete target.errorStatus;
+        } else {
+          target.viewers = mergeViewers(target.viewers, v.viewers);
+        }
+      }
+    });
+    return out;
   }
 
   /* Plain text for pasting: one name per line, "First Last". */
@@ -359,6 +427,8 @@
     embedIdFromUrl: embedIdFromUrl,
     embedsFromHtml: embedsFromHtml,
     joinEmbeds: joinEmbeds,
+    foldEmbeds: foldEmbeds,
+    mergeViewers: mergeViewers,
     plainName: plainName,
     normName: normName
   };

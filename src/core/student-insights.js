@@ -969,7 +969,7 @@
           case 'ExternalTool':
           case 'ExternalUrl':
             var id = SC && SC.embedIdFromUrl(it.external_url || it.url || it.html_url || '');
-            if (id) moduleEmbeds.push({ uuid: id, title: String(it.title || ''), place: { kind: 'Module', name: mname || String(it.title || ''), url: base + '/modules', modules: mname ? [mname] : [] } });
+            if (id) moduleEmbeds.push({ uuid: id, title: String(it.title || ''), place: { kind: 'Module', name: String(it.title || '') || mname, url: base + '/modules' + (it.id !== undefined && it.id !== null ? '/items/' + it.id : ''), modules: mname ? [mname] : [] } });
             break;
           default: break;
         }
