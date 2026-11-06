@@ -316,6 +316,7 @@
     if (!this._observers) this._observers = api.courseObservers(cid).catch(none);
     if (!this._sections) this._sections = api.courseSections(cid).catch(none);
     if (!this._teaching) this._teaching = api.teachingCourses().catch(none);
+    if (!this._recent) this._recent = api.recentStudents(cid).catch(none);
     if (!d.profile) {
       d.profile = Promise.all([
         api.courseUser(cid, uid).catch(none),
@@ -324,9 +325,10 @@
         this.rosterEmails(),
         api.userProfile(uid).catch(none),
         api.userStudentEnrollments(uid).catch(none),
-        this._teaching
+        this._teaching,
+        this._recent
       ]).then(function (r) {
-        return { user: r[0], observers: r[1], sections: r[2], emails: r[3], profile: r[4], enrollments: r[5], courses: r[6] };
+        return { user: r[0], observers: r[1], sections: r[2], emails: r[3], profile: r[4], enrollments: r[5], courses: r[6], recent: r[7] };
       });
     }
     if (o.profileLoading) return;
@@ -1340,6 +1342,14 @@
     }).join('') + '</dl>';
   }
 
+  /* When someone last signed in to Canvas: "today at 2:13 PM",
+   * "on Mon, Nov 2 at 8:05 AM", "Never", or '' when Canvas didn't say. */
+  function loginText(v) {
+    if (v === undefined) return '';
+    var t = v ? Date.parse(v) : NaN;
+    return isFinite(t) ? SI().lastActiveText(t, Date.now()) : 'Never';
+  }
+
   function pct(n) { return typeof n === 'number' && isFinite(n) ? (Math.round(n * 10) / 10) + '%' : ''; }
 
   P.profilePanel = function (uid, student, parts) {
@@ -1357,6 +1367,13 @@
       { text: login, label: 'their Canvas login' },
       { text: user.sis_user_id, label: 'their SIS id' }
     ], Date.now());
+    // When they last signed in to Canvas anywhere: from their user record,
+    // else the course's recent_students list.
+    var studentLogin = 'last_login' in user ? (user.last_login || null) : undefined;
+    if (studentLogin === undefined && p.recent) {
+      var rec = p.recent.filter(function (s) { return s && String(s.id) === uid; })[0];
+      if (rec) studentLogin = rec.last_login || null;
+    }
     var sectionName = {};
     (p.sections || []).forEach(function (s) { if (s && s.id !== undefined) sectionName[String(s.id)] = s.name || ''; });
     var here = (user.enrollments || []).filter(function (e) { return e && String(e.course_id) === cid && e.type === 'StudentEnrollment'; });
@@ -1372,6 +1389,7 @@
       ['Name', esc(student.fullName || student.name || user.name || '') +
         (student.sortableName && student.sortableName !== (student.fullName || student.name) ? ' <span class="cgp-si__muted">(' + esc(student.sortableName) + ')</span>' : '')],
       ['Pronouns', esc(user.pronouns || prof.pronouns || '')],
+      ['Last Canvas login', studentLogin === undefined ? '<span class="cgp-si__muted">Not shared with you by Canvas</span>' : esc(loginText(studentLogin))],
       ['Email', email ? mailLink(email) : ''],
       ['Grade level', year ? 'Grade ' + year.grade + ' · Class of ' + year.classYear + ' <span class="cgp-si__muted">(read from ' + esc(year.from) + ')</span>' : ''],
       ['Section', esc(sections.join(', '))],
@@ -1390,8 +1408,11 @@
     else {
       gBody = '<ul class="cgp-si__people">' + guardians.map(function (g) {
         return '<li><b>' + esc(g.name) + '</b>' + (g.pronouns ? ' <span class="cgp-si__muted">(' + esc(g.pronouns) + ')</span>' : '') +
-          '<span>' + (g.email ? mailLink(g.email) : '<span class="cgp-si__muted">No email shown in Canvas</span>') + '</span></li>';
+          '<span>' + (g.email ? mailLink(g.email) : '<span class="cgp-si__muted">No email shown in Canvas</span>') + '</span>' +
+          (g.lastLogin !== undefined ? '<span class="cgp-si__people-sub">Last Canvas login: ' + esc(loginText(g.lastLogin)) + '</span>' : '') + '</li>';
       }).join('') + '</ul>' +
+        (guardians.some(function (x) { return x.lastLogin === undefined; }) ? '<p class="cgp-si__note">Canvas didn’t share when ' +
+          (guardians.length === 1 ? 'this parent' : 'these parents') + ' last logged in.</p>' : '') +
         (withEmail.length > 1 ? '<p class="cgp-si__line"><a href="mailto:' + esc(withEmail.join(',')) + '">' + (withEmail.length === 2 ? 'Email both' : 'Email all ' + withEmail.length) + '</a>' +
           ' <button type="button" class="cgp-si__copy" data-si-copytext="' + esc(withEmail.join(', ')) + '">Copy all</button></p>' : '');
     }

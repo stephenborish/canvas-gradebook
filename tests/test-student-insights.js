@@ -520,6 +520,8 @@ suite('student overview: profile tab', (test) => {
     a.deep(g.map((x) => x.name), ['Pat Billings', 'Sam Billings']);
     a.eq(g[0].email, 'pat@home.net');
     a.eq(g[1].email, '');
+    a.eq(g[0].lastLogin, undefined, 'Canvas didn’t say');
+    a.eq(si().guardiansFor([{ id: 1, name: 'P', last_login: null, observed_users: [{ id: 7 }] }], 7)[0].lastLogin, null, 'never logged in');
     a.deep(si().guardiansFor(null, 7), []);
   });
 
@@ -559,6 +561,24 @@ suite('student overview: profile tab', (test) => {
     a.ok(html.includes('Block 3') && html.includes('S1001') && html.includes('he/him'), 'section, SIS id, pronouns');
     a.ok(html.includes('86%') && html.includes('C–'), 'current and final grades');
     a.ok(html.includes('AP Biology - 1') && html.includes('/courses/331/grades/7') && !html.includes('/courses/999/'), 'other classes with this teacher only');
+
+    a.ok(html.includes('Not shared with you by Canvas'), 'student login: unknown');
+    a.ok(html.includes('didn’t share when these parents last logged in'), 'parent logins: unknown');
+
+    // Last Canvas login: the student's own record, else recent_students; parents' from their records.
+    const login = '2026-11-02T13:05:00Z';
+    const withLogins = JSON.parse(JSON.stringify(parts));
+    withLogins.profile.user.last_login = login;
+    withLogins.profile.observers[0].last_login = login;
+    withLogins.profile.observers[1].last_login = null;
+    const h2 = c.profilePanel('7', { name: 'Andrew Billings' }, withLogins);
+    const when = si().lastActiveText(Date.parse(login), Date.now());
+    a.ok(h2.includes('Last Canvas login</dt><dd>' + when), 'student login shown');
+    a.ok(h2.includes('Last Canvas login: ' + when) && h2.includes('Last Canvas login: Never'), 'each parent’s login');
+    a.ok(!h2.includes('didn’t share when'), 'no note when every parent is known');
+    const viaRecent = JSON.parse(JSON.stringify(parts));
+    viaRecent.profile.recent = [{ id: 8, last_login: '2026-01-01T00:00:00Z' }, { id: 7, last_login: login }];
+    a.ok(c.profilePanel('7', { name: 'A' }, viaRecent).includes('Last Canvas login</dt><dd>' + when), 'from recent_students');
 
     const none = c.profilePanel('7', { name: 'A' }, { profile: { user: null, observers: null, sections: null, emails: {}, profile: null, enrollments: null, courses: null } });
     a.ok(none.includes('didn’t let you see'), 'observers refused');

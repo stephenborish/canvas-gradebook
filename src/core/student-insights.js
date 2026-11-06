@@ -1046,7 +1046,8 @@
   /* The parents and guardians paired with one student: the course's
    * observers (courseObservers) whose observed_users or observer
    * enrollments name that student. [{id, name, sortableName, email,
-   * pronouns}], by sortable name, each person once. */
+   * pronouns, lastLogin}], by sortable name, each person once. lastLogin is
+   * undefined when Canvas didn't say, null when it says they never have. */
   function guardiansFor(observers, studentId) {
     var sid = String(studentId);
     var seen = Object.create(null);
@@ -1058,7 +1059,8 @@
       return watches;
     }).map(function (u) {
       return { id: String(u.id), name: String(u.name || u.short_name || ''), sortableName: String(u.sortable_name || u.name || ''),
-        email: String(u.email || '').trim(), pronouns: u.pronouns || '' };
+        email: String(u.email || '').trim(), pronouns: u.pronouns || '',
+        lastLogin: 'last_login' in u ? (u.last_login || null) : undefined };
     }).sort(function (a, b) { return a.sortableName.localeCompare(b.sortableName); });
   }
 

@@ -561,8 +561,15 @@
    * links where the school shows them, and their enrollments here. */
   CanvasApi.prototype.courseUser = function (courseId, userId) {
     return this.get('/api/v1/courses/' + courseId + '/users/' + userId, {
-      'include[]': ['enrollments', 'avatar_url', 'bio', 'custom_links']
+      'include[]': ['enrollments', 'avatar_url', 'bio', 'custom_links', 'last_login']
     });
+  };
+
+  /* The course's students, most recently logged in first, each with
+   * last_login: when they last signed in to Canvas anywhere, not just this
+   * course. Needs the "View usage reports" permission. */
+  CanvasApi.prototype.recentStudents = function (courseId) {
+    return this.getAll('/api/v1/courses/' + courseId + '/recent_students', {}, { maxPages: 30 });
   };
 
   /* The course's observers (parents and guardians paired with a student),
@@ -571,7 +578,7 @@
   CanvasApi.prototype.courseObservers = function (courseId) {
     return this.getAll('/api/v1/courses/' + courseId + '/users', {
       'enrollment_type[]': ['observer'],
-      'include[]': ['email', 'enrollments', 'observed_users']
+      'include[]': ['email', 'enrollments', 'observed_users', 'last_login']
     }, { maxPages: 20 });
   };
 
