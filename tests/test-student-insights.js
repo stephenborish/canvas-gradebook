@@ -558,9 +558,17 @@ suite('student overview: profile tab', (test) => {
     const yr = si().classYear([{ text: 'abillings30@malvernprep.org', label: 'x' }], Date.now());
     a.ok(yr && html.includes('Grade ' + yr.grade + ' · Class of 2030'), 'grade level');
     a.ok(html.includes('Pat &lt;Billings&gt;'), 'guardian name, escaped');
-    a.ok(html.includes('mailto:pat@home.net,sam@home.net'), 'email all guardians');
+    a.ok(!html.includes('mailto:pat@home.net,sam@home.net') && !html.includes('Email both'), 'no Email both link');
+    a.ok(html.includes('data-si-copytext="pat@home.net, sam@home.net">Copy all'), 'Copy all guardians');
     a.ok(html.includes('Block 3') && html.includes('S1001') && html.includes('he/him'), 'section, SIS id, pronouns');
-    a.ok(html.includes('86%') && html.includes('C–'), 'current and final grades');
+    a.ok(html.includes('Current grade</dt><dd>86% · B'), 'current grade with its letter');
+    a.ok(!html.includes('Counting ungraded') && !html.includes('71.2%'), 'no grade counting ungraded work as 0');
+    const order = ['>Name<', '>Email<', '>Section<', '>In course since<', '>Last Canvas login<', '>Current grade<'].map((k) => html.indexOf(k));
+    a.ok(order.every((x, i) => x > 0 && (i === 0 || x > order[i - 1])), 'facts in the teacher’s order');
+    a.ok(!html.includes('(Billings, Andrew)'), 'no sortable name after the name');
+    a.ok(c.profilePanel('7', { name: 'Drew Billings', fullName: 'Andrew Billings' }, parts).includes('Andrew Billings <span class="cgp-si__muted">(Drew Billings)</span>'), 'the name they go by, when it differs');
+    a.ok(!c.profilePanel('7', { name: 'Andrew Billings', fullName: 'Andrew Billings' }, parts).includes('(Andrew'), 'no brackets when it is the same');
+    a.ok(!c.profilePanel('7', { name: 'Tommy', fullName: 'Thomas (Tommy) Tegler' }, parts).includes('(Tommy)</span>'), 'no repeat of a nickname already in the name');
     a.ok(html.includes('AP Biology - 1') && html.includes('/courses/331/grades/7') && !html.includes('/courses/999/'), 'other classes with this teacher only');
 
     a.ok(html.includes('Not shared with you by Canvas'), 'student login: unknown');
@@ -595,5 +603,23 @@ suite('student overview: profile tab', (test) => {
     a.ok(none.includes('didn’t let you see'), 'observers refused');
     a.ok(!none.includes('Also in your classes'));
     a.ok(c.profilePanel('7', { name: 'A' }, {}).includes('Reading this student’s profile'), 'loading');
+  });
+
+  test('Studio videos: where each is posted, filter chips, and each assignment’s video status', () => {
+    const Ctl = C();
+    const c = new Ctl({ model: {}, api: {}, adapter: {}, settings: { values: {} }, courseId: 9 });
+    const row = (o) => Object.assign({ duration: 600, completion: 0, status: 'none', classWatched: 3, places: [] }, o);
+    const r = { indexKnown: true, studio: { counts: { watched: 1, partial: 1, none: 1, unknown: 0 }, rows: [
+      row({ uuid: 'a', title: 'Bonds', status: 'partial', completion: 0.47, places: [{ kind: 'Assignment', name: 'HW - Bonds', url: '/courses/9/assignments/5', modules: ['Unit 1'] }] }),
+      row({ uuid: 'b', title: 'Atoms', status: 'watched', completion: 1, places: [{ kind: 'Module', name: 'Atoms video', url: '/courses/9/modules/items/3', modules: ['Unit 1'] }] }),
+      row({ uuid: 'c', title: 'Spare', places: [] })
+    ] } };
+    const html = c.studioPanel(r);
+    a.ok(html.includes('data-si-vplace="assigned"') && html.includes('data-si-vplace="module"') && html.includes('data-si-vplace="unposted"'), 'chips by where posted');
+    a.ok(html.includes('data-vplace="assigned"') && html.includes('Not posted in Canvas'), 'rows tagged');
+    a.ok(html.includes('href="/courses/9/assignments/5"') && html.includes('Posted in'), 'the assignment it is in');
+    const by = c.videosByAssignment(r);
+    a.deep(Object.keys(by), ['5']);
+    a.eq(by['5'][0].title, 'Bonds');
   });
 });

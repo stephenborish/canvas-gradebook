@@ -4,7 +4,7 @@
  * course's Studio videos the student watched. Studio only answers its own
  * page, signed in through Canvas, so this opens Studio the way the
  * teacher's Studio link in Canvas's left menu does - in a hidden frame,
- * once per page, only when the Activity tab is first shown - and asks the
+ * once per page, only when the Activity or Assignments tab is first shown - and asks the
  * extension's script inside it (studio/content.js) for the course's videos
  * and who watched each one. Studio's sign-in stays inside Studio's page.
  * Answers are kept in memory for a few minutes; nothing is stored. */

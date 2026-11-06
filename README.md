@@ -475,8 +475,18 @@ link. **←** / **→** step to the previous / next student without closing; **E
   still waiting on you.
 - **Studio videos**: every video in the course's Studio list *and* every Studio video embedded in an
   assignment, quiz, discussion or page (or added to a module as a Studio link), with what share of
-  each this student watched. Each video says where it is embedded and in which module. An embed
-  copied in from another class is included too; its "in class" count only counts this class.
+  each this student watched. A **Posted in** column says where each video is embedded (linked) and
+  in which module, and chips narrow the list to videos **In assignments**, **In modules & pages**
+  (posted on their own, not tied to an assignment) or **Not posted** in Canvas at all. An embed
+  whose id differs from the one in Studio's course list (copied in with the course from another
+  class, or added from your own Studio library) is the same video: it is matched to it through
+  Studio's list of the video's embeds (or, when Studio won't say, by its exact title) and shown
+  once, on the course video, rather than as a second "Unavailable" row. Its "in class" count only
+  counts this class.
+- On the **Assignments** tab, an assignment with a Studio video embedded in it shows this student's
+  status for that video right by its name (*Video watched*, *Video 47% watched*, *Video not
+  watched*), and the **Video not watched** chip lists the assignments whose video they haven't
+  finished.
 - **Course content opened**: everything from the student's Access Report, each with its module.
 - One search box at the top of the tab finds videos and course content by name, type
   (`video`, `file`, `quiz`), module, or the assignment a video is embedded in. While searching, the
