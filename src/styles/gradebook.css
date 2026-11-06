@@ -1232,7 +1232,7 @@ html.cgp-on .slick-cell[data-cgp-col="total"] > .cgp-total-flag svg {
  * it as a container changes nothing about its size. */
 html.cgp-on .slick-cell[data-cgp-col="total"][data-cgp-band] { container-type: inline-size; }
 @container (max-width: 104px) {
-  html.cgp-on .slick-cell[data-cgp-col="total"]:has(> .cgp-total-flag) > :not(.cgp-total-flag) { box-sizing: border-box !important; padding-left: 24px !important; }
+  html.cgp-on .slick-cell[data-cgp-col="total"]:has(> .cgp-total-flag) > :not(:where(.cgp-total-flag)) { box-sizing: border-box !important; padding-left: 24px !important; }
 }
 
 /* The Total hover tooltip, on <body> so no grid pane clips it. */
