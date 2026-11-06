@@ -312,21 +312,26 @@
     if (!o || o.gen !== this._gen) return;
     var d = o.data;
     var api = this.api, cid = this.courseId, uid = o.uid;
+    var self = this;
     var none = function () { return null; };
-    if (!this._observers) this._observers = api.courseObservers(cid).catch(none);
-    if (!this._sections) this._sections = api.courseSections(cid).catch(none);
-    if (!this._teaching) this._teaching = api.teachingCourses().catch(none);
-    if (!this._recent) this._recent = api.recentStudents(cid).catch(none);
+    // Course-wide, read once per page; a failed read is tried again next time.
+    var shared = function (key, read) {
+      if (!self[key]) self[key] = read().catch(function () { self[key] = null; return null; });
+      return self[key];
+    };
     if (!d.profile) {
+      var user = api.courseUser(cid, uid).catch(none);
       d.profile = Promise.all([
-        api.courseUser(cid, uid).catch(none),
-        this._observers,
-        this._sections,
+        user,
+        shared('_observers', function () { return api.courseObservers(cid); }),
+        shared('_sections', function () { return api.courseSections(cid); }),
         this.rosterEmails(),
         api.userProfile(uid).catch(none),
         api.userStudentEnrollments(uid).catch(none),
-        this._teaching,
-        this._recent
+        shared('_teaching', function () { return api.teachingCourses(); }),
+        // The course's recent_students list only when the student's own record
+        // doesn't say when they last logged in.
+        user.then(function (u) { return u && 'last_login' in u ? null : shared('_recent', function () { return api.recentStudents(cid); }); })
       ]).then(function (r) {
         return { user: r[0], observers: r[1], sections: r[2], emails: r[3], profile: r[4], enrollments: r[5], courses: r[6], recent: r[7] };
       });
@@ -1283,7 +1288,8 @@
       return section(title, '<p class="cgp-si__note">Couldn’t read Studio: ' + esc(s.error) +
         '. Opening Studio once from Canvas’s left menu signs you in; then reopen this student.</p>');
     }
-    if (s.none) return section(title, '<p class="cgp-si__note">Studio has no course named “' + esc(this._courseName) + '”, so there are no Studio videos to show.</p>');
+    var names = (this._courseNames || [this._courseName]).map(function (n) { return '“' + esc(n) + '”'; }).join(' or ');
+    if (s.none) return section(title, '<p class="cgp-si__note">Studio has no course named ' + names + ', so there are no Studio videos to show.</p>');
     if (!s.rows.length) return section(title, '<p class="cgp-si__note">No Studio videos have been added to this course.</p>');
     var c = s.counts;
     var labels = { none: 'Not watched', partial: 'Partly watched', watched: 'Watched', unknown: 'Unavailable' };
@@ -1323,7 +1329,7 @@
       ', including videos embedded in its assignments, quizzes, discussions and pages' +
       (embedded ? ' (' + embedded + (embedded === 1 ? ' isn’t' : ' aren’t') + ' in Studio’s list for this course, e.g. copied from another class)' : '') +
       '. “Watched” is at least ' + Math.round(CGP.studioClass.WATCHED_AT * 100) + '% of the video.' +
-      (s.noCollection ? ' Studio has no course named “' + esc(this._courseName) + '”, so only the embedded videos are listed.' : '') +
+      (s.noCollection ? ' Studio has no course named ' + names + ', so only the embedded videos are listed.' : '') +
       esc(indexNote) + '</p>', esc(aside));
   };
 

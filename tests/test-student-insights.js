@@ -555,7 +555,8 @@ suite('student overview: profile tab', (test) => {
     };
     const html = c.profilePanel('7', { name: 'Andrew Billings', sortableName: 'Billings, Andrew' }, parts);
     a.ok(html.includes('mailto:abillings30@malvernprep.org'), 'student email');
-    a.ok(html.includes('Grade ' + si().classYear([{ text: 'abillings30@malvernprep.org', label: 'x' }], Date.now()).grade) || !si().classYear([{ text: 'abillings30@malvernprep.org', label: 'x' }], Date.now()), 'grade level');
+    const yr = si().classYear([{ text: 'abillings30@malvernprep.org', label: 'x' }], Date.now());
+    a.ok(yr && html.includes('Grade ' + yr.grade + ' · Class of 2030'), 'grade level');
     a.ok(html.includes('Pat &lt;Billings&gt;'), 'guardian name, escaped');
     a.ok(html.includes('mailto:pat@home.net,sam@home.net'), 'email all guardians');
     a.ok(html.includes('Block 3') && html.includes('S1001') && html.includes('he/him'), 'section, SIS id, pronouns');
