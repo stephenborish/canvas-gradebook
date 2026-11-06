@@ -163,6 +163,9 @@
     bulkPaste: true,
     multiCellSelection: true,
     doubleClickOpensTray: true,
+    // Grade Detail Tray: Status options in one row of pills, and the comment
+    // box's Cancel / Submit above a shorter editor (tray-layout.js).
+    trayLayout: true,
     postGradesButton: true,
     hideGradeCellArrow: true,
     rowHoverHighlight: true,

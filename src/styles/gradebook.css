@@ -3690,3 +3690,188 @@ html.cgp-on .cgp-sections-notice__head [data-notice="compare"] { margin-left: au
   html.cgp-on .cgp-board__table .cgp-board__itemcol { min-width: 130px; max-width: 170px; }
   html.cgp-on .cgp-board__cell { min-width: 130px; }
 }
+
+/* ------------------------------------------------- Grade Detail Tray layout */
+/* See src/gradebook/tray-layout.js: the elements are tagged with
+ * data-cgp-tray-* attributes and only restyled while html.cgp-tray-tidy is on
+ * (the `trayLayout` setting). Nothing here moves a node. */
+
+/* Status: one horizontal row of pills instead of a stacked list. */
+html.cgp-tray-tidy [data-cgp-tray-status] {
+  display: flex !important;
+  flex-flow: row wrap !important;
+  align-items: stretch;
+  gap: 6px;
+  margin: 4px 0 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-status] > [data-cgp-tray-opt] {
+  flex: 1 1 64px !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  width: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+/* Late with its "days late" box showing takes the whole row. */
+html.cgp-tray-tidy [data-cgp-tray-status] > [data-cgp-tray-opt]:has(input:not([type="radio"])) {
+  flex-basis: 100% !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-pill] {
+  box-sizing: border-box;
+  height: 100%;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 1px solid rgba(45, 59, 69, 0.22);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: box-shadow 0.12s ease, border-color 0.12s ease;
+}
+html.cgp-tray-tidy [data-cgp-tray-pill]:not([style*="background"]) {
+  background-color: #f5f5f5;
+}
+html.cgp-tray-tidy [data-cgp-tray-pill]:hover {
+  border-color: rgba(45, 59, 69, 0.55);
+}
+html.cgp-tray-tidy [data-cgp-tray-pill]:has(input[type="radio"]:checked) {
+  border-color: #2d3b45;
+  box-shadow: inset 0 0 0 1px #2d3b45;
+}
+html.cgp-tray-tidy [data-cgp-tray-pill]:has(input[type="radio"]:focus-visible) {
+  outline: 2px solid #0374b5;
+  outline-offset: 2px;
+}
+/* The whole pill is the label, so anywhere on it picks the status. */
+html.cgp-tray-tidy [data-cgp-tray-pill] label {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 6px 4px !important;
+  margin: 0 !important;
+  cursor: pointer;
+  text-align: center;
+}
+/* InstUI's radio circle: the outline above already shows which is picked. */
+html.cgp-tray-tidy [data-cgp-tray-pill] label > span[aria-hidden="true"] {
+  display: none !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-pill] label > span {
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: 0.875rem !important;
+  line-height: 1.2 !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html.cgp-tray-tidy [data-cgp-tray-pill]:has(input[type="radio"]:checked) label > span {
+  font-weight: 700 !important;
+}
+/* Late's "days late" box, under its label. */
+html.cgp-tray-tidy [data-cgp-tray-pill]:has(input:not([type="radio"])) {
+  padding-bottom: 8px !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-pill]:has(input:not([type="radio"])) > :not(:first-child) {
+  margin: 0 10px !important;
+}
+
+/* Comments: Cancel / Submit as a slim toolbar joined to the top of a
+ * shorter editor - the bar and the box read as one composer. */
+html.cgp-tray-tidy [data-cgp-tray-comment] {
+  display: flex !important;
+  flex-direction: column !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-comment] > [data-cgp-tray-comment-actions] {
+  order: -1;
+  display: flex !important;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  margin: 0 !important;
+  padding: 4px 4px 4px 10px !important;
+  background: #f5f5f5 !important;
+  border: 1px solid #c7cdd1 !important;
+  border-bottom: 0 !important;
+  border-radius: 6px 6px 0 0;
+  text-align: initial !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-comment] > [data-cgp-tray-comment-actions] > * {
+  margin: 0 !important;
+}
+/* InstUI paints a button on the inner spans; flatten those, style the button. */
+html.cgp-tray-tidy [data-cgp-tray-btn] {
+  appearance: none;
+  display: inline-flex !important;
+  align-items: center;
+  height: 28px;
+  margin: 0 !important;
+  padding: 0 12px !important;
+  border: 0 !important;
+  border-radius: 14px !important;
+  font: inherit;
+  font-size: 0.8125rem !important;
+  line-height: 1 !important;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+html.cgp-tray-tidy [data-cgp-tray-btn] span {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  line-height: inherit !important;
+  color: inherit !important;
+  font-size: inherit !important;
+  font-weight: inherit !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-btn="secondary"] {
+  background: transparent !important;
+  color: #2d3b45 !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-btn="secondary"]:hover:not(:disabled) {
+  background: rgba(45, 59, 69, 0.08) !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-btn="primary"] {
+  background: #0374b5 !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-btn="primary"]:hover:not(:disabled) {
+  background: #025f94 !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-btn]:focus-visible {
+  outline: 2px solid #0374b5 !important;
+  outline-offset: 2px;
+}
+html.cgp-tray-tidy [data-cgp-tray-btn]:disabled,
+html.cgp-tray-tidy [data-cgp-tray-btn][aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: default;
+}
+html.cgp-tray-tidy [data-cgp-tray-comment-editor] .tox-tinymce,
+html.cgp-tray-tidy .tox-tinymce[data-cgp-tray-comment-editor] {
+  height: 150px !important;
+  min-height: 0 !important;
+}
+/* Square top corners where the toolbar sits on the box. */
+html.cgp-tray-tidy [data-cgp-tray-comment]:has(> [data-cgp-tray-comment-actions]) > [data-cgp-tray-comment-editor] .tox-tinymce,
+html.cgp-tray-tidy [data-cgp-tray-comment]:has(> [data-cgp-tray-comment-actions]) > .tox-tinymce[data-cgp-tray-comment-editor],
+html.cgp-tray-tidy [data-cgp-tray-comment]:has(> [data-cgp-tray-comment-actions]) > textarea[data-cgp-tray-comment-editor] {
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+}
+html.cgp-tray-tidy textarea[data-cgp-tray-comment-editor],
+html.cgp-tray-tidy [data-cgp-tray-comment-editor] textarea {
+  min-height: 3.5em;
+  max-height: 9em;
+}
+html.cgp-tray-tidy [data-cgp-tray-hide] {
+  display: none !important;
+}

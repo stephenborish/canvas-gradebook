@@ -22,7 +22,8 @@ const GRADEBOOK_FILES = [
   'src/gradebook/selection.js',
   'src/gradebook/keyboard.js',
   'src/gradebook/course-switcher.js',
-  'src/gradebook/student-search.js'
+  'src/gradebook/student-search.js',
+  'src/gradebook/tray-layout.js'
 ];
 
 let loaded = false;

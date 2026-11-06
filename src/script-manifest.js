@@ -45,6 +45,7 @@ export const CONTENT_JS = [
   'src/gradebook/course-switcher.js',
   'src/gradebook/student-search.js',
   'src/gradebook/course-menu.js',
+  'src/gradebook/tray-layout.js',
   'src/studio/canvas-relay.js',
   'src/assignments/time-shortcuts.js',
   'src/sections/sync-runner.js',
