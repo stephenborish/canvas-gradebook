@@ -121,11 +121,11 @@
    * pages and discussions that Studio's course list doesn't have (`extra`:
    * [{uuid, title}], an embed copied from another class, say). A few at a
    * time, so Studio isn't flooded. */
-  function courseVideos(courseName, extra) {
+  function courseVideos(courseNames, extra) {
     return allPages('/api/media_management/collections', {
       user_id: studioUserId || undefined, type: 'course_wide', with_concluded_courses: 'true'
     }, 'collections', 10).then(function (cols) {
-      var col = SC().findCollection(cols, courseName);
+      var col = SC().findCollection(cols, courseNames);
       if (!col) return { col: null, tiles: [] };
       return allPages('/api/media_management/collections/' + col.id + '/tiles', {
         sort_by: 'created_at', order: 'desc', 'filter[]': ['perspectives']
@@ -155,6 +155,7 @@
         }, function (err) {
           v.viewers = [];
           v.error = err && err.status === 403 ? 'no insights' : 'unavailable';
+          if (err && err.status) v.errorStatus = Number(err.status) || null;
         }).then(worker);
       }
       return Promise.all([worker(), worker(), worker()]).then(function () {
@@ -170,7 +171,9 @@
       try { window.top.postMessage(Object.assign({ source: 'cgp-studio-videos', id: String(d.id || '') }, msg), origin); } catch (e) { /* ignore */ }
     };
     if (!SC()) { reply({ ok: false, error: 'not ready' }); return; }
-    courseVideos(String(d.courseName || '').slice(0, 300), Array.isArray(d.embeds) ? d.embeds : []).then(function (r) {
+    var names = (Array.isArray(d.courseNames) && d.courseNames.length ? d.courseNames : [d.courseName]).slice(0, 4)
+      .map(function (n) { return String(n || '').slice(0, 300); }).filter(Boolean);
+    courseVideos(names, Array.isArray(d.embeds) ? d.embeds : []).then(function (r) {
       reply({ ok: true, collection: r.collection, videos: r.videos });
     }, function (err) {
       reply({ ok: false, error: String((err && err.message) || err) });

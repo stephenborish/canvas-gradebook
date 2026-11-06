@@ -208,12 +208,19 @@
     });
   }
 
-  /* The Studio course (collection) for a Canvas course, by name. */
-  function findCollection(collections, courseName) {
-    var n = normName(courseName);
-    if (!n) return null;
-    var list = (collections || []).filter(function (c) { return c && normName(c.name) === n; });
-    return list.filter(function (c) { return c.type === 'course_wide'; })[0] || list[0] || null;
+  /* The Studio course (collection) for a Canvas course, by name. names: one
+   * name or several to try in order (the course's real name first: Studio
+   * names its course after it, while Canvas's API gives the teacher's own
+   * nickname for the course as `name` when one is set). */
+  function findCollection(collections, names) {
+    var tries = (Array.isArray(names) ? names : [names]).map(normName).filter(Boolean);
+    for (var i = 0; i < tries.length; i++) {
+      var n = tries[i];
+      var list = (collections || []).filter(function (c) { return c && normName(c.name) === n; });
+      var hit = list.filter(function (c) { return c.type === 'course_wide'; })[0] || list[0];
+      if (hit) return hit;
+    }
+    return null;
   }
 
   /* One student's line for each of a course's videos, newest first:
@@ -230,7 +237,8 @@
         places: v.places || [], embeddedOnly: !!v.embeddedOnly };
       // Studio didn't give this video's viewers: unknown, not "not watched".
       if (v.error) {
-        return Object.assign(base, { completion: null, status: 'unknown', watchedSeconds: null, classWatched: null });
+        return Object.assign(base, { completion: null, status: 'unknown', watchedSeconds: null, classWatched: null,
+          errorStatus: v.errorStatus || null });
       }
       var r = classList([student], v.viewers || []).rows[0];
       return Object.assign(base, {

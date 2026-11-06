@@ -502,3 +502,88 @@ suite('student overview: never-opened review fixes', (test) => {
     a.eq(reads.length, 0, 'bodies already there: nothing more read');
   });
 });
+
+suite('student overview: profile tab', (test) => {
+  const C = () => {
+    if (!globalThis.CGP.StudentInsightsController) require('vm').runInThisContext(require('fs').readFileSync(require('path').join(__dirname, '../src/gradebook/student-insights.js'), 'utf8'));
+    return globalThis.CGP.StudentInsightsController;
+  };
+
+  test('parents and guardians: the observers paired with this student, each once', () => {
+    const observers = [
+      { id: 1, name: 'Pat Billings', sortable_name: 'Billings, Pat', email: 'pat@home.net', observed_users: [{ id: 7 }] },
+      { id: 2, name: 'Sam Billings', sortable_name: 'Billings, Sam', enrollments: [{ associated_user_id: 7 }, { associated_user_id: 7 }] },
+      { id: 3, name: 'Other Parent', sortable_name: 'Parent, Other', email: 'o@x.org', observed_users: [{ id: 8 }] },
+      { id: 1, name: 'Pat Billings', sortable_name: 'Billings, Pat', observed_users: [{ id: 7 }] }
+    ];
+    const g = si().guardiansFor(observers, '7');
+    a.deep(g.map((x) => x.name), ['Pat Billings', 'Sam Billings']);
+    a.eq(g[0].email, 'pat@home.net');
+    a.eq(g[1].email, '');
+    a.eq(g[0].lastLogin, undefined, 'Canvas didn’t say');
+    a.eq(si().guardiansFor([{ id: 1, name: 'P', last_login: null, observed_users: [{ id: 7 }] }], 7)[0].lastLogin, null, 'never logged in');
+    a.deep(si().guardiansFor(null, 7), []);
+  });
+
+  test('grade level from a class year in the school email or login', () => {
+    const nov2026 = Date.parse('2026-11-06T12:00:00Z');
+    a.deep(si().classYear([{ text: 'abillings30@malvernprep.org', label: 'email' }], nov2026), { classYear: 2030, grade: 9, from: 'email' });
+    a.eq(si().classYear([{ text: 'jsmith27@x.org', label: 'email' }], nov2026).grade, 12, 'Class of 2027 are seniors in 2026-27');
+    a.eq(si().classYear([{ text: '2029.jdoe@x.org', label: 'email' }], nov2026).grade, 10);
+    a.eq(si().classYear([{ text: 'jsmith27@x.org', label: 'email' }], Date.parse('2027-03-01T12:00:00Z')).grade, 12, 'spring is the same school year');
+    a.eq(si().classYear([{ text: 'jsmith@x.org', label: 'email' }, { text: '123456', label: 'sis' }], nov2026), null, 'no year: nothing guessed');
+    a.eq(si().classYear([{ text: 'room99@x.org', label: 'email' }], nov2026), null, 'a number that is not a class year');
+    a.eq(si().classYear([{ text: 'jsmith@x.org', label: 'email' }, { text: 'jsmith28', label: 'login' }], nov2026).from, 'login');
+  });
+
+  test('the panel shows email, guardians, grade level and grades, and says what Canvas withheld', () => {
+    const Ctl = C();
+    const c = new Ctl({ model: {}, api: {}, adapter: {}, settings: { values: {} }, courseId: 376 });
+    const parts = {
+      enrollment: { grades: { current_score: 86.04, current_grade: 'B', final_score: 71.2, final_grade: 'C-' } },
+      profile: {
+        user: { id: 7, login_id: 'abillings30', sis_user_id: 'S1001', pronouns: 'he/him',
+          enrollments: [{ course_id: 376, type: 'StudentEnrollment', course_section_id: 11, created_at: '2026-08-25T12:00:00Z' }] },
+        observers: [{ id: 1, name: 'Pat <Billings>', sortable_name: 'Billings, Pat', email: 'pat@home.net', observed_users: [{ id: 7 }] },
+          { id: 2, name: 'Sam Billings', sortable_name: 'Billings, Sam', email: 'sam@home.net', observed_users: [{ id: 7 }] }],
+        sections: [{ id: 11, name: 'Block 3' }],
+        emails: { 7: 'abillings30@malvernprep.org' },
+        profile: null,
+        enrollments: [{ course_id: 376 }, { course_id: 331, grades: { current_score: 92.5, current_grade: 'A-' } }, { course_id: 999 }],
+        courses: [{ id: 376, name: 'Integrated Science I - 3' }, { id: 331, name: 'AP Biology - 1' }]
+      }
+    };
+    const html = c.profilePanel('7', { name: 'Andrew Billings', sortableName: 'Billings, Andrew' }, parts);
+    a.ok(html.includes('mailto:abillings30@malvernprep.org'), 'student email');
+    const yr = si().classYear([{ text: 'abillings30@malvernprep.org', label: 'x' }], Date.now());
+    a.ok(yr && html.includes('Grade ' + yr.grade + ' · Class of 2030'), 'grade level');
+    a.ok(html.includes('Pat &lt;Billings&gt;'), 'guardian name, escaped');
+    a.ok(html.includes('mailto:pat@home.net,sam@home.net'), 'email all guardians');
+    a.ok(html.includes('Block 3') && html.includes('S1001') && html.includes('he/him'), 'section, SIS id, pronouns');
+    a.ok(html.includes('86%') && html.includes('C–'), 'current and final grades');
+    a.ok(html.includes('AP Biology - 1') && html.includes('/courses/331/grades/7') && !html.includes('/courses/999/'), 'other classes with this teacher only');
+
+    a.ok(html.includes('Not shared with you by Canvas'), 'student login: unknown');
+    a.ok(html.includes('didn’t share when these parents last logged in'), 'parent logins: unknown');
+
+    // Last Canvas login: the student's own record, else recent_students; parents' from their records.
+    const login = '2026-11-02T13:05:00Z';
+    const withLogins = JSON.parse(JSON.stringify(parts));
+    withLogins.profile.user.last_login = login;
+    withLogins.profile.observers[0].last_login = login;
+    withLogins.profile.observers[1].last_login = null;
+    const h2 = c.profilePanel('7', { name: 'Andrew Billings' }, withLogins);
+    const when = si().lastActiveText(Date.parse(login), Date.now());
+    a.ok(h2.includes('Last Canvas login</dt><dd>' + when), 'student login shown');
+    a.ok(h2.includes('Last Canvas login: ' + when) && h2.includes('Last Canvas login: Never'), 'each parent’s login');
+    a.ok(!h2.includes('didn’t share when'), 'no note when every parent is known');
+    const viaRecent = JSON.parse(JSON.stringify(parts));
+    viaRecent.profile.recent = [{ id: 8, last_login: '2026-01-01T00:00:00Z' }, { id: 7, last_login: login }];
+    a.ok(c.profilePanel('7', { name: 'A' }, viaRecent).includes('Last Canvas login</dt><dd>' + when), 'from recent_students');
+
+    const none = c.profilePanel('7', { name: 'A' }, { profile: { user: null, observers: null, sections: null, emails: {}, profile: null, enrollments: null, courses: null } });
+    a.ok(none.includes('didn’t let you see'), 'observers refused');
+    a.ok(!none.includes('Also in your classes'));
+    a.ok(c.profilePanel('7', { name: 'A' }, {}).includes('Reading this student’s profile'), 'loading');
+  });
+});

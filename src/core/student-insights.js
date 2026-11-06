@@ -1041,7 +1041,56 @@
     return words.every(function (w) { return h.indexOf(w) >= 0; });
   }
 
+  /* ------------------------------------------------------ profile tab */
+
+  /* The parents and guardians paired with one student: the course's
+   * observers (courseObservers) whose observed_users or observer
+   * enrollments name that student. [{id, name, sortableName, email,
+   * pronouns, lastLogin}], by sortable name, each person once. lastLogin is
+   * undefined when Canvas didn't say, null when it says they never have. */
+  function guardiansFor(observers, studentId) {
+    var sid = String(studentId);
+    var seen = Object.create(null);
+    return (observers || []).filter(function (u) {
+      if (!u || u.id === undefined || seen[u.id]) return false;
+      var watches = (u.observed_users || []).some(function (o) { return o && String(o.id) === sid; }) ||
+        (u.enrollments || []).some(function (e) { return e && String(e.associated_user_id) === sid; });
+      if (watches) seen[u.id] = true;
+      return watches;
+    }).map(function (u) {
+      return { id: String(u.id), name: String(u.name || u.short_name || ''), sortableName: String(u.sortable_name || u.name || ''),
+        email: String(u.email || '').trim(), pronouns: u.pronouns || '',
+        lastLogin: 'last_login' in u ? (u.last_login || null) : undefined };
+    }).sort(function (a, b) { return a.sortableName.localeCompare(b.sortableName); });
+  }
+
+  /* A student's class year and grade level, read from a school address or
+   * id that carries the year they graduate ("abillings28@school.org",
+   * "2028.jsmith"): {classYear, grade, from} or null. The school year runs
+   * July to June, so in November 2026 the Class of 2027 is in grade 12.
+   * Only a grade from 1 to 12 counts: anything else is some other number. */
+  function classYear(sources, now) {
+    var d = new Date(now || Date.now());
+    var seniors = d.getFullYear() + (d.getMonth() >= 6 ? 1 : 0);
+    var list = (sources || []).filter(function (s) { return s && s.text; });
+    for (var i = 0; i < list.length; i++) {
+      var local = String(list[i].text).toLowerCase().split('@')[0];
+      var m = /(?:^|[^0-9])(20[0-9]{2})(?![0-9])/.exec(local);
+      var year = m ? Number(m[1]) : null;
+      if (!year) {
+        var two = /^[a-z][a-z._-]*?([0-9]{2})$/.exec(local);
+        year = two ? 2000 + Number(two[1]) : null;
+      }
+      if (!year) continue;
+      var grade = 12 - (year - seniors);
+      if (grade >= 1 && grade <= 12) return { classYear: year, grade: grade, from: list[i].label };
+    }
+    return null;
+  }
+
   CGP.studentInsights = {
+    guardiansFor: guardiansFor,
+    classYear: classYear,
     submissionKind: submissionKind,
     toolName: toolName,
     workReport: workReport,

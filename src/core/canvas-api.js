@@ -555,6 +555,52 @@
     return analyticsOrNull(this.getAll('/api/v1/courses/' + courseId + '/analytics/student_summaries', {}, { maxPages: 20 }));
   };
 
+  /* ------------------------------------------- a student's profile tab */
+
+  /* One person in a course: login and SIS ids, pronouns, avatar, bio and
+   * links where the school shows them, and their enrollments here. */
+  CanvasApi.prototype.courseUser = function (courseId, userId) {
+    return this.get('/api/v1/courses/' + courseId + '/users/' + userId, {
+      'include[]': ['enrollments', 'avatar_url', 'bio', 'custom_links', 'last_login']
+    });
+  };
+
+  /* The course's students, most recently logged in first, each with
+   * last_login: when they last signed in to Canvas anywhere, not just this
+   * course. Needs the "View usage reports" permission. */
+  CanvasApi.prototype.recentStudents = function (courseId) {
+    return this.getAll('/api/v1/courses/' + courseId + '/recent_students', {}, { maxPages: 30 });
+  };
+
+  /* The course's observers (parents and guardians paired with a student),
+   * with their email where the teacher may see it and the students each
+   * one observes (observed_users, and each enrollment's associated_user_id). */
+  CanvasApi.prototype.courseObservers = function (courseId) {
+    return this.getAll('/api/v1/courses/' + courseId + '/users', {
+      'enrollment_type[]': ['observer'],
+      'include[]': ['email', 'enrollments', 'observed_users', 'last_login']
+    }, { maxPages: 20 });
+  };
+
+  CanvasApi.prototype.courseSections = function (courseId) {
+    return this.getAll('/api/v1/courses/' + courseId + '/sections', {}, { maxPages: 5 });
+  };
+
+  /* A user's own profile page (time zone, primary email). Canvas often
+   * refuses it to teachers; callers treat that as "not shown". */
+  CanvasApi.prototype.userProfile = function (userId) {
+    return this.get('/api/v1/users/' + userId + '/profile');
+  };
+
+  /* The student's active student enrollments that this teacher can see,
+   * with grades: their other classes with this teacher. */
+  CanvasApi.prototype.userStudentEnrollments = function (userId) {
+    return this.getAll('/api/v1/users/' + userId + '/enrollments', {
+      'type[]': ['StudentEnrollment'],
+      'state[]': ['active']
+    }, { maxPages: 3 });
+  };
+
   CanvasApi.prototype.course = function (courseId) {
     return this.get('/api/v1/courses/' + courseId);
   };

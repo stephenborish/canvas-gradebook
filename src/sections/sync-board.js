@@ -533,28 +533,5 @@
     });
   };
 
-  /* ------------------------------------------------- the page's button */
-
-  /* On the course home and the Modules page, beside Copy to other classes. */
-  P.mountCompare = function (copyBtn, kind) {
-    if (!copyBtn || (this.compareButton && this.compareButton.isConnected)) return;
-    var self = this;
-    var btn = document.createElement(kind === 'home' ? 'a' : 'button');
-    if (kind === 'home') { btn.href = '#'; btn.setAttribute('role', 'button'); } else btn.type = 'button';
-    btn.className = 'cgp-copyto cgp-copyto--' + kind + ' cgp-copyto--compare' + (kind === 'home' ? ' btn button-sidebar-wide' : '');
-    btn.title = 'Every item in this class against your other classes: what is missing, out of date or changed there';
-    btn.innerHTML = '<svg class="cgp-copyto__glyph" viewBox="0 0 16 16" aria-hidden="true">' +
-      '<rect x="1.5" y="2.5" width="5" height="11" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.5"/>' +
-      '<rect x="9.5" y="2.5" width="5" height="11" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>' +
-      '<span class="cgp-copyto__label">Compare classes</span>';
-    copyBtn.insertAdjacentElement('afterend', btn);
-    this.compareButton = btn;
-    btn.addEventListener('click', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      self.openBoard();
-    });
-  };
-
   CGP.sectionBoard = { CELL: CELL, ORIGIN: ORIGIN, needsAttention: needsAttention };
 })();

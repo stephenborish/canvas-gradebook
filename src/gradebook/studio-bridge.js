@@ -100,11 +100,11 @@
     return opening;
   }
 
-  function ask(courseName, embeds) {
+  function ask(courseNames, embeds) {
     var id = 'v' + (++seq) + '-' + Date.now();
     return new Promise(function (resolve, reject) {
       waiting[id] = { resolve: resolve, reject: reject };
-      try { studio.win.postMessage({ source: 'cgp-canvas-ask', type: 'courseVideos', id: id, courseName: courseName, embeds: embeds || [] }, studio.origin); } catch (e) { delete waiting[id]; reject(e); return; }
+      try { studio.win.postMessage({ source: 'cgp-canvas-ask', type: 'courseVideos', id: id, courseName: courseNames[0], courseNames: courseNames, embeds: embeds || [] }, studio.origin); } catch (e) { delete waiting[id]; reject(e); return; }
       setTimeout(function () {
         if (waiting[id]) { delete waiting[id]; reject(new Error('Studio took too long')); }
       }, ANSWER_WAIT_MS);
@@ -112,7 +112,8 @@
   }
 
   /* {collection, videos: [{uuid, title, duration, thumbnail, createdAt, viewers}]}
-   * for the Studio course named `courseName`, plus the videos in `embeds`
+   * for the Studio course named `courseName` (a name, or names to try in
+   * order), plus the videos in `embeds`
    * ([{uuid, title}], Studio videos embedded in the course's assignments,
    * pages and discussions) that Studio doesn't list under that course. */
   function courseVideos(api, courseId, courseName, embeds) {
@@ -122,11 +123,12 @@
       seen[e.uuid] = true;
       return true;
     }).map(function (e) { return { uuid: String(e.uuid), title: String(e.title || '') }; });
-    var key = courseName + '|' + list.map(function (e) { return e.uuid; }).sort().join(',');
+    var names = (Array.isArray(courseName) ? courseName : [courseName]).filter(Boolean);
+    var key = names.join('/') + '|' + list.map(function (e) { return e.uuid; }).sort().join(',');
     var hit = cache[key];
     if (hit && Date.now() - hit.at < CACHE_MS) return hit.promise;
     var p = open(api, courseId).then(function () {
-      return ask(courseName, list).catch(function (err) {
+      return ask(names, list).catch(function (err) {
         // A Studio page that has stopped answering (expired sign-in, gone):
         // open a fresh one next time.
         reset();
