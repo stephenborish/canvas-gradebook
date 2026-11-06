@@ -3779,7 +3779,8 @@ html.cgp-tray-tidy [data-cgp-tray-pill]:has(input:not([type="radio"])) > :not(:f
   margin: 0 10px !important;
 }
 
-/* Comments: Cancel / Submit above a shorter editor. */
+/* Comments: Cancel / Submit as a slim toolbar joined to the top of a
+ * shorter editor - the bar and the box read as one composer. */
 html.cgp-tray-tidy [data-cgp-tray-comment] {
   display: flex !important;
   flex-direction: column !important;
@@ -3789,20 +3790,88 @@ html.cgp-tray-tidy [data-cgp-tray-comment] > [data-cgp-tray-comment-actions] {
   display: flex !important;
   justify-content: flex-end;
   align-items: center;
-  gap: 6px;
-  margin: 0 0 6px !important;
-  padding: 0 !important;
-}
-html.cgp-tray-tidy [data-cgp-tray-comment] > [data-cgp-tray-comment-actions] button {
+  gap: 4px;
   margin: 0 !important;
+  padding: 4px 4px 4px 10px !important;
+  background: #f5f5f5 !important;
+  border: 1px solid #c7cdd1 !important;
+  border-bottom: 0 !important;
+  border-radius: 6px 6px 0 0;
+  text-align: initial !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-comment] > [data-cgp-tray-comment-actions] > * {
+  margin: 0 !important;
+}
+/* InstUI paints a button on the inner spans; flatten those, style the button. */
+html.cgp-tray-tidy [data-cgp-tray-btn] {
+  appearance: none;
+  display: inline-flex !important;
+  align-items: center;
+  height: 28px;
+  margin: 0 !important;
+  padding: 0 12px !important;
+  border: 0 !important;
+  border-radius: 14px !important;
+  font: inherit;
+  font-size: 0.8125rem !important;
+  line-height: 1 !important;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+html.cgp-tray-tidy [data-cgp-tray-btn] span {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  line-height: inherit !important;
+  color: inherit !important;
+  font-size: inherit !important;
+  font-weight: inherit !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-btn="secondary"] {
+  background: transparent !important;
+  color: #2d3b45 !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-btn="secondary"]:hover:not(:disabled) {
+  background: rgba(45, 59, 69, 0.08) !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-btn="primary"] {
+  background: #0374b5 !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-btn="primary"]:hover:not(:disabled) {
+  background: #025f94 !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-btn]:focus-visible {
+  outline: 2px solid #0374b5 !important;
+  outline-offset: 2px;
+}
+html.cgp-tray-tidy [data-cgp-tray-btn]:disabled,
+html.cgp-tray-tidy [data-cgp-tray-btn][aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: default;
 }
 html.cgp-tray-tidy [data-cgp-tray-comment-editor] .tox-tinymce,
 html.cgp-tray-tidy .tox-tinymce[data-cgp-tray-comment-editor] {
   height: 150px !important;
   min-height: 0 !important;
 }
+/* Square top corners where the toolbar sits on the box. */
+html.cgp-tray-tidy [data-cgp-tray-comment]:has(> [data-cgp-tray-comment-actions]) > [data-cgp-tray-comment-editor] .tox-tinymce,
+html.cgp-tray-tidy [data-cgp-tray-comment]:has(> [data-cgp-tray-comment-actions]) > .tox-tinymce[data-cgp-tray-comment-editor],
+html.cgp-tray-tidy [data-cgp-tray-comment]:has(> [data-cgp-tray-comment-actions]) > textarea[data-cgp-tray-comment-editor] {
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+}
 html.cgp-tray-tidy textarea[data-cgp-tray-comment-editor],
 html.cgp-tray-tidy [data-cgp-tray-comment-editor] textarea {
   min-height: 3.5em;
   max-height: 9em;
+}
+html.cgp-tray-tidy [data-cgp-tray-hide] {
+  display: none !important;
 }

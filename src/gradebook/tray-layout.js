@@ -10,8 +10,10 @@
  *    second row only when there are too many to fit), each pill a single
  *    click target; the checked one is outlined. When Late is picked and its
  *    "days late" box appears, that pill takes the whole row so the box fits.
- *  - the comment form's buttons move ABOVE the editor and the editor is made
- *    shorter, so the box stays in view and an added comment is easy to spot.
+ *  - the comment form's buttons move ABOVE the editor as a slim toolbar
+ *    joined to its top edge (a quiet Cancel, a compact blue Submit), the
+ *    editor is made shorter, and the RCE's word count is hidden, so the box
+ *    stays in view and an added comment is easy to spot.
  *
  * Nothing is moved in the DOM: the tray is React's, and moving its nodes
  * would break its next render. Elements are only tagged with data-cgp-tray-*
@@ -134,7 +136,39 @@
       if (ta.closest && ta.closest(RCE_SELECTOR)) return;
       editors.push(ta);
     });
-    editors.forEach(function (editor) { tagCommentForm(editor, tray); });
+    editors.forEach(function (editor) {
+      tagCommentForm(editor, tray);
+      if (editor.tagName !== 'TEXTAREA') tagWordCount(editor);
+    });
+  }
+
+  /* The RCE status bar's "N words" count. Matched by Canvas's test id where
+   * it has one, otherwise by shape - a leaf outside the editing area whose
+   * whole text is a number and one word ("2 words", "2 mots") - so it works
+   * in any language. A bare divider right before it goes too, so the bar is
+   * not left ending in a separator. */
+  var WORD_COUNT_TEXT = /^\d[\d,.\s]*\s+[^\d\s]+$/;
+  function tagWordCount(editor) {
+    var hits = toArray(editor.querySelectorAll('[data-testid*="word-count"], [data-testid*="wordcount"]'));
+    if (!hits.length) {
+      toArray(editor.querySelectorAll('span, div, button, p')).forEach(function (el) {
+        if (el.children.length || (el.closest && el.closest('.tox-tinymce'))) return;
+        if (WORD_COUNT_TEXT.test(String(el.textContent || '').trim())) hits.push(el);
+      });
+    }
+    hits.forEach(function (el) {
+      var target = (el.closest && el.closest('button')) || el;
+      if (!editor.contains(target) || target === editor) return;
+      // Climb through wrappers that hold nothing else.
+      while (target.parentElement && target.parentElement !== editor &&
+             target.parentElement.children.length === 1) target = target.parentElement;
+      setAttr(target, 'data-cgp-tray-hide', '');
+      var prev = target.previousElementSibling;
+      if (prev && !String(prev.textContent || '').trim() &&
+          !(prev.querySelector && prev.querySelector('button, svg, input, img'))) {
+        setAttr(prev, 'data-cgp-tray-hide', '');
+      }
+    });
   }
 
   function outermostRce(el, tray) {
@@ -164,6 +198,11 @@
           setAttr(form, 'data-cgp-tray-comment', '');
           setAttr(child, 'data-cgp-tray-comment-editor', '');
           setAttr(kids[i], 'data-cgp-tray-comment-actions', '');
+          // Submit is Canvas's last button; anything before it (Cancel) is secondary.
+          var buttons = kids[i].tagName === 'BUTTON' ? [kids[i]] : toArray(kids[i].querySelectorAll('button'));
+          buttons.forEach(function (b, n) {
+            setAttr(b, 'data-cgp-tray-btn', n === buttons.length - 1 ? 'primary' : 'secondary');
+          });
           return true;
         }
       }
