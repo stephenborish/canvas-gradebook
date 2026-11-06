@@ -36,6 +36,11 @@
     upcoming: { label: 'Upcoming', cls: 'upcoming' },
     notSubmitted: { label: 'Not submitted', cls: 'none' }
   };
+  // Sorting by status, A to Z: what needs attention first.
+  var STATUS_RANK = { missing: 0, late: 1, notSubmitted: 2, upcoming: 3, onTime: 4, graded: 5, excused: 6 };
+  // A column's first click: names and status A to Z, dates newest first,
+  // scores highest first.
+  var SORT_FIRST = { name: 'asc', status: 'asc', due: 'desc', submitted: 'desc', score: 'desc', median: 'desc' };
 
   var ICONS = {
     risk: '<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M10 1.5 19 17.5H1zM9 7v5h2V7zm0 6.5v2h2v-2z"/></svg>',
@@ -56,6 +61,9 @@
     this._tab = 'overview';
     this._filter = 'all';
     this._query = '';
+    // Every assignment's sort ({key, dir}, or null for newest due first);
+    // kept from one student to the next.
+    this._sort = null;
     // What "Copy List of Missing/Late Work" copies; kept from one student to
     // the next. open: the builder is expanded.
     this._share = { missing: true, late: false, links: true, open: false };
@@ -497,8 +505,45 @@
       this.applyActivitySearch();
       return;
     }
+    var sortBtn = t.closest('[data-si-sort]');
+    if (sortBtn) {
+      var sk = sortBtn.getAttribute('data-si-sort');
+      var cur = this._sort;
+      this._sort = { key: sk, dir: cur && cur.key === sk ? (cur.dir === 'asc' ? 'desc' : 'asc') : SORT_FIRST[sk] || 'asc' };
+      this.sortWork();
+      return;
+    }
     var chip = t.closest('[data-si-filter-chip]');
     if (chip) { this.applyFilter(chip.getAttribute('data-si-filter-chip')); return; }
+  };
+
+  /* Every assignment, in the order of the header the teacher last clicked
+   * (this._sort: {key, dir}); a blank (no due date, no score) always last,
+   * ties in the usual newest-due-first order. */
+  P.sortWork = function () {
+    if (!this._root) return;
+    var table = this._root.querySelector('[data-si-panel="work"] .cgp-si__table--sortable');
+    if (!table) return;
+    var s = this._sort;
+    table.querySelectorAll('thead th[aria-sort]').forEach(function (h) {
+      var b = h.querySelector('[data-si-sort]');
+      var on = s && b && b.getAttribute('data-si-sort') === s.key;
+      h.setAttribute('aria-sort', on ? (s.dir === 'asc' ? 'ascending' : 'descending') : 'none');
+    });
+    var body = table.querySelector('tbody');
+    if (!body) return;
+    var rows = Array.prototype.slice.call(body.querySelectorAll('tr'));
+    var idx = function (tr) { return Number(tr.getAttribute('data-sort-i')) || 0; };
+    var sign = s && s.dir === 'desc' ? -1 : 1;
+    var text = s && s.key === 'name';
+    rows.sort(function (a, b) {
+      if (!s) return idx(a) - idx(b);
+      var x = a.getAttribute('data-sort-' + s.key) || '', y = b.getAttribute('data-sort-' + s.key) || '';
+      if (x === '' || y === '') return x === y ? idx(a) - idx(b) : x === '' ? 1 : -1;
+      var c = text ? x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' }) : Number(x) - Number(y);
+      return c ? c * sign : idx(a) - idx(b);
+    });
+    rows.forEach(function (tr) { body.appendChild(tr); });
   };
 
   P.selectTab = function (name, filter) {
@@ -539,9 +584,9 @@
     this.applyActivitySearch();
   };
 
-  /* The Activity tab's search: videos and course content by name, type,
-   * module or where a video is embedded. While searching, the charts step
-   * aside so the matches are right under the box. */
+  /* The Activity tab's search, right above the Studio videos and course
+   * content it filters: by name, type, module or where a video is
+   * embedded. While searching, the cards below the matches step aside. */
   P.applyActivitySearch = function () {
     if (!this._root) return;
     var q = this._query || '';
@@ -774,6 +819,7 @@
       this.panel('work', this.work(r)) +
       this.panel('activity', this.activityPanel(r)) +
       this.panel('profile', this.profilePanel(uid, student, parts));
+    this.sortWork();
     this.applyFilter(this._filter);
     body.scrollTop = keepScroll;
     if (searching) {
@@ -1121,7 +1167,7 @@
       '</div>';
     var model = this.model;
 
-    var rows = r.items.slice().reverse().map(function (i) {
+    var rows = r.items.slice().reverse().map(function (i, n) {
       var tags = [i.status === 'missing' ? 'missing' : '', i.status === 'late' ? 'late' : '', i.needsGrading ? 'needs' : '',
         i.status === 'upcoming' ? 'upcoming' : '', i.attempt > 1 ? 'resub' : '', i.submittedAt ? 'submitted' : '',
         unwatched(i) ? 'video' : ''].filter(Boolean).join(' ');
@@ -1160,7 +1206,11 @@
       var haystack = [i.name, st.label, kindWord, group, mods.join(' | '), SI().dateSearchText(i.dueAt), SI().dateSearchText(i.submittedAt)].join(' | ');
       var where = [mods.join(', '), group].filter(Boolean).join(' · ');
       if (where) flags += '<span class="cgp-si__where" title="Module · assignment group">' + esc(where) + '</span>';
-      return '<tr data-tags="' + tags + '" data-search="' + esc(haystack.toLowerCase()) + '">' +
+      var key = function (v) { return v === null || v === undefined || !isFinite(v) ? '' : String(v); };
+      var sortAttrs = ' data-sort-i="' + n + '" data-sort-name="' + esc(String(i.name || '').toLowerCase()) + '" data-sort-due="' + key(i.dueAt) +
+        '" data-sort-status="' + (STATUS_RANK[i.status] === undefined ? 9 : STATUS_RANK[i.status]) + '" data-sort-submitted="' + key(i.submittedAt) +
+        '" data-sort-score="' + (i.status === 'excused' ? '' : key(i.percent)) + '" data-sort-median="' + key(i.classMedian) + '"';
+      return '<tr data-tags="' + tags + '" data-search="' + esc(haystack.toLowerCase()) + '"' + sortAttrs + '>' +
         '<td class="cgp-si__name-cell"><a href="' + esc(self.assignmentUrl(i.id)) + '" target="_blank" rel="noopener" title="Open the assignment">' + esc(i.name) + '</a>' + flags + '</td>' +
         '<td>' + (i.dueAt ? esc(fmtDate(i.dueAt, true)) : '<span class="cgp-si__muted">No due date</span>') + '</td>' +
         '<td><span class="cgp-si__status cgp-si__status--' + st.cls + '">' + st.label + '</span></td>' +
@@ -1170,8 +1220,16 @@
         '<td class="cgp-si__act">' + action + '</td>' +
         '</tr>';
     }).join('');
-    var table = '<div class="cgp-si__table-wrap"><table class="cgp-si__table"><thead><tr><th>Assignment</th><th>Due</th><th>Status</th><th>Submitted</th>' +
-      '<th class="cgp-si__num">Score</th><th class="cgp-si__num">Class median</th><th><span class="cgp-si__sr">Open</span></th></tr></thead><tbody>' + rows +
+    var sort = this._sort;
+    var th = function (key, label, cls) {
+      var dir = sort && sort.key === key ? sort.dir : null;
+      return '<th' + (cls ? ' class="' + cls + '"' : '') + ' aria-sort="' + (dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none') + '">' +
+        '<button type="button" class="cgp-si__sort" data-si-sort="' + key + '" title="Sort by ' + esc(label.toLowerCase()) + '">' + esc(label) +
+        '<span class="cgp-si__sort-arrow" aria-hidden="true"></span></button></th>';
+    };
+    var table = '<div class="cgp-si__table-wrap"><table class="cgp-si__table cgp-si__table--sortable"><thead><tr>' +
+      th('name', 'Assignment') + th('due', 'Due') + th('status', 'Status') + th('submitted', 'Submitted') +
+      th('score', 'Score', 'cgp-si__num') + th('median', 'Class median', 'cgp-si__num') + '<th><span class="cgp-si__sr">Open</span></th></tr></thead><tbody>' + rows +
       '</tbody></table><p class="cgp-si__table-empty cgp-si__note" hidden>No assignments match.</p></div>';
 
     var missingCard = L.missing.length ? section('Missing work', '<ul class="cgp-si__todo">' + L.missing.map(function (i) {
@@ -1242,40 +1300,40 @@
       tiles.push(tile('Active days', '<b>' + a.activeDays30 + '<small> / 30</small></b>', 'days with any page view'));
     }
 
-    var out = this.activitySearch(r) + '<div data-si-nosearch' + (this._query && this._query.trim() ? ' hidden' : '') + '>' +
-      '<div class="cgp-si__tiles">' + tiles.join('') + '</div>';
+    var out = '<div class="cgp-si__tiles">' + tiles.join('') + '</div>';
+    // Daily page views on the left; the smaller charts beside it.
+    var left;
     if (!r.analyticsKnown) {
-      out += '<div class="cgp-si__loading cgp-si__loading--inline" role="status"><span class="cgp-si__spinner" aria-hidden="true"></span>Reading Canvas analytics…</div>';
+      left = '<div class="cgp-si__card cgp-si__act-main"><div class="cgp-si__loading cgp-si__loading--inline" role="status"><span class="cgp-si__spinner" aria-hidden="true"></span>Reading Canvas analytics…</div></div>';
     } else if (!a) {
-      out += '<div class="cgp-si__card"><p class="cgp-si__note">Canvas analytics isn’t available for this course, so page views by day and hour can’t be shown. ' +
+      left = '<div class="cgp-si__card cgp-si__act-main"><p class="cgp-si__note">Canvas analytics isn’t available for this course, so page views by day and hour can’t be shown. ' +
         'Last activity and time in the course come from the enrollment and are shown above.</p></div>';
     } else {
       var trend30 = a.prior30 ? Math.round(((a.last30 - a.prior30) / a.prior30) * 100) : null;
-      out += section('Daily page views', this.heatmap(a),
-        a.last30 + ' in the last 30 days' + (trend30 !== null ? ' (' + (trend30 >= 0 ? '+' : '−') + Math.abs(trend30) + '% vs the 30 before)' : ''));
-      out += '<div class="cgp-si__grid2">' +
-        section('By day of week', this.columns(a.byWeekday, ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], 'page views', null)) +
-        section('By time of day', this.columns(a.byHour, hourLabels(), 'page views', 6)) +
-        '</div>';
+      left = section('Daily page views', this.heatmap(a),
+        a.last30 + ' in the last 30 days' + (trend30 !== null ? ' (' + (trend30 >= 0 ? '+' : '−') + Math.abs(trend30) + '% vs the 30 before)' : ''))
+        .replace('<div class="cgp-si__card">', '<div class="cgp-si__card cgp-si__act-main">');
     }
-    out += '</div>';
-    out += this.studioPanel(r);
-    out += this.contentPanel(r);
-    out += '<div data-si-nosearch' + (this._query && this._query.trim() ? ' hidden' : '') + '>';
+    var charts = [];
+    if (a) {
+      charts.push(section('By day of week', this.columns(a.byWeekday, ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], 'page views', null, true)));
+      charts.push(section('By time of day', this.columns(a.byHour, hourLabels(), 'page views', 6, true)));
+    }
     var t = r.timing;
     if (t.submitted) {
       var lead = t.medianLeadHours === null ? '–' : SI().duration(t.medianLeadHours * 3600);
-      out += '<div class="cgp-si__grid2">' +
-        section('When work gets submitted', this.columns(t.byHour, hourLabels(), 'submissions', 6) +
-          '<p class="cgp-si__line">On-time work arrives a median <b>' + esc(lead) + '</b> before the deadline' +
-          (t.lastMinuteShare !== null ? ' · <b>' + Math.round(t.lastMinuteShare * 100) + '%</b> within the last 2 hours' : '') + '</p>' +
-          (t.lateNight ? '<p class="cgp-si__note">' + t.lateNight + ' of ' + t.submitted + ' submitted between 10 pm and 4 am.</p>' : '')) +
-        section('Feedback conversation', this.feedback(r)) +
-        '</div>';
-    } else {
-      out += section('Feedback conversation', this.feedback(r));
+      charts.push(section('When work gets submitted', this.columns(t.byHour, hourLabels(), 'submissions', 6, true) +
+        '<p class="cgp-si__note">On-time work arrives a median <b>' + esc(lead) + '</b> before the deadline' +
+        (t.lastMinuteShare !== null ? ' · <b>' + Math.round(t.lastMinuteShare * 100) + '%</b> within the last 2 hours' : '') + '.' +
+        (t.lateNight ? ' ' + t.lateNight + ' of ' + t.submitted + ' submitted between 10 pm and 4 am.' : '') + '</p>'));
     }
-    return out + '</div>';
+    out += '<div class="cgp-si__act-grid">' + left +
+      (charts.length ? '<div class="cgp-si__act-charts">' + charts.join('') + '</div>' : '') + '</div>';
+    // The search sits right above what it searches.
+    out += this.activitySearch(r);
+    out += this.studioPanel(r);
+    out += this.contentPanel(r);
+    return out;
   };
 
   /* The modules an assignment (or its quiz / discussion) sits in. */
@@ -1520,13 +1578,11 @@
         return '<li><b>' + esc(g.name) + '</b>' + (g.pronouns ? ' <span class="cgp-si__muted">(' + esc(g.pronouns) + ')</span>' : '') +
           '<span>' + (g.email ? mailLink(g.email) : '<span class="cgp-si__muted">No email shown in Canvas</span>') + '</span>' +
           (g.lastLogin !== undefined ? '<span class="cgp-si__people-sub">Last Canvas login: ' + esc(loginText(g.lastLogin)) + '</span>' : '') + '</li>';
-      }).join('') + '</ul>' +
-        (guardians.some(function (x) { return x.lastLogin === undefined; }) ? '<p class="cgp-si__note">Canvas didn’t share when ' +
-          (guardians.length === 1 ? 'this parent' : 'these parents') + ' last logged in.</p>' : '') +
-        (withEmail.length > 1 ? '<p class="cgp-si__line"><button type="button" class="cgp-si__copy" data-si-copytext="' + esc(withEmail.join(', ')) + '">Copy all</button></p>' : '');
+      }).join('') + '</ul>';
     }
-    gBody += '<p class="cgp-si__note">Phone numbers and home addresses stay in the school’s student information system; Canvas doesn’t give them to teachers.</p>';
-    var guardianCard = section('Parents & guardians', gBody, guardians && guardians.length ? String(guardians.length) : '');
+    var copyAll = withEmail.length > 1
+      ? '<button type="button" class="cgp-si__copy" data-si-copytext="' + esc(withEmail.join(', ')) + '" aria-label="Copy every parent’s email">Copy all</button>' : '';
+    var guardianCard = section('Parents & guardians', gBody, copyAll);
 
     var names = {};
     (p.courses || []).forEach(function (c) { if (c && c.id !== undefined) names[String(c.id)] = c.name || c.course_code || ''; });
@@ -1645,32 +1701,18 @@
     return out;
   }
 
-  P.feedback = function (r) {
-    var f = r.feedback;
-    var rows = '<dl class="cgp-si__dl">' +
-      '<div><dt>Your comments</dt><dd>' + f.fromYou + '</dd></div>' +
-      (f.fromTeachers > f.fromYou ? '<div><dt>Other instructors</dt><dd>' + (f.fromTeachers - f.fromYou) + '</dd></div>' : '') +
-      '<div><dt>Student comments</dt><dd>' + f.fromStudent + '</dd></div>' +
-      '<div><dt>Resubmissions</dt><dd>' + r.lists.resubmitted.length + '</dd></div></dl>';
-    var uid = this._uid, self = this;
-    var unanswered = f.unanswered.length
-      ? '<p class="cgp-si__line"><b>Waiting on a reply from you:</b></p><ul class="cgp-si__todo">' + f.unanswered.map(function (u) {
-        return '<li><a href="' + esc(self.speedGraderUrl(u.id, uid)) + '" target="_blank" rel="noopener">' + esc(u.name) + '</a><span>' +
-          esc(SI().relativeDay(u.at, r.now)) + '</span><b></b></li>';
-      }).join('') + '</ul>' : '';
-    return rows + unanswered;
-  };
-
-  /* Vertical bars; labels every `every` bars (all when null). */
-  P.columns = function (values, labels, unit, every) {
+  /* Vertical bars; labels every `every` bars (all when null). compact: a
+   * small chart, drawn at about the size it's shown so its labels stay
+   * readable. */
+  P.columns = function (values, labels, unit, every, compact) {
     var max = values.reduce(function (m, v) { return Math.max(m, v); }, 0);
     if (!max) return '<p class="cgp-si__note">No ' + esc(unit) + ' recorded.</p>';
-    var W = 340, H = 130, padB = 18, padT = 6;
+    var W = compact ? 210 : 340, H = compact ? 84 : 130, padB = compact ? 16 : 18, padT = compact ? 4 : 6;
     var slot = W / values.length;
-    var bw = Math.max(3, slot - (values.length > 12 ? 3 : 8));
+    var bw = Math.max(3, slot - (values.length > 12 ? (compact ? 2 : 3) : (compact ? 6 : 8)));
     var plotH = H - padB - padT;
     var peak = values.indexOf(max);
-    var svg = '<svg class="cgp-si__cols" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(unit) + ' by ' + (values.length === 7 ? 'day of week' : 'hour') + '">';
+    var svg = '<svg class="cgp-si__cols' + (compact ? ' cgp-si__cols--sm' : '') + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(unit) + ' by ' + (values.length === 7 ? 'day of week' : 'hour') + '">';
     values.forEach(function (v, i) {
       var h = (v / max) * plotH;
       var x = i * slot + (slot - bw) / 2;
@@ -1694,7 +1736,7 @@
   P.heatmap = function (a) {
     var days = a.days;
     var weeks = Math.ceil(days.length / 7);
-    var cell = 22, gap = 4, padL = 30, padT = 18;
+    var cell = 13, gap = 3, padL = 26, padT = 15;
     var W = padL + weeks * (cell + gap), H = padT + 7 * (cell + gap);
     var max = a.maxDay || 1;
     function level(n) {
@@ -1704,7 +1746,7 @@
     }
     var svg = '<svg class="cgp-si__heat" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Page views per day over the last ' + weeks + ' weeks">';
     ['', 'Mon', '', 'Wed', '', 'Fri', ''].forEach(function (l, i) {
-      if (l) svg += '<text class="cgp-si__axis" x="0" y="' + (padT + i * (cell + gap) + cell - 3) + '">' + l + '</text>';
+      if (l) svg += '<text class="cgp-si__axis" x="0" y="' + (padT + i * (cell + gap) + cell - 2) + '">' + l + '</text>';
     });
     var lastMonth = -1, lastLabelWeek = -9;
     days.forEach(function (d, idx) {
@@ -1715,11 +1757,11 @@
         lastMonth = dt.getMonth();
         lastLabelWeek = w;
         var mName = dt.toLocaleString(undefined, { month: 'short' });
-        svg += '<text class="cgp-si__axis" x="' + x + '" y="11">' + esc(mName) + '</text>';
+        svg += '<text class="cgp-si__axis" x="' + x + '" y="10">' + esc(mName) + '</text>';
       }
       if (d.future) return;
       svg += '<rect class="cgp-si__heat-cell cgp-si__heat-' + level(d.count) + '" x="' + x + '" y="' + y + '" width="' + cell + '" height="' + cell +
-        '" rx="3" data-tip="' + esc(dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ': ' +
+        '" rx="2" data-tip="' + esc(dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + ': ' +
           (d.count ? d.count + (d.count === 1 ? ' page view' : ' page views') : 'no activity')) + '"/>';
     });
     svg += '</svg>';
@@ -1729,11 +1771,11 @@
     var total = days.reduce(function (t, d) { return t + d.count; }, 0);
     var active = days.filter(function (d) { return d.count; }).length;
     var past = days.filter(function (d) { return !d.future; }).length;
-    var side = '<dl class="cgp-si__dl cgp-si__dl--stack">' +
-      '<div><dt>Page views, last ' + weeks + ' weeks</dt><dd>' + total.toLocaleString() + '</dd></div>' +
+    var side = '<dl class="cgp-si__dl cgp-si__dl--row">' +
+      '<div><dt>Page views</dt><dd>' + total.toLocaleString() + '<small> / ' + weeks + ' wks</small></dd></div>' +
       '<div><dt>Days with activity</dt><dd>' + active + '<small> / ' + past + '</small></dd></div>' +
       '<div><dt>Busiest day</dt><dd>' + a.maxDay + '<small> views</small></dd></div></dl>';
-    return '<div class="cgp-si__heat-row"><div class="cgp-si__heat-wrap">' + svg + legend + '</div>' + side + '</div>';
+    return '<div class="cgp-si__heat-wrap">' + svg + legend + '</div>' + side;
   };
 
   CGP.StudentInsightsController = StudentInsightsController;
