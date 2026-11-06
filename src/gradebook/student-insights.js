@@ -819,7 +819,8 @@
       this.panel('work', this.work(r)) +
       this.panel('activity', this.activityPanel(r)) +
       this.panel('profile', this.profilePanel(uid, student, parts));
-    this.sortWork();
+    // Rows render in the default order; only a chosen sort moves them.
+    if (this._sort) this.sortWork();
     this.applyFilter(this._filter);
     body.scrollTop = keepScroll;
     if (searching) {
@@ -1316,13 +1317,13 @@
     }
     var charts = [];
     if (a) {
-      charts.push(section('By day of week', this.columns(a.byWeekday, ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], 'page views', null, true)));
-      charts.push(section('By time of day', this.columns(a.byHour, hourLabels(), 'page views', 6, true)));
+      charts.push(section('By day of week', this.columns(a.byWeekday, ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], 'page views', null)));
+      charts.push(section('By time of day', this.columns(a.byHour, hourLabels(), 'page views', 6)));
     }
     var t = r.timing;
     if (t.submitted) {
       var lead = t.medianLeadHours === null ? '–' : SI().duration(t.medianLeadHours * 3600);
-      charts.push(section('When work gets submitted', this.columns(t.byHour, hourLabels(), 'submissions', 6, true) +
+      charts.push(section('When work gets submitted', this.columns(t.byHour, hourLabels(), 'submissions', 6) +
         '<p class="cgp-si__note">On-time work arrives a median <b>' + esc(lead) + '</b> before the deadline' +
         (t.lastMinuteShare !== null ? ' · <b>' + Math.round(t.lastMinuteShare * 100) + '%</b> within the last 2 hours' : '') + '.' +
         (t.lateNight ? ' ' + t.lateNight + ' of ' + t.submitted + ' submitted between 10 pm and 4 am.' : '') + '</p>'));
@@ -1701,18 +1702,17 @@
     return out;
   }
 
-  /* Vertical bars; labels every `every` bars (all when null). compact: a
-   * small chart, drawn at about the size it's shown so its labels stay
-   * readable. */
-  P.columns = function (values, labels, unit, every, compact) {
+  /* Vertical bars; labels every `every` bars (all when null). A small
+   * chart, drawn at about the size it's shown so its labels stay readable. */
+  P.columns = function (values, labels, unit, every) {
     var max = values.reduce(function (m, v) { return Math.max(m, v); }, 0);
     if (!max) return '<p class="cgp-si__note">No ' + esc(unit) + ' recorded.</p>';
-    var W = compact ? 210 : 340, H = compact ? 84 : 130, padB = compact ? 16 : 18, padT = compact ? 4 : 6;
+    var W = 210, H = 84, padB = 16, padT = 4;
     var slot = W / values.length;
-    var bw = Math.max(3, slot - (values.length > 12 ? (compact ? 2 : 3) : (compact ? 6 : 8)));
+    var bw = Math.max(3, slot - (values.length > 12 ? 2 : 6));
     var plotH = H - padB - padT;
     var peak = values.indexOf(max);
-    var svg = '<svg class="cgp-si__cols' + (compact ? ' cgp-si__cols--sm' : '') + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(unit) + ' by ' + (values.length === 7 ? 'day of week' : 'hour') + '">';
+    var svg = '<svg class="cgp-si__cols cgp-si__cols--sm" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(unit) + ' by ' + (values.length === 7 ? 'day of week' : 'hour') + '">';
     values.forEach(function (v, i) {
       var h = (v / max) * plotH;
       var x = i * slot + (slot - bw) / 2;

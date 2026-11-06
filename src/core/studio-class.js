@@ -452,7 +452,9 @@
         if (c) c.push(v); else lengths.push([v]);
       });
       if (lengths.length === 1) lengths[0] = lengths[0].concat(unknown);
-      else if (!lengths.length) lengths.push(unknown);
+      // No length known at all: embeds join the title's one course video;
+      // two course videos with no length to tell them apart stay apart.
+      else if (!lengths.length && unknown.filter(function (v) { return !v.embeddedOnly; }).length <= 1) lengths.push(unknown);
       lengths.forEach(function (c) {
         if (c.length < 2) return;
         var p = primary(c);

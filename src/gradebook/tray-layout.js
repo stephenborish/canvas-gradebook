@@ -235,8 +235,10 @@
       if (editor.tagName === 'TEXTAREA') return;
       setAttr(editor, 'data-cgp-tray-rce', '');
       // The whole status bar where it can be told apart; else just its word
-      // count (found once, then not searched for again).
-      if (!tagStatusBar(editor) && !editor.querySelector('[data-cgp-tray-hide]')) tagWordCount(editor);
+      // count. Found once, then not searched for again (every keystroke's
+      // word count update rescans the tray).
+      if (editor.querySelector('[data-cgp-tray-hide]')) return;
+      if (!tagStatusBar(editor)) tagWordCount(editor);
     });
   }
 
