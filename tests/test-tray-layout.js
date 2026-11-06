@@ -19,30 +19,33 @@ function el(tag, attrs, kids) {
   return e;
 }
 
-function radioOpt(label, checked) {
-  const input = el('input', { type: 'radio', name: 'SubmissionTrayRadioInput' });
+function radioOpt(label, checked, color, days) {
+  const input = el('input', { type: 'radio', name: 'SubmissionTrayRadioInput', value: label.toLowerCase() });
   if (checked) input.setAttribute('checked', '');
-  return el('span', { class: 'col' }, [
-    el('div', { class: 'SubmissionTray__RadioInput' }, [
-      el('div', {}, [input, el('label', {}, [el('span', { 'aria-hidden': 'true' }), el('span', { text: label })])])
-    ])
+  const band = el('div', { class: 'SubmissionTray__RadioInput' }, [
+    el('div', {}, [input, el('label', {}, [el('span', { 'aria-hidden': 'true' }), el('span', { text: label })])])
   ]);
+  if (color) band.style.backgroundColor = color;
+  if (days) band.appendChild(el('div', { class: 'NumberInput__Container' }, [el('span', {}, [el('input', { type: 'text', value: '2' })]), el('span', { text: 'Days' })]));
+  return el('span', { class: 'col' }, [band]);
 }
 
 /** A tray shaped like Canvas's: status fieldset, earlier comments, then the
  * comment form (RCE + status bar, then Cancel / Submit). */
 function buildTray(opts) {
   const o = opts || {};
-  const row = el('span', { class: 'row' }, ['None', 'Late', 'Missing', 'Excused'].map((l, i) => radioOpt(l, i === 0)));
+  const colors = { Late: 'rgb(229, 243, 252)', Missing: 'rgb(255, 232, 229)', Excused: 'rgb(254, 247, 229)' };
+  const row = el('span', { class: 'row' }, ['None', 'Late', 'Missing', 'Excused'].map((l, i) =>
+    radioOpt(l, o.late ? l === 'Late' : i === 0, colors[l], o.late && l === 'Late')));
   const statusBar = el('div', { class: 'status' }, [
     el('button', { text: 'p' }),
     el('span', o.liveBeforeCount ? { 'aria-live': 'polite' } : { class: 'sep' }),
     el('span', {}, [el('span', { text: '2 words' })])
   ]);
-  const rce = el('div', { class: 'rce-wrapper' }, [
-    el('div', { class: 'tox-tinymce' }, [el('button', { text: 'Paragraph' }), el('iframe')]),
-    statusBar
-  ]);
+  const tox = el('div', { class: 'tox-tinymce' }, [el('button', { text: 'Paragraph' }), el('iframe')]);
+  // flatBar: the status bar's parts loose in the wrapper, so it can't be
+  // told apart as one block (the word-count fallback).
+  const rce = el('div', { class: 'rce-wrapper' }, o.flatBar ? [tox].concat(statusBar.children.slice()) : [tox, statusBar]);
   const cancel = el('button', { text: 'Cancel' });
   const submit = el('button', { text: 'Submit' });
   const actions = el('div', { class: 'btns' }, [cancel, submit]);
@@ -89,21 +92,49 @@ suite('Grade Detail Tray layout', (test) => {
     a.not(has(t.statusBar, 'data-cgp-tray-comment-actions'), 'RCE status bar is not the toolbar');
   });
 
-  test('word count and the bare divider before it are hidden; the path button is not', () => {
+  test('the RCE is tagged and its whole status bar (path, word count, accessibility button) is hidden', () => {
     const t = setup();
     t.ctl.start();
-    const [path, sep, count] = t.statusBar.children;
+    a.ok(has(t.rce, 'data-cgp-tray-rce'), 'RCE tagged');
+    a.ok(has(t.statusBar, 'data-cgp-tray-hide'), 'status bar hidden');
+    a.not(has(t.rce.children[0], 'data-cgp-tray-hide'), 'the editor itself is kept');
+  });
+
+  test('status bar not told apart: the word count and the bare divider before it are hidden; the path button is not', () => {
+    const t = setup({ flatBar: true });
+    t.ctl.start();
+    const [, path, sep, count] = t.rce.children;
     a.ok(has(count, 'data-cgp-tray-hide'), 'word count hidden');
     a.ok(has(sep, 'data-cgp-tray-hide'), 'divider hidden');
     a.not(has(path, 'data-cgp-tray-hide'), 'path kept');
   });
 
-  test('an empty aria-live region before the word count is left alone', () => {
-    const t = setup({ liveBeforeCount: true });
+  test('status bar not told apart: an empty aria-live region before the word count is left alone', () => {
+    const t = setup({ liveBeforeCount: true, flatBar: true });
     t.ctl.start();
-    const [, live, count] = t.statusBar.children;
+    const [, , live, count] = t.rce.children;
     a.ok(has(count, 'data-cgp-tray-hide'));
     a.not(has(live, 'data-cgp-tray-hide'), 'live region not hidden');
+  });
+
+  test('each status pill carries its value and an accent darkened from Canvas’s colour', () => {
+    const t = setup();
+    t.ctl.start();
+    const pills = t.row.children.map((c) => c.children[0]);
+    a.deep(pills.map((p) => p.getAttribute('data-cgp-tray-value')), ['none', 'late', 'missing', 'excused']);
+    a.eq(pills[0].style.getPropertyValue('--cgp-tray-accent') || '', '', 'None: no colour, the neutral grey');
+    a.eq(pills[1].style.getPropertyValue('--cgp-tray-accent'), 'hsl(203, 79%, 40%)', 'Late: its blue, readable');
+    a.eq(pills[2].style.getPropertyValue('--cgp-tray-accent'), 'hsl(7, 100%, 40%)', 'Missing: its red');
+    a.ok(/^hsl\(43, \d+%, 32%\)$/.test(pills[3].style.getPropertyValue('--cgp-tray-accent')), 'Excused: its yellow, darker still');
+  });
+
+  test('Late’s days box is tagged to sit under the row; the radio part is not', () => {
+    const t = setup({ late: true });
+    t.ctl.start();
+    const band = t.row.children[1].children[0];
+    a.ok(has(band.children[1], 'data-cgp-tray-days'), 'days box tagged');
+    a.not(has(band.children[0], 'data-cgp-tray-days'), 'radio part not');
+    a.eq(t.doc.querySelectorAll('[data-cgp-tray-days]').length, 1, 'only Late’s');
   });
 
   test('no buttons beside the editor: an unrelated button group further up is never claimed', () => {

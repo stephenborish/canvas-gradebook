@@ -1235,6 +1235,44 @@ html.cgp-on .slick-cell[data-cgp-col="total"][data-cgp-band] { container-type: i
   html.cgp-on .slick-cell[data-cgp-col="total"]:has(> .cgp-total-flag) > :not(:where(.cgp-total-flag)) { box-sizing: border-box !important; padding-left: 24px !important; }
 }
 
+/* Canvas's "this total includes grades that aren't posted yet" crossed-out
+ * eye (and its other Total warning icons). Left in the text flow it sat
+ * beside or under the number, on its own baseline, and pushed the number off
+ * centre. It is lifted out the same way as the threshold flag, mirrored:
+ * a fixed spot on the cell's trailing edge, vertically centred, so every
+ * Total in the column stays centred alike. Not while the cell is being
+ * edited. The attribute is repeated to outrank the grade-font rules. */
+html.cgp-on .slick-cell[data-cgp-col="total"][data-cgp-col="total"][data-cgp-col="total"]:not(:has(input:not([type="hidden"]))) :is(i[class*="icon-"], .final-warning, svg[name="IconOff"], svg[name="IconWarning"]):not([class*="cgp-"]),
+html.cgp-on .slick-cell[class~="total_grade"][class~="total_grade"][class~="total_grade"]:not(:has(input:not([type="hidden"]))) :is(i[class*="icon-"], .final-warning, svg[name="IconOff"], svg[name="IconWarning"]):not([class*="cgp-"]) {
+  position: absolute !important;
+  right: 6px !important;
+  left: auto !important;
+  top: 50% !important;
+  bottom: auto !important;
+  transform: translateY(-50%) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 14px !important;
+  height: 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  line-height: 1 !important;
+  letter-spacing: 0 !important;
+  vertical-align: middle !important;
+  color: var(--cgp-unposted, #b3701a) !important;
+  z-index: 5 !important;
+}
+html.cgp-on .slick-cell[data-cgp-col="total"][data-cgp-col="total"][data-cgp-col="total"]:not(:has(input:not([type="hidden"]))) i[class*="icon-"]:not([class*="cgp-"])::before,
+html.cgp-on .slick-cell[class~="total_grade"][class~="total_grade"][class~="total_grade"]:not(:has(input:not([type="hidden"]))) i[class*="icon-"]:not([class*="cgp-"])::before {
+  font-size: 13px !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+  vertical-align: 0 !important;
+}
+
 /* The Total hover tooltip, on <body> so no grid pane clips it. */
 html.cgp-on .cgp-total-tip {
   position: fixed;
@@ -3730,94 +3768,308 @@ html.cgp-on .cgp-sections-notice__head [data-notice="compare"] { margin-left: au
  * data-cgp-tray-* attributes and only restyled while html.cgp-tray-tidy is on
  * (the `trayLayout` setting). Nothing here moves a node. */
 
-/* Status: one horizontal row of pills instead of a stacked list. */
+/* Status: one row of equal pills - a segmented control - instead of a
+ * stacked list. --cgp-tray-accent is the status's own colour, darkened
+ * (tray-layout.js); None and uncoloured statuses use the neutral grey. */
 html.cgp-tray-tidy [data-cgp-tray-status] {
+  position: relative !important;
   display: flex !important;
   flex-flow: row wrap !important;
-  align-items: stretch;
-  gap: 6px;
-  margin: 4px 0 0 !important;
+  align-items: stretch !important;
+  gap: 6px !important;
+  margin: 6px 0 0 !important;
   padding: 0 !important;
   width: 100% !important;
+  border: 0 !important;
+  box-sizing: border-box !important;
+}
+/* Late's days box sits in the space under the row. */
+html.cgp-tray-tidy [data-cgp-tray-status]:has([data-cgp-tray-days]) {
+  padding-bottom: 50px !important;
 }
 html.cgp-tray-tidy [data-cgp-tray-status] > [data-cgp-tray-opt] {
-  flex: 1 1 64px !important;
-  min-width: 0 !important;
+  position: static !important;
+  display: block !important;
+  flex: 1 1 0 !important;
+  min-width: 56px !important;
   max-width: none !important;
   width: auto !important;
   margin: 0 !important;
   padding: 0 !important;
 }
-/* Late with its "days late" box showing takes the whole row. */
-html.cgp-tray-tidy [data-cgp-tray-status] > [data-cgp-tray-opt]:has(input:not([type="radio"])) {
-  flex-basis: 100% !important;
-}
 html.cgp-tray-tidy [data-cgp-tray-pill] {
-  box-sizing: border-box;
-  height: 100%;
+  --cgp-tray-c: var(--cgp-tray-accent, #6b7780);
+  position: static !important;
+  box-sizing: border-box !important;
+  height: 36px !important;
   margin: 0 !important;
   padding: 0 !important;
-  border: 1px solid rgba(45, 59, 69, 0.22);
-  border-radius: 8px;
+  border: 1px solid #c7cdd1 !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+  /* The status colour as a thin underline, so each pill is recognisable
+   * before it's picked. */
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--cgp-tray-c) 55%, transparent) !important;
   overflow: hidden;
-  transition: box-shadow 0.12s ease, border-color 0.12s ease;
-}
-html.cgp-tray-tidy [data-cgp-tray-pill]:not([style*="background"]) {
-  background-color: #f5f5f5;
+  transition: background-color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
 }
 html.cgp-tray-tidy [data-cgp-tray-pill]:hover {
-  border-color: rgba(45, 59, 69, 0.55);
+  border-color: var(--cgp-tray-c) !important;
+  background: color-mix(in srgb, var(--cgp-tray-c) 5%, #fff) !important;
 }
 html.cgp-tray-tidy [data-cgp-tray-pill]:has(input[type="radio"]:checked) {
-  border-color: #2d3b45;
-  box-shadow: inset 0 0 0 1px #2d3b45;
+  border-color: var(--cgp-tray-c) !important;
+  background: color-mix(in srgb, var(--cgp-tray-c) 12%, #fff) !important;
+  box-shadow: inset 0 0 0 1px var(--cgp-tray-c) !important;
 }
 html.cgp-tray-tidy [data-cgp-tray-pill]:has(input[type="radio"]:focus-visible) {
-  outline: 2px solid #0374b5;
+  outline: 2px solid #0374b5 !important;
   outline-offset: 2px;
 }
-/* The whole pill is the label, so anywhere on it picks the status. */
+/* The radio's own wrapper fills the pill; the label is the click target. */
+html.cgp-tray-tidy [data-cgp-tray-pill] > :not([data-cgp-tray-days]) {
+  height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
 html.cgp-tray-tidy [data-cgp-tray-pill] label {
   display: flex !important;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  box-sizing: border-box;
-  min-height: 36px;
-  padding: 6px 4px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+  height: 100% !important;
+  box-sizing: border-box !important;
+  min-height: 0 !important;
+  padding: 0 4px !important;
   margin: 0 !important;
   cursor: pointer;
   text-align: center;
 }
-/* InstUI's radio circle: the outline above already shows which is picked. */
+/* InstUI's radio circle: the pill itself shows which is picked. */
 html.cgp-tray-tidy [data-cgp-tray-pill] label > span[aria-hidden="true"] {
   display: none !important;
 }
-html.cgp-tray-tidy [data-cgp-tray-pill] label > span {
+html.cgp-tray-tidy [data-cgp-tray-pill] label > span,
+html.cgp-tray-tidy [data-cgp-tray-pill] label > span * {
   margin: 0 !important;
   padding: 0 !important;
-  font-size: 0.875rem !important;
+  font-size: 0.8125rem !important;
+  font-weight: 500 !important;
   line-height: 1.2 !important;
+  color: #2d3b45 !important;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-html.cgp-tray-tidy [data-cgp-tray-pill]:has(input[type="radio"]:checked) label > span {
+html.cgp-tray-tidy [data-cgp-tray-pill]:has(input[type="radio"]:checked) label > span,
+html.cgp-tray-tidy [data-cgp-tray-pill]:has(input[type="radio"]:checked) label > span * {
   font-weight: 700 !important;
+  color: color-mix(in srgb, var(--cgp-tray-c) 80%, #000) !important;
 }
-/* Late's "days late" box, under its label. */
-html.cgp-tray-tidy [data-cgp-tray-pill]:has(input:not([type="radio"])) {
-  padding-bottom: 8px !important;
+/* Late's "days late" box: a strip under the whole row, in Late's colour.
+ * Canvas fills the days in itself when the work came in late. */
+html.cgp-tray-tidy [data-cgp-tray-days] {
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  height: 42px !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  margin: 0 !important;
+  padding: 0 10px !important;
+  border: 1px solid color-mix(in srgb, var(--cgp-tray-c) 40%, #fff) !important;
+  border-radius: 8px !important;
+  background: color-mix(in srgb, var(--cgp-tray-c) 8%, #fff) !important;
+  font-size: 0.8125rem !important;
+  color: #2d3b45 !important;
 }
-html.cgp-tray-tidy [data-cgp-tray-pill]:has(input:not([type="radio"])) > :not(:first-child) {
-  margin: 0 10px !important;
+html.cgp-tray-tidy [data-cgp-tray-days]::before {
+  content: "Late by";
+  font-weight: 700;
+  color: color-mix(in srgb, var(--cgp-tray-c) 80%, #000);
+}
+html.cgp-tray-tidy [data-cgp-tray-days] > * {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-days] input {
+  box-sizing: border-box !important;
+  width: 76px !important;
+  height: 30px !important;
+  padding: 0 8px !important;
+  border: 1px solid #c7cdd1 !important;
+  border-radius: 6px !important;
+  background: #fff !important;
+  font-size: 0.8125rem !important;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+html.cgp-tray-tidy [data-cgp-tray-days] input:focus {
+  outline: none !important;
+  border-color: #0374b5 !important;
+  box-shadow: 0 0 0 2px rgba(3, 116, 181, 0.25) !important;
 }
 
-/* Comments: Cancel / Submit as a slim toolbar joined to the top of a
- * shorter editor - the bar and the box read as one composer. */
+/* Comments: one card - Cancel / Submit as a slim bar on top, a single row
+ * of formatting buttons, a shorter editing area, no status bar. Before
+ * anything is typed Canvas shows no buttons, so the editor alone is the
+ * card; once they appear the card grows the bar. */
+html.cgp-tray-tidy [data-cgp-tray-rce] {
+  box-sizing: border-box !important;
+  border: 1px solid #c7cdd1 !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+  height: auto !important;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+html.cgp-tray-tidy [data-cgp-tray-rce]:focus-within {
+  border-color: #0374b5 !important;
+  box-shadow: 0 0 0 2px rgba(3, 116, 181, 0.2) !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-tinymce {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-container {
+  height: auto !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header {
+  padding: 0 !important;
+  border: 0 !important;
+  border-bottom: 1px solid #e3e6e8 !important;
+  background: #f7f8f9 !important;
+  box-shadow: none !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-toolbar-overlord,
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-toolbar,
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-toolbar__primary,
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-toolbar__overflow,
+html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow {
+  background: transparent none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+/* Every row of buttons is ONE row: the "more" (⋮) drawer included. */
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-toolbar__primary,
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-toolbar__overflow,
+html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  padding: 0 4px !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: none;
+}
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-toolbar__overflow {
+  border-top: 1px solid #e3e6e8 !important;
+}
+html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow {
+  background: #f7f8f9 !important;
+  border: 1px solid #c7cdd1 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 14px rgba(19, 33, 44, 0.15) !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-toolbar__group,
+html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow .tox-toolbar__group {
+  flex: 0 0 auto !important;
+  flex-wrap: nowrap !important;
+  padding: 0 2px !important;
+  margin: 0 !important;
+  border: 0 !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-toolbar__group + .tox-toolbar__group,
+html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow .tox-toolbar__group + .tox-toolbar__group {
+  border-left: 1px solid #e3e6e8 !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-tbtn,
+html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow .tox-tbtn {
+  height: 28px !important;
+  min-width: 28px !important;
+  width: auto !important;
+  margin: 4px 1px !important;
+  padding: 0 3px !important;
+  border-radius: 6px !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-split-button,
+html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow .tox-split-button {
+  margin: 4px 1px !important;
+  border-radius: 6px !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-split-button .tox-tbtn,
+html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow .tox-split-button .tox-tbtn {
+  margin: 0 !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-split-button__chevron,
+html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow .tox-split-button__chevron {
+  width: 14px !important;
+  min-width: 14px !important;
+  padding: 0 !important;
+}
+/* "Paragraph": as wide as its word, not a fixed 7em. */
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-tbtn--select {
+  padding: 0 2px 0 6px !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-tbtn__select-label {
+  width: auto !important;
+  margin: 0 2px 0 0 !important;
+  font-size: 0.8125rem !important;
+}
+/* The editing area: a fixed, shorter height whatever the toolbar does, so
+ * opening the ⋮ drawer never squeezes it. */
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-sidebar-wrap {
+  flex: 0 0 auto !important;
+  height: 104px !important;
+  min-height: 104px !important;
+}
+/* Across, it still fills the width (the sidebar row is a flex row). */
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-edit-area {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  height: 104px !important;
+  min-height: 104px !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-edit-area__iframe {
+  height: 100% !important;
+}
+
+/* With its buttons, the whole form is the card and the editor sits inside. */
 html.cgp-tray-tidy [data-cgp-tray-comment] {
   display: flex !important;
   flex-direction: column !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-comment]:has(> [data-cgp-tray-comment-actions]) {
+  box-sizing: border-box !important;
+  border: 1px solid #c7cdd1 !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+  overflow: hidden !important;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+html.cgp-tray-tidy [data-cgp-tray-comment]:has(> [data-cgp-tray-comment-actions]):focus-within {
+  border-color: #0374b5 !important;
+  box-shadow: 0 0 0 2px rgba(3, 116, 181, 0.2) !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-comment]:has(> [data-cgp-tray-comment-actions]) [data-cgp-tray-rce],
+html.cgp-tray-tidy [data-cgp-tray-comment]:has(> [data-cgp-tray-comment-actions]) [data-cgp-tray-rce]:focus-within,
+html.cgp-tray-tidy [data-cgp-tray-comment]:has(> [data-cgp-tray-comment-actions]) > textarea[data-cgp-tray-comment-editor],
+html.cgp-tray-tidy [data-cgp-tray-comment]:has(> [data-cgp-tray-comment-actions]) [data-cgp-tray-comment-editor] textarea {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-comment-editor] {
+  margin: 0 !important;
 }
 html.cgp-tray-tidy [data-cgp-tray-comment] > [data-cgp-tray-comment-actions] {
   order: -1;
@@ -3826,12 +4078,19 @@ html.cgp-tray-tidy [data-cgp-tray-comment] > [data-cgp-tray-comment-actions] {
   align-items: center;
   gap: 4px;
   margin: 0 !important;
-  padding: 4px 4px 4px 10px !important;
-  background: #f5f5f5 !important;
-  border: 1px solid #c7cdd1 !important;
-  border-bottom: 0 !important;
-  border-radius: 6px 6px 0 0;
+  padding: 5px 6px 5px 10px !important;
+  background: #fff !important;
+  border: 0 !important;
+  border-bottom: 1px solid #e3e6e8 !important;
   text-align: initial !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-comment] > [data-cgp-tray-comment-actions]::before {
+  content: "New comment";
+  margin-right: auto;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #6b7780;
 }
 html.cgp-tray-tidy [data-cgp-tray-comment] > [data-cgp-tray-comment-actions] > * {
   margin: 0 !important;
@@ -3889,18 +4148,7 @@ html.cgp-tray-tidy [data-cgp-tray-btn][aria-disabled="true"] {
   opacity: 0.45;
   cursor: default;
 }
-html.cgp-tray-tidy [data-cgp-tray-comment-editor] .tox-tinymce,
-html.cgp-tray-tidy .tox-tinymce[data-cgp-tray-comment-editor] {
-  height: 150px !important;
-  min-height: 0 !important;
-}
-/* Square top corners where the toolbar sits on the box. */
-html.cgp-tray-tidy [data-cgp-tray-comment]:has(> [data-cgp-tray-comment-actions]) > [data-cgp-tray-comment-editor] .tox-tinymce,
-html.cgp-tray-tidy [data-cgp-tray-comment]:has(> [data-cgp-tray-comment-actions]) > .tox-tinymce[data-cgp-tray-comment-editor],
-html.cgp-tray-tidy [data-cgp-tray-comment]:has(> [data-cgp-tray-comment-actions]) > textarea[data-cgp-tray-comment-editor] {
-  border-top-left-radius: 0 !important;
-  border-top-right-radius: 0 !important;
-}
+/* A plain textarea comment box (no RCE). */
 html.cgp-tray-tidy textarea[data-cgp-tray-comment-editor],
 html.cgp-tray-tidy [data-cgp-tray-comment-editor] textarea {
   min-height: 3.5em;
