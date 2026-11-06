@@ -174,7 +174,12 @@
     var aliasOf = Object.create(null);
     var open = Object.create(null), left = 0;
     videos.forEach(function (v) { if (v.embeddedOnly && !open[v.uuid]) { open[v.uuid] = true; left++; } });
+    // The course videos titled like an unplaced embed first: usually the match.
+    var titles = Object.create(null);
+    videos.forEach(function (v) { if (v.embeddedOnly) titles[SC().normName(v.title)] = true; });
     var course = videos.filter(function (v) { return !v.embeddedOnly && v.mediaId; });
+    course = course.filter(function (v) { return titles[SC().normName(v.title)]; })
+      .concat(course.filter(function (v) { return !titles[SC().normName(v.title)]; }));
     if (!left || !course.length) return Promise.resolve(aliasOf);
     var i = 0;
     function worker() {

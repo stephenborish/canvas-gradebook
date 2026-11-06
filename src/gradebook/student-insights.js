@@ -1350,6 +1350,7 @@
     var labels = VIDEO_LABELS;
     var ASSIGNED = { Assignment: 1, Quiz: 1, Discussion: 1 };
     var placeTags = function (v) {
+      if (!r.indexKnown && (!v.places || !v.places.length)) return ['pending'];
       var tags = [];
       (v.places || []).forEach(function (p) {
         var t = ASSIGNED[p.kind] ? 'assigned' : 'module';
@@ -1358,6 +1359,7 @@
       return tags.length ? tags : ['unposted'];
     };
     var placeHtml = function (v) {
+      if ((!v.places || !v.places.length) && !r.indexKnown) return '<span class="cgp-si__muted">Looking…</span>';
       if (!v.places || !v.places.length) return '<span class="cgp-si__muted" title="In Studio’s list for this course, but not embedded in any assignment, quiz, discussion, page or module">Not posted in Canvas</span>';
       return v.places.slice(0, 4).map(function (p) {
         var name = esc(p.name || p.kind);
@@ -1373,11 +1375,17 @@
       if (!v.places || !v.places.length) bits.push('not posted');
       return esc(bits.join(' | ').toLowerCase());
     };
+    var tally = { all: s.rows.length, assigned: 0, module: 0, unposted: 0, pending: 0 };
+    var tagsOf = s.rows.map(function (v) { var t = placeTags(v); t.forEach(function (x) { tally[x]++; }); return t; });
+    var chips = [['all', 'All'], ['assigned', 'In assignments'], ['module', 'In modules & pages'], ['unposted', 'Not posted']].filter(function (ch) {
+      return ch[0] === 'all' || tally[ch[0]];
+    });
+    var showChips = chips.length > 2 || (chips.length === 2 && tally[chips[1][0]] !== tally.all);
+    // The last filter, unless its chip isn't shown here (nothing of that kind).
     var vfilter = this._videoPlace || 'all';
-    var tally = { all: s.rows.length, assigned: 0, module: 0, unposted: 0 };
-    var rows = s.rows.map(function (v) {
-      var tags = placeTags(v);
-      tags.forEach(function (t) { tally[t]++; });
+    if (!showChips || !chips.some(function (ch) { return ch[0] === vfilter; })) vfilter = this._videoPlace = 'all';
+    var rows = s.rows.map(function (v, n) {
+      var tags = tagsOf[n];
       var on = vfilter === 'all' || tags.indexOf(vfilter) >= 0;
       var open = '<tr data-vplace="' + tags.join(' ') + '" data-search="' + searchOf(v) + '"' + (on ? '' : ' hidden') + '>';
       var where = '<td class="cgp-si__vplaces">' + placeHtml(v) + '</td>';
@@ -1394,10 +1402,7 @@
         '<td class="cgp-si__muted" title="Students in the class who watched any of it">' + v.classWatched + ' in class</td>' +
         '</tr>';
     }).join('');
-    var chips = [['all', 'All'], ['assigned', 'In assignments'], ['module', 'In modules & pages'], ['unposted', 'Not posted']].filter(function (ch) {
-      return ch[0] === 'all' || tally[ch[0]];
-    });
-    var chipHtml = chips.length > 2 || (chips.length === 2 && tally[chips[1][0]] !== tally.all)
+    var chipHtml = showChips
       ? '<div class="cgp-si__chips cgp-si__chips--content" role="group" aria-label="Show videos by where they’re posted">' + chips.map(function (ch) {
         return '<button type="button" class="cgp-si__chip" data-si-vplace="' + ch[0] + '" aria-pressed="' + (vfilter === ch[0]) + '">' + esc(ch[1]) + ' <b>' + tally[ch[0]] + '</b></button>';
       }).join('') + '</div>'
@@ -1481,10 +1486,10 @@
     // (Canvas's display name) in brackets when it differs.
     var fullName = student.fullName || user.name || student.name || '';
     var nick = user.short_name || student.name || '';
-    var plainName = function (n) { return String(n || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
+    var norm = CGP.studioClass ? CGP.studioClass.normName : function (n) { return String(n || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
     // Not when every word of it is already in the name ("Thomas (Tommy) Tegler").
-    var fullWords = plainName(fullName).split(' ');
-    var showNick = !!plainName(nick) && !plainName(nick).split(' ').every(function (w) { return fullWords.indexOf(w) >= 0; });
+    var fullWords = norm(fullName).split(' ');
+    var showNick = !!norm(nick) && !norm(nick).split(' ').every(function (w) { return fullWords.indexOf(w) >= 0; });
 
     var g = (parts.enrollment && parts.enrollment.grades) || (here[0] && here[0].grades) || {};
     var active = student.lastActivityAt ? SI().lastActiveText(Date.parse(student.lastActivityAt), Date.now()) : '';

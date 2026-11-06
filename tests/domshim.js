@@ -218,6 +218,9 @@ Object.defineProperty(FakeElement.prototype, 'nextSibling', {
     return p ? (p.children[p.children.indexOf(this) + 1] || null) : null;
   }
 });
+Object.defineProperty(FakeElement.prototype, 'nextElementSibling', {
+  get: function () { return this.nextSibling; }
+});
 
 FakeElement.prototype.getBoundingClientRect = function () {
   var r = this._rect || { left: 0, top: 0, width: 0, height: 0 };

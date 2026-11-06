@@ -66,6 +66,8 @@
         setTimeout(function () { selfRetry.start(); }, 250);
         return;
       }
+      // A later start() (the setting turned back on) gets a fresh five seconds.
+      this._retryCount = 0;
       CGP.diag.warn('studentSearch.noBreadcrumb');
       return;
     }
@@ -109,8 +111,7 @@
     for (var i = 0; i < links.length; i++) {
       var href = (links[i].getAttribute('href') || '').split(/[?#]/)[0];
       if (/\/courses\/\d+\/?$/.test(href)) {
-        var after = links[i].nextElementSibling || nextEl(links[i]);
-        if (after && isSwitcher(after)) return after;
+        if (isSwitcher(links[i].nextElementSibling)) return links[i].nextElementSibling;
         // Course switcher is off, so nothing has tagged this crumb yet - do
         // it here instead. See course-switcher.js for why: without it, this
         // button can wrap onto its own line, out of alignment with the
@@ -133,20 +134,13 @@
     var home = CGP.CourseSwitcher && CGP.CourseSwitcher.prototype.findHomeCrumb
       ? CGP.CourseSwitcher.prototype.findHomeCrumb.call(this) : null;
     if (home) {
-      var next = home.nextElementSibling || nextEl(home);
-      return next && isSwitcher(next) ? next : home;
+      return isSwitcher(home.nextElementSibling) ? home.nextElementSibling : home;
     }
     return links.length ? links[0] : null;
   };
 
   function isSwitcher(el) {
-    return !!(el.classList && el.classList.contains('cgp-crumb-toggle') && !el.classList.contains('cgp-find-student'));
-  }
-  function nextEl(el) {
-    var parent = el.parentElement;
-    var kids = parent && parent.children ? Array.prototype.slice.call(parent.children) : [];
-    var i = kids.indexOf(el);
-    return i >= 0 ? kids[i + 1] || null : null;
+    return !!(el && el.classList && el.classList.contains('cgp-crumb-toggle') && !el.classList.contains('cgp-find-student'));
   }
 
   P.isOpen = function () { return !!(this.menu && this.menu.classList.contains('cgp-course-menu--on')); };

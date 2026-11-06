@@ -618,6 +618,12 @@ suite('student overview: profile tab', (test) => {
     a.ok(html.includes('data-si-vplace="assigned"') && html.includes('data-si-vplace="module"') && html.includes('data-si-vplace="unposted"'), 'chips by where posted');
     a.ok(html.includes('data-vplace="assigned"') && html.includes('Not posted in Canvas'), 'rows tagged');
     a.ok(html.includes('href="/courses/9/assignments/5"') && html.includes('Posted in'), 'the assignment it is in');
+    c._videoPlace = 'unposted';
+    const placed = { indexKnown: true, studio: { counts: r.studio.counts, rows: r.studio.rows.slice(0, 2) } };
+    const h2 = c.studioPanel(placed);
+    a.ok(!/<tr [^>]* hidden>/.test(h2) && c._videoPlace === 'all', 'a filter whose chip isn’t shown falls back to All');
+    const early = c.studioPanel({ indexKnown: false, studio: { counts: r.studio.counts, rows: [row({ uuid: 'z', title: 'Z' })] } });
+    a.ok(early.includes('Looking…') && !early.includes('Not posted in Canvas'), 'not called unposted before the index is in');
     const by = c.videosByAssignment(r);
     a.deep(Object.keys(by), ['5']);
     a.eq(by['5'][0].title, 'Bonds');
