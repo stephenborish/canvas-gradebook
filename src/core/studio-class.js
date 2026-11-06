@@ -337,7 +337,18 @@
         missing.push(target);
       }
       if (!target.title && e.title) target.title = e.title;
-      if (e.place && !target.places.some(function (p) { return p.kind === e.place.kind && p.name === e.place.name; })) target.places.push(e.place);
+      if (!e.place) return;
+      // One entry per place: the same kind, name and address. Two module
+      // items with the same title in different modules are two places; the
+      // same place reached twice keeps every module it sits in.
+      var same = target.places.filter(function (p) {
+        return p.kind === e.place.kind && p.name === e.place.name && (p.url || '') === (e.place.url || '');
+      })[0];
+      if (!same) { target.places.push(Object.assign({}, e.place, { modules: (e.place.modules || []).slice() })); return; }
+      (e.place.modules || []).forEach(function (m) {
+        same.modules = same.modules || [];
+        if (same.modules.indexOf(m) < 0) same.modules.push(m);
+      });
     });
     return { videos: list, missing: missing };
   }

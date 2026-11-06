@@ -204,4 +204,15 @@ suite('Studio videos for one student', (test) => {
     const out = sc().foldEmbeds([{ uuid: 'a', title: 'Intro' }, { uuid: 'b', title: 'Intro' }, { uuid: 'x', title: 'Intro', embeddedOnly: true, error: 'unavailable' }], {});
     a.eq(out.length, 3);
   });
+
+  test('the same video under the same title in two modules is two places', () => {
+    const place = (url, mod) => ({ uuid: 'v1', title: 'Review video', place: { kind: 'Module', name: 'Review video', url, modules: [mod] } });
+    const j = sc().joinEmbeds([{ uuid: 'v1', title: 'Review video' }], [
+      place('/courses/1/modules/items/10', 'Unit 1'), place('/courses/1/modules/items/20', 'Unit 2'),
+      place('/courses/1/modules/items/20', 'Unit 2')
+    ]);
+    a.deep(j.videos[0].places.map((p) => p.modules[0]), ['Unit 1', 'Unit 2'], 'both modules kept, a repeat once');
+    const noIds = sc().joinEmbeds([{ uuid: 'v1', title: 'Review video' }], [place('/courses/1/modules', 'Unit 1'), place('/courses/1/modules', 'Unit 2')]);
+    a.deep(noIds.videos[0].places.map((p) => p.modules), [['Unit 1', 'Unit 2']], 'one address: its modules merged');
+  });
 });
