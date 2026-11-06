@@ -2784,7 +2784,6 @@ html.cgp-on .cgp-board__quick { flex: 1 1 100%; font-size: 12.5px; color: var(--
 html.cgp-on .cgp-board__orphans summary { cursor: pointer; color: var(--cgp-brand-dark); }
 html.cgp-on .cgp-board__orphanlist { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
 html.cgp-on .cgp-board__orphanlist li { margin: 3px 0; }
-html.cgp-on .cgp-copyto--compare { margin-left: 0; }
 html.cgp-on .cgp-sections__results { list-style: none; margin: 8px 0; padding: 0; }
 html.cgp-on .cgp-sections__result { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--cgp-hairline); font-size: 13px; }
 html.cgp-on .cgp-sections__result ul { margin: 4px 0 0 16px; padding: 0; color: #8a4b00; }

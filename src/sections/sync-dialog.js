@@ -52,6 +52,8 @@
    *  - the course home: in the sidebar, under Import Existing Content (its
    *    mirror image), and opens the item picker;
    *  - the Modules page: beside + Module, and opens the item picker.
+   * One button per page: Compare classes is inside the dialog it opens, so
+   * Canvas's own toolbars keep their room.
    * Other pages get no button. Edit pages neither: what would be copied is
    * the saved version, not what is on screen. */
   var COPY_GLYPH =
@@ -61,7 +63,7 @@
 
   P.start = function () {
     if (!this.settings.values.sectionCopy) { this.unmount(); return; }
-    if (this.button && this.button.isConnected) { this.placeCompare(); return; }
+    if (this.button && this.button.isConnected) return;
     var spot = this.findSpot();
     if (!spot) return;
     if (!spot.at) {
@@ -90,29 +92,13 @@
       e.stopPropagation();
       self2.open(spot.kind === 'item' ? null : { pick: true });
     });
-    this.spotKind = spot.kind;
-    this.placeCompare();
     if (spot.kind === 'item' && this.settings.values.sectionCopyNudge) this.checkPage();
-  };
-
-  /* Compare classes (sync-board.js), beside the button on the course home
-   * and the Modules page, once this course is linked to others. */
-  P.placeCompare = function () {
-    if (!this.mountCompare || !this.button || (this.spotKind !== 'home' && this.spotKind !== 'modules')) return;
-    if (!this.siblings().length) {
-      if (this.compareButton && this.compareButton.parentNode) this.compareButton.parentNode.removeChild(this.compareButton);
-      this.compareButton = null;
-      return;
-    }
-    this.mountCompare(this.button, this.spotKind);
   };
 
   P.unmount = function () {
     document.querySelectorAll('.cgp-copyto-row').forEach(function (el) { el.classList.remove('cgp-copyto-row'); });
     document.querySelectorAll('.cgp-copyto-title').forEach(function (el) { el.classList.remove('cgp-copyto-title'); });
     if (this.button && this.button.parentNode) this.button.parentNode.removeChild(this.button);
-    if (this.compareButton && this.compareButton.parentNode) this.compareButton.parentNode.removeChild(this.compareButton);
-    this.compareButton = null;
     var bar = document.querySelector('.cgp-copyto-bar');
     if (bar) bar.remove();
     this.button = null;
@@ -887,7 +873,10 @@
       '<div class="cgp-sections__courses">' + rows + '</div>' +
       '<div class="cgp-roster__row cgp-roster__actions">' +
       '<button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-act="pick-done"' + (n ? '' : ' disabled') + '>Add ' + (n || '') + '</button>' +
-      '<button type="button" class="cgp-roster__btn" data-act="pick-cancel">Cancel</button></div></section>';
+      '<button type="button" class="cgp-roster__btn" data-act="pick-cancel">Cancel</button>' +
+      (this.openBoard ? '<button type="button" class="cgp-roster__btn" data-act="compare"' +
+        ' title="Every item in this class against your other classes: what is missing, out of date or changed there">Compare classes…</button>' : '') +
+      '</div></section>';
   };
 
   P.loadPickList = function (type) {
