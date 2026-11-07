@@ -3770,151 +3770,196 @@ html.cgp-on .cgp-sections-notice__head [data-notice="compare"] { margin-left: au
  * data-cgp-tray-* attributes and only restyled while html.cgp-tray-tidy is on
  * (the `trayLayout` setting). Nothing here moves a node. */
 
-/* Status: one row of equal pills - a segmented control - instead of a
- * stacked list. --cgp-tray-accent is the status's own colour, darkened
- * (tray-layout.js); None and uncoloured statuses use the neutral grey. */
-html.cgp-tray-tidy [data-cgp-tray-status] {
-  position: relative !important;
-  display: flex !important;
-  flex-flow: row wrap !important;
-  align-items: stretch !important;
-  gap: 6px !important;
-  margin: 6px 0 0 !important;
-  padding: 0 !important;
-  width: 100% !important;
-  border: 0 !important;
-  box-sizing: border-box !important;
-}
-/* Late's days box sits in the space under the row. */
-html.cgp-tray-tidy [data-cgp-tray-status]:has([data-cgp-tray-days]) {
-  padding-bottom: 50px !important;
-}
-html.cgp-tray-tidy [data-cgp-tray-status] > [data-cgp-tray-opt] {
-  position: static !important;
-  display: block !important;
-  flex: 1 1 0 !important;
-  min-width: 56px !important;
-  max-width: none !important;
-  width: auto !important;
-  margin: 0 !important;
-  padding: 0 !important;
-}
-html.cgp-tray-tidy [data-cgp-tray-pill] {
-  --cgp-tray-c: var(--cgp-tray-accent, #6b7780);
-  position: static !important;
-  box-sizing: border-box !important;
-  height: 36px !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  border: 1px solid #c7cdd1 !important;
-  border-radius: 8px !important;
-  background: #fff !important;
-  /* The status colour as a thin underline, so each pill is recognisable
-   * before it's picked. */
-  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--cgp-tray-c) 55%, transparent) !important;
-  overflow: hidden;
-  transition: background-color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
-}
-html.cgp-tray-tidy [data-cgp-tray-pill]:hover {
-  border-color: var(--cgp-tray-c) !important;
-  background: color-mix(in srgb, var(--cgp-tray-c) 5%, #fff) !important;
-}
-html.cgp-tray-tidy [data-cgp-tray-pill]:has(input[type="radio"]:checked) {
-  border-color: var(--cgp-tray-c) !important;
-  background: color-mix(in srgb, var(--cgp-tray-c) 12%, #fff) !important;
-  box-shadow: inset 0 0 0 1px var(--cgp-tray-c) !important;
-}
-html.cgp-tray-tidy [data-cgp-tray-pill]:has(input[type="radio"]:focus-visible) {
-  outline: 2px solid #0374b5 !important;
-  outline-offset: 2px;
-}
-/* The radio's own wrapper fills the pill; the label is the click target. */
-html.cgp-tray-tidy [data-cgp-tray-pill] > :not([data-cgp-tray-days]) {
-  height: 100% !important;
-  margin: 0 !important;
-  padding: 0 !important;
-}
-html.cgp-tray-tidy [data-cgp-tray-pill] label {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  width: 100% !important;
-  height: 100% !important;
-  box-sizing: border-box !important;
-  min-height: 0 !important;
-  padding: 0 4px !important;
-  margin: 0 !important;
-  cursor: pointer;
-  text-align: center;
-}
-/* InstUI's radio circle: the pill itself shows which is picked. */
-html.cgp-tray-tidy [data-cgp-tray-pill] label > span[aria-hidden="true"] {
+/* Status: our own segmented control (StatusControl in tray-layout.js)
+ * stands in for Canvas's radio list, which stays on the page - hidden - and
+ * still does the work. --cgp-tstat-c is each status's own colour, darkened
+ * into an accent; None and uncoloured statuses use the neutral slate. */
+html.cgp-tray-tidy [data-cgp-tray-status][data-cgp-tray-proxied] {
   display: none !important;
 }
-html.cgp-tray-tidy [data-cgp-tray-pill] label > span,
-html.cgp-tray-tidy [data-cgp-tray-pill] label > span * {
-  margin: 0 !important;
-  padding: 0 !important;
-  font-size: 0.8125rem !important;
-  font-weight: 500 !important;
-  line-height: 1.2 !important;
-  color: #2d3b45 !important;
+html.cgp-tray-tidy .cgp-tstat {
+  margin: 8px 0 4px;
+  font-family: inherit;
+  font-size: 0.875rem;
+  line-height: 1.25;
+  color: #2d3b45;
+  -webkit-font-smoothing: antialiased;
+}
+html.cgp-tray-tidy .cgp-tstat * { box-sizing: border-box; }
+html.cgp-tray-tidy .cgp-tstat__seg {
+  /* Each button as wide as its label, the spare width shared out; labels
+   * never truncate - a narrow tray (or many custom statuses) wraps instead. */
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 10px;
+  background: #eef1f3;
+  box-shadow: inset 0 0 0 1px #dfe3e6;
+}
+html.cgp-tray-tidy .cgp-tstat__opt {
+  --cgp-tstat-c: #5b6770;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 0 auto;
+  gap: 5px;
+  height: 32px;
+  margin: 0;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #4b5862;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease;
+}
+html.cgp-tray-tidy .cgp-tstat__opt:hover:not(:disabled):not([aria-pressed="true"]) {
+  background: rgba(255, 255, 255, 0.75);
+  color: #2d3b45;
+}
+html.cgp-tray-tidy .cgp-tstat__opt:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+html.cgp-tray-tidy .cgp-tstat__opt[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--cgp-tstat-c) 13%, #fff);
+  color: color-mix(in srgb, var(--cgp-tstat-c) 82%, #000);
+  box-shadow: inset 0 0 0 1.5px var(--cgp-tstat-c), 0 1px 2px rgba(16, 24, 32, 0.12);
+}
+html.cgp-tray-tidy .cgp-tstat__opt[data-value="none"][aria-pressed="true"] {
+  background: #fff;
+  color: #2d3b45;
+  box-shadow: 0 0 0 1px #d3d9dd, 0 1px 3px rgba(16, 24, 32, 0.12);
+}
+html.cgp-tray-tidy .cgp-tstat__opt:focus { outline: none; }
+html.cgp-tray-tidy .cgp-tstat__opt:focus-visible {
+  outline: 2px solid #0374b5;
+  outline-offset: 1px;
+  z-index: 1;
+}
+html.cgp-tray-tidy .cgp-tstat__opt:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+html.cgp-tray-tidy .cgp-tstat__dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cgp-tstat-c);
+  opacity: 0.85;
+}
+html.cgp-tray-tidy .cgp-tstat__opt[data-value="none"] .cgp-tstat__dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--cgp-tstat-c);
+}
+html.cgp-tray-tidy .cgp-tstat__opt[aria-pressed="true"] .cgp-tstat__dot { opacity: 1; }
+/* Sent to Canvas, not yet confirmed: the dot becomes a small spinner. */
+html.cgp-tray-tidy .cgp-tstat__opt[data-pending] .cgp-tstat__dot {
+  width: 10px;
+  height: 10px;
+  background: transparent;
+  box-shadow: none;
+  border: 2px solid color-mix(in srgb, var(--cgp-tstat-c) 30%, transparent);
+  border-top-color: var(--cgp-tstat-c);
+  animation: cgp-tstat-spin 0.7s linear infinite;
+}
+@keyframes cgp-tstat-spin { to { transform: rotate(360deg); } }
+html.cgp-tray-tidy .cgp-tstat__txt {
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
-html.cgp-tray-tidy [data-cgp-tray-pill]:has(input[type="radio"]:checked) label > span,
-html.cgp-tray-tidy [data-cgp-tray-pill]:has(input[type="radio"]:checked) label > span * {
-  font-weight: 700 !important;
-  color: color-mix(in srgb, var(--cgp-tray-c) 80%, #000) !important;
+
+/* Late: "Late by [-] 2 [+] days", in Late's colour, under the control. */
+html.cgp-tray-tidy .cgp-tstat__late {
+  --cgp-tstat-c: #5b6770;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 7px 10px 7px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--cgp-tstat-c) 28%, #fff);
+  background: color-mix(in srgb, var(--cgp-tstat-c) 7%, #fff);
+  animation: cgp-tstat-in 0.16s ease-out;
 }
-/* Late's "days late" box: a strip under the whole row, in Late's colour.
- * Canvas fills the days in itself when the work came in late. */
-html.cgp-tray-tidy [data-cgp-tray-days] {
-  position: absolute !important;
-  left: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  height: 42px !important;
-  box-sizing: border-box !important;
-  display: flex !important;
-  align-items: center !important;
-  gap: 8px !important;
-  margin: 0 !important;
-  padding: 0 10px !important;
-  border: 1px solid color-mix(in srgb, var(--cgp-tray-c) 40%, #fff) !important;
-  border-radius: 8px !important;
-  background: color-mix(in srgb, var(--cgp-tray-c) 8%, #fff) !important;
-  font-size: 0.8125rem !important;
-  color: #2d3b45 !important;
-}
-html.cgp-tray-tidy [data-cgp-tray-days]::before {
-  content: "Late by";
+html.cgp-tray-tidy .cgp-tstat__late[hidden] { display: none; }
+@keyframes cgp-tstat-in { from { opacity: 0; transform: translateY(-3px); } }
+html.cgp-tray-tidy .cgp-tstat__late-lbl {
+  font-size: 0.8125rem;
   font-weight: 700;
-  color: color-mix(in srgb, var(--cgp-tray-c) 80%, #000);
+  color: color-mix(in srgb, var(--cgp-tstat-c) 82%, #000);
+  white-space: nowrap;
 }
-html.cgp-tray-tidy [data-cgp-tray-days] > * {
-  flex: 0 0 auto !important;
-  width: auto !important;
-  margin: 0 !important;
-  padding: 0 !important;
+html.cgp-tray-tidy .cgp-tstat__stepper {
+  display: inline-flex;
+  align-items: stretch;
+  height: 30px;
+  border: 1px solid #c7cdd1;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
-html.cgp-tray-tidy [data-cgp-tray-days] input {
-  box-sizing: border-box !important;
-  width: 76px !important;
-  height: 30px !important;
-  padding: 0 8px !important;
-  border: 1px solid #c7cdd1 !important;
-  border-radius: 6px !important;
-  background: #fff !important;
-  font-size: 0.8125rem !important;
+html.cgp-tray-tidy .cgp-tstat__stepper:focus-within {
+  border-color: #0374b5;
+  box-shadow: 0 0 0 3px rgba(3, 116, 181, 0.18);
+}
+html.cgp-tray-tidy .cgp-tstat__step {
+  flex: 0 0 28px;
+  width: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: #f5f7f8;
+  color: #4b5862;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+html.cgp-tray-tidy .cgp-tstat__step:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--cgp-tstat-c) 12%, #fff);
+  color: color-mix(in srgb, var(--cgp-tstat-c) 82%, #000);
+}
+html.cgp-tray-tidy .cgp-tstat__step:disabled { cursor: not-allowed; opacity: 0.45; }
+html.cgp-tray-tidy .cgp-tstat__days {
+  width: 48px;
+  height: 100%;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+  border-left: 1px solid #e2e6e9;
+  border-right: 1px solid #e2e6e9;
+  border-radius: 0;
+  background: #fff;
+  box-shadow: none;
+  color: #2d3b45;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  text-align: right;
+  text-align: center;
 }
-html.cgp-tray-tidy [data-cgp-tray-days] input:focus {
-  outline: none !important;
-  border-color: #0374b5 !important;
-  box-shadow: 0 0 0 2px rgba(3, 116, 181, 0.25) !important;
+html.cgp-tray-tidy .cgp-tstat__days:focus { outline: none; box-shadow: none; }
+html.cgp-tray-tidy .cgp-tstat__days:disabled { background: #f5f7f8; color: #8b969e; }
+html.cgp-tray-tidy .cgp-tstat__unit {
+  font-size: 0.8125rem;
+  color: #4b5862;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  html.cgp-tray-tidy .cgp-tstat__opt,
+  html.cgp-tray-tidy .cgp-tstat__late { transition: none; animation: none; }
+  html.cgp-tray-tidy .cgp-tstat__opt[data-pending] .cgp-tstat__dot { animation-duration: 1.6s; }
 }
 
 /* Comments: one card - Cancel / Submit as a slim bar on top, a single row
