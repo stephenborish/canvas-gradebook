@@ -205,6 +205,34 @@ suite('Grade Detail Tray layout', (test) => {
     t.ctl.stopPolling();
   });
 
+  test('Late: Escape drops the edit, shows Canvas’s amount again and cancels a waiting stepper commit', () => {
+    const t = setup({ late: true });
+    t.ctl.start();
+    const ours = t.doc.querySelector('.cgp-tstat__days');
+    const canvas = t.doc.querySelector('.NumberInput__Container input');
+    ours.focus();
+    t.ctl.status.step(1);
+    a.eq(ours.value, '3');
+    a.ok(t.ctl.status.stepTimer, 'commit waiting');
+    ours.dispatchEvent({ type: 'keydown', key: 'Escape' });
+    a.eq(ours.value, '2', 'back to Canvas’s amount while still focused');
+    a.not(t.ctl.status.stepTimer, 'waiting commit cancelled');
+    a.not(t.ctl.status.daysDirty);
+    a.not(canvas._dispatched, 'nothing sent to Canvas');
+    t.ctl.stopPolling();
+  });
+
+  test('a scan queued before the setting went off does not bring the control back', () => {
+    const t = setup();
+    t.ctl.start();
+    t.settings.values.trayLayout = false;
+    t.ctl.apply();
+    t.ctl.scan();
+    a.eq(t.doc.querySelectorAll('.cgp-tstat').length, 0);
+    a.not(has(t.row, 'data-cgp-tray-proxied'));
+    a.not(t.ctl.timer, 'no polling');
+  });
+
   test('setting turned off: the control is removed and Canvas’s group shown again', () => {
     const t = setup();
     t.ctl.start();

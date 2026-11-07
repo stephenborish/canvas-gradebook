@@ -124,6 +124,9 @@
   /** Tags the tray currently on the page, if any. Safe to call repeatedly.
    * Looks only inside the known tray when there is one. */
   P.scan = function () {
+    // A scan queued just before the setting went off must not rebuild the
+    // control apply() has just torn down.
+    if (!this.enabled()) return false;
     if (this.tray && !this.tray.isConnected) this.tray = null;
     var radios = toArray((this.tray || document).querySelectorAll(RADIO_SELECTOR));
     if (radios.length < 2) return false;
@@ -299,7 +302,7 @@
     input.addEventListener('input', function () { self.daysDirty = true; });
     input.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { e.preventDefault(); self.commitDays(); }
-      else if (e.key === 'Escape') { e.stopPropagation(); self.daysDirty = false; self.stateKey = ''; self.sync(); }
+      else if (e.key === 'Escape') { e.stopPropagation(); self.revertDays(); }
       else if (e.key === 'ArrowUp') { e.preventDefault(); self.step(1); }
       else if (e.key === 'ArrowDown') { e.preventDefault(); self.step(-1); }
     });
@@ -517,6 +520,22 @@
     if (!opt.checked) opt.radio.click();
     this.sync();
     return true;
+  };
+
+  /** Drops an uncommitted edit (and any stepper commit still waiting) and
+   * shows Canvas's amount again - even though the box still has focus. */
+  SC.revertDays = function () {
+    if (this.stepTimer) { clearTimeout(this.stepTimer); this.stepTimer = null; }
+    this.daysDirty = false;
+    var m = this.read();
+    this.model = m;
+    if (m.days) {
+      var echo = this.daysEcho;
+      if (echo && (echo.node !== m.days.input || echo.canvas !== m.days.value)) echo = this.daysEcho = null;
+      this.daysInput.value = echo ? echo.shown : m.days.value;
+    }
+    this.stateKey = '';
+    this.sync();
   };
 
   SC.step = function (delta) {
