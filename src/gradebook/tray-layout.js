@@ -170,14 +170,10 @@
   /* ------------------------------------------------------------- statuses */
 
   /* Tags Canvas's radio group: the row that holds every option (hidden once
-   * our control stands in for it), and each option's band with its value.
-   * Returns the row, or null when the radios share no ancestor. */
+   * our control stands in for it). Returns the row, or null when the radios
+   * share no ancestor. */
   function tagStatuses(radios) {
-    var bands = radios.map(bandFor);
-    bands.forEach(function (band, n) {
-      if (band !== radios[n]) setAttr(band, 'data-cgp-tray-value', radioValue(radios[n]));
-    });
-    var row = commonAncestor(bands);
+    var row = commonAncestor(radios.map(bandFor));
     if (row) setAttr(row, 'data-cgp-tray-status', '');
     return row;
   }
@@ -238,6 +234,8 @@
     if (!this.root) this.build();
     if (this.row && this.row !== row) {
       // A new group (another tray): nothing carries over from the last one.
+      // A stepper commit still waiting belongs to the old group's student.
+      if (this.stepTimer) { clearTimeout(this.stepTimer); this.stepTimer = null; }
       this.row.removeAttribute('data-cgp-tray-proxied');
       this.pending = this.daysEcho = null;
       this.daysDirty = false;
@@ -306,7 +304,13 @@
       else if (e.key === 'ArrowUp') { e.preventDefault(); self.step(1); }
       else if (e.key === 'ArrowDown') { e.preventDefault(); self.step(-1); }
     });
-    input.addEventListener('blur', function () { if (self.daysDirty) self.commitDays(); });
+    input.addEventListener('blur', function () {
+      if (self.daysDirty) { self.commitDays(); return; }
+      // Canvas's amount may have changed while the box had focus (and so was
+      // not redrawn): show it now.
+      self.stateKey = '';
+      self.sync();
+    });
     stepper.appendChild(minus);
     stepper.appendChild(input);
     stepper.appendChild(plus);
@@ -482,7 +486,6 @@
     this.late.hidden = false;
     this.late.removeAttribute('hidden');
     var unit = days.unit ? days.unit.toLocaleLowerCase() : 'days';
-    this.unit.textContent = unit;
     setAttr(this.daysInput, 'aria-label', 'Late by, in ' + unit);
     var off = !!days.disabled || opts.some(function (o) { return o.value === 'late' && o.disabled; });
     [this.daysInput, this.minus, this.plus].forEach(function (el) {
@@ -501,8 +504,10 @@
     if (n !== null) {
       if (/^(day|hour)$/.test(unit) && n !== 1) unit += 's';
       else if (/^(days|hours)$/.test(unit) && n === 1) unit = unit.slice(0, -1);
-      this.unit.textContent = unit;
     }
+    // Only when it changed: each write is a mutation in the tray, which
+    // queues another full scan.
+    if (this.unit.textContent !== unit) this.unit.textContent = unit;
   };
 
   /** A status button was pressed. */
@@ -542,7 +547,8 @@
     if (!this.model || !this.model.days || this.daysInput.disabled) return;
     var n = parseAmount(this.daysInput.value);
     if (n === null) n = parseAmount(this.model.days.value) || 0;
-    n = Math.max(0, Math.round(n) + delta);
+    // To the next whole amount in that direction: 1.5 steps to 2 or 1.
+    n = Math.max(0, (delta > 0 ? Math.floor(n) : Math.ceil(n)) + delta);
     this.daysInput.value = String(n);
     this.daysDirty = true;
     var self = this;
@@ -560,7 +566,7 @@
     this.stateKey = '';
     var days = m.days;
     var typed = String(this.daysInput.value || '').trim();
-    if (!days || parseAmount(typed) === null || parseAmount(typed) < 0) { this.sync(); return false; }
+    if (!days || parseAmount(typed) === null) { this.sync(); return false; }
     if (parseAmount(typed) === parseAmount(days.value)) { this.sync(); return false; }
     var input = days.input;
     setNativeValue(input, typed);
