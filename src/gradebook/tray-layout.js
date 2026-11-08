@@ -565,9 +565,15 @@
     this.daysDirty = false;
     this.stateKey = '';
     var days = m.days;
-    var typed = String(this.daysInput.value || '').trim();
-    if (!days || parseAmount(typed) === null) { this.sync(); return false; }
-    if (parseAmount(typed) === parseAmount(days.value)) { this.sync(); return false; }
+    var amount = parseAmount(this.daysInput.value);
+    if (!days || amount === null) { this.sync(); return false; }
+    // Decimals are welcome ("1.5" or "1,5" alike), kept to Canvas's own two
+    // places, and handed over in the page language's decimal separator,
+    // which is how Canvas's field parses what it is given.
+    amount = Math.round(amount * 100) / 100;
+    var typed = formatAmount(amount);
+    this.daysInput.value = typed;
+    if (amount === parseAmount(days.value)) { this.sync(); return false; }
     var input = days.input;
     setNativeValue(input, typed);
     fire(input, 'input', true);
@@ -603,10 +609,36 @@
     else input.value = value;
   }
 
+  /** A typed amount: digits with at most one decimal mark - a point, a
+   * comma, or the page language's own (e.g. Persian "٫", which is how
+   * formatAmount writes it back) - or null for anything else (negatives,
+   * letters, thousands separators). */
   function parseAmount(s) {
-    var t = String(s == null ? '' : s).trim().replace(',', '.');
+    var t = String(s == null ? '' : s).trim();
+    var sep = decimalSeparator();
+    if (sep !== '.' && sep !== ',') t = t.split(sep).join('.');
+    t = t.replace(',', '.');
     if (!t || !/^\d*\.?\d+$|^\d+\.$/.test(t)) return null;
     return parseFloat(t);
+  }
+
+  /** An amount written with the page language's decimal separator. */
+  function formatAmount(n) {
+    var text = String(n);
+    var sep = decimalSeparator();
+    return sep === '.' ? text : text.replace('.', sep);
+  }
+
+  /* Canvas sets <html lang> to the user's language, and parses its days
+   * field by that language's rules ("1,5" is 1.5 in German, 15 in English). */
+  function decimalSeparator() {
+    var lang = (typeof document !== 'undefined' && document.documentElement &&
+      (document.documentElement.lang || document.documentElement.getAttribute('lang'))) || 'en';
+    try {
+      var parts = new Intl.NumberFormat(lang).formatToParts(1.5);
+      for (var i = 0; i < parts.length; i++) if (parts[i].type === 'decimal') return parts[i].value;
+    } catch (e) { /* unknown language tag: fall through */ }
+    return '.';
   }
 
   function flag(el, name) {
