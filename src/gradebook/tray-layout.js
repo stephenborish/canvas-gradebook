@@ -12,7 +12,7 @@
  *    "Late by [-] 2 [+] days" bar. Canvas's radios stay on the page, hidden,
  *    and every press goes through them - Canvas makes its own update.
  *  - the comment box is one card: its Cancel / Submit as a slim bar on top,
- *    a single compact row of formatting buttons that is always on show (the
+ *    compact formatting buttons, always on show and wrapping rather than clipped (the
  *    "more" button now reveals only the Paragraph dropdown - the reverse of
  *    TinyMCE's own split), a shorter editing area, and no status bar under
  *    it (the element path, word count and accessibility checker button).
