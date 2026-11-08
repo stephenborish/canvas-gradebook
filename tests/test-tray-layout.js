@@ -233,6 +233,25 @@ suite('Grade Detail Tray layout', (test) => {
     a.not(t.ctl.timer, 'no polling');
   });
 
+  test('Late: decimals with a point or a comma are sent in the page language’s format, to two places', () => {
+    const t = setup({ late: true });
+    t.ctl.start();
+    const ours = t.doc.querySelector('.cgp-tstat__days');
+    const canvas = t.doc.querySelector('.NumberInput__Container input');
+    const send = (typed) => { ours.value = typed; t.ctl.status.daysDirty = true; t.ctl.status.commitDays(); return canvas.value; };
+    a.eq(send('1,5'), '1.5', 'English page: a comma is a decimal point, never 15');
+    a.eq(send('2.25'), '2.25');
+    a.eq(send('0.333'), '0.33', 'rounded to two places, like Canvas');
+    a.eq(ours.value, '0.33', 'and shown that way');
+    t.doc.documentElement.setAttribute('lang', 'de');
+    a.eq(send('3.5'), '3,5', 'German page: Canvas gets a comma');
+    a.eq(ours.value, '3,5');
+    canvas._dispatched = [];
+    a.eq(send('1,000.5'), '3,5', 'thousands separators are not an amount: Canvas keeps its value');
+    a.deep(canvas._dispatched, [], 'nothing sent for it');
+    t.ctl.stopPolling();
+  });
+
   test('setting turned off: the control is removed and Canvas’s group shown again', () => {
     const t = setup();
     t.ctl.start();
