@@ -178,16 +178,16 @@
     studentInsights: true,
     speedgraderDrafts: true,
     speedgraderStickySubmit: true,
-    // Canvas's Assign To "Time" boxes: type a short key (1-4 = school periods)
-    // and Tab/Enter to fill in that period's start time. Times are stored as
-    // 24-hour "HH:MM" and rendered in Canvas's own 12/24-hour style on use.
-    timeShortcutsEnabled: true,
-    timeShortcuts: [
-      { key: '1', time: '08:55' },
-      { key: '2', time: '10:10' },
-      { key: '3', time: '12:30' },
-      { key: '4', time: '13:45' }
-    ],
+    // Class schedule beside Canvas's Assign To date and time boxes, read from
+    // the teacher's own calendar (a Google Calendar's iCal address, or any
+    // .ics feed): pick a class on a day and its start (or end) time - and the
+    // day - go into the boxes (core/course-calendar.js,
+    // assignments/course-schedule.js). The feed itself is fetched by the
+    // service worker and kept in chrome.storage.local, never synced.
+    courseScheduleEnabled: true,
+    courseCalendarUrl: '',
+    // Which of a class's times a click on it puts in: 'start' or 'end'.
+    courseScheduleTime: 'start',
     snippets: [
       { trigger: 'evidence', text: 'Good claim - now tie it back to the evidence in your data so the reasoning is complete.' },
       { trigger: 'units', text: 'Check your units and significant figures; the value is right but the label is missing.' },
@@ -403,10 +403,8 @@
   var MAX_SNIPPET_ITEM_BYTES = 8000;
   // Leaves ~14KB of sync's 100KB for every other setting and the item keys.
   var MAX_SNIPPET_BYTES = 86000;
-  // ~35 bytes each, so the whole list stays well inside the item every
-  // setting but the snippets shares.
-  var MAX_TIME_SHORTCUTS = 10;
-  var MAX_TIME_SHORTCUT_KEY = 12;
+  // A calendar feed's address (Google's secret ones run ~150 characters).
+  var MAX_CALENDAR_URL = 2000;
 
   /** "8:55", "08:55" -> "08:55"; anything that is not a 24-hour time -> null. */
   function normalizeClock(v) {
@@ -415,11 +413,6 @@
     var h = Number(m[1]), min = Number(m[2]);
     if (h > 23 || min > 59) return null;
     return (h < 10 ? '0' : '') + h + ':' + m[2];
-  }
-
-  /** A shortcut key as stored: letters, digits, - and _ only, lower-cased. */
-  function normalizeTimeKey(k) {
-    return String(k == null ? '' : k).trim().toLowerCase().replace(/[^\w-]/g, '').slice(0, MAX_TIME_SHORTCUT_KEY);
   }
 
   /** UTF-8 byte length - what chrome.storage.sync's quotas actually count. */
@@ -477,18 +470,15 @@
         out[k] = rules || d[k];
         return;
       }
-      if (k === 'timeShortcuts') {
-        // As with snippets, an unusable stored value falls back to the real
-        // defaults; an empty array is a real choice (no shortcuts) and stays.
-        if (!Array.isArray(v)) { out[k] = d[k]; return; }
-        var seen = Object.create(null);
-        out[k] = v.map(function (r) {
-          return { key: normalizeTimeKey(r && r.key), time: normalizeClock(r && r.time) };
-        }).filter(function (r) {
-          if (!r.key || !r.time || seen[r.key]) return false;
-          seen[r.key] = true;
-          return true;
-        }).slice(0, MAX_TIME_SHORTCUTS);
+      if (k === 'courseCalendarUrl') {
+        // Only an address that could be a feed: an https/webcal link or a
+        // bare Google calendar ID. Anything else is no calendar at all.
+        var url = typeof v === 'string' ? v.trim() : '';
+        out[k] = url.length <= MAX_CALENDAR_URL && (/^(https?|webcals?):\/\/\S+$/i.test(url) || /^[^\s\/:@]+@[^\s\/:@]+\.[a-z]{2,}$/i.test(url)) ? url : '';
+        return;
+      }
+      if (k === 'courseScheduleTime') {
+        out[k] = v === 'end' ? 'end' : 'start';
         return;
       }
       if (k === 'sectionGroups') {
@@ -593,11 +583,10 @@
   CGP.SETTINGS_LIMITS = {
     MAX_SNIPPETS: MAX_SNIPPETS, MAX_SNIPPET_TEXT: MAX_SNIPPET_TEXT, MAX_SNIPPET_BYTES: MAX_SNIPPET_BYTES,
     MAX_SNIPPET_ITEM_BYTES: MAX_SNIPPET_ITEM_BYTES,
-    MAX_TIME_SHORTCUTS: MAX_TIME_SHORTCUTS, MAX_TIME_SHORTCUT_KEY: MAX_TIME_SHORTCUT_KEY,
+    MAX_CALENDAR_URL: MAX_CALENDAR_URL,
     MAX_SECTION_GROUPS: MAX_SECTION_GROUPS, MAX_SECTION_GROUP_COURSES: MAX_SECTION_GROUP_COURSES
   };
   CGP.normalizeClock = normalizeClock;
-  CGP.normalizeTimeKey = normalizeTimeKey;
 
   /* How settings are laid out in chrome.storage.sync, which is what carries
    * them between every computer signed in to the same Chrome profile.

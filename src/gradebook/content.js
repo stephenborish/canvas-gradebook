@@ -698,10 +698,11 @@
     CGP.settings.onChange(function () { switcher.start(); if (studentSearch) studentSearch.start(); });
     startSectionCopy(api, courseId);
     startSettingsMirror(api);
-    // Period shortcuts in Canvas's Assign To "Time" boxes. Always listening;
-    // the timeShortcutsEnabled setting is read on every keystroke, so the
-    // options page can flip it without a reload.
-    if (CGP.CanvasTimeShortcuts) new CGP.CanvasTimeShortcuts({ settings: CGP.settings }).start();
+    // The teacher's class schedule beside Canvas's Assign To date and time
+    // boxes. Always listening; courseScheduleEnabled and the calendar address
+    // are read each time a box is focused, so the options page can change
+    // them without a reload.
+    if (CGP.CanvasCourseSchedule) new CGP.CanvasCourseSchedule({ settings: CGP.settings, api: api, courseId: courseId }).start();
   }
 
   function boot() {

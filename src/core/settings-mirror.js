@@ -48,8 +48,14 @@
   function hash(v) { return CGP.util.valueHash(v); }
   function same(a, b) { return CGP.util.stableStringify(a) === CGP.util.stableStringify(b); }
 
+  /* The class-schedule calendar's address stays out of the Canvas copy: a
+   * Google "secret address" lets anyone holding it read that calendar, so it
+   * travels only with Chrome sync. */
+  var NOT_MIRRORED = { 'cgp.setting.courseCalendarUrl': 1 };
+
   function isMirrored(k) {
     k = String(k);
+    if (NOT_MIRRORED[k]) return false;
     return k === 'cgp.snippetStore' || k === 'cgp.snippetOrder' || k.indexOf('cgp.setting.') === 0 || k.indexOf('cgp.snippet.') === 0;
   }
   function isSnippet(k) { return String(k).indexOf('cgp.snippet.') === 0; }

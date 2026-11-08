@@ -108,8 +108,9 @@
       sibs.forEach(function (d) {
         var pref = prefs[d] || {};
         var row = st.rows[d] = { on: pref.on !== false, entry: {} };
-        // A section's usual due time (its class period) is remembered.
-        if (pref.time && st.fields.length) row.entry.due_at = { date: '', time: pref.time };
+        // A section's usual due time (its class period) is remembered. (A
+        // period-shortcut key saved by an older version is not a time.)
+        if (pref.time && S().parseClock(pref.time) && st.fields.length) row.entry.due_at = { date: '', time: pref.time };
       });
       return self.findExisting();
     }).then(function () {
@@ -171,7 +172,7 @@
               var local = S().isoToLocal(dd && dd[f], st.tz);
               // Its date, or that it has none: kept as it is unless changed
               // here (blank would otherwise mean "same as this class").
-              row.entry[f] = local ? { date: local.slice(0, 10), time: CGP.timeShortcuts.format(local.slice(11)) } : { date: '', time: '', none: true };
+              row.entry[f] = local ? { date: local.slice(0, 10), time: CGP.courseCalendar.formatClock(local.slice(11)) } : { date: '', time: '', none: true };
             });
           }, function () { /* boxes stay as they are */ });
         }));
@@ -239,7 +240,7 @@
         var e = row.entry[f] || {};
         return '<label class="cgp-inline__date"><span>' + esc(S().DATE_LABELS[f]) + '</span>' +
           '<input type="date" data-d="' + esc(d) + '" data-f="' + f + '" data-part="date" value="' + esc(e.date || '') + '"' + (row.on ? '' : ' disabled') + '>' +
-          '<input type="text" class="cgp-inline__time" data-d="' + esc(d) + '" data-f="' + f + '" data-part="time" value="' + esc(e.time || '') + '" placeholder="' + (e.none ? 'none there' : 'time or period') + '"' + (row.on ? '' : ' disabled') + '></label>';
+          '<input type="text" class="cgp-inline__time" data-d="' + esc(d) + '" data-f="' + f + '" data-part="time" value="' + esc(e.time || '') + '" placeholder="' + (e.none ? 'none there' : 'time') + '"' + (row.on ? '' : ' disabled') + '></label>';
       };
       var more = fields.length > 1
         ? '<details class="cgp-inline__more"' + (fields.slice(1).some(function (f) { var e = row.entry[f] || {}; return e.date || e.time; }) ? ' open' : '') +
@@ -256,14 +257,10 @@
     el.innerHTML = '<div class="cgp-inline__head"><strong>Also post to your other classes</strong>' +
       '<span class="cgp-inline__count">' + (on ? on + ' of ' + st.sibs.length + ' will get it when you save' : 'None ticked') + '</span></div>' +
       rows +
-      (fields.length ? '<p class="cgp-inline__hint">Leave a date blank for the same as this class. A time alone (or a period shortcut, like ' +
-        esc(this.firstShortcut()) + ') means this class’s day at that time. Times are in ' + esc(st.tz || 'your time zone') + '.</p>' : '') +
+      (fields.length ? '<p class="cgp-inline__hint">Leave a date blank for the same as this class. A time alone (like “1:45 pm”) means this class’s day at that time' +
+        (this.settings.values.courseScheduleEnabled && this.settings.values.courseCalendarUrl ? ' – click a time box to pick from that class’s schedule' : '') +
+        '. Times are in ' + esc(st.tz || 'your time zone') + '.</p>' : '') +
       '<p class="cgp-inline__hint">The copies are made when the saved ' + esc(thing) + ' opens, through Canvas’s own course copy.</p>';
-  };
-
-  P.firstShortcut = function () {
-    var list = this.settings.values.timeShortcuts || [];
-    return list.length ? '“' + list[list.length > 3 ? 3 : 0].key + '”' : '“1:45 pm”';
   };
 
   /* Problems with a row's boxes, checked against a stand-in for this
@@ -275,7 +272,7 @@
     var errs = [];
     st.fields.forEach(function (f) {
       var e = row.entry[f] || {};
-      if (e.time && !S().parseClock(e.time, this.settings.values.timeShortcuts)) errs.push((S().DATE_LABELS[f]) + ': “' + e.time + '” is not a time or period shortcut');
+      if (e.time && !S().parseClock(e.time)) errs.push((S().DATE_LABELS[f]) + ': “' + e.time + '” is not a time');
     }, this);
     return errs;
   };
@@ -494,7 +491,7 @@
           banner.set(d, { error: 'Not copied: it already has “' + info.lookalike.title + '”, which was not copied from here. Copy to other classes can add it anyway.' });
           return null;
         }
-        var res = sync.resolveInline(sync.dateFields(item), item.dates || {}, (intent.sections[d] || {}).entry, tz, self.settings.values.timeShortcuts);
+        var res = sync.resolveInline(sync.dateFields(item), item.dates || {}, (intent.sections[d] || {}).entry, tz);
         if (res.errors.length) { banner.set(d, { error: 'Not copied: ' + res.errors.join('; ') + '.' }); return null; }
         var existing = !!(info.destId && info.status !== 'restore');
         var keep = existing && !sync.defaultReplace(info.status);

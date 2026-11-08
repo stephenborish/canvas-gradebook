@@ -402,15 +402,11 @@
     return m[1] + '-' + m[2] + '-' + m[3] + 'T' + c;
   }
 
-  /** What a teacher types as a time: a period shortcut from the Time
-   * Shortcuts list ("3"), "13:45", "1:45 pm", "9am". -> "HH:MM" or null. */
-  function parseClock(text, shortcuts) {
+  /** What a teacher types (or the class-schedule picker puts in) as a
+   * time: "13:45", "1:45 pm", "9am". -> "HH:MM" or null. */
+  function parseClock(text) {
     var raw = String(text == null ? '' : text).trim().toLowerCase();
     if (!raw) return null;
-    if (CGP.timeShortcuts && shortcuts) {
-      var hit = CGP.timeShortcuts.lookup(raw, shortcuts);
-      if (hit) return CGP.normalizeClock(hit.time);
-    }
     var m = /^(\d{1,2})(?::(\d{2}))?\s*([ap])\.?\s*m?\.?$/.exec(raw);
     if (m) {
       var h = Number(m[1]), min = m[2] ? Number(m[2]) : 0;
@@ -1070,15 +1066,14 @@
   }
 
   /* One section's dates from the editor panel. For each field the teacher
-   * gives a date ("YYYY-MM-DD") and/or a time (anything parseClock reads,
-   * period shortcuts included):
+   * gives a date ("YYYY-MM-DD") and/or a time (anything parseClock reads):
    *   both blank  -> the same as this section's (as saved)
    *   date only   -> that date, at this section's time of day (11:59 PM
    *                  when this section has none)
    *   time only   -> this section's day, at that time
    *   both        -> exactly that
    * src: this section's ISO dates. Returns {iso: {field: iso|null}, errors}. */
-  function resolveInline(fields, src, entry, tz, shortcuts) {
+  function resolveInline(fields, src, entry, tz) {
     src = src || {};
     entry = entry || {};
     var iso = {};
@@ -1093,8 +1088,8 @@
       // A copy that has no such date keeps having none, unless one is
       // typed in (e.none: what the box showed for it).
       if (!d && !t) { iso[f] = e.none ? null : base; return; }
-      var clock = t ? parseClock(t, shortcuts) : null;
-      if (t && !clock) { errors.push(label + ': “' + t + '” is not a time or one of your period shortcuts'); return; }
+      var clock = t ? parseClock(t) : null;
+      if (t && !clock) { errors.push(label + ': “' + t + '” is not a time'); return; }
       if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) { errors.push(label + ': not a date'); return; }
       if (!d && !baseLocal) { errors.push(label + ': this section has no date to put that time on; pick a date too'); return; }
       var day = d || baseLocal.slice(0, 10);

@@ -8,7 +8,7 @@
  * assignments, quizzes, discussions, announcements, pages and modules picked
  * from the course, into the others, through Canvas's own course copy, with:
  *   - each section's own dates (prefilled from this one; a day shift and a
- *     time - a period shortcut such as "3" works - apply to a whole section),
+ *     time apply to a whole section),
  *   - an optional note for one section only, at the top of its instructions,
  *   - the copy placed in that section's matching module,
  *   - a first copy put in the matching assignment group.
@@ -939,7 +939,7 @@
     html += '<section class="cgp-roster__section"><h3>Dates in each class</h3>' +
       '<p class="cgp-stats__note">Times are in ' + esc(st.tz || 'your computer’s time zone') + ', as Canvas shows them. ' +
       'Each class starts with the dates this one has. To move a whole class, shift its dates by days or set its due time ' +
-      '(a time, or one of your period shortcuts such as 1–4).</p>' +
+      '(a time such as 1:45 pm).</p>' +
       st.dests.map(function (d) { return self.renderAdjust(d); }).join('') + '</section>';
 
     html += st.items.map(function (it) { return self.renderItem(it); }).join('');
@@ -1292,8 +1292,8 @@
     var sync = S();
     var a = st.adjust[d] || {};
     var days = Math.round(Number(a.days || 0)) || 0;
-    var clock = a.time ? sync.parseClock(a.time, this.settings.values.timeShortcuts) : null;
-    if (a.time && !clock) { CGP.ui.error('“' + a.time + '” is not a time or one of your period shortcuts.'); return; }
+    var clock = a.time ? sync.parseClock(a.time) : null;
+    if (a.time && !clock) { CGP.ui.error('“' + a.time + '” is not a time.'); return; }
     st.items.forEach(function (it) {
       dated(it).forEach(function (row) {
         var rk = cellKey(it, d) + '|' + itemKey(row);

@@ -130,16 +130,15 @@ suite('copy to sections: dates', (test) => {
     a.eq(S().withTime('2026-03-07T08:55', '13:45'), '2026-03-07T13:45');
   });
 
-  test('a section time can be a period shortcut, a 24-hour or a 12-hour time', () => {
-    const cuts = [{ key: '1', time: '08:55' }, { key: '3', time: '12:30' }];
-    a.eq(S().parseClock('3', cuts), '12:30');
-    a.eq(S().parseClock('13:45', cuts), '13:45');
-    a.eq(S().parseClock('1:45 pm', cuts), '13:45');
-    a.eq(S().parseClock('12am', cuts), '00:00');
-    a.eq(S().parseClock('12:15 PM', cuts), '12:15');
-    a.eq(S().parseClock('9a', cuts), '09:00');
-    a.eq(S().parseClock('7', cuts), null, 'not a shortcut, not a time');
-    a.eq(S().parseClock('13 pm', cuts), null);
+  test('a section time can be a 24-hour or a 12-hour time', () => {
+    a.eq(S().parseClock('13:45'), '13:45');
+    a.eq(S().parseClock('1:45 pm'), '13:45');
+    a.eq(S().parseClock('8:55 AM'), '08:55', 'what the class-schedule picker puts in');
+    a.eq(S().parseClock('12am'), '00:00');
+    a.eq(S().parseClock('12:15 PM'), '12:15');
+    a.eq(S().parseClock('9a'), '09:00');
+    a.eq(S().parseClock('3'), null, 'a bare number (an old period-shortcut key) is not a time');
+    a.eq(S().parseClock('13 pm'), null);
   });
 
   test('dates are checked in the order Canvas enforces', () => {
@@ -1037,7 +1036,6 @@ suite('copy to sections: PR review (Codex)', (test) => {
 });
 
 suite('copy to sections: from Canvas’s own editor', (test) => {
-  const cuts = [{ key: '4', time: '13:45' }];
   const src = { due_at: '2026-11-03T13:55:00Z', unlock_at: null, lock_at: null };
   const F = ['due_at', 'unlock_at', 'lock_at'];
 
@@ -1051,19 +1049,19 @@ suite('copy to sections: from Canvas’s own editor', (test) => {
     a.eq(S().editPageFromPath('/courses/1/assignments'), null);
   });
 
-  test('blank is this section’s; a time alone (or a period) is this section’s day at that time', () => {
-    a.deep(S().resolveInline(F, src, {}, TZ, cuts).iso, src);
-    a.eq(S().resolveInline(F, src, { due_at: { time: '4' } }, TZ, cuts).iso.due_at, '2026-11-03T18:45:00.000Z');
-    a.eq(S().resolveInline(F, src, { due_at: { time: '1:45 pm' } }, TZ, cuts).iso.due_at, '2026-11-03T18:45:00.000Z');
-    a.eq(S().resolveInline(F, src, { due_at: { date: '2026-11-05' } }, TZ, cuts).iso.due_at, '2026-11-05T13:55:00.000Z', 'a date keeps the time of day');
-    a.eq(S().resolveInline(F, src, { due_at: { date: '2026-11-05', time: '4' } }, TZ, cuts).iso.due_at, '2026-11-05T18:45:00.000Z');
-    a.eq(S().resolveInline(F, {}, { due_at: { date: '2026-11-05' } }, TZ, cuts).iso.due_at, '2026-11-06T04:59:59.000Z', 'no time anywhere: end of that day');
+  test('blank is this section’s; a time alone is this section’s day at that time', () => {
+    a.deep(S().resolveInline(F, src, {}, TZ).iso, src);
+    a.eq(S().resolveInline(F, src, { due_at: { time: '13:45' } }, TZ).iso.due_at, '2026-11-03T18:45:00.000Z');
+    a.eq(S().resolveInline(F, src, { due_at: { time: '1:45 pm' } }, TZ).iso.due_at, '2026-11-03T18:45:00.000Z');
+    a.eq(S().resolveInline(F, src, { due_at: { date: '2026-11-05' } }, TZ).iso.due_at, '2026-11-05T13:55:00.000Z', 'a date keeps the time of day');
+    a.eq(S().resolveInline(F, src, { due_at: { date: '2026-11-05', time: '1:45 PM' } }, TZ).iso.due_at, '2026-11-05T18:45:00.000Z');
+    a.eq(S().resolveInline(F, {}, { due_at: { date: '2026-11-05' } }, TZ).iso.due_at, '2026-11-06T04:59:59.000Z', 'no time anywhere: end of that day');
   });
 
   test('what cannot be read, or cannot be placed, is said', () => {
-    a.ok(/not a time/.test(S().resolveInline(F, src, { due_at: { time: '7' } }, TZ, cuts).errors[0]));
-    a.ok(/no date to put that time on/.test(S().resolveInline(F, {}, { due_at: { time: '4' } }, TZ, cuts).errors[0]));
-    a.ok(/after Due/.test(S().resolveInline(F, src, { unlock_at: { date: '2026-11-09' } }, TZ, cuts).errors[0]));
+    a.ok(/not a time/.test(S().resolveInline(F, src, { due_at: { time: '7' } }, TZ).errors[0]));
+    a.ok(/no date to put that time on/.test(S().resolveInline(F, {}, { due_at: { time: '1:45 pm' } }, TZ).errors[0]));
+    a.ok(/after Due/.test(S().resolveInline(F, src, { unlock_at: { date: '2026-11-09' } }, TZ).errors[0]));
   });
 });
 
@@ -1130,9 +1128,9 @@ suite('copy to sections: the editor’s Save', (test) => {
 suite('copy to sections: existing copies without a date', (test) => {
   test('a copy with no due date keeps none; typing one in gives it that date', () => {
     const src = { due_at: '2026-11-03T13:55:00Z', unlock_at: null, lock_at: null };
-    a.eq(S().resolveInline(['due_at'], src, { due_at: { date: '', time: '', none: true } }, TZ, []).iso.due_at, null);
-    a.eq(S().resolveInline(['due_at'], src, { due_at: { date: '2026-11-04', time: '', none: true } }, TZ, []).iso.due_at, '2026-11-04T13:55:00.000Z');
-    a.eq(S().resolveInline(['due_at'], src, { due_at: { date: '', time: '' } }, TZ, []).iso.due_at, '2026-11-03T13:55:00Z', 'a new copy: blank is this class’s');
+    a.eq(S().resolveInline(['due_at'], src, { due_at: { date: '', time: '', none: true } }, TZ).iso.due_at, null);
+    a.eq(S().resolveInline(['due_at'], src, { due_at: { date: '2026-11-04', time: '', none: true } }, TZ).iso.due_at, '2026-11-04T13:55:00.000Z');
+    a.eq(S().resolveInline(['due_at'], src, { due_at: { date: '', time: '' } }, TZ).iso.due_at, '2026-11-03T13:55:00Z', 'a new copy: blank is this class’s');
   });
 });
 

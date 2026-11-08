@@ -23,7 +23,8 @@ async function canvasPatterns(chrome) {
   try {
     const perms = await chrome.permissions.getAll();
     (perms.origins || []).forEach((o) => {
-      if (o.includes('instructure.com') || o === '*://*/*') return;
+      // "https://host/*" is a calendar feed's site (calendar-sync.js), not Canvas.
+      if (!o.startsWith('*://') || o.includes('instructure.com') || o === '*://*/*') return;
       patterns.push(o.replace(/\/\*$/, '/courses/*'));
     });
   } catch (e) { /* instructure.com alone */ }

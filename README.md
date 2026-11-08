@@ -609,14 +609,32 @@ and clicking it never triggers the header's own sort/drag handling underneath.
 Type `/evidence` then `Tab` in SpeedGrader or in the comment popover to expand a saved snippet.
 Edit the snippet list in the options page (first line = trigger, following lines = text).
 
-### Time shortcuts (Assign To time boxes)
+### Class schedule (Assign To date and time boxes)
 
-When creating or editing an assignment, type a period number — `1`, `2`, `3` or `4` — in a
-Due Date / Available from / Until **Time** box, then press `Tab` or `Enter` (or click away) and
-it becomes that period's start time (by default 8:55 AM, 10:10 AM, 12:30 PM, 1:45 PM). Only a box
-holding nothing but a shortcut is touched, so `12:30` or `1 pm` still mean what they say. Add,
-edit or remove shortcuts (any short key, e.g. `lunch` → 11:30 AM) on the **Time Shortcuts** tab of
-the options page; the same Assign To card on quizzes, discussions and modules is covered too.
+Connect the calendar that holds your classes — a Google Calendar works best — and every Due /
+Available from / Until date or time box in Canvas's Assign To card shows that day's schedule beside
+it: your classes in time order (e.g. *AP Biology P1 · 8:55 – 9:50 AM · Room 204*), with any all-day
+events such as *A Day* above them. **Click a class and its start time goes into the time box**; the
+small **End** button beside it puts in the end time instead (which one a click uses is a setting).
+The panel follows the date box — pick a date in Canvas's own calendar and the panel shows that day —
+and the arrows step to another day: pick a class there and that day goes into the date box too, so
+choosing "next Tuesday, start of 3rd period" is one click. Classes named like the Canvas course being
+edited are marked **This course** (numbers tell sections apart, so *Chemistry 3* is not *Chemistry 2*).
+The same Assign To card on quizzes, discussions and modules is covered, and so are the time boxes in
+**Also post to your other classes**, where each class is matched against its own course name.
+
+To set it up, open the **Class Schedule** tab of the options page, paste your Google Calendar's
+**Secret address in iCal format** (Google Calendar → Settings → your calendar → *Integrate calendar*),
+and click **Connect**: Chrome asks once to let the extension read `calendar.google.com` (that one
+site, only to fetch this calendar), a preview shows the classes it found, and **Save changes** keeps
+it. A public calendar's address, its "Public URL" or share link, a bare calendar ID, or any other
+`.ics` feed (Outlook, Apple, a school's scheduling system — Chrome asks for that site instead) work
+too. Repeating events (weekly, daily, monthly), skipped, moved and cancelled meetings, and daylight-
+saving changes are all handled; times are shown in your Canvas profile's time zone, which is what
+Canvas's boxes mean. The calendar is read again every six hours, or with **Refresh** in the panel.
+
+This replaces the old period *time shortcuts* (typing `1`–`4` in a time box); a period number left
+in a class's saved due time from before is simply ignored.
 
 ### Copy to other classes
 
@@ -662,7 +680,8 @@ other classes*. Each of your other classes has a row with its own **Due** date a
 *More dates*, *Available from* and *Until*):
 
 - Leave a date blank for the same date as this class.
-- Type only a time, or a period shortcut such as `4`, for this class's day at that time.
+- Type only a time (`1:45 pm`) for this class's day at that time — or click the time box and pick
+  that class's period from your class schedule.
 - Pick a date to use that date at this class's time of day.
 - A class that already has a copy shows the dates its copy has now, so saving never resets them.
 
@@ -760,7 +779,7 @@ dates; one that already has a copy starts with the dates that copy has there now
 copy never quietly resets that section's own dates. Dates are in your Canvas time zone (your
 profile's), exactly as Canvas shows them. Edit any box, or move a whole section at once: **Shift**
 it a number of days from this section's dates and/or set its **Due time**, which accepts a time
-(`1:45 pm`, `13:45`) or one of your period shortcuts from the Time Shortcuts tab (`4`). A due time
+(`1:45 pm`, `13:45`). A due time
 of 11:59:59 PM keeps its seconds. Due, Available from
 and Until are set for assignments, quizzes and graded discussions; Available from/Until for
 ungraded discussions and pages (when Canvas allows dates on pages); Post at/Until for
@@ -865,7 +884,7 @@ Limits worth knowing:
 
 Everything is in the options page — click the toolbar icon, or `chrome://extensions` →
 Canvas Gradebook+ → Details → Extension options. It opens to a sidebar of tabs (Layout &
-Display, Cell Indicators, Grading Input, Comment Snippets, Time Shortcuts, Course & Domains, Sync &
+Display, Cell Indicators, Grading Input, Comment Snippets, Class Schedule, Course & Domains, Sync &
 Backup, Diagnostics); Save and Restore defaults stay visible in the sidebar no matter which
 tab you're on. Every feature above can be switched off individually. Nothing is configurable
 from inside the gradebook, by design.
@@ -937,7 +956,12 @@ Student names, grades and comment text are never written to the log — only cou
   CSRF token, exactly as the Canvas web app does.
 - No API token, no login, no account.
 - No analytics, no telemetry, no external servers of any kind — not even web fonts; the
-  extension uses your system fonts. The only network permission is your Canvas domain.
+  extension uses your system fonts. The only network permission is your Canvas domain — plus, only
+  if you connect a class-schedule calendar, that calendar's site (e.g. `calendar.google.com`), which
+  is used for nothing but fetching that one calendar.
+- The class-schedule calendar's address is kept in Chrome sync only — never in the Canvas copy of
+  your settings, since a Google "secret address" lets whoever has it read that calendar. The classes
+  read from it (titles, times, rooms) stay on this computer (`chrome.storage.local`).
 - Settings sync through your Chrome profile (`chrome.storage.sync`) and, unless turned off, a copy in
   your own Canvas account's private user data (see "The same settings on every computer" above). That
   copy holds settings and snippets only. Each computer's check-in through Chrome sync holds a random id,
@@ -965,6 +989,7 @@ Student names, grades and comment text are never written to the log — only cou
 manifest.json                     MV3 manifest; one content-script entry, ordered
 src/background.js                 service worker: defaults, options, custom-domain registration
 src/settings-times.js             service worker: this computer's Chrome sync check-in
+src/calendar-sync.js              service worker: fetches the class-schedule calendar, keeps its classes
 src/script-manifest.js            the ordered file list (mirror of the manifest entry)
 
 src/core/                         pure logic - no DOM, no chrome.* at load time
@@ -979,7 +1004,7 @@ src/core/                         pure logic - no DOM, no chrome.* at load time
   totals.js                       letter-grade scale, Total rounding and icon thresholds
   roster-format.js                roster -> email list / TSV / HTML table / CSV
   snippets.js                     /trigger + Tab expansion
-  time-shortcuts.js               period key -> start time lookup and formatting
+  course-calendar.js              iCal parsing, repeats, time zones, one day's classes, course matching
   model.js                        assignments, students, submissions, caches, events
   ui.js                           the one transient toast
 
@@ -1004,7 +1029,7 @@ src/gradebook/
   content.js                      bootstrap (full gradebook, or just the course switcher
                                    elsewhere in the course), single rAF paint pass, observers
 
-src/assignments/time-shortcuts.js period keys in Assign To time boxes (Tab/Enter/blur)
+src/assignments/course-schedule.js class-schedule panel beside Assign To date/time boxes
 src/core/section-sync.js          Copy to sections: requests, dates, notes, change tracking (pure)
 src/sections/sync-runner.js       Copy to sections: survey each section, copy, apply dates/note,
                                    find copies both ways, bring a copy's changes back
