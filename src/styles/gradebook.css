@@ -4075,6 +4075,56 @@ html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow .tox-split-button__ch
   min-width: 14px !important;
   padding: 0 !important;
 }
+/* Swap what shows: the formatting buttons (B I U, colour, link, lists...)
+ * are always on show, and the "Paragraph" block-format dropdown is what the
+ * ⋮ button reveals - the reverse of TinyMCE's own split at tray width.
+ *
+ * Only TinyMCE's sliding mode is touched: there the drawer
+ * (.tox-toolbar__overflow) sits in the editor header beside the primary row,
+ * filled whether open or not and tagged --closed / --open. Which groups land
+ * in which row depends on TinyMCE's width measurements, so neither row is
+ * relied on: both are flattened (display: contents) and the overlord becomes
+ * one row that scrolls sideways if it must. Its groups keep TinyMCE's order
+ * (primary's, then the drawer's); the dropdown's group - the one holding a
+ * .tox-tbtn--select - shows only while ⋮ is "open", and then leads the row;
+ * ⋮ stays pinned at the right end. With an empty drawer there is no ⋮ to
+ * press, so nothing is hidden. */
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar-overlord {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  padding: 0 0 0 4px !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: none;
+}
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar-overlord::-webkit-scrollbar { display: none; }
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__primary,
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__overflow {
+  display: contents !important;
+  /* TinyMCE's closed drawer is visibility: hidden, which its groups inherit. */
+  visibility: visible !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__primary > .tox-toolbar__group { order: 1; }
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__overflow > .tox-toolbar__group { order: 2; }
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__group:has(.tox-tbtn--select) { order: 0; }
+/* ⋮: TinyMCE appends it as the primary row's last group. */
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__primary > .tox-toolbar__group:last-child:not(:has(.tox-tbtn--select)) {
+  order: 3;
+  position: sticky !important;
+  right: 0;
+  z-index: 1;
+  margin-left: auto !important;
+  background: #f7f8f9 !important;
+  border-left: 1px solid #e3e6e8 !important;
+}
+/* The first visible group has no divider before it. */
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__overflow > .tox-toolbar__group:first-child { border-left: 0 !important; }
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__group:has(.tox-tbtn--select) + .tox-toolbar__group { border-left: 1px solid #e3e6e8 !important; }
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow--closed > .tox-toolbar__group) .tox-toolbar__group:has(.tox-tbtn--select) {
+  display: none !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow--closed > .tox-toolbar__group) .tox-toolbar__group:has(.tox-tbtn--select) + .tox-toolbar__group { border-left: 0 !important; }
 /* "Paragraph": as wide as its word, not a fixed 7em. */
 html.cgp-tray-tidy [data-cgp-tray-rce] .tox-tbtn--select {
   padding: 0 2px 0 6px !important;

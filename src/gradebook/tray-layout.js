@@ -12,9 +12,10 @@
  *    "Late by [-] 2 [+] days" bar. Canvas's radios stay on the page, hidden,
  *    and every press goes through them - Canvas makes its own update.
  *  - the comment box is one card: its Cancel / Submit as a slim bar on top,
- *    a single compact row of formatting buttons (the "more" drawer opens as
- *    one row too), a shorter editing area, and no status bar under it (the
- *    element path, word count and accessibility checker button).
+ *    a single compact row of formatting buttons that is always on show (the
+ *    "more" button now reveals only the Paragraph dropdown - the reverse of
+ *    TinyMCE's own split), a shorter editing area, and no status bar under
+ *    it (the element path, word count and accessibility checker button).
  *
  * None of Canvas's nodes is moved: the tray is React's, and moving its nodes
  * would break its next render. They are only tagged with data-cgp-tray-*
