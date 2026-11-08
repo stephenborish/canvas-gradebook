@@ -553,7 +553,8 @@
     var cls = this.lastView && this.lastView.classes[i];
     if (!g || !cls) return null;
     var clock = which === 'end' ? cls.end : cls.start;
-    var day = this.currentDay();
+    // A meeting that runs past midnight ends on the next day.
+    var day = which === 'end' && cls.endDate ? cls.endDate : this.currentDay();
     var setDay = !!(g.date && this.boxDate() !== day);
     this._picking = true;
     try {

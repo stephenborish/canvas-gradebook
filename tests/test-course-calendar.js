@@ -152,7 +152,7 @@ suite('class schedule: reading the calendar', (test) => {
   });
 
   test('a weekly class repeats on its days, at its time, with its room', () => {
-    a.deep(day('2026-11-16').classes, [{ title: 'AP Biology P1', start: '08:55', end: '09:50', loc: 'Room 204' }]);
+    a.deep(day('2026-11-16').classes, [{ title: 'AP Biology P1', start: '08:55', end: '09:50', endDate: '2026-11-16', loc: 'Room 204' }]);
     a.eq(day('2026-11-18').classes.length, 0, 'not on Wednesdays');
     a.eq(day('2026-11-19').classes[0].start, '08:55');
   });
@@ -208,9 +208,44 @@ suite('class schedule: reading the calendar', (test) => {
     a.eq(titles('Homeroom').length, 10, 'two school weeks');
     a.eq(titles('Homeroom').indexOf('2026-11-07'), -1, 'no Saturdays');
     a.deep(titles('Faculty meeting'), ['2026-09-01', '2026-10-06', '2026-11-03', '2026-12-01', '2027-01-05']);
-    // 10:00 EDT in October; still 10:00 (now EST) after the clocks change.
+    // Written in UTC, it repeats at 14:00 UTC (RFC 5545): 10:00 EDT in
+    // October, 9:00 EST once the clocks change - as the calendar shows it.
     a.eq(Cal().dayView(o, '2026-10-21', 'America/New_York').classes[0].start, '10:00');
-    a.eq(Cal().dayView(o, '2026-11-11', 'America/New_York').classes.find((x) => x.title === 'Advisory').start, '10:00');
+    a.eq(Cal().dayView(o, '2026-11-11', 'America/New_York').classes.find((x) => x.title === 'Advisory').start, '09:00');
+    a.ok(o.filter((x) => x.t === 'Advisory').every((x) => x.z === 'UTC' && x.s === '14:00'), 'kept in UTC until shown');
+  });
+
+  test('an extra date (RDATE) keeps its own time, beside the regular meeting on that day', () => {
+    const c = Cal().parseIcs([
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT', 'UID:r', 'SUMMARY:Review session', 'DTSTART:20261103T140000Z', 'DTEND:20261103T150000Z',
+      'RRULE:FREQ=WEEKLY;COUNT=2', 'RDATE:20261110T160000Z', 'RDATE:20261112T140000Z', 'END:VEVENT',
+      'END:VCALENDAR'
+    ].join('\n'));
+    const o = Cal().expand(c, '2026-11-01', '2026-11-30');
+    a.deep(o.map((x) => x.d + ' ' + x.s + '-' + x.e), [
+      '2026-11-03 14:00-15:00', '2026-11-10 14:00-15:00', '2026-11-10 16:00-17:00', '2026-11-12 14:00-15:00'
+    ]);
+  });
+
+  test('a skipped meeting is matched by its time, leaving another one that day', () => {
+    const c = Cal().parseIcs([
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT', 'UID:x', 'SUMMARY:Lab', 'DTSTART;TZID=America/New_York:20261102T090000', 'DTEND;TZID=America/New_York:20261102T100000',
+      'RRULE:FREQ=WEEKLY;COUNT=2', 'RDATE;TZID=America/New_York:20261109T130000',
+      'EXDATE;TZID=America/New_York:20261109T090000', 'END:VEVENT',
+      'END:VCALENDAR'
+    ].join('\n'));
+    a.deep(Cal().expand(c, '2026-11-01', '2026-11-30').map((x) => x.d + ' ' + x.s), ['2026-11-02 09:00', '2026-11-09 13:00']);
+  });
+
+  test('a meeting that runs past midnight ends on the next day', () => {
+    const occ = [{ d: '2026-11-09', s: '23:30', e: '00:30', t: 'Night lab', z: 'America/New_York' }];
+    const c = Cal().dayView(occ, '2026-11-09', 'America/New_York').classes[0];
+    a.eq(c.end, '00:30');
+    a.eq(c.endDate, '2026-11-10');
+    a.eq(Cal().dayView(occ, '2026-11-09', 'America/Chicago').classes[0].endDate, '2026-11-09', 'in Chicago it ends at 23:30 the same day');
+    a.eq(day('2026-11-16').classes[0].endDate, '2026-11-16');
   });
 
   test('a calendar with no events, or not a calendar at all, gives nothing', () => {
@@ -523,6 +558,18 @@ suite('class schedule: the Assign To picker', (test) => {
     a.eq(pair.date.value, '2026-11-10');
     a.deep(pair.date.log, ['focus', 'input']);
     a.eq(pair.time.value, '10:55 AM', 'the moved meeting’s end');
+  });
+
+  test('the end of a meeting that runs past midnight goes in with the next day', async () => {
+    const night = { url: URL_, ok: true, fetchedAt: Date.now(), occ: [{ d: '2026-11-09', s: '23:30', e: '00:30', t: 'Night lab', z: 'America/New_York' }] };
+    const { ctrl, handlers, root } = bootPicker(night, { courseCalendarUrl: URL_ });
+    const pair = duePair('Nov 9, 2026');
+    root.add(pair.card);
+    handlers.focusin({ target: pair.time });
+    await tick(); await tick();
+    ctrl.pick(0, 'end');
+    a.eq(pair.date.value, '2026-11-10');
+    a.eq(pair.time.value, '12:30 AM');
   });
 
   test('a click on the end setting makes the end the main choice', async () => {

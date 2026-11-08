@@ -464,7 +464,6 @@
    * [fromKey, toKey], in each event's own zone, sorted by day and time. */
   function expand(cal, fromKey, toKey) {
     var events = (cal && cal.events) || [];
-    var calZone = (cal && cal.zone) || '';
     var fromN = dayNum(fromKey), toN = dayNum(toKey);
     var out = [];
     var byUid = Object.create(null);
@@ -491,28 +490,46 @@
       if (ev.cancelled) return;
       if (ev.recurrenceId) { push(ev, ev.start.date, ev.start.time, ev.start.zone); return; }
       if (!ev.rrule && !ev.rdates.length) { push(ev, ev.start.date, ev.start.time, ev.start.zone); return; }
-      // Repeats are worked out on the wall clock of the event's zone, so a
-      // class at 8:55 stays at 8:55 across a daylight-saving change. A
-      // repeating event written in UTC is moved onto the calendar's zone.
+      // Repeats are worked out on the wall clock of the event's own zone, so
+      // a class at 8:55 New York time stays at 8:55 across a daylight-saving
+      // change. One written in UTC repeats at the same UTC moment (RFC 5545,
+      // and how the teacher's own calendar shows it); it is put on the
+      // teacher's clock only when shown (localize).
       var start = ev.start;
-      if (!ev.allDay && start.zone === 'UTC' && validZone(calZone)) start = inZone(start, calZone);
       var zone = ev.allDay ? '' : start.zone;
+      // Skipped (EXDATE) and moved or cancelled (RECURRENCE-ID) meetings, by
+      // day and time - or by day alone when given without a time.
       var skip = Object.create(null);
-      ev.exdates.forEach(function (x) { skip[(inZone(x, zone) || x).date] = true; });
-      (byUid[ev.uid] || []).forEach(function (o) { skip[(inZone(o.recurrenceId, zone) || o.recurrenceId).date] = true; });
+      var mark = function (x) {
+        var z = inZone(x, zone) || x;
+        skip[z.time ? z.date + 'T' + z.time : z.date] = true;
+      };
+      ev.exdates.forEach(mark);
+      (byUid[ev.uid] || []).forEach(function (o) { mark(o.recurrenceId); });
       var untilKey = null;
       if (ev.rrule && ev.rrule.until) {
         var u = inZone(ev.rrule.until, zone) || ev.rrule.until;
         untilKey = u.date + 'T' + (u.time || '23:59');
       }
-      var dates = ev.rrule ? ruleDates(ev.rrule, start.date, start.time, addDays(toKey, 1), untilKey) : [start.date];
+      // Each meeting with its own time: the rule's at DTSTART's, an extra
+      // date (RDATE) at the time it gives, if any.
+      var meetings = [];
+      var seen = Object.create(null);
+      var add = function (d, t) {
+        var k = d + 'T' + (t || '');
+        if (seen[k]) return;
+        seen[k] = true;
+        meetings.push({ date: d, time: t });
+      };
+      (ev.rrule ? ruleDates(ev.rrule, start.date, start.time, addDays(toKey, 1), untilKey) : [start.date])
+        .forEach(function (d) { add(d, start.time); });
       ev.rdates.forEach(function (r) {
         var rz = inZone(r, zone) || r;
-        if (dates.indexOf(rz.date) < 0) dates.push(rz.date);
+        add(rz.date, ev.allDay ? null : (rz.time || start.time));
       });
-      dates.forEach(function (d) {
-        if (skip[d]) return;
-        push(ev, d, start.time, zone);
+      meetings.forEach(function (m) {
+        if (skip[m.date] || (m.time && skip[m.date + 'T' + m.time])) return;
+        push(ev, m.date, m.time, zone);
       });
     });
     out.sort(function (a, b) {
@@ -523,19 +540,22 @@
 
   /* ------------------------------------------------------------ showing */
 
-  /** One timed occurrence on tz's wall clock: {date, start, end}. */
+  /** One timed occurrence on tz's wall clock: {date, start, end, endDate}
+   * (endDate is the next day for a meeting that runs past midnight). */
   function localize(o, tz) {
-    if (!o || o.a) return { date: o && o.d, start: null, end: null };
-    if (!o.z || o.z === tz || !validZone(o.z) || !validZone(tz)) return { date: o.d, start: o.s, end: o.e };
+    if (!o || o.a) return { date: o && o.d, start: null, end: null, endDate: o && o.d };
+    if (!o.z || o.z === tz || !validZone(o.z) || !validZone(tz)) {
+      return { date: o.d, start: o.s, end: o.e, endDate: clockToMin(o.e) < clockToMin(o.s) ? addDays(o.d, 1) : o.d };
+    }
     var s = zoneParts(wallToMs(o.d, o.s, o.z), tz);
     var len = clockToMin(o.e) - clockToMin(o.s);
     if (len < 0) len += 1440;
     var e = zoneParts(wallToMs(o.d, o.s, o.z) + len * 60000, tz);
-    return { date: s.date, start: s.time, end: e.time };
+    return { date: s.date, start: s.time, end: e.time, endDate: e.date };
   }
 
   /** One day of the schedule on tz's wall clock:
-   * {allDay: [title], classes: [{title, start, end, loc}]} sorted by time. */
+   * {allDay: [title], classes: [{title, start, end, endDate, loc}]} sorted by time. */
   function dayView(occ, dateKey, tz) {
     var list = Array.isArray(occ) ? occ : [];
     var n = dayNum(dateKey);
@@ -554,7 +574,7 @@
       var key = o.t + '|' + l.start + '|' + l.end;
       if (seen[key]) continue;
       seen[key] = true;
-      classes.push({ title: o.t || '(untitled)', start: l.start, end: l.end, loc: o.l || '' });
+      classes.push({ title: o.t || '(untitled)', start: l.start, end: l.end, endDate: l.endDate, loc: o.l || '' });
     }
     classes.sort(function (a, b) { return a.start < b.start ? -1 : a.start > b.start ? 1 : a.title < b.title ? -1 : 1; });
     return { allDay: allDay, classes: classes };
