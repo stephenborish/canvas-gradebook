@@ -285,10 +285,11 @@
     return C().normalizeUrl(this.settings.values.courseCalendarUrl);
   };
 
-  /** The stored calendar if it is this address's, else null. */
+  /** The stored calendar if it is this address's and has classes read
+   * from it (a failed first read has none), else null. */
   P.data = function () {
     var url = this.calendarUrl();
-    return this.cache && url && this.cache.url === url ? this.cache : null;
+    return this.cache && url && this.cache.url === url && Array.isArray(this.cache.occ) ? this.cache : null;
   };
 
   P.loadData = function (force) {
@@ -443,8 +444,19 @@
       '</div>';
     this.lastView = null;
     if (!data) {
-      var err = (this.cache && this.cache.url === this.calendarUrl() && !this.cache.ok && this.cache.error) ||
-        (this.lastResult && !this.lastResult.ok && this.lastResult.error);
+      var failed = (this.cache && this.cache.url === this.calendarUrl() && !this.cache.ok && this.cache) ||
+        (this.lastResult && !this.lastResult.ok && this.lastResult) || null;
+      var err = failed && failed.error;
+      // The address came here through Chrome sync, but Chrome asks for the
+      // calendar site's permission on each computer: one click on the
+      // options page, which then fills this panel in.
+      if (failed && failed.code === 'permission') {
+        html += '<p class="cgp-sched__msg">Your class schedule came with your settings, but this computer has not been ' +
+          'allowed to read your calendar yet. Click below, then <strong>Connect</strong> &ndash; once per computer.</p>' +
+          '<div class="cgp-sched__foot"><button type="button" class="cgp-sched__cta" data-act="settings">Allow on this computer</button></div>';
+        this.panel.innerHTML = html;
+        return;
+      }
       html += err
         ? '<p class="cgp-sched__msg cgp-sched__msg--err">' + esc(err) + '</p>' +
           '<div class="cgp-sched__foot"><button type="button" class="cgp-sched__link" data-act="refresh">Try again</button>' +

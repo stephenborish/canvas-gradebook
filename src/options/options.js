@@ -445,7 +445,12 @@
       lastCalendar = rec && url && rec.url === url ? rec : null;
       if (url === '') setCalendarStatus('No calendar connected.');
       else if (!url) setCalendarStatus('That is not a calendar address yet.', 'error');
-      else if (!granted) setCalendarStatus('Click Connect to let Gradebook+ read ' + calendarHost(url) + ' on this computer.', 'error');
+      else if (!granted) {
+        // Typically the address arrived through Chrome sync from another
+        // computer: Chrome asks for the site's permission on each one.
+        setCalendarStatus('Your calendar is saved in your settings, but Chrome asks once on each computer: click Connect to let Gradebook+ read ' +
+          calendarHost(url) + ' here.', 'error');
+      }
       else if (!lastCalendar) setCalendarStatus('Not read yet \u2014 click Connect.');
       else if (!lastCalendar.ok) {
         setCalendarStatus(lastCalendar.error + (lastCalendar.occ ? ' (Showing the schedule read ' + fmtWhen(lastCalendar.lastOk) + '.)' : ''), 'error');
@@ -454,6 +459,14 @@
         setCalendarStatus('\u2713 Connected' + (lastCalendar.name ? ' to \u201c' + lastCalendar.name + '\u201d' : '') + ': ' +
           timed + ' class meeting' + (timed === 1 ? '' : 's') + ' between ' + fmtDay(lastCalendar.from) + ' and ' + fmtDay(lastCalendar.to) +
           '. Read ' + fmtWhen(lastCalendar.fetchedAt) + '.', timed ? 'ok' : 'error');
+      }
+      var needsConnect = !!url && !granted;
+      var btn = $('connectCalendar');
+      btn.classList.toggle('btn--attention', needsConnect);
+      // Sent here from the schedule panel in Canvas ("Allow on this computer").
+      if (needsConnect && location.hash === '#schedule' && !renderCalendarStatus.focused) {
+        renderCalendarStatus.focused = true;
+        btn.focus();
       }
       renderSchedulePreview();
     });

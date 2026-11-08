@@ -682,6 +682,9 @@ input.switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2p
 .schedule-status { margin: 8px 0 0; font-size: 13px; color: var(--muted); line-height: 1.5; min-height: 1.5em; }
 .schedule-status.is-ok { color: #0b7a45; }
 .schedule-status.is-error { color: #b91c1c; }
+.btn--attention { box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.35); animation: cgp-attention 1.6s ease-in-out 3; }
+@keyframes cgp-attention { 50% { box-shadow: 0 0 0 6px rgba(2, 132, 199, 0.12); } }
+@media (prefers-reduced-motion: reduce) { .btn--attention { animation: none; } }
 .schedule-select { padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; background: #fff; }
 
 .schedule-preview { margin: 18px 0 22px; }

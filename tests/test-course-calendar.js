@@ -534,6 +534,17 @@ suite('class schedule: the Assign To picker', (test) => {
     a.ok(/data-which="end"[^>]*class|class="cgp-sched__pick"[^>]*data-which="end"/.test(ctrl.panel.innerHTML));
   });
 
+  test('on a computer not yet allowed to read the calendar, the panel says so and offers the one step', async () => {
+    const denied = { url: URL_, ok: false, code: 'permission', fetchedAt: Date.now(), error: 'not allowed' };
+    const { ctrl, handlers, sent } = bootPicker(denied, { courseCalendarUrl: URL_ });
+    handlers.focusin({ target: duePair('Nov 9, 2026').time });
+    await tick(); await tick();
+    a.ok(/came with your settings/.test(ctrl.panel.innerHTML));
+    a.ok(/data-act="settings"[^>]*>Allow on this computer/.test(ctrl.panel.innerHTML));
+    ctrl.onButton({ getAttribute: (k) => (k === 'data-act' ? 'settings' : null) });
+    a.eq(sent[sent.length - 1].type, 'cgp.openOptions');
+  });
+
   test('a calendar not read yet asks the service worker once, and says it is loading', async () => {
     const { ctrl, handlers, sent } = bootPicker(null, { courseCalendarUrl: URL_ });
     const pair = duePair('Nov 9, 2026');

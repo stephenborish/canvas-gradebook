@@ -224,3 +224,91 @@ suite('settings sync: two computers', (test) => {
     });
   });
 });
+
+/* The promise to teachers: every setting saved on one computer is there on
+ * every other computer signed in to the same Chrome profile. One value per
+ * setting, unlike its default; a setting added later without a value here
+ * fails the first test, so none can slip through untested. */
+const NOT_DEFAULT = {
+  assignmentColumnWidth: 150,
+  studentColumnWidth: 230,
+  bulkConfirmThreshold: 40,
+  gradeFontSize: 19,
+  gradingScale: [{ letter: 'A', min: 90 }, { letter: 'B', min: 80 }, { letter: 'C', min: 0 }],
+  totalHighlightRules: [{ below: 65.1, color: 'red', icon: 'alert' }],
+  courseCalendarUrl: 'https://calendar.google.com/calendar/ical/teacher%40school.org/private-0123abcd/basic.ics',
+  courseScheduleTime: 'end',
+  snippets: [{ trigger: 'lab', text: 'Label both axes.' }, { trigger: 'cite', text: 'Cite the data table.' }],
+  sectionGroups: [{ origin: 'https://school.instructure.com', courseIds: ['11', '12'], names: { 11: 'Bio P1', 12: 'Bio P2' } }],
+  rosterPrefs: { nameFormat: 'last-first', email: false, header: false, sortBy: 'first', separator: 'newline' }
+};
+
+function everySettingChanged() {
+  const D = CGP().DEFAULTS;
+  const out = {};
+  const missing = [];
+  Object.keys(D).forEach((k) => {
+    if (typeof D[k] === 'boolean') out[k] = !D[k];
+    else if (k in NOT_DEFAULT) out[k] = NOT_DEFAULT[k];
+    else missing.push(k);
+  });
+  return { values: CGP().sanitizeSettings(out), missing };
+}
+
+suite('settings sync: every setting reaches the teacher’s other computers', (test) => {
+  test('there is a changed value for every setting (a new setting needs one here)', () => {
+    const { values, missing } = everySettingChanged();
+    a.deep(missing, [], 'settings with no value to test');
+    const D = CGP().sanitizeSettings({});
+    const same = Object.keys(D).filter((k) => JSON.stringify(D[k]) === JSON.stringify(values[k]));
+    a.deep(same, [], 'test values equal to the default (sanitizing changed them back?)');
+  });
+
+  test('saved on one computer, every setting reads back the same on another', async () => {
+    const { values } = everySettingChanged();
+    const school = fakeChrome();
+    await withChrome(school, async () => {
+      const { values: base } = await CGP().settingsStorage.read();
+      await CGP().settingsStorage.write(base, values);
+    });
+    // Chrome sync delivers the school computer's items to the teacher's
+    // laptop, which has never stored anything of its own.
+    const laptop = fakeChrome(school.data);
+    await withChrome(laptop, async () => {
+      const { values: read } = await CGP().settingsStorage.read();
+      Object.keys(values).forEach((k) => a.deep(read[k], values[k], k));
+    });
+  });
+
+  test('each setting is its own sync item, inside Chrome sync’s limits', async () => {
+    const { values } = everySettingChanged();
+    const fake = fakeChrome();
+    await withChrome(fake, async () => {
+      const { values: base } = await CGP().settingsStorage.read();
+      await CGP().settingsStorage.write(base, values);
+    });
+    Object.keys(values).filter((k) => k !== 'snippets').forEach((k) => {
+      a.ok(('cgp.setting.' + k) in fake.data, k + ' stored on its own');
+    });
+    const bytes = (k) => Buffer.byteLength(k + JSON.stringify(fake.data[k]));
+    Object.keys(fake.data).forEach((k) => a.ok(bytes(k) <= 8192, k + ' fits one sync item'));
+    a.ok(Object.keys(fake.data).reduce((t, k) => t + bytes(k), 0) <= 102400, 'all of it fits Chrome sync');
+    a.ok(Object.keys(fake.data).length <= 512, 'within Chrome sync’s item count');
+  });
+
+  test('an open Canvas page picks up a class-schedule calendar connected on another computer', async () => {
+    const fake = fakeChrome();
+    await withChrome(fake, async () => {
+      const settings = CGP().settings;
+      settings._bound = false;
+      settings._cbs = [];
+      await settings.load();
+      a.eq(settings.values.courseCalendarUrl, '');
+      const url = NOT_DEFAULT.courseCalendarUrl;
+      await fake.storage.sync.set({ 'cgp.setting.courseCalendarUrl': url, 'cgp.setting.courseScheduleTime': 'end' });
+      await new Promise((r) => setTimeout(r, 0));
+      a.eq(settings.values.courseCalendarUrl, url);
+      a.eq(settings.values.courseScheduleTime, 'end');
+    });
+  });
+});

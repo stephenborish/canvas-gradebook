@@ -46,6 +46,11 @@
     return local || null;
   }
 
+  function syncStore() {
+    var sync = typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync;
+    return sync || null;
+  }
+
   function InlineSectionCopy(ctx) {
     this.api = ctx.api;
     this.courseId = String(ctx.courseId);
@@ -65,7 +70,10 @@
     if (!this.tabToken) this.tabToken = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
     return INTENT_PREFIX + this.origin + '|' + this.tabToken;
   };
+  // This computer's copy, from versions that kept the choices here only.
   P.prefsKey = function () { return PREFS_PREFIX + this.origin + '.' + this.courseId; };
+  // The course's entry in the synced item (CGP.sectionSync.fitClassPrefs).
+  P.syncPrefsKey = function () { return this.origin + '.' + this.courseId; };
 
   P.siblings = function () {
     return S().siblings(this.settings.values.sectionGroups, this.origin, this.courseId);
@@ -300,11 +308,21 @@
     if (final) this.savePrefs();
   };
 
+  /* The course's choices as Chrome sync holds them (made on any of the
+   * teacher's computers), else this computer's own from before they synced. */
   P.readPrefs = function () {
-    var local = store();
-    var k = this.prefsKey();
-    if (!local) return Promise.resolve({});
-    return local.get(k).then(function (r) { return (r && r[k]) || {}; }, function () { return {}; });
+    var local = store(), sync = syncStore();
+    var k = this.prefsKey(), sk = this.syncPrefsKey();
+    var KEY = S().CLASS_PREFS_KEY;
+    var fromSync;
+    try {
+      fromSync = sync ? sync.get(KEY).then(function (r) { return S().classPrefsFor(r && r[KEY], sk); }, function () { return null; }) : Promise.resolve(null);
+    } catch (e) { fromSync = Promise.resolve(null); }
+    return fromSync.then(function (p) {
+      if (p) return p;
+      if (!local) return {};
+      return local.get(k).then(function (r) { return (r && r[k]) || {}; }, function () { return {}; });
+    });
   };
 
   /* Which sections were ticked, and each one's due time, for next time. */
@@ -319,9 +337,26 @@
       if (st.origins && st.origins[d]) { prefs[d] = (st.prefs && st.prefs[d]) || { on: true, time: '' }; return; }
       prefs[d] = { on: row.on !== false, time: row.entry && row.entry.due_at && !row.entry.due_at.date ? row.entry.due_at.time || '' : '' };
     });
-    var o = {};
-    o[this.prefsKey()] = prefs;
-    local.set(o).catch(function () { return null; });
+    var k = this.prefsKey(), sk = this.syncPrefsKey();
+    var KEY = S().CLASS_PREFS_KEY;
+    var sync = syncStore();
+    var keepHere = function () {
+      var o = {};
+      o[k] = prefs;
+      try { local.set(o).catch(function () { return null; }); } catch (e) { /* orphaned tab */ }
+    };
+    if (!sync) { keepHere(); return; }
+    // One write after another: each reads what the last one stored.
+    this._prefsWrite = (this._prefsWrite || Promise.resolve()).then(function () {
+      return sync.get(KEY).then(function (r) {
+        var o = {};
+        o[KEY] = S().fitClassPrefs(r && r[KEY], sk, prefs, Date.now());
+        return sync.set(o);
+      }).then(function () {
+        // Now in Chrome sync: this computer's old copy is not needed.
+        return local.remove(k).catch(function () { return null; });
+      });
+    }).catch(keepHere);
   };
 
   P.titleOnPage = function () {

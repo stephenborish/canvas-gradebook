@@ -904,6 +904,21 @@ Settings and snippets travel two ways, and either one is enough:
    signed in to a different Google account, or has been turned off by your school, which many
    schools do for their accounts.
 
+**What travels, and what stays on one computer.** Every setting on every tab of the options page,
+and every snippet, travels both ways. So do the classes you link for *Copy to other classes* and, in
+*Also post to your other classes*, which classes you tick in each course and each one's usual due
+time (these go by Chrome sync only). Three things stay on the computer where they happen, by design:
+
+- **Class Schedule's calendar permission.** Your calendar's address travels with Chrome sync, but
+  Chrome asks for permission to read `calendar.google.com` separately on each computer. On a new
+  computer the schedule panel in Canvas says so and offers **Allow on this computer**, which opens
+  Class Schedule with **Connect** ready to click — once per computer. (The address is not kept in
+  the Canvas copy, since a Google "secret address" lets whoever has it read that calendar: with Chrome
+  sync off, paste it on each computer.)
+- **SpeedGrader comment drafts** — unsent drafts stay with the computer you typed them on.
+- **Self-hosted Canvas domains** (Course & Domains) — Chrome asks for each site's permission on
+  each computer. Schools on `*.instructure.com` never need this.
+
 The two are merged one setting and one snippet at a time, and for each the newer change wins. So a
 snippet added on one computer and a setting changed on another both survive, and a snippet deleted
 on one computer stays deleted.

@@ -4338,3 +4338,9 @@ html.cgp-on .cgp-sched__msg--err { color: #a0281c; }
 html.cgp-on .cgp-sched__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--cgp-hairline); color: var(--cgp-muted); font-size: 11.5px; }
 html.cgp-on .cgp-sched__foot > span { flex: 1 1 180px; }
 html.cgp-on .cgp-sched__warn { color: #8a5a00; }
+html.cgp-on .cgp-sched__cta {
+  border: 1px solid var(--cgp-brand); border-radius: 6px;
+  background: var(--cgp-brand); color: #fff;
+  padding: 5px 12px; font-size: 12.5px; font-weight: 600;
+}
+html.cgp-on .cgp-sched__cta:hover { background: var(--cgp-brand-dark); border-color: var(--cgp-brand-dark); }

@@ -402,6 +402,50 @@
     return m[1] + '-' + m[2] + '-' + m[3] + 'T' + c;
   }
 
+  /* "Also post to your other classes" remembers, per course, which classes
+   * were ticked and each one's usual due time. Every course's choices share
+   * one chrome.storage.sync item, so they follow the teacher to every
+   * computer signed in to the same Chrome profile:
+   *   {"<origin>.<courseId>": {at, p: {"<class course id>": {on, time}}}}
+   * A class ticked with no usual time is the default and is left out. The
+   * item is kept small - Chrome sync's 100KB is shared with the settings and
+   * snippets - by dropping the courses used longest ago. */
+  var CLASS_PREFS_KEY = 'cgp.classPrefs';
+  var CLASS_PREFS_BYTES = 2500;
+
+  function cleanClassPrefs(p) {
+    var out = {};
+    Object.keys(p && typeof p === 'object' ? p : {}).forEach(function (d) {
+      if (!/^\d+$/.test(d)) return;
+      var e = p[d] || {};
+      var time = String(e.time == null ? '' : e.time).trim().slice(0, 20);
+      if (e.on !== false && !time) return;
+      out[d] = { on: e.on !== false, time: time };
+    });
+    return out;
+  }
+
+  /** `map` (the stored item) with `key`'s choices set to `prefs`, trimmed to fit. */
+  function fitClassPrefs(map, key, prefs, now) {
+    var out = {};
+    Object.keys(map && typeof map === 'object' ? map : {}).forEach(function (k) {
+      var e = map[k];
+      if (e && typeof e === 'object' && e.p && typeof e.p === 'object') out[k] = { at: Number(e.at) || 0, p: cleanClassPrefs(e.p) };
+    });
+    if (key) out[key] = { at: Number(now) || 0, p: cleanClassPrefs(prefs) };
+    var size = function () { return CGP.util.byteLength(CLASS_PREFS_KEY + JSON.stringify(out)); };
+    var oldest = Object.keys(out).filter(function (k) { return k !== key; }).sort(function (x, y) { return out[x].at - out[y].at; });
+    while (oldest.length && size() > CLASS_PREFS_BYTES) delete out[oldest.shift()];
+    if (key && size() > CLASS_PREFS_BYTES) out[key].p = {};
+    return out;
+  }
+
+  /** One course's choices from the stored item, or null if it has none. */
+  function classPrefsFor(map, key) {
+    var e = map && typeof map === 'object' ? map[key] : null;
+    return e && e.p && typeof e.p === 'object' ? cleanClassPrefs(e.p) : null;
+  }
+
   /** What a teacher types (or the class-schedule picker puts in) as a
    * time: "13:45", "1:45 pm", "9am". -> "HH:MM" or null. */
   function parseClock(text) {
@@ -1141,6 +1185,10 @@
     shiftLocal: shiftLocal,
     withTime: withTime,
     parseClock: parseClock,
+    CLASS_PREFS_KEY: CLASS_PREFS_KEY,
+    CLASS_PREFS_BYTES: CLASS_PREFS_BYTES,
+    fitClassPrefs: fitClassPrefs,
+    classPrefsFor: classPrefsFor,
     checkDates: checkDates,
     sameInstant: sameInstant,
     datesWrite: datesWrite,
