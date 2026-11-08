@@ -3778,65 +3778,72 @@ html.cgp-tray-tidy [data-cgp-tray-status][data-cgp-tray-proxied] {
   display: none !important;
 }
 html.cgp-tray-tidy .cgp-tstat {
+  /* An explicit family, never `inherit`: the tray's containers set no font of
+   * their own (InstUI puts it on each Text / Heading), so anything inherited
+   * here falls through to the browser default - Times New Roman. This is
+   * Canvas's own stack, so the control matches the tray's headings. */
+  --cgp-tstat-font: LatoWeb, 'Lato Extended', Lato, 'Helvetica Neue', Helvetica, Arial, sans-serif;
   margin: 8px 0 4px;
-  font-family: inherit;
+  font-family: var(--cgp-tstat-font) !important;
   font-size: 0.875rem;
   line-height: 1.25;
   color: #2d3b45;
   -webkit-font-smoothing: antialiased;
 }
-html.cgp-tray-tidy .cgp-tstat * { box-sizing: border-box; }
+html.cgp-tray-tidy .cgp-tstat * {
+  box-sizing: border-box;
+  font-family: var(--cgp-tstat-font) !important;
+}
 html.cgp-tray-tidy .cgp-tstat__seg {
-  /* Each button as wide as its label, the spare width shared out; labels
+  /* Each segment as wide as its label, the spare width shared out; labels
    * never truncate - a narrow tray (or many custom statuses) wraps instead. */
   display: flex;
   flex-wrap: wrap;
-  gap: 3px;
-  padding: 3px;
-  border-radius: 10px;
-  background: #eef1f3;
-  box-shadow: inset 0 0 0 1px #dfe3e6;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid #c7cdd1;
+  border-radius: 8px;
+  background: #fff;
 }
 html.cgp-tray-tidy .cgp-tstat__opt {
   --cgp-tstat-c: #5b6770;
   position: relative;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 1 0 auto;
   gap: 5px;
-  height: 32px;
+  height: 30px;
   margin: 0;
-  padding: 0 7px;
+  padding: 0 6px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 6px;
   background: transparent;
   color: #4b5862;
-  font: inherit;
   font-size: 0.8125rem;
-  font-weight: 600;
-  letter-spacing: 0.005em;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: none;
+  box-shadow: none;
   cursor: pointer;
   user-select: none;
+  -webkit-appearance: none;
+  appearance: none;
   -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease;
+  transition: background-color 0.14s ease, color 0.14s ease;
 }
 html.cgp-tray-tidy .cgp-tstat__opt:hover:not(:disabled):not([aria-pressed="true"]) {
-  background: rgba(255, 255, 255, 0.75);
-  color: #2d3b45;
-}
-html.cgp-tray-tidy .cgp-tstat__opt:active:not(:disabled) {
-  transform: translateY(0.5px);
+  background: color-mix(in srgb, var(--cgp-tstat-c) 9%, #fff);
+  color: color-mix(in srgb, var(--cgp-tstat-c) 82%, #000);
 }
 html.cgp-tray-tidy .cgp-tstat__opt[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--cgp-tstat-c) 13%, #fff);
-  color: color-mix(in srgb, var(--cgp-tstat-c) 82%, #000);
-  box-shadow: inset 0 0 0 1.5px var(--cgp-tstat-c), 0 1px 2px rgba(16, 24, 32, 0.12);
+  background: var(--cgp-tstat-c);
+  color: #fff;
 }
 html.cgp-tray-tidy .cgp-tstat__opt[data-value="none"][aria-pressed="true"] {
-  background: #fff;
+  background: #eef1f3;
   color: #2d3b45;
-  box-shadow: 0 0 0 1px #d3d9dd, 0 1px 3px rgba(16, 24, 32, 0.12);
 }
 html.cgp-tray-tidy .cgp-tstat__opt:focus { outline: none; }
 html.cgp-tray-tidy .cgp-tstat__opt:focus-visible {
@@ -3850,43 +3857,44 @@ html.cgp-tray-tidy .cgp-tstat__opt:disabled {
 }
 html.cgp-tray-tidy .cgp-tstat__dot {
   flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--cgp-tstat-c);
-  opacity: 0.85;
 }
 html.cgp-tray-tidy .cgp-tstat__opt[data-value="none"] .cgp-tstat__dot {
   background: transparent;
   box-shadow: inset 0 0 0 1.5px var(--cgp-tstat-c);
 }
-html.cgp-tray-tidy .cgp-tstat__opt[aria-pressed="true"] .cgp-tstat__dot { opacity: 1; }
+html.cgp-tray-tidy .cgp-tstat__opt[aria-pressed="true"] .cgp-tstat__dot { background: #fff; }
+html.cgp-tray-tidy .cgp-tstat__opt[data-value="none"][aria-pressed="true"] .cgp-tstat__dot { background: transparent; }
 /* Sent to Canvas, not yet confirmed: the dot becomes a small spinner. */
 html.cgp-tray-tidy .cgp-tstat__opt[data-pending] .cgp-tstat__dot {
   width: 10px;
   height: 10px;
   background: transparent;
   box-shadow: none;
-  border: 2px solid color-mix(in srgb, var(--cgp-tstat-c) 30%, transparent);
-  border-top-color: var(--cgp-tstat-c);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
   animation: cgp-tstat-spin 0.7s linear infinite;
+}
+html.cgp-tray-tidy .cgp-tstat__opt[data-value="none"][data-pending] .cgp-tstat__dot {
+  border-color: rgba(91, 103, 112, 0.3);
+  border-top-color: #5b6770;
 }
 @keyframes cgp-tstat-spin { to { transform: rotate(360deg); } }
 html.cgp-tray-tidy .cgp-tstat__txt {
   white-space: nowrap;
 }
 
-/* Late: "Late by [-] 2 [+] days", in Late's colour, under the control. */
+/* Late: "Late by [-] 2 [+] days" under the control, quiet, in Late's colour. */
 html.cgp-tray-tidy .cgp-tstat__late {
   --cgp-tstat-c: #5b6770;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin-top: 8px;
-  padding: 7px 10px 7px 12px;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--cgp-tstat-c) 28%, #fff);
-  background: color-mix(in srgb, var(--cgp-tstat-c) 7%, #fff);
+  padding: 0 2px;
   animation: cgp-tstat-in 0.16s ease-out;
 }
 html.cgp-tray-tidy .cgp-tstat__late[hidden] { display: none; }
@@ -3894,7 +3902,7 @@ html.cgp-tray-tidy .cgp-tstat__late[hidden] { display: none; }
 html.cgp-tray-tidy .cgp-tstat__late-lbl {
   font-size: 0.8125rem;
   font-weight: 700;
-  color: color-mix(in srgb, var(--cgp-tstat-c) 82%, #000);
+  color: color-mix(in srgb, var(--cgp-tstat-c) 85%, #000);
   white-space: nowrap;
 }
 html.cgp-tray-tidy .cgp-tstat__stepper {
@@ -3902,14 +3910,14 @@ html.cgp-tray-tidy .cgp-tstat__stepper {
   align-items: stretch;
   height: 30px;
   border: 1px solid #c7cdd1;
-  border-radius: 8px;
+  border-radius: 6px;
   background: #fff;
   overflow: hidden;
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 html.cgp-tray-tidy .cgp-tstat__stepper:focus-within {
   border-color: #0374b5;
-  box-shadow: 0 0 0 3px rgba(3, 116, 181, 0.18);
+  box-shadow: 0 0 0 2px rgba(3, 116, 181, 0.2);
 }
 html.cgp-tray-tidy .cgp-tstat__step {
   flex: 0 0 28px;
@@ -3917,12 +3925,15 @@ html.cgp-tray-tidy .cgp-tstat__step {
   margin: 0;
   padding: 0;
   border: 0;
+  border-radius: 0;
   background: #f5f7f8;
   color: #4b5862;
-  font: inherit;
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 400;
   line-height: 1;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
   cursor: pointer;
   transition: background-color 0.12s ease, color 0.12s ease;
 }
@@ -3932,8 +3943,9 @@ html.cgp-tray-tidy .cgp-tstat__step:hover:not(:disabled) {
 }
 html.cgp-tray-tidy .cgp-tstat__step:disabled { cursor: not-allowed; opacity: 0.45; }
 html.cgp-tray-tidy .cgp-tstat__days {
-  width: 48px;
+  width: 44px;
   height: 100%;
+  min-height: 0;
   margin: 0;
   padding: 0 4px;
   border: 0;
@@ -3943,9 +3955,9 @@ html.cgp-tray-tidy .cgp-tstat__days {
   background: #fff;
   box-shadow: none;
   color: #2d3b45;
-  font: inherit;
   font-size: 0.875rem;
-  font-weight: 600;
+  font-weight: 700;
+  line-height: normal;
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
@@ -4062,6 +4074,49 @@ html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow .tox-split-button__ch
   width: 14px !important;
   min-width: 14px !important;
   padding: 0 !important;
+}
+/* Swap what shows: the formatting buttons (B I U, colour, link, lists...)
+ * are always on show, and the "Paragraph" block-format dropdown is what the
+ * ⋮ button reveals - the reverse of TinyMCE's own split at tray width.
+ *
+ * Only TinyMCE's sliding mode is touched: there the drawer
+ * (.tox-toolbar__overflow) sits in the editor header beside the primary row,
+ * filled whether open or not and tagged --closed / --open. Which groups land
+ * in which row depends on TinyMCE's width measurements, so neither row is
+ * relied on: both are flattened (display: contents) and the overlord becomes
+ * one flex row that WRAPS - never scrolls or clips - so every button is
+ * always whole and in reach. Its groups keep TinyMCE's order (primary's,
+ * then the drawer's); the dropdown's group - the one holding a
+ * .tox-tbtn--select - shows only while ⋮ is "open", and then leads the row;
+ * ⋮ sits at the right end of the last line. With an empty drawer there is no ⋮ to
+ * press, so nothing is hidden. */
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar-overlord {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  column-gap: 6px !important;
+  padding: 0 4px !important;
+  overflow: visible !important;
+}
+/* Groups are set apart by a gap, not dividers: a divider would hang at the
+ * left edge of every wrapped line. */
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__group { border-left: 0 !important; }
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__primary,
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__overflow {
+  display: contents !important;
+  /* TinyMCE's closed drawer is visibility: hidden, which its groups inherit. */
+  visibility: visible !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__primary > .tox-toolbar__group { order: 1; }
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__overflow > .tox-toolbar__group { order: 2; }
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__group:has(.tox-tbtn--select) { order: 0; }
+/* ⋮: TinyMCE appends it as the primary row's last group. */
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__primary > .tox-toolbar__group:last-child:not(:has(.tox-tbtn--select)) {
+  order: 3;
+  margin-left: auto !important;
+}
+html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow--closed > .tox-toolbar__group) .tox-toolbar__group:has(.tox-tbtn--select) {
+  display: none !important;
 }
 /* "Paragraph": as wide as its word, not a fixed 7em. */
 html.cgp-tray-tidy [data-cgp-tray-rce] .tox-tbtn--select {
