@@ -252,6 +252,23 @@ suite('Grade Detail Tray layout', (test) => {
     t.ctl.stopPolling();
   });
 
+  test('Late: on a page whose decimal mark is neither point nor comma, the shown amount still reads back', () => {
+    const t = setup({ late: true });
+    t.doc.documentElement.setAttribute('lang', 'fa');
+    t.ctl.start();
+    const ours = t.doc.querySelector('.cgp-tstat__days');
+    const canvas = t.doc.querySelector('.NumberInput__Container input');
+    ours.value = '1.5';
+    t.ctl.status.daysDirty = true;
+    t.ctl.status.commitDays();
+    a.eq(ours.value, '1\u066b5', 'shown in the page’s own format');
+    a.eq(canvas.value, '1\u066b5', 'and sent that way');
+    t.ctl.status.step(1);
+    a.eq(ours.value, '2', 'stepping up from 1٫5 reaches 2, not 1');
+    clearTimeout(t.ctl.status.stepTimer);
+    t.ctl.stopPolling();
+  });
+
   test('setting turned off: the control is removed and Canvas’s group shown again', () => {
     const t = setup();
     t.ctl.start();

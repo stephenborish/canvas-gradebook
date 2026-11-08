@@ -609,10 +609,15 @@
     else input.value = value;
   }
 
-  /** A typed amount: digits with at most one decimal point or comma, or
-   * null for anything else (negatives, letters, thousands separators). */
+  /** A typed amount: digits with at most one decimal mark - a point, a
+   * comma, or the page language's own (e.g. Persian "٫", which is how
+   * formatAmount writes it back) - or null for anything else (negatives,
+   * letters, thousands separators). */
   function parseAmount(s) {
-    var t = String(s == null ? '' : s).trim().replace(',', '.');
+    var t = String(s == null ? '' : s).trim();
+    var sep = decimalSeparator();
+    if (sep !== '.' && sep !== ',') t = t.split(sep).join('.');
+    t = t.replace(',', '.');
     if (!t || !/^\d*\.?\d+$|^\d+\.$/.test(t)) return null;
     return parseFloat(t);
   }
