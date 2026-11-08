@@ -6,23 +6,24 @@
  * section eats half the tray and a typed comment's Submit is off the bottom
  * of the screen. With `trayLayout` on:
  *
- *  - the Status options sit side by side as one row of equal pills - a
- *    segmented control - each pill a single click target, tinted in its
- *    status colour (Canvas's own, darkened into an accent) once checked.
- *    Late's "days late" box, which Canvas puts inside the Late option, is
- *    shown as a strip UNDER the row, so the four pills stay on one line.
+ *  - the Status radios are replaced by our own segmented control (see
+ *    StatusControl below): one row of buttons in Canvas's status colours,
+ *    the current one filled; pressing it again clears it; Late gets a tidy
+ *    "Late by [-] 2 [+] days" bar. Canvas's radios stay on the page, hidden,
+ *    and every press goes through them - Canvas makes its own update.
  *  - the comment box is one card: its Cancel / Submit as a slim bar on top,
  *    a single compact row of formatting buttons (the "more" drawer opens as
  *    one row too), a shorter editing area, and no status bar under it (the
  *    element path, word count and accessibility checker button).
  *
- * Nothing is moved in the DOM: the tray is React's, and moving its nodes
- * would break its next render. Elements are only tagged with data-cgp-tray-*
+ * None of Canvas's nodes is moved: the tray is React's, and moving its nodes
+ * would break its next render. They are only tagged with data-cgp-tray-*
  * attributes (never classes: React rewrites className whenever Canvas
- * toggles one of its own, e.g. on the checked radio) and the CSS keyed off
- * those attributes and html.cgp-tray-tidy does the rest - a flex row for the
- * statuses, `order: -1` for the buttons. Turning the setting off drops the
- * root class, which puts the tray back exactly as Canvas draws it.
+ * toggles one of its own) and the CSS keyed off those attributes and
+ * html.cgp-tray-tidy does the rest. The one node we add is the status
+ * control, a sibling right after Canvas's radio group. Turning the setting
+ * off removes it and drops the root class, which puts the tray back exactly
+ * as Canvas draws it.
  *
  * Every lookup is anchored on the radios' `name` (SubmissionTrayRadioInput),
  * which Canvas never localizes, rather than on labels or emotion-generated
@@ -36,12 +37,15 @@
   var RCE_SELECTOR = '.rce-wrapper, [data-testid="RCEWrapper"], .tox-tinymce';
   var ROOT_CLASS = 'cgp-tray-tidy';
   var GRID_SELECTOR = '.slick-viewport, .grid-canvas';
+  var POLL_MS = 200;
 
   function TrayLayoutController(ctx) {
     var self = this;
     this.settings = ctx.settings;
     this.observer = null;
     this.tray = null;   // the tray dialog last seen, while it is on the page
+    this.status = null; // the StatusControl standing in for Canvas's radios
+    this.timer = null;
     this.scheduleScan = CGP.util.rafBatch(function () { self.scan(); }, 'trayLayout');
   }
 
@@ -62,7 +66,13 @@
   P.apply = function () {
     var on = this.enabled();
     document.documentElement.classList.toggle(ROOT_CLASS, on);
-    if (on) this.observe(); else this.disconnect();
+    if (on) this.observe();
+    else {
+      this.disconnect();
+      this.stopPolling();
+      if (this.status) this.status.destroy();
+      this.status = null;
+    }
   };
 
   P.observe = function () {
@@ -114,68 +124,515 @@
   /** Tags the tray currently on the page, if any. Safe to call repeatedly.
    * Looks only inside the known tray when there is one. */
   P.scan = function () {
+    // A scan queued just before the setting went off must not rebuild the
+    // control apply() has just torn down.
+    if (!this.enabled()) return false;
     if (this.tray && !this.tray.isConnected) this.tray = null;
     var radios = toArray((this.tray || document).querySelectorAll(RADIO_SELECTOR));
     if (radios.length < 2) return false;
-    tagStatuses(radios);
+    var row = tagStatuses(radios);
     // Comment forms are only looked for inside the tray itself: falling back
     // to the whole page would restyle any other textarea + buttons on it
     // (the gradebook's own comment popover, say).
     this.tray = trayFor(radios[0]);
     if (this.tray) tagCommentForms(this.tray);
+    if (row) {
+      if (!this.status) this.status = new StatusControl();
+      if (this.status.attach(row)) this.startPolling();
+    }
     return true;
+  };
+
+  /* Canvas flips a radio's `checked` as a property, which no observer
+   * reports, so while the control is up it re-reads the radios on a light
+   * timer (a handful of property reads; nothing is written unless changed). */
+  P.startPolling = function () {
+    if (this.timer) return;
+    var self = this;
+    this.timer = setInterval(function () { self.tick(); }, POLL_MS);
+    if (this.timer && typeof this.timer.unref === 'function') this.timer.unref();
+  };
+
+  P.stopPolling = function () {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+  };
+
+  P.tick = function () {
+    if (!this.status || !this.enabled()) { this.stopPolling(); return; }
+    if (this.status.connected()) { this.status.sync(); return; }
+    // The tray closed, or React swapped the group out: find it afresh.
+    this.stopPolling();
+    if (this.tray && !this.tray.isConnected) this.tray = null;
+    this.scan();
   };
 
   /* ------------------------------------------------------------- statuses */
 
+  /* Tags Canvas's radio group: the row that holds every option (hidden once
+   * our control stands in for it). Returns the row, or null when the radios
+   * share no ancestor. */
   function tagStatuses(radios) {
-    // The band Canvas paints (its status colour) around each radio.
-    var pills = radios.map(function (r) {
-      return (r.closest && r.closest('.SubmissionTray__RadioInput')) || r;
-    });
-    pills.forEach(function (pill, n) {
-      if (pill.tagName === 'INPUT') return;
-      setAttr(pill, 'data-cgp-tray-value', String(radios[n].value || radios[n].getAttribute('value') || '').toLowerCase());
-      paintAccent(pill);
-      // Late's "days late" box: the part of the option holding a field
-      // other than the radio.
-      toArray(pill.children).forEach(function (child) {
-        var field = toArray(child.querySelectorAll('input')).filter(function (i) {
-          var t = (i.getAttribute('type') || 'text').toLowerCase();
-          return t !== 'radio' && t !== 'hidden';
-        })[0];
-        if (field && !child.contains(radios[n])) setAttr(child, 'data-cgp-tray-days', '');
-      });
-    });
-    var row = commonAncestor(pills);
-    if (!row) return;
-    setAttr(row, 'data-cgp-tray-status', '');
-    toArray(row.children).forEach(function (child) {
-      var pill = null;
-      for (var i = 0; i < pills.length; i++) {
-        if (child.contains(pills[i])) { pill = pills[i]; break; }
-      }
-      if (!pill) return;
-      setAttr(child, 'data-cgp-tray-opt', '');
-      // When the radio itself is all there is, the column it sits in is the pill.
-      setAttr(pill.tagName === 'INPUT' ? child : pill, 'data-cgp-tray-pill', '');
-    });
+    var row = commonAncestor(radios.map(bandFor));
+    if (row) setAttr(row, 'data-cgp-tray-status', '');
+    return row;
   }
 
-  /* Canvas paints each status option in its status colour - pale tints
-   * (late blue, missing red, excused yellow, or the teacher's own choices).
-   * The same hue, darkened into a readable accent, becomes the pill's
-   * --cgp-tray-accent: its underline, and its border and text once checked.
-   * A custom property is the one thing set in a style: React only rewrites
-   * the style properties it manages, so this survives its renders. */
-  function paintAccent(pill) {
-    var bg = (pill.style && pill.style.backgroundColor) || '';
-    if (pill.getAttribute('data-cgp-tray-bg') === bg) return;
-    setAttr(pill, 'data-cgp-tray-bg', bg);
-    var accent = accentFor(bg);
-    if (!pill.style || typeof pill.style.setProperty !== 'function') return;
-    if (accent) pill.style.setProperty('--cgp-tray-accent', accent);
-    else if (pill.style.removeProperty) pill.style.removeProperty('--cgp-tray-accent');
+  /** The band Canvas paints (its status colour) around one radio. */
+  function bandFor(radio) {
+    return (radio.closest && radio.closest('.SubmissionTray__RadioInput')) || radio;
+  }
+
+  function radioValue(radio) {
+    return String(radio.value || radio.getAttribute('value') || '').toLowerCase();
+  }
+
+  /* ---------------------------------------------------- the status control */
+
+  /* Our own status picker, standing in for Canvas's radio list (which stays
+   * on the page, hidden, and still does the work).
+   *
+   *  - One segmented control: a button per status, in Canvas's order and
+   *    with Canvas's labels and colours (custom statuses included). The
+   *    current one is filled in its colour.
+   *  - A button "presses" Canvas's own radio, so Canvas makes exactly the
+   *    update it would have made, through its own code.
+   *  - Pressing the current status again clears it - presses None - which a
+   *    radio can never do.
+   *  - The press shows at once (with a small spinner) and settles when
+   *    Canvas's radio agrees; if Canvas ignores it, it reverts.
+   *  - Late gets a "Late by [-] 2 [+] days" bar under the control, wired to
+   *    Canvas's own days field (which commits on blur): typing commits on
+   *    Enter or leaving the box, the steppers commit after a short pause.
+   *
+   * Canvas sets a radio's `checked` as a property, which no observer sees,
+   * so the controller re-reads the radios on a light timer while the tray
+   * is open; nothing is written to the page unless something changed. */
+  var NEUTRAL = '#5b6770';
+  var PENDING_MS = 6000;
+  var STEP_COMMIT_MS = 650;
+
+  function StatusControl() {
+    this.root = null;
+    this.row = null;
+    this.optsKey = '';
+    this.stateKey = '';
+    this.buttons = {};
+    this.pending = null;       // { value, until }
+    this.daysDirty = false;    // our days box holds an uncommitted edit
+    this.daysEcho = null;      // { node, canvas, shown } after a commit
+    this.stepTimer = null;
+    this.model = null;
+  }
+
+  var SC = StatusControl.prototype;
+
+  /** Puts the control right after Canvas's row (inside the same group, so
+   * it sits under Canvas's "Status" heading) and hides the row. */
+  SC.attach = function (row) {
+    if (!row || !row.parentElement) return false;
+    if (!this.root) this.build();
+    if (this.row && this.row !== row) {
+      // A new group (another tray): nothing carries over from the last one.
+      // A stepper commit still waiting belongs to the old group's student.
+      if (this.stepTimer) { clearTimeout(this.stepTimer); this.stepTimer = null; }
+      this.row.removeAttribute('data-cgp-tray-proxied');
+      this.pending = this.daysEcho = null;
+      this.daysDirty = false;
+      this.stateKey = '';
+    }
+    this.row = row;
+    if (this.root.parentElement !== row.parentElement || row.nextSibling !== this.root) {
+      row.parentElement.insertBefore(this.root, row.nextSibling);
+    }
+    setAttr(row, 'data-cgp-tray-proxied', '');
+    this.sync();
+    return true;
+  };
+
+  SC.connected = function () {
+    return !!(this.root && this.root.isConnected && this.row && this.row.isConnected);
+  };
+
+  SC.destroy = function () {
+    if (this.stepTimer) clearTimeout(this.stepTimer);
+    this.stepTimer = null;
+    if (this.row) this.row.removeAttribute('data-cgp-tray-proxied');
+    if (this.root) this.root.remove();
+    this.root = this.row = null;
+    this.optsKey = this.stateKey = '';
+    this.buttons = {};
+    this.pending = this.daysEcho = null;
+    this.daysDirty = false;
+  };
+
+  SC.build = function () {
+    var self = this;
+    var root = document.createElement('div');
+    root.className = 'cgp-tstat';
+    root.setAttribute('data-cgp-tray-own', '');
+
+    var seg = document.createElement('div');
+    seg.className = 'cgp-tstat__seg';
+    seg.setAttribute('role', 'group');
+    seg.setAttribute('aria-label', 'Submission status');
+    seg.addEventListener('keydown', function (e) { self.onSegKey(e); });
+
+    var late = document.createElement('div');
+    late.className = 'cgp-tstat__late';
+    late.hidden = true;
+    late.setAttribute('hidden', '');
+
+    var lbl = document.createElement('span');
+    lbl.className = 'cgp-tstat__late-lbl';
+    lbl.textContent = 'Late by';
+
+    var stepper = document.createElement('span');
+    stepper.className = 'cgp-tstat__stepper';
+    var minus = stepButton('−', 'Less late', function () { self.step(-1); });
+    var plus = stepButton('+', 'More late', function () { self.step(1); });
+    var input = document.createElement('input');
+    input.className = 'cgp-tstat__days';
+    input.setAttribute('type', 'text');
+    input.setAttribute('inputmode', 'decimal');
+    input.setAttribute('autocomplete', 'off');
+    input.setAttribute('aria-label', 'Time late');
+    input.addEventListener('input', function () { self.daysDirty = true; });
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); self.commitDays(); }
+      else if (e.key === 'Escape') { e.stopPropagation(); self.revertDays(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); self.step(1); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); self.step(-1); }
+    });
+    input.addEventListener('blur', function () {
+      if (self.daysDirty) { self.commitDays(); return; }
+      // Canvas's amount may have changed while the box had focus (and so was
+      // not redrawn): show it now.
+      self.stateKey = '';
+      self.sync();
+    });
+    stepper.appendChild(minus);
+    stepper.appendChild(input);
+    stepper.appendChild(plus);
+
+    var unit = document.createElement('span');
+    unit.className = 'cgp-tstat__unit';
+
+    late.appendChild(lbl);
+    late.appendChild(stepper);
+    late.appendChild(unit);
+    root.appendChild(seg);
+    root.appendChild(late);
+
+    this.root = root;
+    this.seg = seg;
+    this.late = late;
+    this.daysInput = input;
+    this.unit = unit;
+    this.minus = minus;
+    this.plus = plus;
+  };
+
+  function stepButton(text, label, onClick) {
+    var b = document.createElement('button');
+    b.setAttribute('type', 'button');
+    b.className = 'cgp-tstat__step';
+    b.setAttribute('aria-label', label);
+    b.setAttribute('tabindex', '-1');
+    b.textContent = text;
+    // Keep focus where it is (the days box keeps its edit going).
+    b.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    b.addEventListener('click', function (e) { e.preventDefault(); onClick(); });
+    return b;
+  }
+
+  /** What Canvas's hidden radios say right now. */
+  SC.read = function () {
+    var radios = this.row ? toArray(this.row.querySelectorAll(RADIO_SELECTOR)) : [];
+    var opts = radios.map(function (r) {
+      var band = bandFor(r);
+      var value = radioValue(r);
+      var color = band !== r && band.style ? band.style.backgroundColor : '';
+      return {
+        value: value,
+        label: labelFor(r, band) || value,
+        accent: value === 'none' ? null : accentFor(color),
+        radio: r,
+        band: band,
+        checked: flag(r, 'checked'),
+        disabled: flag(r, 'disabled')
+      };
+    });
+    var current = null;
+    opts.forEach(function (o) { if (o.checked) current = o.value; });
+    var lateOpt = opts.filter(function (o) { return o.value === 'late'; })[0];
+    return { opts: opts, current: current, days: lateOpt && lateOpt.band !== lateOpt.radio ? readDays(lateOpt.band, lateOpt.radio) : null };
+  };
+
+  function labelFor(radio, band) {
+    var id = radio.getAttribute('id');
+    var label = null;
+    if (id && band.querySelector) {
+      toArray(band.querySelectorAll('label')).forEach(function (l) {
+        if (!label && l.getAttribute('for') === id) label = l;
+      });
+    }
+    label = label || (radio.closest && radio.closest('label')) || (band.querySelector && band.querySelector('label'));
+    return label ? textOf(label).replace(/\s+/g, ' ').trim() : '';
+  }
+
+  /* Canvas's days field (TimeLateInput: an InstUI NumberInput plus a
+   * "Day(s)" / "Hour(s)" word), present only while Late is checked. */
+  function readDays(band, radio) {
+    var input = toArray(band.querySelectorAll('input')).filter(function (i) {
+      var t = (i.getAttribute('type') || 'text').toLowerCase();
+      return i !== radio && t !== 'radio' && t !== 'hidden';
+    })[0];
+    if (!input) return null;
+    var box = (input.closest && input.closest('.NumberInput__Container')) || input.parentElement;
+    var unit = '';
+    toArray(box ? box.querySelectorAll('*') : []).forEach(function (el) {
+      if (el.children.length || el === input) return;
+      if (el.closest && el.closest('label')) return;   // the screen-reader label
+      var t = textOf(el).trim();
+      if (t) unit = t;
+    });
+    return {
+      input: input,
+      value: String(input.value != null ? input.value : (input.getAttribute('value') || '')),
+      unit: unit,
+      disabled: flag(input, 'disabled') || input.getAttribute('aria-disabled') === 'true'
+    };
+  }
+
+  /** Re-reads Canvas and redraws whatever changed. */
+  SC.sync = function () {
+    if (!this.root || !this.row) return;
+    var m = this.read();
+    this.model = m;
+    if (!m.opts.length) return;
+    if (this.pending && (this.pending.value === m.current || Date.now() > this.pending.until)) this.pending = null;
+
+    var optsKey = m.opts.map(function (o) { return o.value + '\u0001' + o.label + '\u0001' + (o.accent || ''); }).join('\u0002');
+    if (optsKey !== this.optsKey) {
+      this.optsKey = optsKey;
+      this.stateKey = '';
+      this.buildButtons(m.opts);
+    }
+
+    var shown = this.pending ? this.pending.value : m.current;
+    var days = m.days;
+    var stateKey = [shown, this.pending ? 1 : 0, m.opts.map(function (o) { return o.disabled ? 1 : 0; }).join(''),
+      days ? days.value + '|' + days.unit + '|' + (days.disabled ? 1 : 0) : '-', this.daysDirty ? 1 : 0].join('\u0001');
+    if (stateKey === this.stateKey) return;
+    this.stateKey = stateKey;
+
+    var self = this;
+    m.opts.forEach(function (o) {
+      var b = self.buttons[o.value];
+      if (!b) return;
+      var on = o.value === shown;
+      setAttr(b, 'aria-pressed', on ? 'true' : 'false');
+      if (on && self.pending) setAttr(b, 'data-pending', ''); else b.removeAttribute('data-pending');
+      b.disabled = !!o.disabled;
+      if (o.disabled) setAttr(b, 'disabled', ''); else b.removeAttribute('disabled');
+      setAttr(b, 'title', on && o.value !== 'none' ? o.label + ' – click again to clear' : o.label);
+    });
+    setAttr(this.root, 'data-current', shown || '');
+    this.renderDays(shown === 'late' ? days : null, m.opts);
+  };
+
+  SC.buildButtons = function (opts) {
+    var self = this;
+    while (this.seg.children.length) this.seg.removeChild(this.seg.children[0]);
+    this.buttons = {};
+    opts.forEach(function (o) {
+      var b = document.createElement('button');
+      b.setAttribute('type', 'button');
+      b.className = 'cgp-tstat__opt';
+      b.setAttribute('data-value', o.value);
+      b.setAttribute('aria-pressed', 'false');
+      if (b.style && typeof b.style.setProperty === 'function') {
+        b.style.setProperty('--cgp-tstat-c', o.accent || NEUTRAL);
+      }
+      var dot = document.createElement('span');
+      dot.className = 'cgp-tstat__dot';
+      dot.setAttribute('aria-hidden', 'true');
+      var txt = document.createElement('span');
+      txt.className = 'cgp-tstat__txt';
+      txt.textContent = o.label;
+      b.appendChild(dot);
+      b.appendChild(txt);
+      b.addEventListener('click', function (e) {
+        if (e && e.preventDefault) e.preventDefault();
+        self.choose(o.value);
+      });
+      self.seg.appendChild(b);
+      self.buttons[o.value] = b;
+    });
+    var late = opts.filter(function (o) { return o.value === 'late'; })[0];
+    if (this.late.style && typeof this.late.style.setProperty === 'function') {
+      this.late.style.setProperty('--cgp-tstat-c', (late && late.accent) || NEUTRAL);
+    }
+  };
+
+  SC.renderDays = function (days, opts) {
+    if (!days) {
+      this.late.hidden = true;
+      setAttr(this.late, 'hidden', '');
+      this.daysDirty = false;
+      return;
+    }
+    this.late.hidden = false;
+    this.late.removeAttribute('hidden');
+    var unit = days.unit ? days.unit.toLocaleLowerCase() : 'days';
+    setAttr(this.daysInput, 'aria-label', 'Late by, in ' + unit);
+    var off = !!days.disabled || opts.some(function (o) { return o.value === 'late' && o.disabled; });
+    [this.daysInput, this.minus, this.plus].forEach(function (el) {
+      el.disabled = off;
+      if (off) setAttr(el, 'disabled', ''); else el.removeAttribute('disabled');
+    });
+    var echo = this.daysEcho;
+    if (echo && (echo.node !== days.input || echo.canvas !== days.value)) echo = this.daysEcho = null;
+    if (!this.daysDirty && !isFocused(this.daysInput)) {
+      var v = echo ? echo.shown : days.value;
+      if (this.daysInput.value !== v) this.daysInput.value = v;
+    }
+    // Canvas words the unit by its whole-number copy ("1.5 Day"); put the
+    // English plural right for what is actually shown.
+    var n = parseAmount(this.daysInput.value);
+    if (n !== null) {
+      if (/^(day|hour)$/.test(unit) && n !== 1) unit += 's';
+      else if (/^(days|hours)$/.test(unit) && n === 1) unit = unit.slice(0, -1);
+    }
+    // Only when it changed: each write is a mutation in the tray, which
+    // queues another full scan.
+    if (this.unit.textContent !== unit) this.unit.textContent = unit;
+  };
+
+  /** A status button was pressed. */
+  SC.choose = function (value) {
+    var m = this.read();
+    var shown = this.pending ? this.pending.value : m.current;
+    var target = value === shown && value !== 'none' ? 'none' : value;
+    if (target === shown && !this.pending) return false;
+    var opt = m.opts.filter(function (o) { return o.value === target; })[0];
+    if (!opt || opt.disabled) return false;
+    if (this.daysDirty) this.commitDays();
+    this.pending = { value: target, until: Date.now() + PENDING_MS };
+    // Canvas's own radio: the click is what React listens for, so Canvas
+    // runs its usual change handler and makes its usual request.
+    if (!opt.checked) opt.radio.click();
+    this.sync();
+    return true;
+  };
+
+  /** Drops an uncommitted edit (and any stepper commit still waiting) and
+   * shows Canvas's amount again - even though the box still has focus. */
+  SC.revertDays = function () {
+    if (this.stepTimer) { clearTimeout(this.stepTimer); this.stepTimer = null; }
+    this.daysDirty = false;
+    var m = this.read();
+    this.model = m;
+    if (m.days) {
+      var echo = this.daysEcho;
+      if (echo && (echo.node !== m.days.input || echo.canvas !== m.days.value)) echo = this.daysEcho = null;
+      this.daysInput.value = echo ? echo.shown : m.days.value;
+    }
+    this.stateKey = '';
+    this.sync();
+  };
+
+  SC.step = function (delta) {
+    if (!this.model || !this.model.days || this.daysInput.disabled) return;
+    var n = parseAmount(this.daysInput.value);
+    if (n === null) n = parseAmount(this.model.days.value) || 0;
+    // To the next whole amount in that direction: 1.5 steps to 2 or 1.
+    n = Math.max(0, (delta > 0 ? Math.floor(n) : Math.ceil(n)) + delta);
+    this.daysInput.value = String(n);
+    this.daysDirty = true;
+    var self = this;
+    if (this.stepTimer) clearTimeout(this.stepTimer);
+    this.stepTimer = setTimeout(function () { self.stepTimer = null; self.commitDays(); }, STEP_COMMIT_MS);
+  };
+
+  /** Hands our days box's value to Canvas's field, the way typing in it
+   * and tabbing away would: Canvas commits on blur, reading the field. */
+  SC.commitDays = function () {
+    if (this.stepTimer) { clearTimeout(this.stepTimer); this.stepTimer = null; }
+    var m = this.read();
+    this.model = m;
+    this.daysDirty = false;
+    this.stateKey = '';
+    var days = m.days;
+    var typed = String(this.daysInput.value || '').trim();
+    if (!days || parseAmount(typed) === null) { this.sync(); return false; }
+    if (parseAmount(typed) === parseAmount(days.value)) { this.sync(); return false; }
+    var input = days.input;
+    setNativeValue(input, typed);
+    fire(input, 'input', true);
+    // React has put back its own (whole-number) copy by now; the blur
+    // handler must see what was typed.
+    setNativeValue(input, typed);
+    fire(input, 'focusout', true);
+    fire(input, 'blur', false);
+    this.daysEcho = { node: input, canvas: String(input.value), shown: typed };
+    this.sync();
+    return true;
+  };
+
+  /* Arrow keys move between the status buttons. */
+  SC.onSegKey = function (e) {
+    var keys = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 };
+    if (!(e.key in keys)) return;
+    var list = toArray(this.seg.children).filter(function (b) { return !b.disabled; });
+    var at = list.indexOf(document.activeElement);
+    if (at < 0) return;
+    e.preventDefault();
+    var next = list[(at + keys[e.key] + list.length) % list.length];
+    if (next && next.focus) next.focus();
+  };
+
+  /* The input's own value setter, past any instance-level override: React
+   * tracks a controlled field's value through one, and a value set through
+   * it would look unchanged to React's change handler. */
+  function setNativeValue(input, value) {
+    var proto = typeof HTMLInputElement !== 'undefined' ? HTMLInputElement.prototype : null;
+    var desc = proto && Object.getOwnPropertyDescriptor(proto, 'value');
+    if (desc && desc.set && input instanceof HTMLInputElement) desc.set.call(input, value);
+    else input.value = value;
+  }
+
+  function parseAmount(s) {
+    var t = String(s == null ? '' : s).trim().replace(',', '.');
+    if (!t || !/^\d*\.?\d+$|^\d+\.$/.test(t)) return null;
+    return parseFloat(t);
+  }
+
+  function flag(el, name) {
+    if (typeof el[name] === 'boolean') return el[name];
+    return el.getAttribute(name) !== null;
+  }
+
+  function isFocused(el) {
+    return typeof document !== 'undefined' && document.activeElement === el;
+  }
+
+  function fire(el, type, bubbles) {
+    var ev = null;
+    try {
+      if (/^focus|^blur$/.test(type) && typeof FocusEvent === 'function') ev = new FocusEvent(type, { bubbles: bubbles });
+      else if (typeof Event === 'function') ev = new Event(type, { bubbles: bubbles });
+    } catch (e) { ev = null; }
+    if (ev && typeof el.dispatchEvent === 'function') el.dispatchEvent(ev);
+  }
+
+  /** An element's text, descendants included. */
+  function textOf(el) {
+    if (!el) return '';
+    var own = el.textContent;
+    if (own) return String(own);
+    return toArray(el.children).map(textOf).join(' ');
   }
 
   /* A pale status colour as a strong accent of the same hue, or null when

@@ -333,8 +333,35 @@ FakeElement.prototype.cloneNode = function (deep) {
   return clone;
 };
 
-FakeElement.prototype.addEventListener = function () {};
-FakeElement.prototype.removeEventListener = function () {};
+// Just enough events for controls built in the fake DOM: listeners per
+// type, bubbling up the parents, and click().
+FakeElement.prototype.addEventListener = function (type, fn) {
+  (this._listeners = this._listeners || {});
+  (this._listeners[type] = this._listeners[type] || []).push(fn);
+};
+FakeElement.prototype.removeEventListener = function (type, fn) {
+  var list = this._listeners && this._listeners[type];
+  if (list && list.indexOf(fn) >= 0) list.splice(list.indexOf(fn), 1);
+};
+FakeElement.prototype.dispatchEvent = function (ev) {
+  var e = ev;
+  if (!e.target) { try { e.target = this; } catch (x) { /* read-only on real Events */ } }
+  var node = this;
+  var stopped = false;
+  var fake = { type: e.type, target: this, key: e.key, preventDefault: function () {}, stopPropagation: function () { stopped = true; } };
+  while (node && !stopped) {
+    ((node._listeners && node._listeners[e.type]) || []).slice().forEach(function (fn) { fn.call(node, fake); });
+    if (!e.bubbles) break;
+    node = node.parentElement;
+  }
+  this._dispatched = (this._dispatched || []).concat([e.type]);
+  return true;
+};
+FakeElement.prototype.click = function () {
+  if (this.disabled) return;
+  this.dispatchEvent({ type: 'click', bubbles: true });
+};
+FakeElement.prototype.focus = function () { if (global.document) global.document.activeElement = this; };
 
 /* -------------------------------------------------------------- document */
 
