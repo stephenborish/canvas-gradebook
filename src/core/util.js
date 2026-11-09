@@ -135,7 +135,7 @@
     gbHideAssignmentGroupTotals: true,
     gbHideTotalColumn: false,
     gbViewHiddenGradesIndicator: true,
-    gbEnableStatusIcons: true,
+    gbEnableStatusIcons: false,
     // indicators
     commentIndicator: true,
     showCommentCount: true,

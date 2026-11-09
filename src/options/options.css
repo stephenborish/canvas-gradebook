@@ -665,7 +665,33 @@ input.switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2p
 
 /* ----------------------------------------------------------- class schedule */
 
+.schedule-steps {
+  margin: 14px 0 4px;
+  padding: 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.schedule-steps__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.schedule-steps__title { margin: 0; font-size: 14.5px; font-weight: 600; color: var(--ink); }
+.schedule-steps__head .btn { text-decoration: none; }
+.schedule-steps__list { margin: 12px 0 0; padding-left: 22px; color: var(--ink-soft); font-size: 13.5px; line-height: 1.6; }
+.schedule-steps__list li { margin: 0 0 6px; }
+.gcal-example { margin: 10px 0 0 22px; }
+.gcal-example__caption { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.gcal-example__field {
+  display: block;
+  max-width: 460px;
+  padding: 8px 12px;
+  background: #f1f3f4;
+  border-radius: 4px 4px 0 0;
+  border-bottom: 2px solid #1a73e8;
+  font-family: Roboto, Arial, sans-serif;
+}
+.gcal-example__label { display: block; font-size: 12px; color: #1a73e8; }
+.gcal-example__value { display: block; font-size: 13.5px; color: #3c4043; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .schedule-connect { padding: 13px 0; border-bottom: 1px solid var(--line); }
+.snippets-tip + .snippets-tip { margin-top: 8px; }
 .schedule-connect .setting__label { display: block; }
 .schedule-connect__row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .schedule-connect__url {
@@ -715,16 +741,25 @@ input.switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2p
 .schedule-preview__time { color: var(--muted); font-size: 13px; white-space: nowrap; }
 .schedule-preview__empty { color: var(--muted); font-size: 13px; margin: 0; }
 
+/* A setting whose control is a list: the label and hint on top, the list
+   full width beneath (side by side, the list squeezed the label to a word
+   per line). */
+.setting--list { flex-direction: column; align-items: stretch; gap: 10px; }
+.section-groups { display: grid; gap: 8px; }
 .section-group {
-  flex: 1 0 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 6px 0;
-  border-bottom: 1px solid #e6e9ec;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
 }
-.section-group:last-child { border-bottom: 0; }
+.section-group__text { min-width: 0; }
+.section-group__names { display: block; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.section-group__where { display: block; margin-top: 2px; font-size: 12.5px; color: var(--muted); }
+.section-group .btn { flex: 0 0 auto; }
 
 .sync-status p { margin: 6px 0 10px; line-height: 1.5; }
 .sync-status__ok { color: #0b5e37; }

@@ -121,6 +121,9 @@ suite('class schedule: calendar addresses', (test) => {
     a.eq(Cal().normalizeUrl('https://calendar.google.com/calendar/embed?src=abc%40group.calendar.google.com&ctz=America%2FNew_York'), ical('abc@group.calendar.google.com'));
     a.eq(Cal().normalizeUrl('https://calendar.google.com/calendar/u/0?cid=' + Buffer.from('me@school.org').toString('base64').replace(/=+$/, '')), ical('me@school.org'));
     a.eq(Cal().normalizeUrl('abc@group.calendar.google.com'), ical('abc@group.calendar.google.com'));
+    // A school calendar added by link (Settings for other calendars), as its Public URL shows it.
+    a.eq(Cal().normalizeUrl('https://calendar.google.com/calendar/embed?src=vvtdpd9d83opc17jl9o57pcmkitoetfv%40import.calendar.google.com&ctz=America%2FNew_York'),
+      ical('vvtdpd9d83opc17jl9o57pcmkitoetfv@import.calendar.google.com'));
   });
 
   test('webcal and other feeds are read over https; non-feeds are refused', () => {

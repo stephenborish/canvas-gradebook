@@ -66,9 +66,13 @@
     // one and only whole-roster Total read, rather than correcting it
     // afterwards. See env-bridge.js and model.setGradingPeriod. A late
     // arrival still self-corrects; it is just one extra read instead of zero.
+    // Canvas's current View Options for this course (env-bridge.js), so the
+    // sync below opens Canvas's settings dialog only when one differs.
+    var canvasViewOptions = null;
     window.addEventListener('message', function (e) {
       if (e.source !== window || !e.data || e.data.source !== 'cgp-env') return;
       var env = e.data.env || {};
+      if (env.viewOptions && typeof env.viewOptions === 'object') canvasViewOptions = env.viewOptions;
       if (env.currentUserId) CGP.diag.set('envUserId', String(env.currentUserId));
       if (env.courseId) CGP.diag.set('envCourseId', String(env.courseId));
       if (env.currentGradingPeriodId !== undefined) model.setGradingPeriod(env.currentGradingPeriodId);
@@ -463,9 +467,10 @@
       reconcileColumns();
 
       // Best-effort, once per page load: push this teacher's preferred View
-      // Options into Canvas's own settings tray so they never have to do it
-      // by hand per course. A no-op unless syncViewOptionsToCanvas is on.
-      layout.syncViewOptions();
+      // Options into Canvas's own settings so they never have to do it by
+      // hand per course. A no-op unless syncViewOptionsToCanvas is on, and
+      // Canvas's settings dialog is opened (unseen) only when one differs.
+      layout.syncViewOptions(function () { return canvasViewOptions; });
 
       // Slower safety tick: catches any rerender an observer missed. Cheap,
       // because unchanged cells are skipped by their paint signature. Also

@@ -66,6 +66,31 @@
     return (id === undefined || id === null) ? null : String(id);
   }
 
+  /* Canvas's own View Options for this teacher in this course, read the way
+   * Canvas's gradebook reads them (Gradebook.tsx: settings are "true" /
+   * "false" strings; unpublished assignments are shown unless "false",
+   * everything else is off unless "true"; Notes is the teacher-notes column,
+   * shown when it exists and is not hidden). Keys are the extension's own
+   * setting names; null = this Canvas does not offer that option here. Lets
+   * layout.js leave Canvas's settings dialog closed when nothing differs. */
+  function viewOptions() {
+    var o = gradebookOptions();
+    var s = o.settings;
+    if (!s || typeof s !== 'object') return null;
+    var notes = o.teacher_notes;
+    var on = function (k) { return s[k] === 'true' || s[k] === true; };
+    return {
+      gbShowNotes: !!(notes && !notes.hidden),
+      gbShowUnpublishedAssignments: s.show_unpublished_assignments === undefined || s.show_unpublished_assignments === null
+        ? true : (s.show_unpublished_assignments === 'true' || s.show_unpublished_assignments === true),
+      gbSplitStudentNames: o.allow_separate_first_last_names ? on('show_separate_first_last_names') : null,
+      gbHideAssignmentGroupTotals: on('hide_assignment_group_totals'),
+      gbHideTotalColumn: on('hide_total'),
+      gbViewHiddenGradesIndicator: on('view_hidden_grades_indicator'),
+      gbEnableStatusIcons: on('view_status_for_colorblindness')
+    };
+  }
+
   function envPayload() {
     var ENV = window.ENV || {};
     var opts = ENV.GRADEBOOK_OPTIONS || {};
@@ -75,7 +100,8 @@
       gradebookEditable: opts.gradebook_is_editable === undefined ? null : !!opts.gradebook_is_editable,
       gradingPeriodsEnabled: !!(opts.grading_period_set || opts.multiple_grading_periods_enabled),
       currentGradingPeriodId: currentGradingPeriodId(),
-      postPolicies: !!opts.post_policies_enabled
+      postPolicies: !!opts.post_policies_enabled,
+      viewOptions: viewOptions()
     };
     if (payload.courseId !== null) payload.courseId = String(payload.courseId);
     return payload;
