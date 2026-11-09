@@ -242,3 +242,234 @@ html.cgp-sg-tidy .cgp-sgbar__submit:focus-visible {
   outline: 2px solid #0374b5;
   outline-offset: 2px;
 }
+
+/* ------------------------------------------------ tidy sidebar
+ * Classic SpeedGrader's right-hand panel (speed_grader.html.erb), while
+ * html.cgp-sg-tidy is on: a soft grey panel holding three white cards -
+ * Submission, Assessment, Comments - each with a small caps heading, the
+ * submitted files as rows, the grade box and "same grade" link as proper
+ * controls, the comments as bubbles, and Reassign / Download as one quiet
+ * footer. Only Canvas's own nodes are styled, by the ids Canvas gives them;
+ * nothing is moved, and display is never forced on anything Canvas shows or
+ * hides itself. */
+html.cgp-sg-tidy #right_side {
+  --cgp-sg-panel: #f2f4f6;
+  --cgp-sg-card: #fff;
+  --cgp-sg-line: #e1e5e9;
+  --cgp-sg-soft: #f7f8fa;
+  --cgp-sg-ink: #2d3b45;
+  --cgp-sg-muted: #5f6e79;
+  --cgp-sg-accent: var(--ic-brand-primary, #0374b5);
+  color: var(--cgp-sg-ink);
+}
+html.cgp-sg-tidy #right_side #rightside_inner {
+  box-sizing: border-box;
+  padding: 12px 12px 4px;
+  background: var(--cgp-sg-panel);
+}
+/* The cards. */
+html.cgp-sg-tidy #right_side #rightside_inner > .content_box {
+  box-sizing: border-box;
+  margin: 0 0 12px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--cgp-sg-line);
+  border-radius: 10px;
+  background: var(--cgp-sg-card);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+}
+/* Card headings: "Assessment", "Assignment Comments" - and "Submission",
+ * which Canvas leaves without one. */
+html.cgp-sg-tidy #right_side #rightside_inner > .content_box > h2,
+html.cgp-sg-tidy #right_side h2.gradebookHeader--rightside,
+html.cgp-sg-tidy #right_side #submission_details::before {
+  display: block;
+  margin: 0 0 10px;
+  padding: 0;
+  color: var(--cgp-sg-muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+html.cgp-sg-tidy #right_side #submission_details::before {
+  content: 'Submission';
+}
+
+/* Submission: when, the word count, notices, the files. */
+html.cgp-sg-tidy #right_side #submission_details {
+  font-size: 14px;
+  line-height: 1.45;
+}
+html.cgp-sg-tidy #right_side #submission_word_count {
+  margin-top: 4px;
+  color: var(--cgp-sg-muted);
+  font-size: 13px;
+}
+html.cgp-sg-tidy #right_side #submission_word_count:empty,
+html.cgp-sg-tidy #right_side #submission_attachment_viewed_at_container:empty {
+  display: none;
+}
+html.cgp-sg-tidy #right_side #submission_not_newest_notice,
+html.cgp-sg-tidy #right_side #submission_late_notice {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #fff4e5;
+  font-size: 13px;
+}
+html.cgp-sg-tidy #right_side #submission_files_container {
+  margin-top: 12px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--cgp-sg-line);
+}
+html.cgp-sg-tidy #right_side #submission_files_container > label {
+  display: block;
+  margin: 0 0 6px;
+  color: var(--cgp-sg-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+html.cgp-sg-tidy #right_side #submission_files_container .labelText--not-bold {
+  color: #8a969f;
+  font-weight: 400;
+}
+html.cgp-sg-tidy #right_side #submission_files_list .submission-file {
+  box-sizing: border-box;
+  margin: 0 0 6px;
+  padding: 8px 58px 8px 10px;
+  border: 1px solid var(--cgp-sg-line);
+  border-radius: 8px;
+  background-color: var(--cgp-sg-soft);
+  font-size: 14px;
+  line-height: 1.35;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+html.cgp-sg-tidy #right_side #submission_files_list .submission-file:hover {
+  border-color: #c7cdd1;
+}
+html.cgp-sg-tidy #right_side #submission_files_list .submission-file:last-child {
+  margin-bottom: 0;
+}
+html.cgp-sg-tidy #right_side #submission_files_list .submission-file .display_name {
+  display: block;
+  color: var(--cgp-sg-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+html.cgp-sg-tidy #right_side #submission_files_list .submission-file .display_name:hover {
+  text-decoration: underline;
+}
+html.cgp-sg-tidy #right_side #submission_files_list .submission-file .submission-file-download,
+html.cgp-sg-tidy #right_side #submission_files_list .submission-file .submission-file-delete {
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--cgp-sg-muted);
+}
+html.cgp-sg-tidy #right_side #submission_files_list .submission-file .submission-file-download { right: 12px; }
+html.cgp-sg-tidy #right_side #submission_files_list .submission-file .submission-file-delete { right: 36px; }
+html.cgp-sg-tidy #right_side #submission_files_list .submission-file-selected {
+  border-color: var(--cgp-sg-accent);
+  background-color: #eaf3fb;
+  background-position: 10px center;
+  padding-left: 32px;
+}
+
+/* Assessment: the grade, its box, and "Use this same grade". */
+html.cgp-sg-tidy #right_side #grading-box-points-possible {
+  margin: 0 0 4px;
+  color: var(--cgp-sg-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+html.cgp-sg-tidy #right_side input#grading-box-extended,
+html.cgp-sg-tidy #right_side select#grading-box-extended {
+  box-sizing: border-box;
+  min-width: 72px;
+  height: 38px;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid #c7cdd1;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--cgp-sg-ink);
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: none;
+}
+html.cgp-sg-tidy #right_side #grading-box-extended:focus {
+  border-color: var(--cgp-sg-accent);
+  outline: 2px solid rgba(3, 116, 181, 0.25);
+  outline-offset: 0;
+}
+html.cgp-sg-tidy #right_side #submit_same_score br { display: none; }
+html.cgp-sg-tidy #right_side a#submit_same_score {
+  display: table;
+  margin-top: 10px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: #eef5fb;
+  color: var(--cgp-sg-accent);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-decoration: none;
+}
+html.cgp-sg-tidy #right_side a#submit_same_score:hover { background: #e0ecf7; }
+html.cgp-sg-tidy #right_side #rubric_summary_holder,
+html.cgp-sg-tidy #right_side #grading_details_mount_point:not(:empty) {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--cgp-sg-line);
+}
+
+/* Comments: each one a bubble, drafts marked in amber. */
+html.cgp-sg-tidy #right_side #comments > div.comment {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--cgp-sg-soft);
+  font-size: 14px;
+  line-height: 1.45;
+}
+html.cgp-sg-tidy #right_side #comments > div.comment.draft {
+  background: #fff8e6;
+  box-shadow: inset 3px 0 0 #f0a000;
+}
+html.cgp-sg-tidy #right_side #comments > div.comment .comment_flex { margin-bottom: 4px; }
+html.cgp-sg-tidy #right_side #comments > div.comment .comment_citation {
+  color: var(--cgp-sg-muted);
+  font-size: 12px;
+}
+html.cgp-sg-tidy #right_side #comments > div.comment .avatar { border-radius: 50%; }
+html.cgp-sg-tidy #right_side #add_a_comment { margin-top: 4px; }
+
+/* Reassign and Download Submission Comments: one quiet footer row. */
+html.cgp-sg-tidy #right_side #reassign_assignment_wrapper {
+  display: inline-block;
+  margin: 4px 14px 0 0;
+  vertical-align: middle;
+}
+html.cgp-sg-tidy #right_side #reassign_assignment {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 30px;
+}
+html.cgp-sg-tidy #right_side #speed_grader_submission_comments_download_mount_point {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 13px;
+  vertical-align: middle;
+}
+html.cgp-sg-tidy #right_side #speed_grader_submission_comments_download_mount_point a {
+  color: var(--cgp-sg-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+html.cgp-sg-tidy #right_side #speed_grader_submission_comments_download_mount_point a:hover {
+  text-decoration: underline;
+}
