@@ -31,13 +31,17 @@
 
   var TOOL_PATTERNS = {
     freedraw: /free\s*-?\s*draw|free\s*hand|\bdraw(ing)?\b|\bpen\b|\binking?\b/i,
-    point: /\bpoint\b|\bpin\b/i
+    point: /\bpoint\b|\bpin\b|\bcomment\b/i
   };
   // Never mistaken for free draw by the patterns above.
   var NOT_TOOLS = /highlight|strike|area|rectangle|text|select|eraser|zoom|rotate|download|fullscreen|expand/i;
   var RED_LABEL = /^\s*(red|rojo|roja|rouge|rot|rosso|vermelho|rood|czerwony|красный|红色?|赤)\s*$/i;
-  var COLOR_LABEL = /^\s*(red|orange|yellow|gold|brown|green|blue|light\s*blue|cyan|teal|pink|magenta|purple|violet|black|gr[ae]y|white)\s*$/i;
+  var COLOR_LABEL = /^\s*(red|orange|yellow|gold|brown|green|blue|light\s*blue|dark\s*blue|navy|cyan|teal|pink|magenta|purple|violet|black|gr[ae]y|white)\s*$/i;
+  // DocViewer names its swatches "Annotation markup color Red" (title "Red"):
+  // the colour is what follows "color" (or the last word or two of that).
+  var COLOR_PREFIX = /^.*\b(colou?r|farbe|couleur|kleur)\b\s*:?\s*/i;
   var SWATCH_SELECTOR = 'button, [role="radio"], [role="button"], [role="option"], [role="menuitemradio"], li, a';
+  var SWATCH_CLASS = /(^|\s)ColorButton(\s|$)|colou?r-?(button|swatch|option)/i;
   var SESSION_KEY = 'cgp.annotationColor.userChose';
   var SCAN_MS = 120;
   var WAIT_MS = 1500;   // for the palette to show after its button is pressed
@@ -143,7 +147,7 @@
         return false;
       }
       var trigger = colorTrigger(this.doc);
-      if (!trigger || /\bred\b/i.test(labelOf(trigger)) || isRed(swatchColor(trigger))) {
+      if (!trigger || RED_LABEL.test(colorNameOf(trigger)) || /\bred\b/i.test(labelOf(trigger)) || isRed(swatchColor(trigger))) {
         // Red already, or no colour button to be found: nothing to do.
         this.pending = null;
         return false;
@@ -205,13 +209,20 @@
     var candidates = toArray(doc.querySelectorAll(
       'button, [role="button"], [role="radio"], [role="tab"], [role="menuitemradio"], [role="option"]'));
     for (var i = 0; i < candidates.length; i++) {
-      var el = candidates[i];
-      if (!isActive(el)) continue;
-      var label = labelOf(el);
-      if (!label || NOT_TOOLS.test(label) || COLOR_LABEL.test(label)) continue;
-      if (TOOL_PATTERNS.point.test(label)) return 'point';
-      if (TOOL_PATTERNS.freedraw.test(label)) return 'freedraw';
+      var tool = toolOf(candidates[i]);
+      if (tool) return tool;
     }
+    return null;
+  }
+
+  /** 'freedraw' or 'point' when `el` is that tool's button and is active;
+   * never a colour swatch or one of the other tools. */
+  function toolOf(el) {
+    if (!isActive(el)) return null;
+    var label = labelOf(el);
+    if (!label || NOT_TOOLS.test(label) || colorNameOf(el, label) || SWATCH_CLASS.test(classOf(el))) return null;
+    if (TOOL_PATTERNS.point.test(label)) return 'point';
+    if (TOOL_PATTERNS.freedraw.test(label)) return 'freedraw';
     return null;
   }
 
@@ -250,8 +261,10 @@
       var pops = el.getAttribute('aria-haspopup') !== null || el.getAttribute('aria-expanded') !== null;
       // A pop-up button named after the colour it shows ("Blue") is the
       // colour button; a plain button named so is a swatch.
-      if (COLOR_LABEL.test(label) || RED_LABEL.test(label)) return pops && small(el);
+      // "Annotation markup color Blue": the button showing the current
+      // colour (a swatch in an open palette was skipped above).
       if (TRIGGER_LABEL.test(label)) return true;
+      if (colorNameOf(el)) return pops && small(el);
       return pops && !!parseColor(swatchColor(el)) && small(el);
     });
     if (!all.length) return null;
@@ -264,9 +277,7 @@
     var bars = toArray(doc.querySelectorAll('[role="toolbar"]'));
     for (var i = 0; i < bars.length; i++) {
       var active = toArray(bars[i].querySelectorAll('button, [role="button"], [role="radio"]')).some(function (el) {
-        if (!isActive(el)) return false;
-        var label = labelOf(el);
-        return TOOL_PATTERNS.point.test(label) || TOOL_PATTERNS.freedraw.test(label);
+        return !!toolOf(el);
       });
       if (active) return bars[i];
     }
@@ -297,14 +308,24 @@
 
   /* ----------------------------------------------------------- the palette */
 
-  /* A palette: the smallest container holding at least five colour swatches
-   * side by side (siblings). Returns { root, swatches, red } or null. */
+  /* A palette: at least five colour swatches side by side. Each swatch
+   * counts as the outermost wrapper holding it alone (DocViewer wraps every
+   * ColorButton in its own box), and the palette is the parent those
+   * wrappers share. Returns { root, swatches, red } or null; `swatches` are
+   * the pressable controls themselves. */
   function findPalette(doc) {
+    var all = toArray(doc.querySelectorAll(SWATCH_SELECTOR)).filter(isSwatch);
+    // The control itself, not a list item around it.
+    var swatches = all.filter(function (el) {
+      return !all.some(function (o) { return o !== el && el.contains(o); });
+    });
     var groups = [];
     var seen = [];
-    toArray(doc.querySelectorAll(SWATCH_SELECTOR)).forEach(function (el) {
-      if (!isSwatch(el)) return;
-      var parent = el.parentElement;
+    swatches.forEach(function (el) {
+      var unit = el;
+      while (unit.parentElement && unit.parentElement !== doc.body &&
+             countIn(unit.parentElement, swatches) === 1) unit = unit.parentElement;
+      var parent = unit.parentElement;
       if (!parent) return;
       var at = seen.indexOf(parent);
       if (at < 0) { seen.push(parent); groups.push({ root: parent, swatches: [el] }); }
@@ -317,22 +338,60 @@
     });
     if (!best) return null;
     var red = null;
-    best.swatches.forEach(function (s) { if (!red && RED_LABEL.test(labelOf(s))) red = s; });
+    best.swatches.forEach(function (s) { if (!red && RED_LABEL.test(colorNameOf(s))) red = s; });
     if (!red) best.swatches.forEach(function (s) { if (!red && isRed(swatchColor(s))) red = s; });
     best.red = red;
     return best;
   }
 
-  /** A colour swatch: labelled with a colour name, or a small square-ish
-   * control painted in one. */
+  function countIn(root, list) {
+    var n = 0;
+    for (var i = 0; i < list.length && n < 2; i++) if (root.contains(list[i])) n++;
+    return n;
+  }
+
+  /** The colour a control is named for ("red", "light blue"), or ''. Reads
+   * its title and aria-label each on its own: "Annotation markup color Red"
+   * and "Red" both give "red". */
+  function colorNameOf(el, label) {
+    var texts = [el.getAttribute('title'), el.getAttribute('aria-label'), el.getAttribute('data-color-name'),
+      label !== undefined ? label : labelOf(el)];
+    for (var i = 0; i < texts.length; i++) {
+      var t = String(texts[i] || '').replace(/\s+/g, ' ').trim();
+      if (!t || t.length > 60) continue;
+      var tail = t.replace(COLOR_PREFIX, '');
+      var tries = [t];
+      // The last word or two only after a "color" prefix: a link or list
+      // item that merely ends in one ("Sam Green") is not a swatch.
+      if (tail !== t) {
+        var words = tail.split(' ');
+        tries.push(tail, words.slice(-2).join(' '), words[words.length - 1]);
+      }
+      for (var j = 0; j < tries.length; j++) {
+        if (COLOR_LABEL.test(tries[j]) || RED_LABEL.test(tries[j])) return tries[j].trim().toLowerCase();
+      }
+    }
+    return '';
+  }
+
+  /** A colour swatch: named for a colour, a ColorButton, or a small
+   * square-ish control painted in one. */
   function isSwatch(el) {
     var label = labelOf(el);
-    if (COLOR_LABEL.test(label) || RED_LABEL.test(label)) return true;
+    if (colorNameOf(el, label)) return true;
+    var painted = !!parseColor(swatchColor(el));
+    if (SWATCH_CLASS.test(classOf(el)) && painted) return true;
     if (label && label.length > 2 && !/^#|^rgb/i.test(label)) return false;
     var r = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
     if (!r || r.width < 10 || r.height < 10 || r.width > 56 || r.height > 56) return false;
     if (Math.abs(r.width - r.height) > Math.max(r.width, r.height) * 0.5) return false;
-    return !!parseColor(swatchColor(el));
+    return painted;
+  }
+
+  function classOf(el) {
+    var c = el && el.className;
+    if (c && typeof c === 'object' && c.baseVal !== undefined) c = c.baseVal;
+    return String(c || '');
   }
 
   /** The colour a swatch shows: its own background, or the first painted

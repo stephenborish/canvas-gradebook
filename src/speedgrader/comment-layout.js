@@ -221,26 +221,45 @@
 
   /* ------------------------------------------------------- the footer bar */
 
-  /* Kinds of comment tool, told by id, class, icon and label; each gets one
-   * of our icons so the group reads as one set. Anything else keeps a copy
-   * of Canvas's own icon. */
+  /* Kinds of comment tool; each gets one of our icons so the group reads as
+   * one set. Anything else keeps a copy of Canvas's own icon. A kind is told
+   * from the strongest clue first - the control's id, then its icon (Canvas's
+   * icon-font class or an icon's name), then its label, then its own text -
+   * and within one clue the narrow kinds (screen, speech, media) win over the
+   * broad "attach": Canvas labels its media button "Record/Upload Media", and
+   * "upload" alone must not make that a second paperclip. */
   var TOOL_KINDS = [
-    { kind: 'attach', test: /attach|paperclip|\bfile\b|upload/i, label: 'Attach a file',
-      icon: 'M16.5 6.5v10a4.5 4.5 0 0 1-9 0V5.8a3 3 0 0 1 6 0v9.7a1.5 1.5 0 0 1-3 0V6.5h-1.5v9a3 3 0 0 0 6 0V5.8a4.5 4.5 0 0 0-9 0v10.7a6 6 0 0 0 12 0v-10z' },
     { kind: 'screen', test: /screen/i, label: 'Record your screen',
       icon: 'M3 5h18v11H3zm2 2v7h14V7zM8 18h8v2H8zM4 3h3v1.5H5.5V6H4zm16 0v3h-1.5V4.5H17V3z' },
-    { kind: 'speech', test: /speech|dictat|microphone|\bvoice\b|\baudio\b/i, label: 'Speech to text',
+    { kind: 'speech', test: /speech|dictat|microphone|\bmic\b|\bvoice\b|\baudio\b/i, label: 'Speech to text',
       icon: 'M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3zm-1.2 3v6a1.2 1.2 0 0 0 2.4 0V6a1.2 1.2 0 0 0-2.4 0zM6 11h1.8a4.2 4.2 0 0 0 8.4 0H18a6 6 0 0 1-5.1 5.9V20H16v1.5H8V20h3.1v-3.1A6 6 0 0 1 6 11z' },
-    { kind: 'media', test: /media|video|record|camera/i, label: 'Record or upload media',
-      icon: 'M3 6.5h12a1.5 1.5 0 0 1 1.5 1.5v1.8L21 7v10l-4.5-2.8V16a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 16V8A1.5 1.5 0 0 1 3 6.5zm.3 1.8v7.4h11.4V8.3z' }
+    { kind: 'media', test: /media|video|record|camera|kaltura|studio/i, label: 'Record or upload media',
+      icon: 'M3 6.5h12a1.5 1.5 0 0 1 1.5 1.5v1.8L21 7v10l-4.5-2.8V16a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 16V8A1.5 1.5 0 0 1 3 6.5zm.3 1.8v7.4h11.4V8.3z' },
+    { kind: 'attach', test: /attach|paperclip|\bfiles?\b|upload/i, label: 'Attach a file',
+      icon: 'M16.5 6.5v10a4.5 4.5 0 0 1-9 0V5.8a3 3 0 0 1 6 0v9.7a1.5 1.5 0 0 1-3 0V6.5h-1.5v9a3 3 0 0 0 6 0V5.8a4.5 4.5 0 0 0-9 0v10.7a6 6 0 0 0 12 0v-10z' }
   ];
   var SVG_NS = 'http://www.w3.org/2000/svg';
 
+  /** The clues to a tool's kind, strongest first. */
+  function kindClues(el) {
+    var icons = el.querySelectorAll ? toArray(el.querySelectorAll('i, svg, img')) : [];
+    var iconClue = icons.map(function (i) {
+      return [classOf(i), i.getAttribute('name'), i.getAttribute('data-testid'), i.getAttribute('src')].join(' ');
+    }).join(' ');
+    return [
+      String(el.getAttribute('id') || '').replace(/[_-]+/g, ' '),
+      iconClue + ' ' + String(el.getAttribute('data-testid') || '').replace(/[_-]+/g, ' '),
+      [el.getAttribute('aria-label'), el.getAttribute('title')].join(' '),
+      textOf(el) + ' ' + classOf(el).replace(/[_-]+/g, ' ')
+    ];
+  }
+
   function toolKind(el) {
-    var icon = el.querySelector ? el.querySelector('i, svg, img') : null;
-    var hay = [el.getAttribute('id'), classOf(el), icon ? classOf(icon) : '', el.getAttribute('aria-label'),
-      el.getAttribute('title'), el.getAttribute('data-testid'), textOf(el)].join(' ');
-    for (var i = 0; i < TOOL_KINDS.length; i++) if (TOOL_KINDS[i].test.test(hay)) return TOOL_KINDS[i];
+    var clues = kindClues(el);
+    for (var c = 0; c < clues.length; c++) {
+      if (!/\S/.test(clues[c])) continue;
+      for (var i = 0; i < TOOL_KINDS.length; i++) if (TOOL_KINDS[i].test.test(clues[c])) return TOOL_KINDS[i];
+    }
     return null;
   }
 
@@ -371,8 +390,13 @@
   B.renderTools = function (tools) {
     var box = this.tools;
     while (box.children.length) box.removeChild(box.children[0]);
+    var used = {};
     tools.forEach(function (canvas) {
       var kind = toolKind(canvas);
+      // Two tools never share an icon: a second one of a kind (a kind
+      // misread, or a tool Canvas added) shows Canvas's own icon instead.
+      if (kind && used[kind.kind]) kind = null;
+      if (kind) used[kind.kind] = true;
       var b = document.createElement('button');
       b.setAttribute('type', 'button');
       b.className = 'cgp-sgbar__tool';
@@ -384,6 +408,10 @@
       if (!icon) {
         var own = canvas.querySelector && canvas.querySelector('i, svg');
         icon = own ? own.cloneNode(true) : null;
+        // A copy never repeats an id (Canvas mounts its media icon by id).
+        if (icon) [icon].concat(toArray(icon.querySelectorAll ? icon.querySelectorAll('[id]') : [])).forEach(function (n) {
+          if (n.removeAttribute) n.removeAttribute('id');
+        });
       }
       if (icon) b.appendChild(icon);
       else {

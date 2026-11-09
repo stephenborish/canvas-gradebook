@@ -110,6 +110,57 @@ suite('SpeedGrader tidy comment box', (test) => {
     a.not(has(t.row, 'data-cgp-sg-proxied'), 'and shows Canvas’s row again');
   });
 
+  test('each tool gets its own icon: "upload" in the media label never makes it a second paperclip', () => {
+    const t = setupSg();
+    // Canvas's real markup: icon-font classes, titles, screen-reader text.
+    [[t.attach, 'icon-paperclip', 'File Attachment'], [t.media, 'icon-media', 'Record/Upload Media Comment'],
+      [t.speech, 'icon-audio', 'Speech Recognition']].forEach(([b, icon, title]) => {
+      b.removeAttribute('aria-label');
+      b.setAttribute('title', title);
+      b.appendChild(el('i', { class: icon }));
+      b.appendChild(el('span', { class: 'screenreader-only', text: title }));
+    });
+    t.ctl.start();
+    const kinds = t.doc.querySelectorAll('.cgp-sgbar__tool').map((b) => b.getAttribute('data-kind'));
+    a.deep(kinds, ['attach', 'media', 'speech']);
+    t.ctl.apply.call(Object.assign(t.ctl, { settings: { values: {} } }));
+  });
+
+  test('no id or icon to go by and labels that all say "upload": no two tools share an icon', () => {
+    const t = setupSg();
+    [t.attach, t.media, t.speech].forEach((b, i) => {
+      b.removeAttribute('id');
+      b.setAttribute('aria-label', 'Upload ' + i);
+      b.appendChild(el('svg', { class: 'own-' + i }));
+    });
+    t.ctl.start();
+    const tools = t.doc.querySelectorAll('.cgp-sgbar__tool');
+    a.eq(tools.length, 3);
+    a.eq(tools.filter((b) => b.getAttribute('data-kind') === 'attach').length, 1, 'one paperclip');
+    a.ok(tools[1].querySelector('.own-1') && tools[2].querySelector('.own-2'), 'the others keep Canvas’s own icons');
+    t.ctl.apply.call(Object.assign(t.ctl, { settings: { values: {} } }));
+  });
+
+  test('posted comments keep Canvas’s Edit and Delete: never tagged, proxied or hidden', () => {
+    const t = setupSg();
+    const edit = el('a', { class: 'edit_comment_link icon-edit', href: 'javascript:void 0;' }, [el('span', { class: 'screenreader-only', text: 'Edit comment' })]);
+    const del = el('a', { class: 'delete_comment_link icon-x', href: 'javascript:void 0;' }, [el('span', { class: 'screenreader-only', text: 'Delete comment' })]);
+    const publish = el('button', { class: 'submit_comment_button' }, [el('span', { text: 'Submit' })]);
+    t.comments.appendChild(el('div', { class: 'comment' }, [
+      el('div', { class: 'comment_flex' }, [el('span', { class: 'comment', text: 'Nice work' }), edit, publish, del])]));
+    t.ctl.start();
+    t.ctl.scan();
+    [edit, del, publish].forEach((n) => {
+      ['data-cgp-sg-tool', 'data-cgp-sg-proxied', 'data-cgp-sg-submit', 'data-cgp-tray-hide'].forEach((attr) =>
+        a.not(has(n, attr), n.className + ' has no ' + attr));
+    });
+    let clicks = 0;
+    t.submit.addEventListener('click', () => { clicks++; });
+    t.doc.querySelector('.cgp-sgbar__submit').click();
+    a.eq(clicks, 1, 'the bar’s Submit still posts through Canvas’s, not a comment’s Submit');
+    t.ctl.apply.call(Object.assign(t.ctl, { settings: { values: {} } }));
+  });
+
   test('Canvas swaps in new, identical tool nodes: the bar presses the new ones', () => {
     const t = setupSg();
     t.ctl.start();
@@ -281,6 +332,61 @@ suite('DocViewer: red by default for Free Draw and Point', (test) => {
     t.tools[5].setAttribute('aria-pressed', 'true');
     t.ctl.scan();
     a.eq(trigger.clicks, 3, 'Free Draw again: palette opened again');
+  });
+
+  /* DocViewer's real swatches: <button class="ColorButton" aria-label=
+   * "Annotation markup color Red" title="Red"><div class="ColorButton-inner">
+   * <svg><circle fill="#EE0612"/></svg></div></button>, each in a box. */
+  function colorButton(name, fill) {
+    const b = el('button', { class: 'ColorButton', 'aria-label': 'Annotation markup color ' + name, title: name }, [
+      el('div', { class: 'ColorButton-inner' }, [el('svg', {}, [el('circle', { class: 'ColorButton-main-circle', fill })])])
+    ]);
+    b.clicks = 0;
+    b.addEventListener('click', () => { b.clicks++; });
+    return b;
+  }
+  const DV_COLORS = [['Red', '#EE0612'], ['Orange', '#FC5E13'], ['Yellow', '#FCB900'], ['Green', '#00AC18'],
+    ['Blue', '#008EE2'], ['Purple', '#8D3AB3'], ['Pink', '#FF0080'], ['Black', '#000000']];
+
+  test('DocViewer ColorButtons ("Annotation markup color Red"), each in its own box: red is pressed', () => {
+    const t = setupDocViewer({ tool: 'Free Draw', noPalette: true });
+    const swatches = DV_COLORS.map(([n, f]) => colorButton(n, f));
+    t.doc.body.appendChild(el('div', { class: 'ColorPalette' }, swatches.map((s) => el('div', { class: 'cell' }, [s]))));
+    const p = globalThis.CGP.annotationColor.findPalette(t.doc);
+    a.ok(p, 'palette found');
+    a.eq(p.swatches.length, 8);
+    a.ok(p.red === swatches[0], 'red is the Red ColorButton');
+    t.ctl.scan();
+    a.eq(swatches[0].clicks, 1, 'red pressed');
+    a.eq(swatches[4].clicks, 0);
+  });
+
+  test('DocViewer: palette closed behind the current-colour button: opened, red pressed, closed', () => {
+    const t = setupDocViewer({ tool: 'Point', noPalette: true });
+    t.ctl.schedule = () => {};
+    const swatches = DV_COLORS.map(([n, f]) => colorButton(n, f));
+    const palette = el('div', { class: 'ColorPalette' }, swatches.map((s) => el('div', {}, [s])));
+    const trigger = colorButton('Blue', '#008EE2');
+    trigger.addEventListener('click', () => {
+      if (palette.parentElement) palette.remove(); else t.doc.body.appendChild(palette);
+    });
+    swatches[0].addEventListener('click', () => palette.remove());
+    t.tools[0].parentElement.appendChild(trigger);
+    t.ctl.scan();
+    a.eq(trigger.clicks, 1, 'palette opened');
+    t.ctl.scan();
+    a.eq(swatches[0].clicks, 1, 'red pressed');
+    t.ctl.scan(); t.ctl.scan();
+    a.not(palette.parentElement, 'palette closed');
+    a.eq(trigger.clicks, 1);
+  });
+
+  test('a ColorButton that is pressed is never taken for the active tool', () => {
+    const t = setupDocViewer({ tool: 'Select', noPalette: true });
+    const b = colorButton('Red', '#EE0612');
+    b.setAttribute('aria-pressed', 'true');
+    t.doc.body.appendChild(b);
+    a.eq(globalThis.CGP.annotationColor.activeTool(t.doc), null);
   });
 
   test('setting off: nothing pressed', () => {
