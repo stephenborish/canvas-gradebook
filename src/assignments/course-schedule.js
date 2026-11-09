@@ -194,8 +194,11 @@
     // Picking a day in Canvas's own calendar (a click outside the panel,
     // which closes it) leaves the focus in the date box, so no focusin
     // follows; nor does clicking into a box that already has the focus.
-    // After any click, a closed panel opens again for the focused box.
-    document.addEventListener('click', function () {
+    // After any click, a closed panel opens again for the focused box -
+    // except a click in the panel itself (Close, or picking a class), which
+    // closes it on purpose while the focus stays in the box.
+    document.addEventListener('click', function (e) {
+      if (self.inPanel(e.target)) return;
       setTimeout(function () {
         if (!self.group && !self._picking && document.activeElement) self.onFocusIn(document.activeElement);
       }, 0);
@@ -621,6 +624,17 @@
 
     var text = C().formatClock(clock, { hour12: C().uses12Hour(pageLang()) });
     var settle = typeof this.settleMs === 'number' ? this.settleMs : SETTLE_MS;
+    // The teacher's own next move (typing another time, clicking elsewhere)
+    // ends the watch below: a time that differs then is theirs, not one
+    // Canvas put back, and the focus is theirs too. Our own writes are
+    // untrusted events, so only real ones count.
+    var userActed = false;
+    var USER_EVENTS = ['keydown', 'mousedown', 'pointerdown', 'input'];
+    var onUser = function (e) { if (e && e.isTrusted) userActed = true; };
+    USER_EVENTS.forEach(function (t) { document.addEventListener(t, onUser, true); });
+    var stopWatching = function () {
+      USER_EVENTS.forEach(function (t) { document.removeEventListener(t, onUser, true); });
+    };
     var putTime = function () {
       g.time.focus();
       setNativeValue(g.time, text);
@@ -646,6 +660,7 @@
     var retries = 0;
     var watch = function (left) {
       return wait(settle).then(function () {
+        if (userActed) return null;
         if (clockOf(g.time.value) !== clock && retries < 2) {
           retries++;
           CGP.diag && CGP.diag.bump && CGP.diag.bump('courseSchedule.retried');
@@ -655,12 +670,16 @@
       });
     };
     return run.then(function () {
+      // A move of the teacher's while the date settled: leave the boxes to them.
+      if (userActed) return null;
       putTime();
       return watch(4);
     }).then(function () {
+      stopWatching();
       self._picking = false;
       return result;
     }, function (e) {
+      stopWatching();
       self._picking = false;
       throw e;
     });

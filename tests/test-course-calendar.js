@@ -504,6 +504,7 @@ class FakeInput extends Node {
 
 function bootPicker(cache, values) {
   const handlers = {};
+  const lists = {};
   const root = new Node('div');
   const body = new Node('body');
   const sent = [];
@@ -511,7 +512,11 @@ function bootPicker(cache, values) {
     documentElement: { lang: 'en-US', contains: () => true, clientWidth: 1200, clientHeight: 800 },
     body: Object.assign(body, { appendChild: (el) => body.add(el) }),
     activeElement: null,
-    addEventListener(type, fn) { handlers[type] = fn; },
+    addEventListener(type, fn) {
+      (lists[type] = lists[type] || []).push(fn);
+      handlers[type] = (e) => (lists[type] || []).slice().forEach((f) => f(e));
+    },
+    removeEventListener(type, fn) { lists[type] = (lists[type] || []).filter((f) => f !== fn); },
     getElementById() { return null; },
     querySelector() { return null; },
     querySelectorAll: (sel) => root.querySelectorAll(sel),
@@ -749,6 +754,54 @@ suite('class schedule: the Assign To picker', (test) => {
     await ctrl.pick(0, 'start');
     a.eq(pair.time.value, '8:55 AM');
     a.eq(blurs, 2);
+  });
+
+  test('Close in the panel keeps it closed, though the focus stays in the box', async () => {
+    const { ctrl, handlers, root, document } = bootPicker(cache, { courseCalendarUrl: URL_ });
+    const pair = duePair('Nov 9, 2026');
+    root.add(pair.card);
+    handlers.focusin({ target: pair.time });
+    await tick(); await tick();
+    const closeBtn = new Node('button', { 'data-act': 'close' });
+    ctrl.panel.add(closeBtn);
+    document.activeElement = pair.time;
+    handlers.click({ target: closeBtn });       // the page's capture listener sees it first
+    ctrl.onButton(closeBtn);                    // then the panel's own handler closes it
+    await new Promise((r) => setTimeout(r, 5));
+    a.eq(ctrl.group, null, 'still closed');
+    handlers.click({ target: pair.time });      // a click back in the box opens it again
+    await new Promise((r) => setTimeout(r, 5));
+    a.ok(ctrl.group);
+  });
+
+  test('a time the teacher types right after picking is theirs: the watch stops', async () => {
+    const { ctrl, handlers, root } = bootPicker(cache, { courseCalendarUrl: URL_ });
+    ctrl.settleMs = 15;
+    const pair = duePair('Nov 9, 2026');
+    root.add(pair.card);
+    handlers.focusin({ target: pair.time });
+    await tick(); await tick();
+    const picking = ctrl.pick(0, 'start');           // 8:55 AM
+    await new Promise((r) => setTimeout(r, 5));
+    handlers.keydown({ isTrusted: true, key: '9', target: pair.time });
+    pair.time.value = '9:15 AM';
+    await picking;
+    a.eq(pair.time.value, '9:15 AM', 'not put back to 8:55');
+    a.eq(pair.time.log.filter((x) => x === 'focus').length, 1, 'focus not taken again');
+  });
+
+  test('our own writes do not count as the teacher’s', async () => {
+    const { ctrl, handlers, root } = bootPicker(cache, { courseCalendarUrl: URL_ });
+    const pair = duePair('Nov 9, 2026');
+    root.add(pair.card);
+    let blurs = 0;
+    pair.time.blur = function () { this.log.push('blur'); if (++blurs === 1) setTimeout(() => { pair.time.value = '8:00 AM'; }, 0); };
+    handlers.focusin({ target: pair.time });
+    await tick(); await tick();
+    const picking = ctrl.pick(0, 'start');
+    handlers.input({ isTrusted: false, target: pair.time });   // like the input event setNativeValue sends
+    await picking;
+    a.eq(pair.time.value, '8:55 AM', 'Canvas’s reset is still undone');
   });
 
   test('a click on the end setting makes the end the main choice', async () => {
