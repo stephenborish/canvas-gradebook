@@ -239,3 +239,83 @@ suite('score analysis: course totals', (test) => {
     a.eq(menu.children.indexOf(added), 3, 'after Move to End');
   });
 });
+
+suite('View Options: Canvas’s settings dialog is opened only when something differs', (test) => {
+  const WANT = {
+    syncViewOptionsToCanvas: true, hideCanvasUtilityControls: true,
+    gbShowNotes: false, gbShowUnpublishedAssignments: false, gbSplitStudentNames: false,
+    gbHideAssignmentGroupTotals: true, gbHideTotalColumn: false,
+    gbViewHiddenGradesIndicator: true, gbEnableStatusIcons: false
+  };
+  const SAME = {
+    gbShowNotes: false, gbShowUnpublishedAssignments: false, gbSplitStudentNames: null,
+    gbHideAssignmentGroupTotals: true, gbHideTotalColumn: false,
+    gbViewHiddenGradesIndicator: true, gbEnableStatusIcons: false
+  };
+  function setup(values) {
+    const CGP = loadGradebookDom();
+    const doc = domshim.install();
+    const gear = canvasGear(doc, domshim.FakeElement);
+    let clicks = 0;
+    gear.click = () => { clicks++; };
+    const store = {};
+    globalThis.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } };
+    const layout = new CGP.CompactLayoutController({ adapter: new CGP.GradebookDomAdapter(), settings: { values: Object.assign({}, WANT, values) } });
+    layout.controlsHidden = true;
+    layout.applyGeometry = () => {};
+    layout.viewOptionsWaitMs = 30;
+    return { layout, clicks: () => clicks, store };
+  }
+
+  test('when Canvas already matches, the dialog is never opened (nothing flashes on load)', async () => {
+    const { layout, clicks } = setup();
+    a.eq(await layout.syncViewOptions(() => SAME), false);
+    a.eq(clicks(), 0);
+    a.eq(layout.controlsHidden, true, 'the utility strip stays collapsed');
+  });
+
+  test('an option offered here that differs is the only reason to open it', () => {
+    const { layout } = setup();
+    a.deep(layout.viewOptionsToChange(Object.assign({}, SAME, { gbEnableStatusIcons: true })).map((s) => s.key), ['gbEnableStatusIcons']);
+    a.deep(layout.viewOptionsToChange(Object.assign({}, SAME, { gbSplitStudentNames: null })), [], 'not offered by this Canvas: left alone');
+  });
+
+  test('while Canvas’s values are unknown, nothing is opened blind', async () => {
+    const { layout, clicks } = setup();
+    a.eq(await layout.syncViewOptions(() => null), false);
+    a.eq(clicks(), 0);
+  });
+
+  test('turned off, nothing is read or opened', async () => {
+    const { layout, clicks } = setup({ syncViewOptionsToCanvas: false });
+    a.eq(await layout.syncViewOptions(() => Object.assign({}, SAME, { gbHideTotalColumn: true })), false);
+    a.eq(clicks(), 0);
+  });
+
+  test('an option the dialog did not show is not asked again on every load', () => {
+    const { layout } = setup();
+    layout.rememberNotOffered({ gbViewHiddenGradesIndicator: true });
+    a.deep(layout.viewOptionsToChange(Object.assign({}, SAME, { gbViewHiddenGradesIndicator: false })), []);
+    layout.settings.values.gbViewHiddenGradesIndicator = false;
+    a.deep(layout.viewOptionsToChange(Object.assign({}, SAME, { gbViewHiddenGradesIndicator: true })).map((s) => s.key),
+      ['gbViewHiddenGradesIndicator'], 'a different choice is tried again');
+  });
+
+  test('“Hide Total and Override Columns” is the Total option too; exact labels win', () => {
+    const { layout } = setup();
+    const doc = globalThis.document;
+    const mk = (label) => {
+      const box = new domshim.FakeElement('input');
+      box.setAttribute('type', 'checkbox');
+      box.setAttribute('aria-label', label);
+      doc.body.appendChild(box);
+      return box;
+    };
+    const other = mk('Show notes in the export');
+    const notes = mk('Notes');
+    const total = mk('Hide Total and Override Columns');
+    a.eq(layout.findViewOptionCheckbox(['notes']), notes);
+    a.eq(layout.findViewOptionCheckbox(['hide total column', 'hide total and override columns']), total);
+    void other;
+  });
+});

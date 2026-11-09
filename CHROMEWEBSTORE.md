@@ -73,7 +73,7 @@ Your settings, comment snippets and class choices sync to every computer where C
 HOW TO USE
 1. Open a course gradebook in Canvas. The improvements are already on.
 2. Click the extension's toolbar icon to open its settings and turn features on or off.
-3. Optional: on the Class Schedule tab, paste your Google Calendar's "Secret address in iCal format" and click Connect.
+3. Optional: on the Class Schedule tab, paste your class calendar's "Public URL to this calendar" (from Google Calendar's settings, under Integrate calendar) and click Connect.
 4. Optional: open an assignment and choose "Copy to other classes" to link the sections you teach.
 
 PRIVACY
@@ -176,7 +176,7 @@ section can be published as-is (for example as a GitHub Pages page or a public G
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
-| 1.28.0 | 2026-11-09 | Class Schedule replaces Time Shortcuts: pick due times from your Google Calendar's class periods; "Also post to your other classes" choices sync across computers; review fixes. New optional permission use: the connected calendar's site. | Draft |
+| 1.28.0 | 2026-11-09 | Class Schedule replaces Time Shortcuts: pick due times from your Google Calendar's class periods; "Also post to your other classes" choices sync across computers; Canvas's settings dialog no longer flashes on gradebook load when View Options are applied automatically; Gradebook Status Icons off by default; review fixes. New optional permission use: the connected calendar's site. | Draft |
 | 1.27.0 | 2026-11-06 | Student overview search, Studio videos embedded in assignments, readable item titles. | Published |
 
 ## Review Notes

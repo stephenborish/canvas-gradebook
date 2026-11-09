@@ -388,7 +388,7 @@
     var url = typedCalendarUrl();
     if (url === '') { setCalendarStatus('Paste your calendar\u2019s address first.', 'error'); return Promise.resolve(false); }
     if (!url) {
-      setCalendarStatus('That is not a calendar address. In Google Calendar: Settings, your calendar, Integrate calendar, and copy \u201cSecret address in iCal format\u201d.', 'error');
+      setCalendarStatus('That is not a calendar\u2019s link. In Google Calendar open Settings, click your class calendar, then Integrate calendar, and copy \u201cPublic URL to this calendar\u201d.', 'error');
       return Promise.resolve(false);
     }
     $('courseCalendarUrl').value = url;
@@ -700,8 +700,9 @@
       var names = g.courseIds.map(function (id) {
         return escapeHtml((g.names && g.names[id]) || ('Course ' + id));
       }).join(' &middot; ');
-      return '<div class="section-group"><span>' + names + ' <span class="hint">(' + escapeHtml(g.origin.replace(/^https?:\/\//, '')) + ')</span></span>' +
-        '<button type="button" class="btn" data-unlink="' + i + '">Remove</button></div>';
+      return '<div class="section-group"><div class="section-group__text"><span class="section-group__names">' + names + '</span>' +
+        '<span class="section-group__where">' + g.courseIds.length + ' classes &middot; ' + escapeHtml(g.origin.replace(/^https?:\/\//, '')) + '</span></div>' +
+        '<button type="button" class="btn btn--quiet btn--sm" data-unlink="' + i + '">Remove</button></div>';
     }).join('');
   }
 

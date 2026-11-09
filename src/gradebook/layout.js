@@ -341,95 +341,202 @@
     } catch (e) { /* nothing else to try */ }
   };
 
-  /* openArrangeMenu() reveals Canvas's utility strip (it has to - the gear
-   * lives in it) unconditionally, which is fine for syncViewOptions below:
-   * that flow runs with nothing for the teacher to look at, so leaving the whole
-   * utility strip permanently un-hidden afterward - which openArrangeMenu()
-   * used to do, with nothing anywhere restoring it - was a bug of its own,
-   * not a side effect anyone wanted. Called once the automation is actually
-   * DONE - not when it gave up early and told the teacher the tray is still
-   * open for them to finish by hand, which must stay visible. */
-  P.reapplyHiddenState = function (wasHidden) {
-    if (wasHidden && this.settings.values.hideCanvasUtilityControls && !this.controlsHidden) {
-      this.hideControls();
-      this.applyGeometry();
-    }
-  };
-
   /* Canvas's own "View Options" checkboxes, mirrored in this extension's
    * options page (see options.html "Layout & Display") so a teacher sets
-   * them once instead of per course in Canvas's own settings tray. Off by
-   * default (syncViewOptionsToCanvas) - this drives Canvas's real controls
-   * exactly the way a teacher click would, so it is
-   * only worth doing when a teacher has actually opted in. Best-effort: any
-   * checkbox this Canvas build's markup doesn't match is simply left alone,
-   * never guessed at. */
+   * them once instead of per course in Canvas's own settings dialog. Off by
+   * default (syncViewOptionsToCanvas).
+   *
+   * Canvas's current values come from its page data (env-bridge.js), and
+   * the dialog is opened only when one of them differs from the teacher's
+   * choice - after the first sync in a course, never again until something
+   * changes. Opening it used to happen on every gradebook load, and the
+   * dialog showed for a moment each time. When it must be opened, it is
+   * opened through Canvas's hidden gear (the utility strip stays collapsed)
+   * and every layer Canvas adds to the page is hidden before it is drawn,
+   * until the change is applied and the dialog is closed.
+   *
+   * Labels are Canvas's (ViewOptionsTabPanel.tsx); "Hide Total and Override
+   * Columns" is the Total label where grade overrides are on. An option this
+   * Canvas does not show is left alone, never guessed at, and remembered for
+   * the course so it does not reopen the dialog on every load. */
   var VIEW_OPTION_CHECKBOXES = [
-    { label: 'notes', key: 'gbShowNotes' },
-    { label: 'unpublished assignments', key: 'gbShowUnpublishedAssignments' },
-    { label: 'split student names', key: 'gbSplitStudentNames' },
-    { label: 'hide assignment group totals', key: 'gbHideAssignmentGroupTotals' },
-    { label: 'hide total column', key: 'gbHideTotalColumn' },
-    { label: 'view hidden grades indicator', key: 'gbViewHiddenGradesIndicator' },
-    { label: 'enable gradebook status icons', key: 'gbEnableStatusIcons' }
+    { labels: ['notes'], key: 'gbShowNotes' },
+    { labels: ['unpublished assignments'], key: 'gbShowUnpublishedAssignments' },
+    { labels: ['split student names'], key: 'gbSplitStudentNames' },
+    { labels: ['hide assignment group totals'], key: 'gbHideAssignmentGroupTotals' },
+    { labels: ['hide total column', 'hide total and override columns'], key: 'gbHideTotalColumn' },
+    { labels: ['view hidden grades indicator'], key: 'gbViewHiddenGradesIndicator' },
+    { labels: ['enable gradebook status icons'], key: 'gbEnableStatusIcons' }
   ];
 
-  P.findViewOptionCheckbox = function (labelText) {
-    var boxes = document.querySelectorAll('input[type="checkbox"]');
+  function checkboxLabel(box) {
+    var labelledEl = box.labels && box.labels[0];
+    return ((box.getAttribute('aria-label') || '') + ' ' +
+      (labelledEl ? labelledEl.textContent || '' : '')).trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  /** The View Options checkbox with one of these labels, inside `scope`
+   * (the settings dialog): an exact label first, so "Notes" never matches
+   * some other box that merely mentions notes. */
+  P.findViewOptionCheckbox = function (labels, scope) {
+    var list = [].concat(labels);
+    var boxes = (scope || document).querySelectorAll('input[type="checkbox"]');
+    var loose = null;
     for (var i = 0; i < boxes.length; i++) {
-      var labelledEl = boxes[i].labels && boxes[i].labels[0];
-      var text = ((boxes[i].getAttribute('aria-label') || '') + ' ' +
-        (labelledEl ? labelledEl.textContent || '' : '')).trim().toLowerCase();
-      if (text.indexOf(labelText) >= 0) return boxes[i];
+      var text = checkboxLabel(boxes[i]);
+      for (var j = 0; j < list.length; j++) {
+        if (text === list[j]) return boxes[i];
+        if (!loose && text.indexOf(list[j]) >= 0) loose = boxes[i];
+      }
     }
-    return null;
+    return loose;
   };
 
-  P.syncViewOptions = function () {
+  function courseKey() {
+    var m = /\/courses\/(\d+)/.exec(String((typeof location !== 'undefined' && location.pathname) || ''));
+    return 'cgp.viewOptions.notOffered.' + (m ? m[1] : 'unknown');
+  }
+
+  /** Options this course's settings dialog did not show last time:
+   * {key: the value that was wanted}. */
+  P.notOfferedViewOptions = function () {
+    try { return JSON.parse(localStorage.getItem(courseKey()) || '{}') || {}; } catch (e) { return {}; }
+  };
+
+  P.rememberNotOffered = function (map) {
+    try {
+      if (Object.keys(map).length) localStorage.setItem(courseKey(), JSON.stringify(map));
+      else localStorage.removeItem(courseKey());
+    } catch (e) { /* storage blocked: it is only asked again */ }
+  };
+
+  /** The options whose Canvas value differs from the teacher's choice.
+   * `current` is Canvas's {key: bool, or null when not offered here}; an
+   * option Canvas's dialog lacked last time, for the same wanted value, is
+   * not asked again. */
+  P.viewOptionsToChange = function (current) {
+    var s = this.settings.values;
+    var notOffered = this.notOfferedViewOptions();
+    return VIEW_OPTION_CHECKBOXES.filter(function (spec) {
+      var have = current ? current[spec.key] : undefined;
+      if (typeof have !== 'boolean') return false;
+      var want = !!s[spec.key];
+      return have !== want && notOffered[spec.key] !== want;
+    });
+  };
+
+  /** Hides every layer added to <body> from now until the returned function
+   * is called: Canvas's dialog and its backdrop are mounted there, and a
+   * MutationObserver runs before the page is next drawn, so they are never
+   * seen. The function puts back whatever is still on the page. */
+  P.hideNewLayers = function () {
+    var hidden = [];
+    var hide = function (el) {
+      if (!el || el.nodeType !== 1 || !el.style) return;
+      hidden.push({ el: el, opacity: el.style.getPropertyValue('opacity'), events: el.style.getPropertyValue('pointer-events') });
+      el.style.setProperty('opacity', '0', 'important');
+      el.style.setProperty('pointer-events', 'none', 'important');
+    };
+    var mo = typeof MutationObserver === 'function' && document.body ? new MutationObserver(function (records) {
+      records.forEach(function (r) { Array.prototype.forEach.call(r.addedNodes || [], hide); });
+    }) : null;
+    if (mo) mo.observe(document.body, { childList: true });
+    return function () {
+      if (mo) mo.disconnect();
+      hidden.forEach(function (h) {
+        h.el.style.removeProperty('opacity');
+        h.el.style.removeProperty('pointer-events');
+        if (h.opacity) h.el.style.setProperty('opacity', h.opacity);
+        if (h.events) h.el.style.setProperty('pointer-events', h.events);
+      });
+    };
+  };
+
+  function waitForValue(get, ms) {
+    return new Promise(function (resolve) {
+      var start = Date.now();
+      (function poll() {
+        var v = null;
+        try { v = get ? get() : null; } catch (e) { v = null; }
+        if (v || Date.now() - start >= ms) { resolve(v || null); return; }
+        setTimeout(poll, 100);
+      })();
+    });
+  }
+
+  /** getCurrent() -> Canvas's current View Options (env-bridge.js), or null
+   * while not yet known. Resolves true when something was changed. */
+  P.syncViewOptions = function (getCurrent) {
     var s = this.settings.values;
     if (!s.syncViewOptionsToCanvas) return Promise.resolve(false);
     var self = this;
-    var wasHidden = this.controlsHidden;
+    return waitForValue(getCurrent, typeof this.viewOptionsWaitMs === 'number' ? this.viewOptionsWaitMs : 4000).then(function (current) {
+      if (!current) {
+        // Canvas's values unknown: nothing is opened blind.
+        CGP.diag.set('layout.viewOptionsSynced', { skipped: 'canvas values unknown' });
+        return false;
+      }
+      var todo = self.viewOptionsToChange(current);
+      if (!todo.length) {
+        CGP.diag.set('layout.viewOptionsSynced', { changed: 0, upToDate: true });
+        return false;
+      }
+      return self.applyViewOptions(todo);
+    });
+  };
+
+  /* Opens Canvas's settings dialog unseen, sets these options, applies. */
+  P.applyViewOptions = function (todo) {
+    var s = this.settings.values;
+    var self = this;
+    var gear = this.findSettingsButton();
+    if (!gear || !gear.isConnected) {
+      CGP.diag.warn('layout.viewOptions.gearNotFound');
+      return Promise.resolve(false);
+    }
     var root = document.documentElement;
-    // The tray is opened only to be driven and closed again; the teacher
-    // never needs to see it (see the matching rule in gradebook.css).
+    var showLayers = this.hideNewLayers();
     root.classList.add('cgp-syncing-view-options');
-    var finish = function () {
-      self.reapplyHiddenState(wasHidden);
+    var finish = function (changed) {
       return new Promise(function (resolve) {
-        // Canvas closes the tray itself after Apply; anything still open by
-        // now is closed here so it never lingers on screen.
+        // Canvas closes the dialog itself after Apply; anything still open
+        // by now is closed here, still unseen.
         setTimeout(function () {
           self.closeSettingsTray();
           setTimeout(function () {
+            showLayers();
             root.classList.remove('cgp-syncing-view-options');
-            resolve();
+            resolve(changed);
           }, 250);
         }, 400);
       });
     };
-    return this.openArrangeMenu().then(function (onTab) {
-      if (!onTab) return finish().then(function () { return false; });
+    gear.click();   // Canvas's own (hidden) gear: the dialog is not drawn inside the strip
+    return this.selectViewOptionsTab().then(function (onTab) {
+      if (!onTab) return finish(false);
+      var tray = self.findSettingsTray();
       var changed = 0;
-      var missing = 0;
-      VIEW_OPTION_CHECKBOXES.forEach(function (spec) {
-        var box = self.findViewOptionCheckbox(spec.label);
-        if (!box) { missing++; return; }
+      var notOffered = self.notOfferedViewOptions();
+      todo.forEach(function (spec) {
         var want = !!s[spec.key];
+        var box = self.findViewOptionCheckbox(spec.labels, tray);
+        if (!box) { notOffered[spec.key] = want; return; }
+        delete notOffered[spec.key];
         if (box.checked === want) return;
         box.click();
         changed++;
       });
+      self.rememberNotOffered(notOffered);
       if (changed) {
-        var apply = self.findTrayApplyButton(self.findSettingsTray());
+        var apply = self.findTrayApplyButton(tray);
         if (apply) apply.click();
       } else {
-        // Nothing to change: close the tray rather than leaving it open.
         self.closeSettingsTray();
       }
-      CGP.diag.set('layout.viewOptionsSynced', { changed: changed, missing: missing });
-      return finish().then(function () { return changed > 0; });
+      CGP.diag.set('layout.viewOptionsSynced', { changed: changed, notOffered: Object.keys(notOffered) });
+      return finish(changed > 0);
     }, function () {
+      showLayers();
       root.classList.remove('cgp-syncing-view-options');
       return false;
     });

@@ -434,14 +434,39 @@
             <input id="courseScheduleEnabled" type="checkbox" class="switch">
           </div>
 
+          <div class="schedule-steps">
+            <div class="schedule-steps__head">
+              <h2 class="schedule-steps__title">Step 1 &middot; Copy your class calendar&rsquo;s link from Google Calendar</h2>
+              <a class="btn btn--secondary btn--sm" href="https://calendar.google.com/calendar/r/settings" target="_blank" rel="noopener noreferrer">Open Google Calendar settings &#8599;</a>
+            </div>
+            <ol class="schedule-steps__list">
+              <li>In Google Calendar, click the <strong>gear</strong> at the top right, then <strong>Settings</strong>
+                (or use the button above).</li>
+              <li>In the list on the left, click the <strong>name of the calendar that holds your classes</strong>.
+                A calendar your school shares with you (for example <em>All Classes</em>) is under
+                <strong>Settings for other calendars</strong>; one you made yourself is under <strong>Settings for my calendars</strong>.</li>
+              <li>Under that calendar&rsquo;s name, click <strong>Integrate calendar</strong>.</li>
+              <li>Find the box labelled <strong>Public URL to this calendar</strong>. Click in it, select everything in it
+                (<kbd>Ctrl</kbd>+<kbd>A</kbd>, or <kbd>&#8984;</kbd>+<kbd>A</kbd> on a Mac) and copy it
+                (<kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>&#8984;</kbd>+<kbd>C</kbd>).</li>
+            </ol>
+            <div class="gcal-example" aria-hidden="true">
+              <span class="gcal-example__caption">It looks like this in Google Calendar:</span>
+              <div class="gcal-example__field">
+                <span class="gcal-example__label">Public URL to this calendar</span>
+                <span class="gcal-example__value">https://calendar.google.com/calendar/embed?src=&hellip;</span>
+              </div>
+            </div>
+          </div>
+
           <div class="schedule-connect">
-            <label class="setting__label" for="courseCalendarUrl">Your calendar&rsquo;s address
-              <span class="hint">Paste your Google Calendar&rsquo;s <strong>Secret address in iCal format</strong> (steps below). A public
-                calendar&rsquo;s address, its &ldquo;Public URL&rdquo;, or any other <code>.ics</code> calendar link works too.</span>
+            <label class="setting__label" for="courseCalendarUrl"><strong>Step 2 &middot; Paste it here and click Connect</strong>
+              <span class="hint">Chrome then asks once to let Gradebook+ read calendar.google.com &ndash; only to fetch this calendar.
+                Check the preview below shows your classes, then click <strong>Save changes</strong>.</span>
             </label>
             <div class="schedule-connect__row">
               <input id="courseCalendarUrl" type="text" inputmode="url" class="schedule-connect__url" spellcheck="false" autocomplete="off"
-                placeholder="https://calendar.google.com/calendar/ical/&hellip;/basic.ics">
+                placeholder="https://calendar.google.com/calendar/embed?src=&hellip;" aria-describedby="calendarStatus">
               <button type="button" id="connectCalendar" class="btn btn--secondary">Connect</button>
               <button type="button" id="disconnectCalendar" class="btn btn--quiet">Remove</button>
             </div>
@@ -471,24 +496,28 @@
           </div>
 
           <div class="snippets-instructions">
-            <h2 class="snippets-instructions__title">Getting your Google Calendar&rsquo;s address</h2>
+            <h2 class="snippets-instructions__title">Then, in Canvas</h2>
             <ol class="snippets-steps">
-              <li><strong>Put your classes in one calendar:</strong> one event per class meeting (or a repeating event), named like the
-                course &ndash; e.g. <em>AP Biology P1</em>, 8:55&ndash;9:50 AM. All-day events such as <em>A Day</em> show above that day&rsquo;s classes.</li>
-              <li><strong>Copy its address:</strong> in Google Calendar open <strong>Settings</strong>, pick that calendar under
-                <em>Settings for my calendars</em>, then <strong>Integrate calendar</strong>, and copy the
-                <strong>Secret address in iCal format</strong>.</li>
-              <li><strong>Connect it:</strong> paste it above, click <strong>Connect</strong> (Chrome asks to let Gradebook+ read
-                calendar.google.com &ndash; only to fetch this calendar), check the preview, and click <strong>Save changes</strong>.</li>
-              <li><strong>Use it in Canvas:</strong> click any Due / Available from / Until date or time box. Your classes for that day
-                appear beside it; click one and its time (and the day, if you moved to another day with the arrows) goes in.</li>
+              <li><strong>Open a date or time box:</strong> click any Due, Available from or Until box when you create or edit an
+                assignment. That day&rsquo;s classes appear beside it.</li>
+              <li><strong>Click a class:</strong> its start time goes into the time box (the small <strong>End</strong> button uses
+                its end time). Use the arrows to see another day; picking a class there puts that day in the date box too.</li>
             </ol>
             <div class="snippets-tip">
               <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M10 2a6 6 0 0 0-6 6c0 2.2 1.2 4.1 3 5.2V15a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1.8c1.8-1.1 3-3 3-5.2a6 6 0 0 0-6-6zm-1 15h2v1H9v-1z"/></svg>
+              <span><strong>If Connect says the calendar is not public:</strong> Google only shares a calendar&rsquo;s classes through
+                that link when the calendar is public. For a calendar you made, open <strong>Access permissions for events</strong> in
+                the same settings page, tick <strong>Make available to public</strong> and choose <strong>See all event details</strong>
+                &ndash; or, instead, paste its <strong>Secret address in iCal format</strong> (in <em>Integrate calendar</em>), which works
+                without making it public. For a calendar your school shares with you, ask whoever runs it to make it public.
+                The <strong>Public address in iCal format</strong> works too.</span>
+            </div>
+            <div class="snippets-tip">
+              <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M10 2a6 6 0 0 0-6 6c0 2.2 1.2 4.1 3 5.2V15a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1.8c1.8-1.1 3-3 3-5.2a6 6 0 0 0-6-6zm-1 15h2v1H9v-1z"/></svg>
               <span><strong>Good to know:</strong> the calendar is read again every few hours (or with <strong>Refresh</strong> in the
-                schedule panel). Classes named like the Canvas course you are editing are marked <em>This course</em>. The secret
-                address lets anyone who has it see that calendar, so it is kept in Chrome sync only &ndash; never copied into your Canvas
-                account &ndash; and on another computer you click <strong>Connect</strong> once there too.</span>
+                schedule panel). Classes named like the Canvas course you are editing are marked <em>This course</em>. The calendar&rsquo;s
+                link travels with your settings through Chrome sync (never into your Canvas account); on another computer, click
+                <strong>Connect</strong> once there to allow it.</span>
             </div>
           </div>
         </section>
@@ -540,11 +569,11 @@
             </label>
             <input id="sectionCopyNudge" type="checkbox" class="switch">
           </div>
-          <div class="setting setting--field">
-            <label class="setting__label">Classes that share a course
-              <span class="hint">Change these from Copy to other classes in Canvas; remove a group here.</span>
-            </label>
-            <div id="sectionGroupsList" class="setting__control setting__control--wide"></div>
+          <div class="setting setting--list">
+            <div class="setting__label">Classes that share a course
+              <span class="hint">Linked from <strong>Copy to other classes</strong> in Canvas, and changed there. Remove a group here to unlink its classes.</span>
+            </div>
+            <div id="sectionGroupsList" class="section-groups"></div>
           </div>
 
           <h2 class="panel__group">SpeedGrader</h2>

@@ -628,11 +628,14 @@ edited are marked **This course** (numbers tell sections apart, so *Chemistry 3*
 The same Assign To card on quizzes, discussions and modules is covered, and so are the time boxes in
 **Also post to your other classes**, where each class is matched against its own course name.
 
-To set it up, open the **Class Schedule** tab of the options page, paste your Google Calendar's
-**Secret address in iCal format** (Google Calendar → Settings → your calendar → *Integrate calendar*),
-and click **Connect**: Chrome asks once to let the extension read `calendar.google.com` (that one
+To set it up, open the **Class Schedule** tab of the options page and follow its two steps: in Google
+Calendar's **Settings**, click the calendar that holds your classes (a calendar your school shares,
+such as *All Classes*, is under *Settings for other calendars*), then **Integrate calendar**, and copy
+**Public URL to this calendar**; paste it and click **Connect**: Chrome asks once to let the extension read `calendar.google.com` (that one
 site, only to fetch this calendar), a preview shows the classes it found, and **Save changes** keeps
-it. A public calendar's address, its "Public URL" or share link, a bare calendar ID, or any other
+it. That link works only when the calendar is public; for a calendar you made, its **Secret address in
+iCal format** works without making it public. A *Public address in iCal format*, a share link, a bare
+calendar ID, or any other
 `.ics` feed (Outlook, Apple, a school's scheduling system — Chrome asks for that site instead) work
 too. Repeating events (weekly, daily, monthly), skipped, moved and cancelled meetings, and daylight-
 saving changes are all handled; times are shown in your Canvas profile's time zone, which is what

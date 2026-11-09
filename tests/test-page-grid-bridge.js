@@ -464,3 +464,39 @@ function loadBridgeWith(opts) {
     replies: function () { return posted.filter(function (m) { return m.source === 'cgp-submission-synced'; }); }
   };
 }
+
+suite('page-context bridge: Canvas’s View Options', (test) => {
+  function envReply(GRADEBOOK_OPTIONS) {
+    const b = loadBridgeWith({ querySelector: function () { return null; } });
+    b.win.ENV = { GRADEBOOK_OPTIONS };
+    b.win.postMessage({ source: 'cgp-env-request' }, b.win.location.origin);
+    const envs = b.posted().filter((m) => m.source === 'cgp-env');
+    return envs[envs.length - 1].env.viewOptions;
+  }
+
+  test('read the way Canvas’s gradebook reads them, with Canvas’s defaults', () => {
+    a.deep(envReply({ settings: {}, teacher_notes: null }), {
+      gbShowNotes: false, gbShowUnpublishedAssignments: true, gbSplitStudentNames: null,
+      gbHideAssignmentGroupTotals: false, gbHideTotalColumn: false,
+      gbViewHiddenGradesIndicator: false, gbEnableStatusIcons: false
+    }, 'nothing set: unpublished shown, the rest off; split names not offered');
+    a.deep(envReply({
+      allow_separate_first_last_names: true,
+      teacher_notes: { id: '5', hidden: false },
+      settings: {
+        show_unpublished_assignments: 'false', show_separate_first_last_names: 'true',
+        hide_assignment_group_totals: 'true', hide_total: 'true',
+        view_hidden_grades_indicator: 'true', view_status_for_colorblindness: 'true'
+      }
+    }), {
+      gbShowNotes: true, gbShowUnpublishedAssignments: false, gbSplitStudentNames: true,
+      gbHideAssignmentGroupTotals: true, gbHideTotalColumn: true,
+      gbViewHiddenGradesIndicator: true, gbEnableStatusIcons: true
+    });
+    a.eq(envReply({ settings: {}, teacher_notes: { id: '5', hidden: true } }).gbShowNotes, false, 'a hidden notes column');
+  });
+
+  test('unknown when the page has no gradebook settings', () => {
+    a.eq(envReply({}), null);
+  });
+});

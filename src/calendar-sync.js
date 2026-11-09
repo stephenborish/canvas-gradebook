@@ -80,7 +80,7 @@ export function createCalendarSync(chrome, opts = {}) {
         const gone = res.status === 404 || res.status === 403 || res.status === 401 || res.status === 410;
         throw coded(gone ? 'notfound' : 'http', gone
           ? (C.isGooglePublic(url)
-            ? 'Google says this calendar is not public. Use its “Secret address in iCal format” instead (Google Calendar, Settings, your calendar, Integrate calendar).'
+            ? 'Google says this calendar is not public, so its classes cannot be read from that link. If you made the calendar, turn on “Make available to public” (See all event details) in its Access permissions, or paste its “Secret address in iCal format” instead. If your school shares it with you, ask whoever runs it to make it public.'
             : 'That calendar address was refused (' + res.status + '). Copy it again from your calendar’s settings.')
           : hostOf(url) + ' answered with an error (' + res.status + '). Try again later.');
       }
@@ -91,7 +91,7 @@ export function createCalendarSync(chrome, opts = {}) {
       const text = await res.text();
       if (text.length > MAX_CHARS) throw coded('toolarge', 'That calendar is too large to read. Use a calendar that holds just your classes.');
       if (!/BEGIN:VCALENDAR/i.test(text.slice(0, 4096))) {
-        throw coded('notcalendar', 'That address did not return a calendar. Use the address that ends in .ics (in Google Calendar: Settings, your calendar, Integrate calendar, “Secret address in iCal format”).');
+        throw coded('notcalendar', 'That address did not return a calendar. In Google Calendar open Settings, click your class calendar, then Integrate calendar, and copy “Public URL to this calendar”.');
       }
       const cal = C.parseIcs(text);
       const today = C.today('', now());
