@@ -977,11 +977,12 @@
     var out = {};
     var controls = toArray(tray.querySelectorAll('a, button, [role="button"]')).filter(function (c) {
       if (c.closest && c.closest('[data-cgp-tray-own], [data-cgp-tray-comment], [data-cgp-tray-status], ' + RCE_SELECTOR)) return false;
-      return isShown(c, tray);
+      return true;
     });
     controls.forEach(function (c) {
       var kind = actionKind(c);
-      if (!kind || out[kind]) return;
+      // The style read only for the two controls we are after.
+      if (!kind || out[kind] || !isShown(c, tray)) return;
       out[kind] = { canvas: c, slot: slotFor(c, tray) };
     });
     // Both in one block: hiding that block would hide both, and our row
@@ -1107,12 +1108,15 @@
     this.update();
   };
 
-  CG.release = function () {
+  /** Drops the listeners (and, unless `listenersOnly`, the height). */
+  CG.release = function (listenersOnly) {
     if (this.doc) {
       try {
         ['input', 'keyup', 'paste', 'cut'].forEach(function (t) { this.doc.removeEventListener(t, this.onInput); }, this);
       } catch (e) { /* the iframe is gone */ }
     }
+    this.doc = null;
+    if (listenersOnly) return;
     if (this.editor && this.editor.style && typeof this.editor.style.removeProperty === 'function') {
       this.editor.style.removeProperty('--cgp-tray-edit-h');
     }
@@ -1145,9 +1149,15 @@
     if (ed.tagName === 'TEXTAREA') {
       var top = ed.getBoundingClientRect().top;
       var max = winH ? Math.floor(winH - top - gap) : Infinity;
-      // Measured at its natural height: 'auto' lets it shrink back again.
-      ed.style.setProperty('--cgp-tray-edit-h', 'auto');
-      this.height = '';
+      // Grown: scrollHeight says if it needs more. Shrinking needs a
+      // measure at its natural height ('auto'), done only when the text got
+      // shorter (fewer characters) since the last measure.
+      var len = String(ed.value || '').length;
+      if (this.textLen !== undefined && len < this.textLen) {
+        ed.style.setProperty('--cgp-tray-edit-h', 'auto');
+        this.height = '';
+      }
+      this.textLen = len;
       var want = (ed.scrollHeight || 0) + 2;
       return Math.max(TEXTAREA_MIN, Math.min(want, max));
     }
@@ -1157,10 +1167,12 @@
     var doc = null;
     try { doc = frame.contentDocument; } catch (e) { doc = null; }
     if (!doc || !doc.body) return null;
-    if (doc !== this.doc) {
-      this.doc = doc;
-      ['input', 'keyup', 'paste', 'cut'].forEach(function (t) { doc.addEventListener(t, this.onInput); }, this);
-    }
+    if (doc !== this.doc) this.release(true);
+    this.doc = doc;
+    // Added on every measure, not once per document: the editor's
+    // document.open() keeps the document but erases its listeners. Adding
+    // the same listener again is a no-op while it is still there.
+    ['input', 'keyup', 'paste', 'cut'].forEach(function (t) { doc.addEventListener(t, this.onInput); }, this);
     var areaTop = area.getBoundingClientRect().top;
     var limit = winH ? Math.floor(winH - areaTop - gap) : Infinity;
     var content = contentHeight(doc);

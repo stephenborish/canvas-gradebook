@@ -25,7 +25,7 @@
     'textarea[placeholder*="comment" i]'
   ].join(', ');
 
-  var SUBMIT_SELECTORS = [
+  var SUBMIT_SELECTORS = CGP.SPEEDGRADER_SUBMIT_SELECTOR = [
     '#comment_submit_button',
     'button[data-testid="comment-submit-button"]',
     'button[data-testid*="submit-comment" i]',
@@ -220,7 +220,17 @@
       timer = setTimeout(function () { timer = null; scan(); }, 200);
     }
     if (typeof MutationObserver !== 'undefined' && document.body) {
-      new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
+      // Only additions that are, or hold, an iframe: the gradebook grid
+      // rewrites rows on every scroll frame and must not re-arm the scan.
+      new MutationObserver(function (records) {
+        for (var i = 0; i < records.length; i++) {
+          var added = records[i].addedNodes || [];
+          for (var j = 0; j < added.length; j++) {
+            var n = added[j];
+            if (n.nodeType === 1 && (n.tagName === 'IFRAME' || (n.querySelector && n.querySelector('iframe')))) { schedule(); return; }
+          }
+        }
+      }).observe(document.body, { childList: true, subtree: true });
     }
     // A frame's document can be replaced without any change to the page
     // around it (the editor writing its content in): check now and then.

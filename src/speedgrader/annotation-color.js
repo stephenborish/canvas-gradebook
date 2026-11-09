@@ -38,8 +38,7 @@
   function AnnotationColorDefaults(ctx) {
     this.settings = ctx && ctx.settings;
     this.doc = (ctx && ctx.document) || document;
-    this.handled = typeof WeakSet === 'function' ? new WeakSet() : null;
-    this.handledList = [];
+    this.handled = {};   // tool -> palettes already handled for it
     this.userChose = readSession();
     this.observer = null;
     this.timer = null;
@@ -73,12 +72,16 @@
     this.timer = setTimeout(function () { self.timer = null; self.scan(); }, SCAN_MS);
   };
 
-  P.isHandled = function (palette) {
-    return this.handled ? this.handled.has(palette) : this.handledList.indexOf(palette) >= 0;
+  /* Per tool: a palette DocViewer keeps mounted while the teacher switches
+   * from Free Draw to Point still gets red for Point. */
+  P.isHandled = function (tool, palette) {
+    return (this.handled[tool] || []).indexOf(palette) >= 0;
   };
 
-  P.markHandled = function (palette) {
-    if (this.handled) this.handled.add(palette); else this.handledList.push(palette);
+  P.markHandled = function (tool, palette) {
+    var list = this.handled[tool] || (this.handled[tool] = []);
+    // Only the last few: a palette re-created on every open must not pile up.
+    if (list.push(palette) > 8) list.shift();
   };
 
   /** Presses red in a newly shown palette, if one of our tools is active. */
@@ -87,8 +90,8 @@
     var tool = activeTool(this.doc);
     if (!tool || this.userChose[tool]) return false;
     var palette = findPalette(this.doc);
-    if (!palette || this.isHandled(palette.root)) return false;
-    this.markHandled(palette.root);
+    if (!palette || this.isHandled(tool, palette.root)) return false;
+    this.markHandled(tool, palette.root);
     var red = palette.red;
     if (!red || isSelected(red)) return false;
     this.ourClick = true;
@@ -101,6 +104,10 @@
     if (this.ourClick || !e || e.isTrusted === false) return;
     var target = e.target;
     if (!target || !target.closest) return;
+    // Cheap test first: only a click on something swatch-like is worth the
+    // full palette scan.
+    var near = target.closest(SWATCH_SELECTOR);
+    if (!near || !isSwatch(near)) return;
     var palette = findPalette(this.doc);
     if (!palette) return;
     var hit = null;

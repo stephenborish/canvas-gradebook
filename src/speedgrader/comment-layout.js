@@ -28,12 +28,6 @@
   if (CGP.SpeedGraderCommentLayout) return;
 
   var ROOT_CLASS = 'cgp-sg-tidy';
-  var SUBMIT_SELECTOR = [
-    '#comment_submit_button',
-    'button[data-testid="comment-submit-button"]',
-    'button[data-testid*="submit-comment" i]',
-    '#submit_comment_button'
-  ].join(', ');
   var MOUNT_SELECTOR = '#speedgrader_comment_textarea_mount_point, #speed_grader_comment_textarea_mount_point, #add_a_comment';
   // Canvas's comment tools beside Submit: attach a file, media comment
   // (record / upload video or audio), screen capture, speech to text.
@@ -143,7 +137,9 @@
   };
 
   function findSubmit() {
-    var btn = document.querySelector(SUBMIT_SELECTOR);
+    // The list lives with the draft code (speedgrader/content.js), read at
+    // call time since that file loads after this one.
+    var btn = CGP.SPEEDGRADER_SUBMIT_SELECTOR ? document.querySelector(CGP.SPEEDGRADER_SUBMIT_SELECTOR) : null;
     if (btn) return btn;
     var buttons = document.querySelectorAll('button');
     for (var i = 0; i < buttons.length; i++) {
@@ -181,7 +177,8 @@
       if (node.querySelector(TOOL_HINT)) return node;
       node = node.parentElement;
     }
-    return row;
+    // Submit sitting loose beside the editor: no row of its own to restyle.
+    return rce && row && row.contains(rce) ? null : row;
   }
 
   function tagRow(row, submit) {
