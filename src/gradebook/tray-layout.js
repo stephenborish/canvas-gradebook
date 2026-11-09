@@ -182,6 +182,7 @@
     if (!this.status || !this.enabled()) { this.stopPolling(); return; }
     if (this.status.connected()) {
       this.status.sync();
+      this.status.fit();
       // Canvas's buttons change by attribute (another student's link, a
       // disabled state), which the childList-only observer never reports.
       if (this.actions && this.tray) this.actions.attach(this.tray);
@@ -250,6 +251,7 @@
     this.daysEcho = null;      // { node, canvas, shown } after a commit
     this.stepTimer = null;
     this.model = null;
+    this.fitKey = '';
   }
 
   var SC = StatusControl.prototype;
@@ -274,6 +276,7 @@
     }
     setAttr(row, 'data-cgp-tray-proxied', '');
     this.sync();
+    this.fit();
     return true;
   };
 
@@ -281,10 +284,73 @@
     return !!(this.root && this.root.isConnected && this.row && this.row.isConnected);
   };
 
+  /* ------------------------------------------- one row, however many */
+
+  /* Every status on one row, whatever the school has turned on (Canvas's
+   * four, plus Extended, Incomplete or any custom status). The row is fitted
+   * to its labels, measured, in up to three steps - never by cutting a
+   * label short while there is any other way:
+   *
+   *  1. roomy: dot and label, as designed (the usual four);
+   *  2. compact: no dots, tighter padding, each label in its own status
+   *     colour instead - the colour cue kept, ~25% narrower (five or six);
+   *  3. compact, and the tray widened just enough to fit, up to 28em (and
+   *     never past the window).
+   *
+   * Only if even that is not enough (a long custom label, a tiny window)
+   * do the labels share the width and the longest end in "…", the full name
+   * in its tooltip. Re-fitted when the statuses or the tray's width change. */
+  var FIT_MAX_EM = 28;
+
+  SC.fit = function () {
+    var root = this.root;
+    var seg = this.seg;
+    if (!root || !seg || !root.isConnected || typeof seg.offsetWidth !== 'number') return null;
+    var frame = root.closest ? root.closest('[data-cgp-tray-frame]') : null;
+    var avail = root.clientWidth;
+    if (!avail) return null;   // not laid out (hidden, or a test page)
+    var key = this.optsKey + '|' + avail + '|' + (frame ? frame.offsetWidth : 0) + '|' +
+      (typeof window !== 'undefined' ? window.innerWidth : 0);
+    if (key === this.fitKey) return root.getAttribute('data-fit');
+    // Measure from the tray's own width, never from a widening of ours.
+    if (frame && frame.style && frame.style.getPropertyValue('--cgp-tray-w')) {
+      frame.style.removeProperty('--cgp-tray-w');
+      avail = root.clientWidth;
+    }
+    var mode = 'roomy';
+    setAttr(root, 'data-fit', mode);
+    if (this.natural() > avail) {
+      mode = 'compact';
+      setAttr(root, 'data-fit', mode);
+      var need = this.natural() - avail;
+      if (need > 0 && frame && frame.style) {
+        var em = parseFloat((typeof getComputedStyle === 'function' && getComputedStyle(frame).fontSize) || '16') || 16;
+        var cap = Math.min(FIT_MAX_EM * em, (typeof window !== 'undefined' ? window.innerWidth : 1e9) - 24);
+        var width = Math.min(Math.ceil(frame.offsetWidth + need + 2), Math.floor(cap));
+        if (width > frame.offsetWidth) frame.style.setProperty('--cgp-tray-w', width + 'px');
+      }
+    }
+    avail = root.clientWidth;
+    this.fitKey = this.optsKey + '|' + avail + '|' + (frame ? frame.offsetWidth : 0) + '|' +
+      (typeof window !== 'undefined' ? window.innerWidth : 0);
+    return mode;
+  };
+
+  /** The row's width with every label whole (px). */
+  SC.natural = function () {
+    setAttr(this.root, 'data-measuring', '');
+    var w = this.seg.offsetWidth;
+    this.root.removeAttribute('data-measuring');
+    return w;
+  };
+
   SC.destroy = function () {
     if (this.stepTimer) clearTimeout(this.stepTimer);
     this.stepTimer = null;
     if (this.row) this.row.removeAttribute('data-cgp-tray-proxied');
+    var frame = this.root && this.root.closest ? this.root.closest('[data-cgp-tray-frame]') : null;
+    if (frame && frame.style) frame.style.removeProperty('--cgp-tray-w');
+    this.fitKey = '';
     if (this.root) this.root.remove();
     this.root = this.row = null;
     this.optsKey = this.stateKey = '';

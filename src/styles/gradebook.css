@@ -3797,7 +3797,9 @@ html.cgp-tray-tidy .cgp-tstat * {
 /* The tray a little wider than InstUI's 20em, so None / Late / Missing /
  * Excused always fit on one row (tagFrame in tray-layout.js). */
 html.cgp-tray-tidy [data-cgp-tray-frame] {
-  width: 22.5em !important;
+  /* --cgp-tray-w: set by StatusControl.fit only when five or more statuses
+   * need a little more room (never past 28em). */
+  width: var(--cgp-tray-w, 22.5em) !important;
   max-width: 100vw !important;
 }
 html.cgp-tray-tidy .cgp-tstat__seg {
@@ -3863,6 +3865,24 @@ html.cgp-tray-tidy .cgp-tstat__opt:focus-visible {
 html.cgp-tray-tidy .cgp-tstat__opt:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+/* Fitting (StatusControl.fit): measured with every label whole... */
+html.cgp-tray-tidy .cgp-tstat[data-measuring] .cgp-tstat__seg {
+  display: inline-flex;
+  width: max-content;
+}
+html.cgp-tray-tidy .cgp-tstat[data-measuring] .cgp-tstat__opt { flex: 0 0 auto; }
+html.cgp-tray-tidy .cgp-tstat[data-measuring] .cgp-tstat__txt { overflow: visible; }
+/* ...and compact for five or more: no dots, tighter, each label in its own
+ * status colour so the colour cue stays. */
+html.cgp-tray-tidy .cgp-tstat[data-fit="compact"] .cgp-tstat__opt {
+  gap: 0;
+  padding: 0 6px;
+  font-size: 0.8125rem;
+}
+html.cgp-tray-tidy .cgp-tstat[data-fit="compact"] .cgp-tstat__dot { display: none; }
+html.cgp-tray-tidy .cgp-tstat[data-fit="compact"] .cgp-tstat__opt:not([data-value="none"]):not([aria-pressed="true"]) {
+  color: color-mix(in srgb, var(--cgp-tstat-c) 85%, #000);
 }
 html.cgp-tray-tidy .cgp-tstat__dot {
   flex: 0 0 auto;
