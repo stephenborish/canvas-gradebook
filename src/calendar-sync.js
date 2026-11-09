@@ -48,6 +48,10 @@ export function createCalendarSync(chrome, opts = {}) {
   const doFetch = opts.fetch || ((...a) => fetch(...a));
   const now = opts.now || (() => Date.now());
   const inflight = new Map();
+  // The address asked for most recently ('' once cleared): a slower read of
+  // an address the teacher has since replaced must not overwrite the new
+  // calendar's record when it finally finishes.
+  let latest;
 
   async function read() {
     const got = await chrome.storage.local.get(CALENDAR_KEY);
@@ -80,6 +84,10 @@ export function createCalendarSync(chrome, opts = {}) {
             : 'That calendar address was refused (' + res.status + '). Copy it again from your calendar’s settings.')
           : hostOf(url) + ' answered with an error (' + res.status + '). Try again later.');
       }
+      // Refused before downloading when the size is declared (a wrong link
+      // to a large file); checked again after, for answers that do not say.
+      const declared = Number(res.headers && res.headers.get && res.headers.get('content-length'));
+      if (declared > MAX_CHARS) throw coded('toolarge', 'That calendar is too large to read. Use a calendar that holds just your classes.');
       const text = await res.text();
       if (text.length > MAX_CHARS) throw coded('toolarge', 'That calendar is too large to read. Use a calendar that holds just your classes.');
       if (!/BEGIN:VCALENDAR/i.test(text.slice(0, 4096))) {
@@ -99,7 +107,7 @@ export function createCalendarSync(chrome, opts = {}) {
         ['occ', 'name', 'zone', 'from', 'to', 'events', 'lastOk'].forEach((k) => { if (cached[k] !== undefined) rec[k] = cached[k]; });
       }
     }
-    await chrome.storage.local.set({ [CALENDAR_KEY]: rec });
+    if (latest === undefined || latest === url) await chrome.storage.local.set({ [CALENDAR_KEY]: rec });
     return summarize(rec);
   }
 
@@ -107,11 +115,13 @@ export function createCalendarSync(chrome, opts = {}) {
    * enough (opts.force: always). A blank address clears what is stored. */
   async function refresh(input, o = {}) {
     if (!String(input || '').trim()) {
+      latest = '';
       await chrome.storage.local.remove(CALENDAR_KEY);
       return { ok: true, empty: true };
     }
     const url = C.normalizeUrl(input);
     if (!url) return { ok: false, code: 'badurl', error: 'That is not a calendar address.' };
+    latest = url;
     const cached = await read();
     if (!o.force && cached && cached.url === url) {
       const age = now() - Number(cached.fetchedAt || 0);

@@ -472,7 +472,9 @@
     });
   }
 
-  function fmtDay(key) { return key ? Cal().formatDay(key, undefined, null) : ''; }
+  // With the year whenever it is not this one: the range read runs from
+  // weeks ago to more than a year ahead.
+  function fmtDay(key) { return key ? Cal().formatDay(key, undefined, String(new Date().getFullYear())) : ''; }
 
   function renderSchedulePreview() {
     var box = $('schedulePreview');
@@ -973,8 +975,9 @@
 
   function listDomains() {
     chrome.permissions.getAll().then(function (perms) {
-      // Canvas domains are granted as "*://host/*"; a class-schedule
-      // calendar's site as "https://host/*" (not a Canvas domain).
+      // The rule in isCustomCanvasOrigin (src/script-manifest.js): Canvas
+      // domains are granted as "*://host/*", a class-schedule calendar's
+      // site as "https://host/*".
       var extra = (perms.origins || []).filter(function (o) {
         return o.indexOf('*://') === 0 && o.indexOf('instructure.com') === -1 && o !== '*://*/*';
       });

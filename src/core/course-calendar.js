@@ -556,15 +556,33 @@
 
   /** One day of the schedule on tz's wall clock:
    * {allDay: [title], classes: [{title, start, end, endDate, loc}]} sorted by time. */
+  /* The occurrences grouped by day, built once per stored list (a new list
+   * arrives whenever the calendar is read again), so showing a day - and
+   * looking ahead for the next day with classes - reads only the days it
+   * needs instead of every stored meeting. */
+  var byDayCache = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function byDay(list) {
+    var idx = byDayCache && byDayCache.get(list);
+    if (idx) return idx;
+    idx = Object.create(null);
+    for (var i = 0; i < list.length; i++) {
+      var o = list[i];
+      if (o && o.d) (idx[o.d] = idx[o.d] || []).push(o);
+    }
+    if (byDayCache) byDayCache.set(list, idx);
+    return idx;
+  }
+
   function dayView(occ, dateKey, tz) {
     var list = Array.isArray(occ) ? occ : [];
     var n = dayNum(dateKey);
+    var idx = byDay(list);
+    // A zone change moves a time by at most a day.
+    var near = [].concat(idx[dayKey(n - 1)] || [], idx[dateKey] || [], idx[dayKey(n + 1)] || []);
     var allDay = [], classes = [], seen = Object.create(null);
-    for (var i = 0; i < list.length; i++) {
-      var o = list[i];
-      if (!o || !o.d) continue;
+    for (var i = 0; i < near.length; i++) {
+      var o = near[i];
       var dn = dayNum(o.d);
-      if (dn < n - 1 || dn > n + 1) continue;   // a zone change moves a time by at most a day
       if (o.a) {
         if (dn === n && allDay.indexOf(o.t) < 0) allDay.push(o.t);
         continue;

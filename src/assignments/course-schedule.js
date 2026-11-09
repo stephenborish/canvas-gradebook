@@ -35,11 +35,7 @@
 
   function C() { return CGP.courseCalendar; }
 
-  function esc(s) {
-    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
-  }
+  function esc(s) { return CGP.util.escapeHtml(s); }
 
   /* ------------------------------------------------------ finding boxes */
 
@@ -379,6 +375,21 @@
     return null;
   };
 
+  /** Whether picking a class on `day` also puts `day` in the date box.
+   * Always when the teacher chose the day here (stepped to it, or the end
+   * of a meeting that runs past midnight). Otherwise only an empty Canvas
+   * date box is filled: a date this cannot read (another language's
+   * format) is left as the teacher set it, and an empty class date in
+   * "Also post to your other classes" already means this class's day. */
+  P.writesDay = function (day, chose) {
+    var g = this.group;
+    if (!g || !g.date) return false;
+    var boxDay = this.boxDate();
+    if (boxDay === day) return false;
+    if (chose || this.view) return true;
+    return g.kind !== 'inline' && boxDay === null && !String(g.date.value || '').trim();
+  };
+
   P.currentDay = function () {
     return this.view || this.boxDate() || (this.group && this.group.kind === 'inline' ? this.pageDueDate() : null) || C().today(this.zone());
   };
@@ -495,7 +506,7 @@
       }).join('') + '</ul>';
     }
     var where = g.label ? '“' + esc(g.label) + '”' : 'the time box';
-    var dateNote = g.date && this.boxDate() !== day ? ' and this day' : '';
+    var dateNote = this.writesDay(day, false) ? ' and this day' : '';
     var stale = !data.ok && data.error;
     html += '<div class="cgp-sched__foot">' +
       (view.classes.length ? '<span>Click a class to put its ' + primary + ' time' + dateNote + ' in ' + where + '.</span>' : '') +
@@ -554,8 +565,10 @@
     if (!g || !cls) return null;
     var clock = which === 'end' ? cls.end : cls.start;
     // A meeting that runs past midnight ends on the next day.
-    var day = which === 'end' && cls.endDate ? cls.endDate : this.currentDay();
-    var setDay = !!(g.date && this.boxDate() !== day);
+    var shown = this.currentDay();
+    var overnight = which === 'end' && !!cls.endDate && cls.endDate !== shown;
+    var day = overnight ? cls.endDate : shown;
+    var setDay = this.writesDay(day, overnight);
     this._picking = true;
     try {
       if (g.kind === 'inline') {

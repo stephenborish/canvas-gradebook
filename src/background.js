@@ -9,7 +9,7 @@
  * and fetches the teacher's class-schedule calendar (calendar-sync.js). It
  * never reads or stores Canvas data itself. */
 
-import { CONTENT_JS, CONTENT_CSS } from './script-manifest.js';
+import { CONTENT_JS, CONTENT_CSS, isCustomCanvasOrigin } from './script-manifest.js';
 import { createSelfUpdater } from './self-update.js';
 import { createLiveRelay, LIVE_SYNC_TYPE } from './live-relay.js';
 import { createSettingsTimes } from './settings-times.js';
@@ -56,9 +56,8 @@ async function registerWithFallback(script, optionalKeys) {
 async function syncDynamicScripts() {
   try {
     const perms = await chrome.permissions.getAll();
-    // Self-hosted Canvas domains are granted as "*://host/*"; a calendar
-    // feed's site (calendar-sync.js) as "https://host/*" and gets no scripts.
-    const origins = (perms.origins || []).filter((o) => o.startsWith('*://') && !o.includes('instructure.com') && o !== '*://*/*');
+    // A class-schedule calendar's site is granted too, and gets no scripts.
+    const origins = (perms.origins || []).filter(isCustomCanvasOrigin);
     const ids = [DYNAMIC_ID, DYNAMIC_BRIDGE_ID, DYNAMIC_WATCH_ID];
     const existing = await chrome.scripting.getRegisteredContentScripts({ ids }).catch(() => []);
     if (existing.length) await chrome.scripting.unregisterContentScripts({ ids: existing.map((s) => s.id) });

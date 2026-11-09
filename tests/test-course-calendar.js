@@ -248,6 +248,16 @@ suite('class schedule: reading the calendar', (test) => {
     a.eq(day('2026-11-16').classes[0].endDate, '2026-11-16');
   });
 
+  test('a day is read from its own meetings, even in a large calendar', () => {
+    const big = [];
+    for (let i = 0; i < 15000; i++) big.push({ d: Cal().addDays('2026-01-01', i % 365), s: '07:00', e: '07:30', t: 'Filler ' + (i % 7), z: 'America/New_York' });
+    big.push({ d: '2026-11-09', s: '08:55', e: '09:50', t: 'AP Biology P1', z: 'America/New_York' });
+    const t0 = Date.now();
+    for (let i = 0; i < 50; i++) Cal().dayView(big, Cal().addDays('2026-11-01', i), 'America/New_York');
+    a.ok(Date.now() - t0 < 1000, '50 days shown in ' + (Date.now() - t0) + 'ms');
+    a.ok(Cal().dayView(big, '2026-11-09', 'America/New_York').classes.some((c) => c.title === 'AP Biology P1'));
+  });
+
   test('a calendar with no events, or not a calendar at all, gives nothing', () => {
     a.deep(Cal().expand(Cal().parseIcs('BEGIN:VCALENDAR\nEND:VCALENDAR'), '2026-01-01', '2026-12-31'), []);
     a.deep(Cal().expand(Cal().parseIcs('<html>login</html>'), '2026-01-01', '2026-12-31'), []);
@@ -382,6 +392,32 @@ suite('class schedule: fetching the calendar (service worker)', (test) => {
     a.eq(res.code, 'network');
     a.eq(chrome.bag[CALENDAR_KEY].occ.length, good);
     a.eq(chrome.bag[CALENDAR_KEY].lastOk, NOW);
+  });
+
+  test('a slower read of a replaced address does not overwrite the new calendar', async () => {
+    const { createCalendarSync, CALENDAR_KEY } = await import(SYNC_MODULE);
+    const chrome = fakeChrome();
+    let release;
+    const slow = new Promise((r) => { release = r; });
+    const fetch = async (url) => {
+      if (url === PUBLIC) await slow;
+      return { ok: true, status: 200, text: async () => ICS };
+    };
+    const sync = createCalendarSync(chrome, { fetch, now: () => NOW });
+    const old = sync.refresh(PUBLIC, { force: true });
+    await sync.refresh(SECRET, { force: true });
+    release();
+    await old;
+    a.eq(chrome.bag[CALENDAR_KEY].url, SECRET);
+  });
+
+  test('a file declared too large is refused before it is downloaded', async () => {
+    const { createCalendarSync } = await import(SYNC_MODULE);
+    let read = false;
+    const fetch = async () => ({ ok: true, status: 200, headers: { get: (h) => (h === 'content-length' ? String(200 * 1024 * 1024) : null) }, text: async () => { read = true; return ICS; } });
+    const res = await createCalendarSync(fakeChrome(), { fetch, now: () => NOW }).refresh(SECRET);
+    a.eq(res.code, 'toolarge');
+    a.eq(read, false);
   });
 
   test('a blank address clears what is stored; junk is refused', async () => {
@@ -570,6 +606,52 @@ suite('class schedule: the Assign To picker', (test) => {
     ctrl.pick(0, 'end');
     a.eq(pair.date.value, '2026-11-10');
     a.eq(pair.time.value, '12:30 AM');
+  });
+
+  test('a date box this cannot read is left as the teacher set it', async () => {
+    const { ctrl, handlers, root } = bootPicker(cache, { courseCalendarUrl: URL_ });
+    const pair = duePair('lun, 9 nov 2026');
+    root.add(pair.card);
+    handlers.focusin({ target: pair.time });
+    await tick(); await tick();
+    ctrl.pick(0, 'start');
+    a.eq(pair.date.value, 'lun, 9 nov 2026', 'not replaced with the day shown');
+    a.eq(pair.date.log.length, 0);
+    a.ok(pair.time.value, 'the time still goes in');
+  });
+
+  test('an empty Canvas date box gets the day shown', async () => {
+    const { ctrl, handlers, root } = bootPicker(cache, { courseCalendarUrl: URL_ });
+    const pair = duePair('');
+    root.add(pair.card);
+    handlers.focusin({ target: pair.time });
+    await tick(); await tick();
+    ctrl.view = '2026-11-09';
+    ctrl.render();
+    ctrl.pick(0, 'start');
+    a.eq(pair.date.value, '2026-11-09');
+  });
+
+  test('“Also post to your other classes”: a blank class date stays blank (this class’s day) unless another day is chosen', async () => {
+    const { ctrl, handlers, root } = bootPicker(cache, { courseCalendarUrl: URL_ });
+    const page = duePair('Mon, Nov 9, 2026');          // this class's own Due date
+    const date = new FakeInput({ type: 'date', 'data-f': 'due_at' });
+    const time = new FakeInput({ class: 'cgp-inline__time', 'data-f': 'due_at' });
+    const row = new Node('div', { class: 'cgp-inline__row' }).add(
+      new Node('label', { class: 'cgp-inline__name' }, 'Honors Chemistry 4'),
+      new Node('label', { class: 'cgp-inline__date' }).add(date, time));
+    root.add(page.card, row);
+    handlers.focusin({ target: time });
+    await tick(); await tick();
+    a.eq(ctrl.currentDay(), '2026-11-09', 'opens on this class’s Due date');
+    a.ok(/This course/.test(ctrl.panel.innerHTML), 'the row’s own class is marked');
+    ctrl.pick(1, 'start');
+    a.eq(time.value, '1:30 PM');
+    a.eq(date.value, '', 'still “same as this class”');
+    handlers.focusin({ target: time });
+    ctrl.onButton({ getAttribute: (k) => (k === 'data-act' ? 'next' : null) });
+    ctrl.pick(0, 'start');
+    a.eq(date.value, '2026-11-10', 'a day stepped to goes in');
   });
 
   test('a click on the end setting makes the end the main choice', async () => {
