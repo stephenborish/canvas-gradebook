@@ -47,6 +47,8 @@
     // own dot on them is stale; on any other cell it is Canvas's to draw.
     this.postConfirmed = new Set();
     this.pendingAssignments = new Map();
+    // Columns whose pending read is background warming (low priority).
+    this._lowPending = new Set();
     this.commentVerifiedAssignments = new Set();
     // "assignmentId:userId" -> Date.now() when a local write (a keyboard
     // shortcut, bulk paste, or an added comment) most recently started on
@@ -96,6 +98,20 @@
     return String(assignmentId) + ':' + String(userId);
   };
 
+  /* The client for a list read: numbered pages read several at a time
+   * rather than one round trip after another (CanvasApi getAll's parallel;
+   * a list Canvas pages by bookmark is still read in order), at the given
+   * place in the shared request queue - 'low' for background warming, so a
+   * column the teacher is looking at never waits behind it. Taken from
+   * this.api on every call, so a swapped-in client is honoured. */
+  GradebookModel.prototype._reader = function (priority) {
+    var api = this.api;
+    if (!api || typeof api.withDefaults !== 'function') return api;
+    var defs = { parallel: true };
+    if (priority) defs.priority = priority;
+    return api.withDefaults(defs);
+  };
+
   GradebookModel.prototype.init = function () {
     var self = this;
     if (this.ready) return Promise.resolve(this);
@@ -119,9 +135,10 @@
     // whole Promise.all has settled, same as before.
     var userPromise = this.api.currentUser();
     var totalsGen = ++this._totalsGen;
+    var reader = this._reader();
     var dataPromise = Promise.all([
-      self.api.assignments(self.courseId),
-      self.api.studentEnrollments(self.courseId, self.gradingPeriodId)
+      reader.assignments(self.courseId),
+      reader.studentEnrollments(self.courseId, self.gradingPeriodId)
     ]);
     this._initPromise = Promise.all([userPromise, dataPromise]).then(function (results) {
       var user = results[0];
@@ -268,7 +285,7 @@
     // Two reloads can overlap (the period changed twice quickly); only the
     // newest may write scores, or an older period's totals could land last.
     var gen = ++this._totalsGen;
-    return this.api.studentEnrollments(this.courseId, this.gradingPeriodId).then(function (enrollments) {
+    return this._reader().studentEnrollments(this.courseId, this.gradingPeriodId).then(function (enrollments) {
       if (gen !== self._totalsGen) return null;
       (enrollments || []).forEach(function (e) { self._applyEnrollment(e); });
       CGP.diag.bump('totals.reloadedForGradingPeriod');
@@ -299,16 +316,32 @@
   GradebookModel.prototype.ensureAssignments = function (ids, opts) {
     var self = this;
     var requested = (ids || []).map(String);
+    var low = !!(opts && opts.priority === 'low');
+    // A column only background warming is reading would wait behind
+    // everything else in the queue: a caller that needs it now reads it
+    // again at its own priority, and the warming read is left to land
+    // harmlessly (its generation is moved on).
+    var takeOver = function (id) { return !low && self._lowPending.has(id) && self.pendingAssignments.has(id); };
     var wanted = requested.filter(function (id) {
-      return id && self.assignments.has(id) && !self.loadedAssignments.has(id) && !self.pendingAssignments.has(id);
+      return id && self.assignments.has(id) && !self.loadedAssignments.has(id) &&
+        (!self.pendingAssignments.has(id) || takeOver(id));
+    });
+    wanted.forEach(function (id) {
+      if (takeOver(id)) {
+        self._fetchGen.set(id, self._gen(id) + 1);
+        self.pendingAssignments.delete(id);
+        self._lowPending.delete(id);
+      }
     });
     // Columns another call is already fetching are waited on too, so a
     // caller asking for [a, b] while b is in flight gets both, not just a.
-    var waits = requested.map(function (id) { return self.pendingAssignments.get(id); }).filter(Boolean);
+    var waits = requested.filter(function (id) { return wanted.indexOf(id) < 0; })
+      .map(function (id) { return self.pendingAssignments.get(id); }).filter(Boolean);
     if (!wanted.length) {
       return waits.length ? Promise.all(waits.map(function (p) { return p.catch(function () { return null; }); })) : Promise.resolve(null);
     }
 
+    var reader = this._reader(opts && opts.priority);
     var batchSize = this._batchSize();
     // Generous on purpose: student_ids[]=all can also return students this
     // roster does not count (concluded or inactive enrollments).
@@ -324,10 +357,13 @@
       var fetchOpts = Object.assign({}, opts || {}, { maxPages: maxPages });
       function release() {
         batch.forEach(function (id) {
-          if (self.pendingAssignments.get(id) === job) self.pendingAssignments.delete(id);
+          if (self.pendingAssignments.get(id) === job) {
+            self.pendingAssignments.delete(id);
+            self._lowPending.delete(id);
+          }
         });
       }
-      var job = self.api.submissionsForAssignments(self.courseId, batch, fetchOpts).then(function (subs) {
+      var job = reader.submissionsForAssignments(self.courseId, batch, fetchOpts).then(function (subs) {
         // A truncated read is not "the column": cells it never reached would
         // read as status-free and ungraded. Treat it as a failed load - and
         // release the columns here, since a throw from this handler never
@@ -367,7 +403,10 @@
         CGP.diag.error('model.submissions.failed', { assignments: batch.length, status: err && err.status });
         throw err;
       });
-      batch.forEach(function (id) { self.pendingAssignments.set(id, job); });
+      batch.forEach(function (id) {
+        self.pendingAssignments.set(id, job);
+        if (low) self._lowPending.add(id); else self._lowPending.delete(id);
+      });
       return job;
     });
     return Promise.all(jobs.concat(waits).map(function (p) { return p.catch(function () { return null; }); }));
@@ -386,11 +425,14 @@
     });
     if (!wanted.length) return Promise.resolve(null);
     var verified = [];
+    // A second, defensive read of columns already loaded: it waits behind
+    // any column the teacher has scrolled to that is not loaded yet.
+    var reader = this._reader('low');
     return Promise.all(wanted.map(function (id) {
       self.commentVerifiedAssignments.add(id);
       var fetchStartedAt = Date.now();
       var gen = self._gen(id);
-      return self.api.submissionsForAssignment(self.courseId, id).then(function (subs) {
+      return reader.submissionsForAssignment(self.courseId, id).then(function (subs) {
         if (subs && subs.truncated) {
           // Handled here: a throw from this handler would skip the error
           // handler beside it and leave the column marked verified.
@@ -432,7 +474,8 @@
     });
     if (!remaining.length) { CGP.diag.log('model.prefetch.done'); return Promise.resolve(); }
     var slice = remaining.slice(0, 8);
-    return this.ensureAssignments(slice).then(function () {
+    // Low priority: columns scrolled into view go ahead of this warming.
+    return this.ensureAssignments(slice, { priority: 'low' }).then(function () {
       return util.sleep(450).then(function () { return self.prefetchRemaining(); });
     }, function () { return null; });
   };
@@ -616,6 +659,7 @@
     this._fetchGen.set(id, this._gen(id) + 1);
     this.loadedAssignments.delete(id);
     this.pendingAssignments.delete(id);
+    this._lowPending.delete(id);
     this.commentVerifiedAssignments.delete(id);
     return this.ensureAssignments([id], opts);
   };

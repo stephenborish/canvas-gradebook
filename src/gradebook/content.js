@@ -75,8 +75,31 @@
       if (env.viewOptions && typeof env.viewOptions === 'object') canvasViewOptions = env.viewOptions;
       if (env.currentUserId) CGP.diag.set('envUserId', String(env.currentUserId));
       if (env.courseId) CGP.diag.set('envCourseId', String(env.courseId));
-      if (env.currentGradingPeriodId !== undefined) model.setGradingPeriod(env.currentGradingPeriodId);
+      if (env.currentGradingPeriodId !== undefined) {
+        model.setGradingPeriod(env.currentGradingPeriodId);
+        startReadingCourse();
+      }
     });
+
+    /* The course's assignments, roster and totals are read straight away -
+     * while Canvas is still loading and drawing its own grid, which on a big
+     * course takes seconds - instead of only once that grid is on screen.
+     * That wait used to sit in front of every read the gradebook makes, so
+     * the first comment bubble, status mark or Total could not appear until
+     * Canvas's own load AND all of ours had run one after the other.
+     *
+     * Started on the bridge's first answer (so the grading period Canvas is
+     * showing is already known and the Total is read once, for the right
+     * period), or after a short wait if no answer comes; a period learned
+     * later still corrects itself (model.setGradingPeriod). A failure here
+     * is retried, and reported, by initWithRetry once the grid is up. */
+    var courseReadStarted = false;
+    function startReadingCourse() {
+      if (courseReadStarted) return;
+      courseReadStarted = true;
+      CGP.diag.set('modelInitStartedAt', Math.round(typeof performance !== 'undefined' ? performance.now() : 0));
+      model.init().catch(function () { /* retried below, after the grid appears */ });
+    }
     // Canvas's own in-page store (canvas-store.js) and the other tabs of this
     // course (live-sync.js): where every saved submission goes next.
     var canvasStore = new CGP.CanvasStore({ model: model, requestPaint: function () { paint(); } });
@@ -143,6 +166,7 @@
     // The bridge runs from document_start and may have posted before this
     // listener existed; ask it for the current ENV now that we're listening.
     try { window.postMessage({ source: 'cgp-env-request' }, location.origin); } catch (e) { /* ignore */ }
+    setTimeout(startReadingCourse, 300);
 
     var layout = new CGP.CompactLayoutController({ adapter: adapter, settings: settings });
     layout.start();
@@ -712,9 +736,9 @@
 
   function boot() {
     // Only the top-level window should initialize the Gradebook, CourseSwitcher,
-    // or CourseMenuController. Subframes (such as TinyMCE/RCE comment iframes or
-    // document viewer frames) are injected solely so snippets/capture works in
-    // speedgrader/content.js; they must never run page boot or mount drawers.
+    // or CourseMenuController. This script is no longer injected into frames
+    // at all (frames get src/frame-gate.js, which adds only what snippets
+    // need), but a frame must still never run page boot or mount drawers.
     if (typeof window !== 'undefined' && window.self !== window.top) {
       // Settings still load, though: speedgrader/content.js expands the
       // teacher's own snippets in these frames, not the built-in defaults.

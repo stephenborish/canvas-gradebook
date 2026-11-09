@@ -9,7 +9,7 @@
  * and fetches the teacher's class-schedule calendar (calendar-sync.js). It
  * never reads or stores Canvas data itself. */
 
-import { CONTENT_JS, CONTENT_CSS, isCustomCanvasOrigin } from './script-manifest.js';
+import { CONTENT_JS, CONTENT_CSS, FRAME_JS, isCustomCanvasOrigin } from './script-manifest.js';
 import { createSelfUpdater, CHECK_NOW } from './self-update.js';
 import { createLiveRelay, LIVE_SYNC_TYPE } from './live-relay.js';
 import { createSettingsTimes } from './settings-times.js';
@@ -17,12 +17,16 @@ import { createCalendarSync, CALENDAR_REFRESH } from './calendar-sync.js';
 // The welcome tour's record (a plain script that adds CGP.TourState to
 // globalThis), so its shape is defined in one place.
 import './tour/tour-state.js';
+// What a frame inside a course page gets (frame-gate.js), likewise.
+import './frame-gate.js';
 
 const TourState = globalThis.CGP.TourState;
+const FrameGate = globalThis.CGP.FrameGate;
 
 const DYNAMIC_ID = 'cgp-custom-domains';
 const DYNAMIC_BRIDGE_ID = 'cgp-custom-domains-bridge';
 const DYNAMIC_WATCH_ID = 'cgp-custom-domains-write-watch';
+const DYNAMIC_FRAME_ID = 'cgp-custom-domains-frames';
 
 function toCoursesPattern(origin) {
   // "*://canvas.school.edu/*" -> "*://canvas.school.edu/courses/*"
@@ -54,8 +58,8 @@ async function registerWithFallback(script, optionalKeys) {
 }
 
 /* Self-hosted Canvas gets what *.instructure.com gets from the manifest:
- * the content scripts in every frame (comment frames need them for
- * snippets), and the page-context bridge in the MAIN world at
+ * the content scripts in the course page, the small frame gate in every
+ * frame inside it (comment frames need snippets), and the page-context bridge in the MAIN world at
  * document_start on gradebook pages, so it can see Canvas's grid being
  * built rather than having to go looking for it afterwards. */
 async function syncDynamicScripts() {
@@ -63,7 +67,7 @@ async function syncDynamicScripts() {
     const perms = await chrome.permissions.getAll();
     // A class-schedule calendar's site is granted too, and gets no scripts.
     const origins = (perms.origins || []).filter(isCustomCanvasOrigin);
-    const ids = [DYNAMIC_ID, DYNAMIC_BRIDGE_ID, DYNAMIC_WATCH_ID];
+    const ids = [DYNAMIC_ID, DYNAMIC_BRIDGE_ID, DYNAMIC_WATCH_ID, DYNAMIC_FRAME_ID];
     const existing = await chrome.scripting.getRegisteredContentScripts({ ids }).catch(() => []);
     if (existing.length) await chrome.scripting.unregisterContentScripts({ ids: existing.map((s) => s.id) });
     if (!origins.length) return { registered: 0 };
@@ -92,6 +96,15 @@ async function syncDynamicScripts() {
       matches: origins.map(toCoursesPattern),
       js: CONTENT_JS,
       css: CONTENT_CSS,
+      runAt: 'document_idle',
+      // The page only; frames get the gate below.
+      allFrames: false,
+      persistAcrossSessions: true
+    }, []);
+    await registerWithFallback({
+      id: DYNAMIC_FRAME_ID,
+      matches: origins.map(toCoursesPattern),
+      js: FRAME_JS,
       runAt: 'document_idle',
       // Real (same-URL-scheme) frames only: the scripting API's
       // matchOriginAsFallback, which would also reach about:blank frames,
@@ -169,6 +182,17 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
       }).catch(() => 0);
     }
     return false;
+  }
+  // A comment editor's frame in the gradebook or SpeedGrader (frame-gate.js):
+  // the scripts that expand snippets, into that frame only. Answered once
+  // they have run, so the frame can then load the teacher's settings.
+  if (msg && msg.type === FrameGate.MESSAGE) {
+    if (!sender || !sender.tab || sender.tab.id === undefined || !sender.frameId) return false;
+    chrome.scripting.executeScript({
+      target: { tabId: sender.tab.id, frameIds: [sender.frameId] },
+      files: FrameGate.FILES
+    }).then(() => respond({ ok: true }), (e) => respond({ ok: false, error: String(e && e.message) }));
+    return true;
   }
   // The options page's "Check for updates now".
   if (msg && msg.type === CHECK_NOW) {

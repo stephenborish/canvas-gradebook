@@ -349,30 +349,57 @@ function backoffFixture(CGP, opts) {
 }
 
 suite('grid reliability C: failure backoff', (test) => {
-  test('a failed load / verify is not re-requested on the next paint, retried after nextAt, abandoned after 6', async () => {
+  test('a failed load is not re-requested on the next paint, retried after nextAt, abandoned after 6', async () => {
     const CGP = loadGradebookDom();
     const f = backoffFixture(CGP, { loadOk: false, verifyOk: false });
     f.c.paint();
     await tick();
     a.eq(f.calls.load, 1);
-    a.eq(f.calls.verify, 1);
     const lf = f.c.loadFailures.get('101');
     a.eq(lf.count, 1);
     a.ok(lf.nextAt - Date.now() > 1500 && lf.nextAt - Date.now() <= 2000, 'first backoff ~2s');
 
+    a.eq(f.calls.verify, 0, 'not sent while the column load is out');
+
     f.c.paint();
     await tick();
     a.eq(f.calls.load, 1, 'not retried inside the backoff window');
-    a.eq(f.calls.verify, 1);
+    a.eq(f.calls.verify, 1, 'after a failed load the per-assignment read goes out (it loads the column too)');
 
     for (let i = 0; i < 8; i++) {
       f.c.loadFailures.get('101').nextAt = 0;
-      f.c.commentFailures.get('101').nextAt = 0;
       f.c.paint();
       await tick();
     }
     a.eq(f.calls.load, 6, 'gives up after 6 consecutive failures');
-    a.eq(f.calls.verify, 6);
+  });
+
+  test('the comment check waits for the column load, then backs off the same way', async () => {
+    const CGP = loadGradebookDom();
+    const f = backoffFixture(CGP, { loadOk: true, verifyOk: false });
+    f.c.paint();
+    await tick();
+    a.eq(f.calls.load, 1);
+    a.eq(f.calls.verify, 0, 'not sent beside the first load of the column');
+
+    // The load's 'cells' repaints: now the column is loaded.
+    f.c.paint();
+    await tick();
+    a.eq(f.calls.load, 1);
+    a.eq(f.calls.verify, 1);
+    const cf = f.c.commentFailures.get('101');
+    a.eq(cf.count, 1);
+
+    f.c.paint();
+    await tick();
+    a.eq(f.calls.verify, 1, 'not retried inside the backoff window');
+
+    for (let i = 0; i < 8; i++) {
+      f.c.commentFailures.get('101').nextAt = 0;
+      f.c.paint();
+      await tick();
+    }
+    a.eq(f.calls.verify, 6, 'gives up after 6 consecutive failures');
     a.ok(f.c.commentFailures.get('101').count === 6);
   });
 
@@ -401,12 +428,18 @@ suite('grid reliability C: failure backoff', (test) => {
     await tick();
     a.ok(f.c.loadFailures.has('101'));
     f.model.ensureAssignments = (ids) => { f.calls.load++; ids.forEach((id) => f.model.loadedAssignments.add(id)); return Promise.resolve(); };
-    f.model.verifyVisibleComments = (ids) => { f.calls.verify++; ids.forEach((id) => f.model.commentVerifiedAssignments.add(id)); return Promise.resolve(); };
     f.c.loadFailures.get('101').nextAt = 0;
-    f.c.commentFailures.get('101').nextAt = 0;
     f.c.paint();
     await tick();
     a.ok(!f.c.loadFailures.has('101'));
+    // Loaded now: the comment check goes out on the next paint, and fails.
+    f.c.paint();
+    await tick();
+    a.ok(f.c.commentFailures.has('101'));
+    f.model.verifyVisibleComments = (ids) => { f.calls.verify++; ids.forEach((id) => f.model.commentVerifiedAssignments.add(id)); return Promise.resolve(); };
+    f.c.commentFailures.get('101').nextAt = 0;
+    f.c.paint();
+    await tick();
     a.ok(!f.c.commentFailures.has('101'));
   });
 });

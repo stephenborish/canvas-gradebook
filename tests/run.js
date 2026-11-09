@@ -15,6 +15,7 @@ require('./test-model-staleness');
 require('./test-post-reporting');
 require('./test-grading-period');
 require('./test-model-init-parallel');
+require('./test-load-speed');
 require('./test-dom-adapter-panes');
 require('./test-frozen-total-geometry');
 require('./test-hide-test-student');
