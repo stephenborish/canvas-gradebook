@@ -36,8 +36,13 @@ a checkout of this repo. To make a ZIP for a Web Store upload after raising `"ve
 `manifest.json`:
 
 ```bash
-cd .. && zip -r canvas-gradebook-plus.zip canvas-gradebook-plus -x "*/.DS_Store"
+cd .. && zip -r canvas-gradebook-plus.zip canvas-gradebook-plus \
+  -x "*/.DS_Store" "*/.git/*" "*/.agents/*" "*/.claude/*" "*/tests/*" \
+     "*/README.md" "*/CHROMEWEBSTORE.md" "*/skills-lock.json"
 ```
+
+The store listing's text, permission justifications and privacy answers are kept in
+`CHROMEWEBSTORE.md`.
 
 ---
 

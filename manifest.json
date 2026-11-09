@@ -3,7 +3,7 @@
   "name": "Canvas Gradebook+",
   "version": "1.28.0",
   "author": "stephenborish",
-  "description": "Grade faster without leaving Canvas: feedback indicators, spreadsheet-style grading, one-click posting and instant score analysis.",
+  "description": "Grade faster in Canvas: see your feedback at a glance, grade like a spreadsheet, post grades in one click, pick due times by class.",
   "minimum_chrome_version": "116",
   "permissions": [
     "storage",
