@@ -72,8 +72,24 @@
     // (see request() below), so a modest increase costs nothing on a course
     // that never gets throttled and only means slightly more patience on one
     // that does.
-    this.gate = util.pool(opts.concurrency || 6);
+    // Two extra slots for high-priority reads (the student overview the
+    // teacher just opened), so they never queue behind background warming.
+    this.gate = util.pool(opts.concurrency || 6, { reserve: 2 });
+    this._defaults = null;
   }
+
+  /* The same client, with request defaults for everything sent through it:
+   *   priority: 'high' | 'low'  - place in the shared queue (see util.pool)
+   *   timeoutMs                 - give up on one attempt after this long (a
+   *                               stalled connection), then retry as for a
+   *                               network error
+   *   parallel                  - read numbered pages of a list at once
+   * It shares the queue, so priorities are honoured across both. */
+  CanvasApi.prototype.withDefaults = function (defs) {
+    var view = Object.create(this);
+    view._defaults = Object.assign({}, this._defaults || {}, defs || {});
+    return view;
+  };
 
   CanvasApi.prototype.csrfToken = function () {
     return util.cookie('_csrf_token');
@@ -97,7 +113,8 @@
 
   CanvasApi.prototype.request = function (path, opts) {
     var self = this;
-    opts = opts || {};
+    opts = Object.assign({}, this._defaults || {}, opts || {});
+    var timeoutMs = opts.timeoutMs > 0 && (opts.method || 'GET').toUpperCase() === 'GET' ? opts.timeoutMs : 0;
     var method = (opts.method || 'GET').toUpperCase();
     var u = this.url(path, opts.params);
     var headers = {
@@ -132,10 +149,17 @@
         // When this attempt actually went out (after any wait for the pool
         // or a retry's backoff), for reading Canvas's clock off its Date.
         var sentAt = Date.now();
-        return self.fetchImpl(u.toString(), {
+        // A read that stalls (a dropped connection that never errors) is
+        // abandoned after timeoutMs and retried like any network failure.
+        var ctl = timeoutMs && typeof AbortController === 'function' ? new AbortController() : null;
+        var timer = ctl ? setTimeout(function () { ctl.abort(); }, timeoutMs) : null;
+        var init = {
           method: method, headers: headers, body: body,
           credentials: 'same-origin', redirect: 'follow', cache: 'no-store'
-        }).then(function (res) {
+        };
+        if (ctl) init.signal = ctl.signal;
+        var clear = function () { if (timer) { clearTimeout(timer); timer = null; } };
+        return self.fetchImpl(u.toString(), init).then(function (res) {
           return res.text().then(function (text) {
             if (!res.ok) {
               // Canvas answers 401 both for "not logged in" (status
@@ -157,12 +181,15 @@
             return { data: parseBody(text), link: res.headers.get('Link') || res.headers.get('link'),
               date: res.headers.get('Date') || res.headers.get('date') || null, sentAt: sentAt };
           });
-        }, function (e) {
-          throw new CanvasApiError('Network error on ' + method + ' ' + u.pathname, {
-            path: u.pathname, method: method, network: true, message: String(e && e.message)
+        }).then(function (r) { clear(); return r; }, function (e) {
+          clear();
+          if (e instanceof CanvasApiError) throw e;
+          var timedOut = !!(ctl && ctl.signal.aborted);
+          throw new CanvasApiError((timedOut ? 'Timed out on ' : 'Network error on ') + method + ' ' + u.pathname, {
+            path: u.pathname, method: method, network: true, timedOut: timedOut, message: String(e && e.message)
           });
         });
-      }).catch(function (err) {
+      }, { priority: opts.priority }).catch(function (err) {
         // A throttled request was refused before Canvas acted on it, so it is
         // always safe to send again. A network failure or a 5xx is not: the
         // write may already have been applied before the response was lost,
@@ -198,28 +225,69 @@
 
   CanvasApi.prototype.getAll = function (path, params, opts) {
     var self = this;
-    opts = opts || {};
+    opts = Object.assign({}, opts || {});
+    var parallel = opts.parallel !== undefined ? opts.parallel : !!(this._defaults && this._defaults.parallel);
     var maxPages = opts.maxPages || 40;
     var merged = Object.assign({ per_page: 100 }, params || {});
     var out = [];
 
+    function add(r) {
+      if (Array.isArray(r.data)) out = out.concat(r.data);
+      else if (r.data) out.push(r.data);
+    }
+    function truncated() {
+      CGP.diag.warn('api.pagination.truncated', { path: String(path), pages: maxPages });
+      // Callers that would otherwise treat a partial list as the whole
+      // truth (a column marked loaded, a roster) can check this.
+      out.truncated = true;
+    }
     function step(target, page) {
       return self.request(target, {}).then(function (r) {
-        if (Array.isArray(r.data)) out = out.concat(r.data);
-        else if (r.data) out.push(r.data);
+        add(r);
         var next = nextLink(r.link);
-        if (next && page + 1 < maxPages) return step(next, page + 1);
-        if (next) {
-          CGP.diag.warn('api.pagination.truncated', { path: String(path), pages: maxPages });
-          // Callers that would otherwise treat a partial list as the whole
-          // truth (a column marked loaded, a roster) can check this.
-          out.truncated = true;
+        if (next && page + 1 < maxPages) {
+          // Numbered pages (page=2 ... page=N, with a "last" link) can all be
+          // read at once instead of one after another. Bookmark pagination
+          // (page=bookmark:...) has no "last" and is read in order.
+          var rest = page === 0 && parallel ? numberedPages(next, lastLink(r.link)) : null;
+          if (rest) {
+            var want = rest.slice(0, maxPages - 1);
+            return Promise.all(want.map(function (url) { return self.request(url, {}); })).then(function (rs) {
+              rs.forEach(add);
+              if (rest.length > want.length) truncated();
+              return out;
+            });
+          }
+          return step(next, page + 1);
         }
+        if (next) truncated();
         return out;
       });
     }
     return step(this.url(path, merged).toString(), 0);
   };
+
+  function lastLink(header) {
+    var m = /<([^>]+)>;\s*rel="last"/.exec(String(header || ''));
+    return m ? m[1] : null;
+  }
+
+  /* Every page URL from `next` to `last`, when both are plain page numbers
+   * of the same list; otherwise null (read the list in order instead). */
+  function numberedPages(next, last) {
+    if (!next || !last) return null;
+    var n, l;
+    try { n = new URL(next); l = new URL(last); } catch (e) { return null; }
+    var a = Number(n.searchParams.get('page')), b = Number(l.searchParams.get('page'));
+    if (!(a >= 2) || !(b >= a) || Math.floor(a) !== a || Math.floor(b) !== b || b - a > 200) return null;
+    var out = [];
+    for (var p = a; p <= b; p++) {
+      var u = new URL(next);
+      u.searchParams.set('page', String(p));
+      out.push(u.toString());
+    }
+    return out;
+  }
 
   /* ------------------------------------------------------------- endpoints */
 
@@ -811,5 +879,5 @@
 
   CGP.CanvasApi = CanvasApi;
   CGP.CanvasApiError = CanvasApiError;
-  CGP.apiInternals = { parseBody: parseBody, nextLink: nextLink, isThrottled: isThrottled, retryAfterMs: retryAfterMs, formToJson: formToJson };
+  CGP.apiInternals = { parseBody: parseBody, nextLink: nextLink, isThrottled: isThrottled, retryAfterMs: retryAfterMs, formToJson: formToJson, numberedPages: numberedPages };
 })();

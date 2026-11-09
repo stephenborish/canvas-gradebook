@@ -506,7 +506,28 @@ If Canvas analytics is off for the course, the Activity tab says so and still sh
 and time in the course from the enrollment.
 
 Everything is read from Canvas when the panel opens — that student's submissions and comments,
-their analytics, the course's assignment groups — and held in memory for that page only. Turn it
+their analytics, the course's assignment groups — and held in memory for that page only.
+
+It is built to open fast and to keep working on a poor connection:
+
+- **Reading starts before the click.** Resting the pointer on a name starts reading that student;
+  once a panel is open, the other tabs' data and the previous and next students are read in the
+  background, so switching tab or pressing **←** / **→** is usually instant.
+- **The panel goes first.** Its reads jump the gradebook's shared request queue (and have two
+  reserved slots), so they never wait behind the background loading of every column. Background
+  prefetches go last.
+- **Long lists are read in parallel.** Where Canvas numbers its pages, every page is requested at
+  once instead of one after another.
+- **Nothing hangs.** A read that stalls is abandoned after 20 seconds and retried, like any dropped
+  connection.
+- **Failures are local, and say so.** If analytics, the Access Report or the profile can't be read,
+  that section says *Couldn't … just now* with its own **Try again**, instead of claiming the
+  course doesn't offer it; the rest of the panel is unaffected. Only that part is read again next
+  time, not the whole student.
+- **Earlier data is shown at once.** A student read in the last 90 seconds opens from memory;
+  after that, the earlier read is still shown immediately while a fresh one arrives. If the fresh
+  read fails, the earlier one stays, with a note and **Try again**.
+- Data arriving in the same frame is drawn once, so the panel doesn't flicker as pieces land. Turn it
 off with *Clicking a student's name opens their overview* in the options page.
 
 ### Copy the class roster

@@ -3000,6 +3000,22 @@ html.cgp-on .cgp-si__panel {
   html.cgp-on .cgp-si__backdrop, html.cgp-on .cgp-si__panel { animation: none; }
 }
 
+/* A section that couldn't be read: what happened, and a button to read it again. */
+html.cgp-on .cgp-si__retry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--si-warn-wash, #fdf4dc);
+  color: #6a4b00;
+  font-size: 13px;
+  line-height: 1.4;
+}
+html.cgp-on .cgp-si__retry .cgp-si__btn { flex: 0 0 auto; }
+html.cgp-on .cgp-si__retry--top { margin: 0 0 14px; }
+
 /* Header */
 html.cgp-on .cgp-si__head {
   display: flex;
