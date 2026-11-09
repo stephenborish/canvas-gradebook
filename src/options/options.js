@@ -1300,12 +1300,7 @@
   /* The welcome tour (src/tour/) is offered once per install; this marks it
    * due again on this computer, and the next gradebook opened shows it. */
   $('replayTour').addEventListener('click', function () {
-    var KEY = 'cgp.tour';
-    chrome.storage.local.get(KEY).then(function (got) {
-      var o = {};
-      o[KEY] = Object.assign({}, got && got[KEY], { pending: true, chapter: 'gradebook', requestedAt: Date.now() });
-      return chrome.storage.local.set(o);
-    }).then(function () {
+    new CGP.TourState().request().then(function () {
       status('Done. The tour starts next time you open a Canvas gradebook.');
     }, function () {
       status('Could not schedule the tour.', { error: true });

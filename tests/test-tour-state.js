@@ -107,20 +107,90 @@ suite('Welcome tour: once per install', (test) => {
     a.ok(html.indexOf('../tour/tour.js') > 0 && html.indexOf('../tour/tour.js') < html.indexOf('options.js"'));
   });
 
-  test('both content-script lists load the tour, before the gradebook entry point', () => {
+  test('only the small record module loads on every course page; the tour itself is injected on demand', () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
     const js = manifest.content_scripts.find((c) => (c.js || []).includes('src/gradebook/content.js')).js;
     const list = fs.readFileSync(path.join(ROOT, 'src/script-manifest.js'), 'utf8');
-    ['src/tour/tour-state.js', 'src/tour/tour-content.js', 'src/tour/tour.js'].forEach((f) => {
-      a.ok(js.includes(f), f + ' in manifest.json');
-      a.ok(list.includes("'" + f + "'"), f + ' in script-manifest.js');
-      a.ok(js.indexOf(f) < js.indexOf('src/gradebook/content.js'), f + ' before content.js');
+    a.ok(js.includes('src/tour/tour-state.js'), 'tour-state.js in manifest.json');
+    a.ok(list.includes("'src/tour/tour-state.js'"), 'tour-state.js in script-manifest.js');
+    TourState.FILES.forEach((f) => {
+      a.not(js.includes(f), f + ' is not a static content script');
+      a.not(list.includes("'" + f + "'"), f + ' is not in script-manifest.js');
+      a.ok(fs.existsSync(path.join(ROOT, f)), f + ' exists');
     });
+    const bg = fs.readFileSync(path.join(ROOT, 'src/background.js'), 'utf8');
+    a.ok(bg.includes("import './tour/tour-state.js'"), 'background shares the record module');
+    a.ok(/msg\.type === TourState\.INJECT[\s\S]*executeScript[\s\S]*files: TourState\.FILES/.test(bg), 'background injects on request');
   });
 
-  test('a fresh install, and only a fresh install, marks the tour due', () => {
+  test('a fresh install, and only a fresh install, marks the tour due', async () => {
     const bg = fs.readFileSync(path.join(ROOT, 'src/background.js'), 'utf8');
-    a.ok(/details\.reason === 'install'/.test(bg));
-    a.ok(/'cgp\.tour': \{ pending: true/.test(bg));
+    a.ok(/details\.reason === 'install'[\s\S]{0,200}markInstalled\(\)/.test(bg));
+    // The whole record, not a merge: nothing from an earlier install survives.
+    const store = memoryStorage({ [TourState.KEY]: { pending: false, stop: 'gear', outcome: 'skipped' } });
+    await new TourState(store).markInstalled();
+    const v = store.bag[TourState.KEY];
+    a.eq(v.pending, true); a.eq(v.chapter, 'gradebook'); a.eq(v.stop, null); a.eq(v.outcome, undefined);
   });
+
+  test('wanted on a course page while due, or when asked for in the address; never in SpeedGrader', () => {
+    const loc = (pathname, hash) => ({ pathname, hash: hash || '' });
+    a.ok(TourState.wantedHere(loc('/courses/5/gradebook'), { pending: true }));
+    a.ok(TourState.wantedHere(loc('/courses/5/assignments/9'), { pending: true }), 'the invitation');
+    a.not(TourState.wantedHere(loc('/courses/5/gradebook'), { pending: false }));
+    a.ok(TourState.wantedHere(loc('/courses/5', '#cgp-tour=classes'), {}));
+    a.not(TourState.wantedHere(loc('/courses/5/gradebook/speed_grader'), { pending: true }));
+    a.not(TourState.wantedHere(loc('/profile/settings'), { pending: true }));
+  });
+
+  test('progress is kept, so a reload or another course carries on from the same stop', async () => {
+    const store = memoryStorage({ [TourState.KEY]: TourState.installed() });
+    const s = new TourState(store);
+    await s.saveStop('find');
+    a.eq(store.bag[TourState.KEY].stop, 'find');
+    a.eq(await s.isPending(), true);
+    await s.setChapter('classes');
+    a.eq(store.bag[TourState.KEY].stop, null, 'a new part starts at its first stop');
+  });
+
+  test('writes run in order: a progress save in flight never undoes "finished"', async () => {
+    let slow = true;
+    const bag = { [TourState.KEY]: TourState.installed() };
+    const store = {
+      get: async (k) => ({ [k]: bag[k] }),
+      set: (o) => new Promise((r) => setTimeout(() => { Object.assign(bag, JSON.parse(JSON.stringify(o))); r(); }, slow ? 30 : 0))
+    };
+    const s = new TourState(store);
+    const p1 = s.saveStop('gear');          // slow write starts first
+    slow = false;
+    const p2 = s.markDone('skipped', 'gear');
+    await Promise.all([p1, p2]);
+    a.eq(bag[TourState.KEY].pending, false);
+    a.eq(bag[TourState.KEY].stop, 'gear');
+  });
+
+  test('"Replay" reports a storage failure; ordinary writes swallow it', async () => {
+    const s = new TourState({ get: async () => ({}), set: async () => { throw new Error('quota'); } });
+    let failed = false;
+    await s.request().catch(() => { failed = true; });
+    a.ok(failed, 'request() rejects');
+    await s.saveStop('x'); // must not throw
+  });
+
+  test('the options page uses the shared record for Replay', () => {
+    const opts = fs.readFileSync(path.join(ROOT, 'src/options/options.js'), 'utf8');
+    a.ok(opts.includes('new CGP.TourState().request()'));
+    a.not(opts.includes("'cgp.tour'"), 'no second copy of the key');
+    const html = fs.readFileSync(path.join(ROOT, 'src/options/options.html'), 'utf8');
+    a.ok(html.indexOf('../tour/tour-state.js') > 0 && html.indexOf('../tour/tour-state.js') < html.indexOf('options.js"'));
+  });
+
+  test('the tour cleans up after itself: no per-frame polling, listeners removed', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src/tour/tour.js'), 'utf8');
+    a.not(/function tick\b/.test(src), 'no requestAnimationFrame loop');
+    a.ok(src.includes('ResizeObserver'), 'element size changes are observed');
+    a.ok(src.includes('chrome.storage.onChanged.removeListener(on)'), 'storage listener is removable');
+    a.not(/function waitFor\(test, timeoutMs/.test(src), 'one shared waitFor (tour-content.js)');
+  });
+
 });

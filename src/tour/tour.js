@@ -364,10 +364,13 @@
     this.minimized = false;
     this.targetEl = null;
     this._raf = 0;
+    this._watch = null;
+    this._unlisten = null;
     this._lastRect = null;
     this._onKey = this.onKey.bind(this);
     this._onPageClick = this.onPageClick.bind(this);
     this._onResize = this.reflow.bind(this, true);
+    this._onScroll = this.schedule.bind(this);
   }
 
   Tour.prototype.mount = function () {
@@ -424,7 +427,12 @@
     this.mount();
     this.plan();
     this.active = true;
-    this.index = 0;
+    // Picking up a tour left part-way (a reload, a trip to another course).
+    var at = 0;
+    if (opts.startAt) {
+      for (var k = 0; k < this.stops.length; k++) if (this.stops[k].id === opts.startAt) at = k;
+    }
+    this.index = at;
     window.addEventListener('keydown', this._onKey, true);
     window.addEventListener('keyup', this._onKey, true);
     window.addEventListener('keypress', this._onKey, true);
@@ -435,7 +443,7 @@
     var self = this;
     requestAnimationFrame(function () {
       self.layer.classList.remove('is-off');
-      self.show(0, 1);
+      self.show(at, 1);
     });
     CGP.tourInstance = this;
   };
@@ -476,6 +484,7 @@
 
   Tour.prototype.paint = function (s, dir) {
     this.shown = s;
+    if (s.kind !== 'hero' && s.kind !== 'finale') this.remember(s.id);
     // Resolve the element(s) to point at.
     var target = null, usedFallback = false;
     if (s.target) { try { target = s.target(); } catch (e) { target = null; } }
@@ -503,6 +512,10 @@
     try { focusEl.focus({ preventScroll: true }); } catch (e) { /* ignore */ }
     this.loop();
     if (s.kind === 'finale') this.celebrate();
+  };
+
+  Tour.prototype.remember = function (stopId) {
+    if (this.state && this.state.saveStop) this.state.saveStop(stopId);
   };
 
   /* The stop's element(s), as one list. */
@@ -589,6 +602,8 @@
       if (!again) return null;
       this.targetEl = again;
       list = this.targets();
+      var w = this._watch;
+      if (w && w.ro) list.forEach(function (n) { try { w.ro.observe(n); } catch (e) { /* ignore */ } });
     }
     var r = list.reduce(function (u, n) {
       var b = n.getBoundingClientRect();
@@ -604,15 +619,38 @@
     return { x: x, y: y, w: x2 - x, h: y2 - y };
   };
 
+  /* Keeps the spotlight on its element. No per-frame polling: a reflow is
+   * scheduled (at most once a frame) when the page scrolls - any scroller,
+   * the grid included - when the element changes size, and on a slow
+   * heartbeat for anything else that moves it (Canvas re-rendering a row, a
+   * panel finishing its animation). */
   Tour.prototype.loop = function () {
+    this.unwatch();
     var self = this;
+    var w = this._watch = { ro: null, beat: 0 };
+    window.addEventListener('scroll', this._onScroll, { capture: true, passive: true });
+    if (typeof ResizeObserver !== 'undefined') {
+      w.ro = new ResizeObserver(function () { self.schedule(); });
+      this.targets().forEach(function (n) { try { w.ro.observe(n); } catch (e) { /* ignore */ } });
+    }
+    w.beat = setInterval(function () { self.schedule(); }, 400);
+  };
+
+  Tour.prototype.unwatch = function () {
+    var w = this._watch;
     cancelAnimationFrame(this._raf);
-    var tick = function () {
-      if (!self.active || self.minimized) return;
-      self.reflow(false);
-      self._raf = requestAnimationFrame(tick);
-    };
-    this._raf = requestAnimationFrame(tick);
+    this._raf = 0;
+    window.removeEventListener('scroll', this._onScroll, { capture: true });
+    if (!w) return;
+    if (w.ro) w.ro.disconnect();
+    clearInterval(w.beat);
+    this._watch = null;
+  };
+
+  Tour.prototype.schedule = function () {
+    if (this._raf || !this.active || this.minimized) return;
+    var self = this;
+    this._raf = requestAnimationFrame(function () { self._raf = 0; self.reflow(false); });
   };
 
   Tour.prototype.reflow = function (force) {
@@ -803,7 +841,11 @@
 
   Tour.prototype.minimize = function () {
     this.minimized = true;
-    cancelAnimationFrame(this._raf);
+    this.unwatch();
+    // The teacher is trying it out - which may take them to another page (a
+    // course from the switcher): the tour carries on from the next stop there.
+    var after = this.stops[this.index + 1];
+    if (after) this.remember(after.id);
     this.layer.classList.add('is-off');
     this.card.classList.remove('is-on');
     this.spot.classList.remove('is-on');
@@ -837,7 +879,8 @@
   };
 
   Tour.prototype.detach = function () {
-    cancelAnimationFrame(this._raf);
+    this.unwatch();
+    if (this._unlisten) { this._unlisten(); this._unlisten = null; }
     window.removeEventListener('keydown', this._onKey, true);
     window.removeEventListener('keyup', this._onKey, true);
     window.removeEventListener('keypress', this._onKey, true);
@@ -893,6 +936,12 @@
       body: 'See what\u2019s new on your own gradebook: feedback bubbles, one-key statuses, student overviews and more.',
       go: function (id) { return '/courses/' + id + '/gradebook#cgp-tour'; }
     },
+    resume: {
+      eyebrow: 'Tour in progress',
+      title: 'Pick up where you left off?',
+      body: 'Your tour is waiting on your gradebook, right at the stop you reached.',
+      go: function (id) { return '/courses/' + id + '/gradebook#cgp-tour'; }
+    },
     classes: {
       eyebrow: 'Tour · Part 2',
       title: 'Ready for part 2?',
@@ -901,8 +950,8 @@
     }
   };
 
-  function showInvite(state, courseId, chapter) {
-    var copy = INVITES[chapter] || INVITES.gradebook;
+  function showInvite(state, courseId, chapter, resuming) {
+    var copy = resuming && chapter === 'gradebook' ? INVITES.resume : (INVITES[chapter] || INVITES.gradebook);
     var host = el('div', 'cgp-tour-host');
     var root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
     var style = el('style');
@@ -924,7 +973,9 @@
     root.appendChild(layer);
     (document.body || document.documentElement).appendChild(host);
     requestAnimationFrame(function () { requestAnimationFrame(function () { card.classList.add('is-on'); }); });
+    var unlisten = listenForDone(function () { close(); });
     function close() {
+      if (unlisten) { unlisten(); unlisten = null; }
       card.classList.remove('is-on');
       setTimeout(function () { if (host.parentNode) host.parentNode.removeChild(host); }, 600);
     }
@@ -941,16 +992,7 @@
 
   /* ---------------------------------------------------------------- boot */
 
-  function waitFor(test, timeoutMs, every) {
-    return new Promise(function (resolve) {
-      if (test()) { resolve(true); return; }
-      var started = Date.now();
-      var t = setInterval(function () {
-        if (test()) { clearInterval(t); resolve(true); }
-        else if (Date.now() - started > timeoutMs) { clearInterval(t); resolve(false); }
-      }, every || 250);
-    });
-  }
+  function waitFor(test, ms, every) { return CGP.tourWaitFor(test, ms, every || 250); }
 
   function whenVisible() {
     if (!document.hidden) return Promise.resolve();
@@ -990,8 +1032,7 @@
           whenVisible().then(function () {
             state.isPending().then(function (still) {
               if (!still) return;
-              var invite = showInvite(state, courseId, chapter);
-              listenForDone(function () { invite.close(); });
+              showInvite(state, courseId, chapter, !!v.stop);
             });
           });
         }, 1800);
@@ -1015,21 +1056,24 @@
           .then(function (go) {
             if (!go || CGP.tourInstance) return;
             var tour = new Tour({ state: state, chapter: chapter, courseId: courseId });
-            tour.start();
-            listenForDone(function () { if (!tour.endedHere && tour.index === 0) tour.dismissQuietly(); });
+            tour.start({ startAt: v.stop });
+            tour._unlisten = listenForDone(function () { if (!tour.endedHere && tour.index === 0) tour.dismissQuietly(); });
           });
       });
     });
   }
 
-  // Finished or skipped in another tab: an untouched welcome card here goes too.
+  // Finished or skipped in another tab: an untouched welcome card here goes
+  // too. Returns the function that stops listening.
   function listenForDone(fn) {
-    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.onChanged) return;
-    chrome.storage.onChanged.addListener(function (changes, area) {
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.onChanged) return null;
+    var on = function (changes, area) {
       if (area !== 'local' || !changes[CGP.TourState.KEY]) return;
       var v = changes[CGP.TourState.KEY].newValue;
       if (v && v.pending === false) fn();
-    });
+    };
+    chrome.storage.onChanged.addListener(on);
+    return function () { try { chrome.storage.onChanged.removeListener(on); } catch (e) { /* ignore */ } };
   }
 
   CGP.Tour = Tour;

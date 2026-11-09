@@ -14,6 +14,11 @@ import { createSelfUpdater } from './self-update.js';
 import { createLiveRelay, LIVE_SYNC_TYPE } from './live-relay.js';
 import { createSettingsTimes } from './settings-times.js';
 import { createCalendarSync, CALENDAR_REFRESH } from './calendar-sync.js';
+// The welcome tour's record (a plain script that adds CGP.TourState to
+// globalThis), so its shape is defined in one place.
+import './tour/tour-state.js';
+
+const TourState = globalThis.CGP.TourState;
 
 const DYNAMIC_ID = 'cgp-custom-domains';
 const DYNAMIC_BRIDGE_ID = 'cgp-custom-domains-bridge';
@@ -109,9 +114,8 @@ async function syncDynamicScripts() {
 // shows it clears the mark again. chrome.storage.local, so it is per install.
 chrome.runtime.onInstalled.addListener(async (details) => {
   if (details && details.reason === 'install') {
-    try {
-      await chrome.storage.local.set({ 'cgp.tour': { pending: true, installedAt: Date.now() } });
-    } catch (e) { /* the tour is a nicety; never block setup on it */ }
+    // write() swallows storage errors: the tour never blocks setup.
+    await new TourState(chrome.storage.local).markInstalled();
   }
   await syncDynamicScripts();
 });
@@ -149,6 +153,17 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   if (msg && msg.type === 'cgp.openOptions') {
     const tab = typeof msg.hash === 'string' && /^[a-z]+(-tour)?$/.test(msg.hash) ? msg.hash : 'schedule';
     chrome.tabs.create({ url: chrome.runtime.getURL('src/options/options.html#' + tab) });
+    return false;
+  }
+  // A course page that wants the welcome tour (tour-state.js decided): the
+  // tour itself goes into that frame only now, never on every page.
+  if (msg && msg.type === TourState.INJECT) {
+    if (sender && sender.tab && sender.tab.id !== undefined) {
+      chrome.scripting.executeScript({
+        target: { tabId: sender.tab.id, frameIds: [sender.frameId || 0] },
+        files: TourState.FILES
+      }).catch(() => 0);
+    }
     return false;
   }
   if (msg && msg.type === 'cgp.checkIn') {

@@ -82,15 +82,16 @@
       headerOf('.slick-header-column .cgp-header-title');
   }
 
-  function waitFor(test, ms) {
+  /* Resolves true as soon as test() does, or false after `ms`. The tour's
+   * one polling helper: tour.js uses it too (CGP.tourWaitFor). */
+  function waitFor(test, ms, every) {
     return new Promise(function (resolve) {
-      var hit = test();
-      if (hit) { resolve(true); return; }
+      if (test()) { resolve(true); return; }
       var t0 = Date.now();
       var iv = setInterval(function () {
         if (test()) { clearInterval(iv); resolve(true); }
         else if (Date.now() - t0 > ms) { clearInterval(iv); resolve(false); }
-      }, 120);
+      }, every || 120);
     });
   }
 
@@ -684,4 +685,5 @@
   CGP.tourScheduleStops = scheduleStops;
   CGP.tourIcons = ICON;
   CGP.tourFind = { onScreen: onScreen, pick: pick };
+  CGP.tourWaitFor = waitFor;
 })();

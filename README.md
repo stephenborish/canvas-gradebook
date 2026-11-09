@@ -582,13 +582,20 @@ type and click as they go.
 - It is offered **once per install**: a fresh install marks it due on that computer
   (`chrome.storage.local`, so Chrome sync never carries it between computers). Finishing part 1
   records that part 2 is next; finishing or skipping clears it for good. Updates never show it.
-- On any other course page, a small card in the corner offers whichever part is next and opens the
-  right page for it. SpeedGrader never shows either.
+- Progress is kept: a reload, or a **Try it** that leads to another page (a course picked from the
+  switcher), carries on from the same stop rather than starting over.
+- On any other course page, a small card in the corner offers whichever part is next (or *Pick up
+  where you left off?*) and opens the right page for it. SpeedGrader never shows either.
 - **Replay the welcome tour** in the options page's sidebar marks it due again, from part 1.
 
 The tour is drawn in a shadow root, so Canvas's stylesheet and the extension's own never reach it.
-It lives in `src/tour/`: `tour-state.js` (whether it is due, and which part), `tour-content.js`
-(what each stop says and points at) and `tour.js` (the spotlight, the cards and the invitation).
+It lives in `src/tour/`: `tour-state.js` (whether it is due, which part and which stop),
+`tour-content.js` (what each stop says and points at) and `tour.js` (the spotlight, the cards and the
+invitation). Only `tour-state.js` is a content script: on a course page where the tour is wanted it
+asks the service worker to inject the other two into that tab, so the rest of the time the tour
+costs a single storage read. `background.js` imports the same file, so the stored record is defined
+once. The spotlight follows its element on scroll, on resize (a `ResizeObserver`) and on a slow
+heartbeat, never with a per-frame loop.
 
 ### Every view stays in step
 

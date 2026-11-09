@@ -12,6 +12,14 @@
  *
  * The options page's "Replay the tour" sets pending again.
  *
+ * This file is the one definition of that record. background.js imports it
+ * (it is safe to run as a module: it only adds CGP.TourState to globalThis),
+ * the options page loads it with a script tag, and the content scripts run it
+ * on every course page. There it also decides whether the tour is wanted at
+ * all, and only then asks background.js to inject the tour itself
+ * (tour-content.js, tour.js) into this tab: some 1,700 lines a teacher needs
+ * once are not parsed on every page for the life of the install.
+ *
  * No DOM and no chrome.* at load time, so tests load it as-is. */
 (function () {
   'use strict';
@@ -33,8 +41,12 @@
 
   /* A fresh install's record. */
   TourState.installed = function (now) {
-    return { pending: true, installedAt: now || Date.now() };
+    return { pending: true, chapter: 'gradebook', stop: null, installedAt: now || Date.now() };
   };
+
+  /* The message a course page sends to have the tour injected. */
+  TourState.INJECT = 'cgp.tourInject';
+  TourState.FILES = ['src/tour/tour-content.js', 'src/tour/tour.js'];
 
   TourState.prototype.read = function () {
     var s = this.storage;
@@ -48,16 +60,38 @@
     }, function () { return {}; });
   };
 
-  TourState.prototype.write = function (patch) {
+  /* Merges `patch` into the record. Storage failures are swallowed (the tour
+   * is a nicety) unless opts.strict, for a caller that reports them. */
+  TourState.prototype.write = function (patch, opts) {
     var s = this.storage;
     if (!s) return Promise.resolve(patch);
     var self = this;
-    return this.read().then(function (cur) {
-      var next = Object.assign({}, cur, patch);
-      var o = {};
-      o[KEY] = next;
-      return new Promise(function (resolve) { resolve(s.set(o)); }).then(function () { return next; });
-    }).catch(function () { return patch; }).then(function (v) { self.last = v; return v; });
+    // One write at a time, each reading what the last one wrote: a "this
+    // stop" save still in flight can never land after "finished" and bring
+    // the tour back.
+    var run = function () {
+      return self.read().then(function (cur) {
+        var next = opts && opts.replace ? Object.assign({}, patch) : Object.assign({}, cur, patch);
+        var o = {};
+        o[KEY] = next;
+        return new Promise(function (resolve) { resolve(s.set(o)); }).then(function () { return next; });
+      });
+    };
+    var done = (this._queue || Promise.resolve()).then(run);
+    this._queue = done.catch(function () { /* the next write still runs */ });
+    if (!(opts && opts.strict)) done = done.catch(function () { return patch; });
+    return done.then(function (v) { self.last = v; return v; });
+  };
+
+  /* A fresh install (background.js): the whole record, not a merge. */
+  TourState.prototype.markInstalled = function () {
+    return this.write(TourState.installed(), { replace: true });
+  };
+
+  /* Where the teacher is, so a reload or a trip to another course carries on
+   * from there instead of starting over. */
+  TourState.prototype.saveStop = function (stopId) {
+    return this.write({ stop: stopId || null });
   };
 
   /* Due: never seen since this install (or asked for again). */
@@ -77,7 +111,7 @@
 
   /* "Replay the tour" on the options page. */
   TourState.prototype.request = function () {
-    return this.write({ pending: true, chapter: 'gradebook', requestedAt: Date.now() });
+    return this.write({ pending: true, chapter: 'gradebook', stop: null, requestedAt: Date.now() }, { strict: true });
   };
 
   /* The tour has two chapters, on two pages: 'gradebook' (the grid and the
@@ -88,7 +122,7 @@
   TourState.CHAPTERS = ['gradebook', 'classes'];
 
   TourState.prototype.setChapter = function (chapter) {
-    return this.write({ chapter: chapter });
+    return this.write({ chapter: chapter, stop: null });
   };
 
   /* The page asked for the tour in its address - #cgp-tour (the first
@@ -104,5 +138,23 @@
     return TourState.chapterFromHash(hash) !== null;
   };
 
+  /* Is the tour wanted on this page? The top frame of a course page (not
+   * SpeedGrader) with the tour due, or #cgp-tour in the address. */
+  TourState.wantedHere = function (loc, record) {
+    var path = String(loc.pathname || '');
+    if (!/\/courses\/\d+/.test(path) || /\/gradebook\/speed_grader/i.test(path)) return false;
+    return (record && record.pending === true) || TourState.wantsTourFromHash(loc.hash);
+  };
+
   CGP.TourState = TourState;
+
+  // On a course page: ask for the tour only when it is wanted here.
+  if (typeof window !== 'undefined' && typeof document !== 'undefined' && window.top === window &&
+      typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage &&
+      /\/courses\/\d+/.test(location.pathname)) {
+    new TourState().read().then(function (v) {
+      if (!TourState.wantedHere(location, v) || CGP.Tour) return;
+      try { chrome.runtime.sendMessage({ type: TourState.INJECT }); } catch (e) { /* extension reloaded */ }
+    });
+  }
 })();
