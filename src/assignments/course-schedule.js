@@ -76,11 +76,13 @@
 
   function hasClass(el, c) { return !!(el && el.classList && el.classList.contains(c)); }
 
-  /** The nearest box `test` accepts that shares an ancestor with `el`
-   * (within a few levels: one date-and-time pair, not the next one). */
+  /** The nearest box `test` accepts that shares an ancestor with `el`: the
+   * first ancestor holding one is the pair's own (one date-and-time pair,
+   * not the next). InstUI nests the two boxes deeply - 13 levels apart in
+   * some versions - so the search goes well past that. */
   function partner(el, test) {
     var n = el.parentElement;
-    for (var depth = 0; n && depth < 8; depth++, n = n.parentElement) {
+    for (var depth = 0; n && depth < 20; depth++, n = n.parentElement) {
       var all = Array.prototype.slice.call(n.querySelectorAll('input'));
       var found = all.filter(function (x) { return x !== el && test(x); });
       if (found.length) {
@@ -188,6 +190,15 @@
       var t = e.target;
       if (self.inPanel(t) || self.inGroup(t)) return;
       self.close();
+    }, true);
+    // Picking a day in Canvas's own calendar (a click outside the panel,
+    // which closes it) leaves the focus in the date box, so no focusin
+    // follows; nor does clicking into a box that already has the focus.
+    // After any click, a closed panel opens again for the focused box.
+    document.addEventListener('click', function () {
+      setTimeout(function () {
+        if (!self.group && !self._picking && document.activeElement) self.onFocusIn(document.activeElement);
+      }, 0);
     }, true);
     var place = function () { if (self.group) self.place(); };
     window.addEventListener('resize', place);
@@ -559,44 +570,100 @@
 
   /* ------------------------------------------------------------- pick */
 
+  /* Canvas commits a date in steps, each a turn after the focus leaves the
+   * date box: InstUI's DateTimeInput re-reads the box when its calendar
+   * closes (setTimeout), hands Canvas the change (another setTimeout), and
+   * Canvas applies one made by leaving the box on the next turn again -
+   * filling in the course's default due time when the date had no time,
+   * and putting back the time InstUI remembered. A class time typed into
+   * the time box before those land is overwritten by them (the teacher
+   * picks 10:10 and gets the default 8:00 AM). So the date is let settle
+   * first, and the time box is checked once more afterwards. */
+  var SETTLE_MS = 150;
+
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  /** What a time box shows, as "HH:MM" (Canvas writes "10:10 AM"). */
+  function clockOf(text) {
+    var S = CGP.sectionSync;
+    return S && S.parseClock ? S.parseClock(text) : String(text || '').trim();
+  }
+
+  /** Puts the class's time (and, when it should, its day) into the boxes.
+   * Resolves with {date, time} once Canvas holds them. */
   P.pick = function (i, which) {
     var g = this.group;
     var cls = this.lastView && this.lastView.classes[i];
-    if (!g || !cls) return null;
+    if (!g || !cls) return Promise.resolve(null);
+    var self = this;
     var clock = which === 'end' ? cls.end : cls.start;
     // A meeting that runs past midnight ends on the next day.
     var shown = this.currentDay();
     var overnight = which === 'end' && !!cls.endDate && cls.endDate !== shown;
     var day = overnight ? cls.endDate : shown;
     var setDay = this.writesDay(day, overnight);
-    this._picking = true;
-    try {
-      if (g.kind === 'inline') {
-        // Our own boxes: plain inputs, read on input/change.
-        var put = function (input, v) {
-          input.value = v;
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-          input.dispatchEvent(new Event('change', { bubbles: true }));
-        };
-        if (setDay) put(g.date, day);
-        put(g.time, C().formatClock(clock, { hour12: true }));
-      } else {
+    var result = { date: setDay ? day : null, time: clock };
+    var fromDateBox = typeof document !== 'undefined' && document.activeElement === g.date;
+    this.close();
+    CGP.diag && CGP.diag.bump && CGP.diag.bump('courseSchedule.picked');
+
+    if (g.kind === 'inline') {
+      // Our own boxes: plain inputs, read on input/change.
+      var put = function (input, v) {
+        input.value = v;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      if (setDay) put(g.date, day);
+      put(g.time, C().formatClock(clock, { hour12: true }));
+      return Promise.resolve(result);
+    }
+
+    var text = C().formatClock(clock, { hour12: C().uses12Hour(pageLang()) });
+    var settle = typeof this.settleMs === 'number' ? this.settleMs : SETTLE_MS;
+    var putTime = function () {
+      g.time.focus();
+      setNativeValue(g.time, text);
+      g.time.blur();    // when Canvas reads and commits a typed time
+    };
+    this._picking = true;   // our own focus moves must not reopen the panel
+    var run = Promise.resolve();
+    if (setDay || fromDateBox) {
+      run = run.then(function () {
         if (setDay) {
           // ISO is the one date form every Canvas date box reads, in every
           // language; Canvas shows it its own way once the box is left.
           g.date.focus();
           setNativeValue(g.date, day);
         }
-        g.time.focus();   // leaves the date box: Canvas commits the date
-        setNativeValue(g.time, C().formatClock(clock, { hour12: C().uses12Hour(pageLang()) }));
-        g.time.blur();    // and the time
-      }
-    } finally {
-      this._picking = false;
+        g.time.focus();   // leaves the date box: Canvas starts committing the date
+        return wait(settle);
+      });
     }
-    this.close();
-    CGP.diag && CGP.diag.bump && CGP.diag.bump('courseSchedule.picked');
-    return { date: setDay ? day : null, time: clock };
+    // Then the time, watched for a few more turns in case Canvas's own
+    // update still lands afterwards (a busy page delays it): put back, at
+    // most twice, if something replaced it.
+    var retries = 0;
+    var watch = function (left) {
+      return wait(settle).then(function () {
+        if (clockOf(g.time.value) !== clock && retries < 2) {
+          retries++;
+          CGP.diag && CGP.diag.bump && CGP.diag.bump('courseSchedule.retried');
+          putTime();
+        }
+        return left > 1 ? watch(left - 1) : null;
+      });
+    };
+    return run.then(function () {
+      putTime();
+      return watch(4);
+    }).then(function () {
+      self._picking = false;
+      return result;
+    }, function (e) {
+      self._picking = false;
+      throw e;
+    });
   };
 
   CGP.CanvasCourseSchedule = CanvasCourseSchedule;

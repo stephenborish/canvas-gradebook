@@ -542,8 +542,9 @@ function bootPicker(cache, values) {
     course: async () => ({ name: 'AP Biology - P1 (2026-27)', course_code: 'APBIO-1' })
   };
   const ctrl = new CGP.CanvasCourseSchedule({ settings, api, courseId: '7' });
+  ctrl.settleMs = 1;   // Canvas's turns, shortened for the tests
   ctrl.start();
-  return { ctrl, handlers, root, sent, settings };
+  return { ctrl, handlers, root, sent, settings, document };
 }
 
 /** One Due date-and-time pair the way Canvas's Assign To card lays it out. */
@@ -581,6 +582,32 @@ suite('class schedule: the Assign To picker', (test) => {
     a.eq(B.groupFor(time).label, 'Due');
   });
 
+  test('pairs the boxes even when InstUI nests them deeply (13 levels apart)', () => {
+    bootPicker(cache, { courseCalendarUrl: URL_ });
+    const B = CGP.courseScheduleBoxes;
+    const date = new FakeInput({ role: 'combobox' }, 'Due Date');
+    const time = new FakeInput({ role: 'combobox' }, 'Time');
+    const wrap = (el, levels) => { let n = el; for (let i = 0; i < levels; i++) n = new Node('span').add(n); return n; };
+    new Node('div').add(wrap(date, 12), wrap(time, 12));
+    a.eq(B.isDateInput(date), true, 'InstUI’s date box is a combobox too');
+    a.eq(B.groupFor(date).time, time);
+    a.eq(B.groupFor(time).date, date);
+  });
+
+  test('after a day is picked in Canvas’s calendar (focus still in the date box), the panel comes back', async () => {
+    const { ctrl, handlers, root, document } = bootPicker(cache, { courseCalendarUrl: URL_ });
+    const pair = duePair('Nov 9, 2026');
+    root.add(pair.card);
+    handlers.focusin({ target: pair.date });
+    a.ok(ctrl.group);
+    handlers.mousedown({ target: new Node('button') });   // a day in Canvas's calendar
+    a.eq(ctrl.group, null);
+    document.activeElement = pair.date;
+    handlers.click({});
+    await new Promise((r) => setTimeout(r, 5));
+    a.ok(ctrl.group && ctrl.group.date === pair.date, 'open again for the date box');
+  });
+
   test('stays out of the way until a calendar is connected', async () => {
     const { ctrl, handlers } = bootPicker(cache, { courseCalendarUrl: '' });
     const { time } = duePair('Nov 9, 2026');
@@ -598,7 +625,7 @@ suite('class schedule: the Assign To picker', (test) => {
     a.eq(ctrl.currentDay(), '2026-11-09', 'the date box’s day');
     a.deep(ctrl.lastView.classes.map((c) => c.title), ['AP Biology P1', 'Honors Chemistry, Period 4']);
     a.ok(/This course/.test(ctrl.panel.innerHTML), 'the Canvas course’s own class is marked');
-    const res = ctrl.pick(1, 'start');
+    const res = await ctrl.pick(1, 'start');
     a.eq(pair.time.value, '1:30 PM');
     a.deep(pair.time.log, ['focus', 'input', 'blur']);
     a.eq(pair.date.log.length, 0, 'the date was already right');
@@ -614,7 +641,7 @@ suite('class schedule: the Assign To picker', (test) => {
     await tick(); await tick();
     ctrl.onButton({ getAttribute: (k) => (k === 'data-act' ? 'next' : null) });
     a.eq(ctrl.currentDay(), '2026-11-10');
-    ctrl.pick(0, 'end');
+    await ctrl.pick(0, 'end');
     a.eq(pair.date.value, '2026-11-10');
     a.deep(pair.date.log, ['focus', 'input']);
     a.eq(pair.time.value, '10:55 AM', 'the moved meeting’s end');
@@ -627,7 +654,7 @@ suite('class schedule: the Assign To picker', (test) => {
     root.add(pair.card);
     handlers.focusin({ target: pair.time });
     await tick(); await tick();
-    ctrl.pick(0, 'end');
+    await ctrl.pick(0, 'end');
     a.eq(pair.date.value, '2026-11-10');
     a.eq(pair.time.value, '12:30 AM');
   });
@@ -638,7 +665,7 @@ suite('class schedule: the Assign To picker', (test) => {
     root.add(pair.card);
     handlers.focusin({ target: pair.time });
     await tick(); await tick();
-    ctrl.pick(0, 'start');
+    await ctrl.pick(0, 'start');
     a.eq(pair.date.value, 'lun, 9 nov 2026', 'not replaced with the day shown');
     a.eq(pair.date.log.length, 0);
     a.ok(pair.time.value, 'the time still goes in');
@@ -652,7 +679,7 @@ suite('class schedule: the Assign To picker', (test) => {
     await tick(); await tick();
     ctrl.view = '2026-11-09';
     ctrl.render();
-    ctrl.pick(0, 'start');
+    await ctrl.pick(0, 'start');
     a.eq(pair.date.value, '2026-11-09');
   });
 
@@ -669,13 +696,56 @@ suite('class schedule: the Assign To picker', (test) => {
     await tick(); await tick();
     a.eq(ctrl.currentDay(), '2026-11-09', 'opens on this class’s Due date');
     a.ok(/This course/.test(ctrl.panel.innerHTML), 'the row’s own class is marked');
-    ctrl.pick(1, 'start');
+    await ctrl.pick(1, 'start');
     a.eq(time.value, '1:30 PM');
     a.eq(date.value, '', 'still “same as this class”');
     handlers.focusin({ target: time });
     ctrl.onButton({ getAttribute: (k) => (k === 'data-act' ? 'next' : null) });
-    ctrl.pick(0, 'start');
+    await ctrl.pick(0, 'start');
     a.eq(date.value, '2026-11-10', 'a day stepped to goes in');
+  });
+
+  test('picked from the date box, the class time survives Canvas putting its default due time back', async () => {
+    // What Canvas does: leaving the date box closes its calendar and commits
+    // the date a few turns later, putting back the time it had - the course's
+    // default due time (8:00 AM) - over anything typed meanwhile.
+    const { ctrl, handlers, root, document } = bootPicker(cache, { courseCalendarUrl: URL_ });
+    const pair = duePair('Nov 10, 2026');
+    pair.time.value = '8:00 AM';
+    pair.date.focus = function () { this.log.push('focus'); document.activeElement = this; };
+    pair.time.focus = function () {
+      this.log.push('focus');
+      if (document.activeElement === pair.date) {
+        setTimeout(() => setTimeout(() => setTimeout(() => { pair.time.value = '8:00 AM'; }, 0), 0), 0);
+      }
+      document.activeElement = this;
+    };
+    root.add(pair.card);
+    pair.date.focus();
+    handlers.focusin({ target: pair.date });
+    await tick(); await tick();
+    const res = await ctrl.pick(0, 'start');   // the moved AP Biology meeting, 10:00
+    await new Promise((r) => setTimeout(r, 20));
+    a.eq(pair.time.value, '10:00 AM', 'not the default due time');
+    a.eq(pair.date.value, 'Nov 10, 2026', 'the date as the teacher set it');
+    a.deep(res, { date: null, time: '10:00' });
+    a.eq(ctrl._picking, false);
+  });
+
+  test('if Canvas still puts another time back, the class time goes in once more', async () => {
+    const { ctrl, handlers, root } = bootPicker(cache, { courseCalendarUrl: URL_ });
+    const pair = duePair('Nov 9, 2026');
+    root.add(pair.card);
+    let blurs = 0;
+    pair.time.blur = function () {
+      this.log.push('blur');
+      if (++blurs === 1) setTimeout(() => { pair.time.value = '8:00 AM'; }, 0);
+    };
+    handlers.focusin({ target: pair.time });
+    await tick(); await tick();
+    await ctrl.pick(0, 'start');
+    a.eq(pair.time.value, '8:55 AM');
+    a.eq(blurs, 2);
   });
 
   test('a click on the end setting makes the end the main choice', async () => {
