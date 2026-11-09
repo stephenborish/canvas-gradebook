@@ -136,3 +136,16 @@ suite('SpeedGrader tidy sidebar', (test) => {
     a.eq(fresh.getAttribute('data-cgp-sg-card'), 'assessment');
   });
 });
+
+suite('content-script lists', (test) => {
+  test('manifest.json and script-manifest.js (self-hosted Canvas) list the same scripts in the same order', () => {
+    const root = path.join(__dirname, '..');
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+    const src = fs.readFileSync(path.join(root, 'src/script-manifest.js'), 'utf8');
+    const block = /export const CONTENT_JS = \[([\s\S]*?)\];/.exec(src);
+    a.ok(block, 'CONTENT_JS found');
+    const dynamic = block[1].match(/'[^']+'/g).map((s) => s.slice(1, -1));
+    const entry = manifest.content_scripts.find((cs) => (cs.js || []).indexOf('src/gradebook/content.js') >= 0);
+    a.deep(dynamic, entry.js);
+  });
+});
