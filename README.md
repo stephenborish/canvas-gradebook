@@ -548,6 +548,35 @@ graded again (`grade_matches_current_submission` false). Canvas only sets that w
 submits over an existing score, so on-paper and no-submission work, and excused cells, never show
 it.
 
+### A welcome tour, once per install
+
+The first time a gradebook opens after the extension is installed, a short guided tour runs on
+top of it — the teacher's real gradebook, not a mock-up. A spotlight moves from one real element
+to the next (a comment bubble, a submission badge, a column's **Post** button, a student's name,
+the Total, the course switcher, Find student, the breadcrumb gear), and a card beside it says what
+Gradebook+ does there, with a small animated illustration. Stops marked **Try it** let the click
+through to the page — open a comment thread, a student overview, the course menu — and the tour
+folds into a small pill at the bottom of the screen until **Next stop** is pressed.
+
+- `←` / `→` move between stops, `Esc` ends the tour. **Skip tour** is on the first card, and every
+  card has a close button.
+- Nothing is read from or written to Canvas. While a card is up, keystrokes outside it are held
+  back, so an `M` or a digit can never land in a grade cell behind the tour.
+- A stop for a feature that is switched off in the options page (or a cell nothing applies to yet)
+  is left out or explained in place rather than pointing at nothing.
+- It is offered **once per install**: a fresh install marks it due on that computer
+  (`chrome.storage.local`, so Chrome sync never carries it between computers), and finishing or
+  skipping it clears the mark. Updates never show it, so teachers who already use the extension
+  are not interrupted.
+- Open any other page in a course first and a small card in the corner offers the tour instead;
+  **Show me** opens the course's gradebook and starts it. SpeedGrader never shows either.
+- **Replay the welcome tour** in the options page's sidebar marks it due again; the next gradebook
+  opened shows it.
+
+The tour is drawn in a shadow root, so Canvas's stylesheet and the extension's own never reach it.
+It lives in `src/tour/`: `tour-state.js` (whether it is due), `tour-content.js` (what each stop
+says and points at) and `tour.js` (the spotlight, the cards and the invitation).
+
 ### Every view stays in step
 
 A grade, status or comment is the same wherever you look at it — the grid, the Grade Detail

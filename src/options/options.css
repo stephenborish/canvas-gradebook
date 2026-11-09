@@ -303,6 +303,8 @@ input.switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2p
 .btn--primary:hover { background: var(--brand-dark); border-color: var(--brand-dark); }
 .btn--quiet { background: transparent; border-color: transparent; color: var(--muted); }
 .btn--quiet:hover { color: var(--ink); background: var(--bg); }
+.btn--tour { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.btn--tour svg { width: 14px; height: 14px; fill: currentColor; flex: 0 0 auto; }
 
 .action-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
 

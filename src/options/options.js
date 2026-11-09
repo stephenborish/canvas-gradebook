@@ -1274,6 +1274,21 @@
     if (e.key === 'Enter') { e.preventDefault(); grantDomain(); }
   });
 
+  /* The welcome tour (src/tour/) is offered once per install; this marks it
+   * due again on this computer, and the next gradebook opened shows it. */
+  $('replayTour').addEventListener('click', function () {
+    var KEY = 'cgp.tour';
+    chrome.storage.local.get(KEY).then(function (got) {
+      var o = {};
+      o[KEY] = Object.assign({}, got && got[KEY], { pending: true, requestedAt: Date.now() });
+      return chrome.storage.local.set(o);
+    }).then(function () {
+      status('The tour starts the next time you open a Canvas gradebook.');
+    }, function () {
+      status('Could not schedule the tour.', { error: true });
+    });
+  });
+
   $('refreshDiag').addEventListener('click', renderDiag);
   $('clearDiag').addEventListener('click', function () {
     chrome.storage.local.remove('cgp.diag').then(function () {
@@ -1284,7 +1299,7 @@
   function initVersion() {
     var el = $('extensionVersion');
     if (!el) return;
-    var ver = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest && chrome.runtime.getManifest().version) || CGP.VERSION || '1.29.0';
+    var ver = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest && chrome.runtime.getManifest().version) || CGP.VERSION || '1.30.0';
     el.textContent = ver;
   }
 

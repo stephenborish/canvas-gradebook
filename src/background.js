@@ -103,7 +103,16 @@ async function syncDynamicScripts() {
 // No settings are written here. Defaults need no storing (every reader fills
 // them in), and writing them on a fresh install raced the teacher's real
 // settings on their way in through Chrome sync.
-chrome.runtime.onInstalled.addListener(async () => {
+//
+// The one exception is the welcome tour (src/tour/): a fresh install - never
+// an update - marks it due on this computer, and the first gradebook that
+// shows it clears the mark again. chrome.storage.local, so it is per install.
+chrome.runtime.onInstalled.addListener(async (details) => {
+  if (details && details.reason === 'install') {
+    try {
+      await chrome.storage.local.set({ 'cgp.tour': { pending: true, installedAt: Date.now() } });
+    } catch (e) { /* the tour is a nicety; never block setup on it */ }
+  }
   await syncDynamicScripts();
 });
 
@@ -138,7 +147,8 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     return true;
   }
   if (msg && msg.type === 'cgp.openOptions') {
-    chrome.tabs.create({ url: chrome.runtime.getURL('src/options/options.html#schedule') });
+    const tab = typeof msg.hash === 'string' && /^[a-z]+$/.test(msg.hash) ? msg.hash : 'schedule';
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/options/options.html#' + tab) });
     return false;
   }
   if (msg && msg.type === 'cgp.checkIn') {
