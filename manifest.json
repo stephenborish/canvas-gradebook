@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Canvas Gradebook+",
-  "version": "1.27.0",
+  "version": "1.28.0",
   "author": "stephenborish",
   "description": "Grade faster without leaving Canvas: feedback indicators, spreadsheet-style grading, one-click posting and instant score analysis.",
   "minimum_chrome_version": "116",
