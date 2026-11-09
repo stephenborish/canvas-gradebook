@@ -13,8 +13,9 @@
  * snippets in the comment editor of the gradebook or SpeedGrader (the top
  * page also binds those editors' documents itself; this covers a frame it
  * cannot reach). So this small script runs in frames instead, and only a
- * frame inside one of those pages asks the service worker to add the three
- * scripts snippets need (FILES), then loads the teacher's settings.
+ * blank (editor) frame inside one of those pages asks the service worker
+ * to add the three scripts snippets need (FILES), then loads the teacher's
+ * settings.
  *
  * Also imported by the service worker, for MESSAGE and FILES; nothing below
  * the definitions runs there. */
@@ -54,6 +55,12 @@
     // The page itself already has everything (the full content-script set).
     if (win.top === win.self) return false;
     if (CGP._frameScriptsRequested || CGP.snippets) return false;
+    // Canvas's rich comment editor is a blank (about:blank / about:srcdoc)
+    // frame. A frame with an address of its own - SpeedGrader's submission
+    // preview, reloaded on every student - holds no comment editor.
+    var protocol = '';
+    try { protocol = String(win.location.protocol || ''); } catch (e) { protocol = ''; }
+    if (protocol !== 'about:') return false;
     if (!FrameGate.inGradingPage(win)) return false;
     CGP._frameScriptsRequested = true;
     try {

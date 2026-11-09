@@ -359,9 +359,12 @@ suite('grid reliability C: failure backoff', (test) => {
     a.eq(lf.count, 1);
     a.ok(lf.nextAt - Date.now() > 1500 && lf.nextAt - Date.now() <= 2000, 'first backoff ~2s');
 
+    a.eq(f.calls.verify, 0, 'not sent while the column load is out');
+
     f.c.paint();
     await tick();
     a.eq(f.calls.load, 1, 'not retried inside the backoff window');
+    a.eq(f.calls.verify, 1, 'after a failed load the per-assignment read goes out (it loads the column too)');
 
     for (let i = 0; i < 8; i++) {
       f.c.loadFailures.get('101').nextAt = 0;
@@ -369,7 +372,6 @@ suite('grid reliability C: failure backoff', (test) => {
       await tick();
     }
     a.eq(f.calls.load, 6, 'gives up after 6 consecutive failures');
-    a.eq(f.calls.verify, 0, 'a column that never loaded is never comment-checked');
   });
 
   test('the comment check waits for the column load, then backs off the same way', async () => {

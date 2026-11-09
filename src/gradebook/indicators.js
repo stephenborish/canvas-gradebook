@@ -799,12 +799,15 @@
             neededAssignments.push(aid);
           }
           // The comment check is a second read of a column, so it waits
-          // until the first has landed (the 'cells' it emits repaints and
-          // gets here again): sent together, the two raced each other for
-          // the same request slots and slowed the screenful being opened.
-          var columnLoaded = !!((self.model.everLoadedAssignments && self.model.everLoadedAssignments.has(aid)) ||
-            (self.model.loadedAssignments && self.model.loadedAssignments.has(aid)));
-          if (columnLoaded && self.settings && self.settings.values && self.settings.values.commentIndicator &&
+          // while the column's own load is out (the 'cells' it emits, or
+          // the next paint after a failure, gets here again): sent
+          // together, the two raced each other for the same request slots
+          // and slowed the screenful being opened. After a failed load it
+          // still goes out, since its per-assignment read also loads the
+          // column - the fallback when the bulk read keeps failing.
+          var columnLoading = self.requested.has(aid) ||
+            !!(self.model.pendingAssignments && self.model.pendingAssignments.has(aid));
+          if (!columnLoading && self.settings && self.settings.values && self.settings.values.commentIndicator &&
               self.model.commentVerifiedAssignments && !self.model.commentVerifiedAssignments.has(aid) &&
               !self.requestedComments.has(aid) && self.mayRequest(self.commentFailures, aid, now)) {
             self.requestedComments.add(aid);

@@ -47,6 +47,8 @@
     // own dot on them is stale; on any other cell it is Canvas's to draw.
     this.postConfirmed = new Set();
     this.pendingAssignments = new Map();
+    // Columns whose pending read is background warming (low priority).
+    this._lowPending = new Set();
     this.commentVerifiedAssignments = new Set();
     // "assignmentId:userId" -> Date.now() when a local write (a keyboard
     // shortcut, bulk paste, or an added comment) most recently started on
@@ -314,12 +316,27 @@
   GradebookModel.prototype.ensureAssignments = function (ids, opts) {
     var self = this;
     var requested = (ids || []).map(String);
+    var low = !!(opts && opts.priority === 'low');
+    // A column only background warming is reading would wait behind
+    // everything else in the queue: a caller that needs it now reads it
+    // again at its own priority, and the warming read is left to land
+    // harmlessly (its generation is moved on).
+    var takeOver = function (id) { return !low && self._lowPending.has(id) && self.pendingAssignments.has(id); };
     var wanted = requested.filter(function (id) {
-      return id && self.assignments.has(id) && !self.loadedAssignments.has(id) && !self.pendingAssignments.has(id);
+      return id && self.assignments.has(id) && !self.loadedAssignments.has(id) &&
+        (!self.pendingAssignments.has(id) || takeOver(id));
+    });
+    wanted.forEach(function (id) {
+      if (takeOver(id)) {
+        self._fetchGen.set(id, self._gen(id) + 1);
+        self.pendingAssignments.delete(id);
+        self._lowPending.delete(id);
+      }
     });
     // Columns another call is already fetching are waited on too, so a
     // caller asking for [a, b] while b is in flight gets both, not just a.
-    var waits = requested.map(function (id) { return self.pendingAssignments.get(id); }).filter(Boolean);
+    var waits = requested.filter(function (id) { return wanted.indexOf(id) < 0; })
+      .map(function (id) { return self.pendingAssignments.get(id); }).filter(Boolean);
     if (!wanted.length) {
       return waits.length ? Promise.all(waits.map(function (p) { return p.catch(function () { return null; }); })) : Promise.resolve(null);
     }
@@ -340,7 +357,10 @@
       var fetchOpts = Object.assign({}, opts || {}, { maxPages: maxPages });
       function release() {
         batch.forEach(function (id) {
-          if (self.pendingAssignments.get(id) === job) self.pendingAssignments.delete(id);
+          if (self.pendingAssignments.get(id) === job) {
+            self.pendingAssignments.delete(id);
+            self._lowPending.delete(id);
+          }
         });
       }
       var job = reader.submissionsForAssignments(self.courseId, batch, fetchOpts).then(function (subs) {
@@ -383,7 +403,10 @@
         CGP.diag.error('model.submissions.failed', { assignments: batch.length, status: err && err.status });
         throw err;
       });
-      batch.forEach(function (id) { self.pendingAssignments.set(id, job); });
+      batch.forEach(function (id) {
+        self.pendingAssignments.set(id, job);
+        if (low) self._lowPending.add(id); else self._lowPending.delete(id);
+      });
       return job;
     });
     return Promise.all(jobs.concat(waits).map(function (p) { return p.catch(function () { return null; }); }));
@@ -636,6 +659,7 @@
     this._fetchGen.set(id, this._gen(id) + 1);
     this.loadedAssignments.delete(id);
     this.pendingAssignments.delete(id);
+    this._lowPending.delete(id);
     this.commentVerifiedAssignments.delete(id);
     return this.ensureAssignments([id], opts);
   };

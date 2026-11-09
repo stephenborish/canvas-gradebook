@@ -77,6 +77,33 @@ suite('load speed: the gradebook model', (test) => {
     a.eq(verify.defaults.priority, 'low', 'the comment double-check waits too');
   });
 
+  test('a column only background warming is reading is read again, at normal priority, when it is needed now', async () => {
+    const { api, reads } = recordingApi();
+    let releaseLow;
+    const base = api.submissionsForAssignments;
+    api.submissionsForAssignments = function (courseId, ids) {
+      if (this._defaults && this._defaults.priority === 'low') {
+        reads.push({ name: 'submissions', ids: ids.slice(), defaults: this._defaults });
+        return new Promise((res) => { releaseLow = () => res([{ assignment_id: '51', user_id: '10', score: 1 }]); });
+      }
+      return base.call(this, courseId, ids).then(() => [{ assignment_id: '51', user_id: '10', score: 9 }]);
+    };
+    const model = new CGP.GradebookModel(api, '7');
+    await model.init();
+    const warming = model.ensureAssignments(['51'], { priority: 'low' });
+    await model.ensureAssignments(['51']);
+    const subs = reads.filter((r) => r.name === 'submissions');
+    a.eq(subs.length, 2, 'the on-screen read did not wait on the warming one');
+    a.eq(subs[1].defaults.priority, undefined);
+    a.ok(model.loadedAssignments.has('51'));
+    releaseLow();
+    await warming;
+    a.eq(model.cell('51', '10').score, 9, 'the older warming read lands harmlessly');
+    // A second low-priority ask for a column a normal read holds just waits.
+    await model.ensureAssignments(['51'], { priority: 'low' });
+    a.eq(reads.filter((r) => r.name === 'submissions').length, 2);
+  });
+
   test('a client without withDefaults (a test double, an older caller) is used as it is', async () => {
     const calls = [];
     const api = {
@@ -152,7 +179,7 @@ const FrameGate = globalThis.CGP.FrameGate;
 function fakeWindow(path, parentPath, opts) {
   opts = opts || {};
   const top = { location: { pathname: parentPath } };
-  const win = { location: { pathname: path }, document: { referrer: opts.referrer || '' } };
+  const win = { location: { pathname: path, protocol: opts.protocol || (path === 'blank' ? 'about:' : 'https:') }, document: { referrer: opts.referrer || '' } };
   win.self = win;
   if (opts.isTop) { win.top = win; win.parent = win; } else { win.top = top; win.parent = top; }
   return win;
@@ -198,7 +225,10 @@ suite('load speed: frames inside a course page', (test) => {
       delete CGP._frameScriptsRequested;
       a.eq(FrameGate.run(fakeWindow('blank', '/courses/1/gradebook'), rt), true);
       delete CGP._frameScriptsRequested;
-      a.eq(FrameGate.run(fakeWindow('/x', '/elsewhere', { referrer: 'https://x.instructure.com/courses/1/gradebook/speed_grader?assignment_id=1' }), rt), true, 'by referrer when the parent is unreadable');
+      a.eq(FrameGate.run(fakeWindow('srcdoc', '/elsewhere', { protocol: 'about:', referrer: 'https://x.instructure.com/courses/1/gradebook/speed_grader?assignment_id=1' }), rt), true, 'by referrer when the parent is unreadable');
+      delete CGP._frameScriptsRequested;
+      a.eq(FrameGate.run(fakeWindow('/courses/1/assignments/2/submissions/3', '/courses/1/gradebook/speed_grader'), rt), false,
+        'SpeedGrader\u2019s submission preview has an address of its own and no comment editor');
     } finally {
       CGP.snippets = saved.snippets;
       CGP.settings = saved.settings;
