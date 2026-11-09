@@ -1,6 +1,6 @@
 # Chrome Web Store Listing — Canvas Gradebook+
 
-> Last Updated: 2026-11-09 · Version 1.28.0
+> Last Updated: 2026-11-09 · Version 1.28.1
 
 Everything the Chrome Developer Dashboard asks for, in one place. Copy each field as it is.
 The Web Store shows plain text only (no Markdown), so the detailed description below is
@@ -90,7 +90,7 @@ PERMISSIONS
 
 Canvas Gradebook+ is an independent tool for teachers. It is not affiliated with or endorsed by Instructure, the maker of Canvas.
 
-Version 1.28.0: new Class Schedule. Connect your Google Calendar and pick due times from your class periods right in Canvas's Assign To boxes. This version replaces Time Shortcuts.
+Version 1.28.1: new Class Schedule. Connect your Google Calendar and pick due times from your class periods right in Canvas's Assign To boxes (replaces Time Shortcuts). Also: a cleaner SpeedGrader comment box, and Free Draw and Point annotations start in red from the first mark.
 ```
 
 **Category:** Education (in the Dashboard: Productivity → Education)
@@ -176,6 +176,7 @@ section can be published as-is (for example as a GitHub Pages page or a public G
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
+| 1.28.1 | 2026-11-09 | Grade detail panel: status buttons always on one row (panel slightly wider); SpeedGrader and Submit for Student as matching, aligned buttons. SpeedGrader comment box: attach / media / speech tools and Submit Comment in one footer bar joined to the editor. Free Draw and Point annotations set to red as soon as the tool is picked. | Draft |
 | 1.28.0 | 2026-11-09 | Class Schedule replaces Time Shortcuts: pick due times from your Google Calendar's class periods; "Also post to your other classes" choices sync across computers; Canvas's settings dialog no longer flashes on gradebook load when View Options are applied automatically; Gradebook Status Icons off by default; review fixes. New optional permission use: the connected calendar's site. | Draft |
 | 1.27.0 | 2026-11-06 | Student overview search, Studio videos embedded in assignments, readable item titles. | Published |
 
