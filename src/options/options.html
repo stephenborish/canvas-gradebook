@@ -343,8 +343,10 @@
               <span class="hint">Status becomes one row of buttons in your status colours: click one to set it,
                 click it again to clear it, and Late gets a &ldquo;Late by &minus; 2 + days&rdquo; box that takes
                 decimals too (1.5 or 1,5). The comment
-                box's Cancel / Submit move above a shorter editor so a new comment is easy to spot, and its
-                formatting buttons are always showing (the &ldquo;more&rdquo; button holds the Paragraph menu).</span>
+                box's Cancel / Submit move above the editor so a new comment is easy to spot, the editor grows as
+                you type (down to the bottom of the window, then it scrolls), and its
+                formatting buttons are always showing (the &ldquo;more&rdquo; button holds the Paragraph menu).
+                SpeedGrader and Submit for Student sit side by side.</span>
             </label>
             <input id="trayLayout" type="checkbox" class="switch">
           </div>
@@ -584,6 +586,22 @@
           <div class="setting">
             <label class="setting__label" for="speedgraderStickySubmit">Keep the SpeedGrader "Submit Comment" button in view instead of below the comment box</label>
             <input id="speedgraderStickySubmit" type="checkbox" class="switch">
+          </div>
+          <div class="setting">
+            <label class="setting__label" for="speedgraderTidyComments">Tidy the SpeedGrader comment box
+              <span class="hint">The same look as the Grade Detail Tray: every formatting button showing (including
+                images and equations), an editor that grows as you type down to the bottom of the window and then
+                scrolls, and the attach-a-file, record video / audio and speech buttons as clear buttons beside a
+                larger Submit Comment.</span>
+            </label>
+            <input id="speedgraderTidyComments" type="checkbox" class="switch">
+          </div>
+          <div class="setting">
+            <label class="setting__label" for="annotationDefaultRed">Start Free Draw and Point annotations in red
+              <span class="hint">In the document viewer over a student&rsquo;s file. Pick another colour yourself and
+                that choice is kept for the rest of the session in that tab.</span>
+            </label>
+            <input id="annotationDefaultRed" type="checkbox" class="switch">
           </div>
           <div class="setting">
             <label class="setting__label" for="prefetchAllAssignments">Warm every assignment column in the background so indicators appear everywhere</label>

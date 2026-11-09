@@ -25,7 +25,7 @@
     'textarea[placeholder*="comment" i]'
   ].join(', ');
 
-  var SUBMIT_SELECTORS = [
+  var SUBMIT_SELECTORS = CGP.SPEEDGRADER_SUBMIT_SELECTOR = [
     '#comment_submit_button',
     'button[data-testid="comment-submit-button"]',
     'button[data-testid*="submit-comment" i]',
@@ -45,6 +45,25 @@
 
   var COMMENTS_SELECTORS = ['#comments', '#comment_list', '.comment_list', '.comments'].join(', ');
 
+  var COMMENT_CONTAINERS =
+    '#speedgrader_comment_textarea_mount_point, #speed_grader_comment_textarea_mount_point, #add_a_comment, ' +
+    '#discussion, .comment_area, ' +
+    '#right_side, .rubric_container, #rubric_assessments, .grade-detail-tray, [data-testid*="comment" i], ' +
+    '.cgp-pop, .cgp-comment-popover, #comment-form, .comments, .comment_list, [class*="grade-detail" i], ' +
+    // The Grade Detail Tray's comment box carries no comment-ish id or
+    // label; it is only identifiable as a field inside the tray's dialog.
+    '[role="dialog"]';
+
+  /** The <iframe> element holding `el`'s document, when that document is a
+   * same-origin frame's (the RCE's); null in the top document. */
+  function frameOf(el) {
+    try {
+      var doc = el.ownerDocument;
+      var win = doc && doc.defaultView;
+      return (win && win.frameElement) || null;
+    } catch (e) { return null; }
+  }
+
   /* Canvas may render SpeedGrader comments with the RCE-lite editor instead of
    * a textarea. In that mode the editable surface is contenteditable and the
    * old textarea-only Tab handler never runs. Expand /trigger at the caret in
@@ -59,14 +78,14 @@
     // Detail Tray, the comment popover) or says so in an attribute. A text
     // submission view or a stray field never expands snippets.
     if (tag === 'textarea' || el.matches('[contenteditable="true"]') || el.matches('input[type="text"]')) {
-      if (el.closest(
-        '#speedgrader_comment_textarea_mount_point, #add_a_comment, #discussion, .comment_area, ' +
-        '#right_side, .rubric_container, #rubric_assessments, .grade-detail-tray, [data-testid*="comment" i], ' +
-        '.cgp-pop, .cgp-comment-popover, #comment-form, .comments, .comment_list, [class*="grade-detail" i], ' +
-        // The Grade Detail Tray's comment box carries no comment-ish id or
-        // label; it is only identifiable as a field inside the tray's dialog.
-        '[role="dialog"]'
-      )) return true;
+      if (el.closest(COMMENT_CONTAINERS)) return true;
+      // Canvas's rich comment editor (TinyMCE) types into the <body> of its
+      // own iframe, a separate document with none of the containers above
+      // and only a generic "Rich Text Area" label. It is a comment box when
+      // the IFRAME sits in one of those containers (SpeedGrader's comment
+      // mount point, the Grade Detail Tray's dialog...).
+      var frame = frameOf(el);
+      if (frame && frame.closest && frame.closest(COMMENT_CONTAINERS)) return true;
       var label = ((el.getAttribute('aria-label') || '') + ' ' +
         (el.getAttribute('placeholder') || '') + ' ' +
         (el.getAttribute('name') || '') + ' ' +
@@ -80,7 +99,8 @@
   }
 
   function pointAtTextOffset(root, offset) {
-    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    var doc = root.ownerDocument || document;
+    var walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
     var n, used = 0, last = null;
     while ((n = walker.nextNode())) {
       last = n;
@@ -88,16 +108,20 @@
       if (used + len >= offset) return { node: n, offset: Math.max(0, offset - used) };
       used += len;
     }
-    if (!last) { last = document.createTextNode(''); root.appendChild(last); }
+    if (!last) { last = doc.createTextNode(''); root.appendChild(last); }
     return { node: last, offset: (last.nodeValue || '').length };
   }
 
+  /* The editor's OWN document and window: the RCE's editable body lives in
+   * an iframe, whose selection and ranges are not the top page's. */
   function expandRichSnippet(editor, snippets) {
-    var sel = window.getSelection && window.getSelection();
+    var doc = editor.ownerDocument || document;
+    var win = doc.defaultView || window;
+    var sel = win.getSelection && win.getSelection();
     if (!sel || !sel.rangeCount || !editor.contains(sel.anchorNode)) return false;
     var caret = sel.getRangeAt(0);
     if (!caret.collapsed) return false;
-    var before = document.createRange();
+    var before = doc.createRange();
     before.selectNodeContents(editor);
     before.setEnd(caret.endContainer, caret.endOffset);
     var prefix = before.toString();
@@ -107,18 +131,29 @@
     if (!snip) return false;
     var a = pointAtTextOffset(editor, hit.start);
     var b = pointAtTextOffset(editor, hit.end);
-    var replace = document.createRange();
+    var replace = doc.createRange();
     replace.setStart(a.node, a.offset);
     replace.setEnd(b.node, b.offset);
+    // Typed in through the browser's own editing: select "/trigger" and
+    // insert the text over it. The editor (TinyMCE) sees real input - its
+    // content, undo and Canvas's copy of the comment all follow - exactly as
+    // if the teacher had typed the snippet.
+    sel.removeAllRanges();
+    sel.addRange(replace);
+    var inserted = false;
+    try { inserted = typeof doc.execCommand === 'function' && doc.execCommand('insertText', false, snip.text); } catch (e) { inserted = false; }
+    if (inserted) return true;
+    // Fallback: edit the DOM directly and announce it.
     replace.deleteContents();
-    var tn = document.createTextNode(snip.text);
+    var tn = doc.createTextNode(snip.text);
     replace.insertNode(tn);
-    var next = document.createRange();
+    var next = doc.createRange();
     next.setStart(tn, tn.nodeValue.length);
     next.collapse(true);
     sel.removeAllRanges();
     sel.addRange(next);
-    editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: snip.text }));
+    var IE = win.InputEvent || InputEvent;
+    editor.dispatchEvent(new IE('input', { bubbles: true, inputType: 'insertText', data: snip.text }));
     return true;
   }
 
@@ -154,6 +189,55 @@
     if (CGP._snippetCaptureInstalled) return;
     CGP._snippetCaptureInstalled = true;
     document.addEventListener('keydown', handleSnippetKeydown, true);
+    bindFrameSnippetCapture();
+  }
+
+  /* Canvas's rich comment editor types inside its own iframe, and a
+   * keydown there never reaches this document. The extension is not
+   * reliably running inside that blank frame either (it may never be
+   * injected, and the editor rewrites the frame's document after it is
+   * created, which drops listeners added to the first one). So from here,
+   * the same Tab handler is added to every same-origin iframe's document -
+   * again whenever an editor appears or its document is replaced. */
+  function bindFrameSnippetCapture() {
+    if (typeof window === 'undefined' || window.top !== window.self) return;
+    function scan() {
+      var frames = document.querySelectorAll('iframe');
+      for (var i = 0; i < frames.length; i++) {
+        var doc = null;
+        try { doc = frames[i].contentDocument; } catch (e) { doc = null; }   // cross-origin
+        if (!doc || !doc.addEventListener) continue;
+        // Added every time, never "once per document": the editor's
+        // document.open() keeps the same document but ERASES its listeners,
+        // so a remembered "already bound" would be wrong. Adding the same
+        // listener again is a no-op while it is still there.
+        doc.addEventListener('keydown', handleSnippetKeydown, true);
+      }
+    }
+    var timer = null;
+    function schedule() {
+      if (timer) return;
+      timer = setTimeout(function () { timer = null; scan(); }, 200);
+    }
+    if (typeof MutationObserver !== 'undefined' && document.body) {
+      // Only additions that are, or hold, an iframe: the gradebook grid
+      // rewrites rows on every scroll frame and must not re-arm the scan.
+      new MutationObserver(function (records) {
+        for (var i = 0; i < records.length; i++) {
+          var added = records[i].addedNodes || [];
+          for (var j = 0; j < added.length; j++) {
+            var n = added[j];
+            if (n.nodeType === 1 && (n.tagName === 'IFRAME' || (n.querySelector && n.querySelector('iframe')))) { schedule(); return; }
+          }
+        }
+      }).observe(document.body, { childList: true, subtree: true });
+    }
+    // A frame's document can be replaced without any change to the page
+    // around it (the editor writing its content in): check now and then.
+    setInterval(scan, 1500);
+    // Focus moving into an editor is the moment it matters most.
+    document.addEventListener('focusin', schedule, true);
+    scan();
   }
 
   function isGradingPath(path) {
@@ -576,6 +660,12 @@
       pinSubmitButton();
     }
 
+    // The comment box laid out like the Grade Detail Tray's (comment-layout.js).
+    if (CGP.SpeedGraderCommentLayout) {
+      try { new CGP.SpeedGraderCommentLayout({ settings: CGP.settings }).start(); } catch (e) {
+        CGP.diag.error('speedgraderLayout.startFailed', { message: String(e && e.message) });
+      }
+    }
     // Document-level and bound once, so neither needs the poll below.
     bindDraftListeners();
     watchSubmit();

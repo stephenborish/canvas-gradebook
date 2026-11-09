@@ -116,6 +116,7 @@
         "src/sections/sync-dialog.js",
         "src/sections/sync-board.js",
         "src/sections/inline-copy.js",
+        "src/speedgrader/comment-layout.js",
         "src/speedgrader/content.js",
         "src/gradebook/content.js"
       ],
@@ -126,6 +127,17 @@
       "run_at": "document_idle",
       "all_frames": true,
       "match_about_blank": true
+    },
+    {
+      "matches": [
+        "*://*.instructure.com/*sessions/*"
+      ],
+      "js": [
+        "src/core/util.js",
+        "src/speedgrader/annotation-color.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
     },
     {
       "matches": [

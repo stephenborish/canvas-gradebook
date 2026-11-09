@@ -29,6 +29,7 @@ require('./test-course-menu');
 require('./test-selection');
 require('./test-course-switcher');
 require('./test-tray-layout');
+require('./test-speedgrader-layout');
 require('./test-write-safety');
 require('./test-comments-ui');
 require('./test-grid-reliability');
