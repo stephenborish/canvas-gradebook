@@ -46,6 +46,13 @@ suite('self-update', (test) => {
     a.eq(f.calls.check, 1);
   });
 
+  test('a class-schedule calendar site granted as https://host/* is not a Canvas domain', async () => {
+    const { createSelfUpdater } = await import(MODULE);
+    const f = fakeChrome({ origins: ['*://*.instructure.com/*', 'https://calendar.google.com/*'] });
+    await createSelfUpdater(f.chrome).onTabUpdated(1, { status: 'complete' }, { url: 'https://calendar.google.com/courses/9' });
+    a.eq(f.calls.check, 0);
+  });
+
   test('the Web Store is asked at most once an hour', async () => {
     const { createSelfUpdater, CHECK_INTERVAL_MS } = await import(MODULE);
     const f = fakeChrome();

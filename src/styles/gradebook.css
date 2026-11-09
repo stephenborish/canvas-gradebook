@@ -4259,3 +4259,88 @@ html.cgp-tray-tidy [data-cgp-tray-comment-editor] textarea {
 html.cgp-tray-tidy [data-cgp-tray-hide] {
   display: none !important;
 }
+
+/* ------------------------------------------------- class schedule picker
+ * Beside Canvas's Assign To date and time boxes (assignments/course-schedule.js). */
+html.cgp-on .cgp-sched {
+  position: fixed;
+  z-index: 2147483000;
+  width: 320px;
+  max-height: min(420px, calc(100vh - 16px));
+  overflow: auto;
+  box-sizing: border-box;
+  font-family: var(--cgp-font);
+  font-size: 13px;
+  color: var(--cgp-ink);
+  background: var(--cgp-surface);
+  border: 1px solid var(--cgp-hairline-strong);
+  border-radius: var(--cgp-radius);
+  box-shadow: var(--cgp-shadow);
+  padding: 8px;
+  line-height: 1.35;
+}
+html.cgp-on .cgp-sched[hidden] { display: none; }
+html.cgp-on .cgp-sched button { font: inherit; cursor: pointer; margin: 0; }
+html.cgp-on .cgp-sched__head { display: flex; align-items: center; gap: 4px; padding: 0 0 6px; border-bottom: 1px solid var(--cgp-hairline); margin-bottom: 6px; }
+html.cgp-on .cgp-sched__day { flex: 1 1 auto; text-align: center; font-weight: 600; color: var(--cgp-ink-strong); font-size: 13.5px; white-space: nowrap; }
+html.cgp-on .cgp-sched__today-tag { font-weight: 500; font-size: 11px; color: var(--cgp-brand-dark); background: var(--cgp-brand-wash); border-radius: 999px; padding: 1px 6px; margin-left: 4px; vertical-align: 1px; }
+html.cgp-on .cgp-sched__nav,
+html.cgp-on .cgp-sched__x {
+  flex: 0 0 auto;
+  width: 28px; height: 28px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--cgp-ink);
+  font-size: 18px; line-height: 1;
+  padding: 0;
+}
+html.cgp-on .cgp-sched__nav:hover,
+html.cgp-on .cgp-sched__x:hover { background: var(--cgp-row-hover); border-color: var(--cgp-hairline); }
+html.cgp-on .cgp-sched__x { color: var(--cgp-muted); }
+html.cgp-on .cgp-sched__link {
+  border: 0; background: transparent; padding: 2px 4px;
+  color: var(--cgp-brand-dark); font-size: 12px; text-decoration: underline; text-underline-offset: 2px;
+}
+html.cgp-on .cgp-sched__tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
+html.cgp-on .cgp-sched__tag { font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: #f3f5f7; border: 1px solid var(--cgp-hairline); color: var(--cgp-ink); }
+html.cgp-on .cgp-sched__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+html.cgp-on .cgp-sched__row { display: flex; align-items: stretch; gap: 4px; margin: 0; }
+html.cgp-on .cgp-sched__pick {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  text-align: left;
+  padding: 6px 9px;
+  border: 1px solid var(--cgp-hairline);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--cgp-ink);
+}
+html.cgp-on .cgp-sched__pick:hover,
+html.cgp-on .cgp-sched__pick:focus-visible { border-color: var(--cgp-brand); background: var(--cgp-brand-wash); outline: none; }
+html.cgp-on .cgp-sched__row.is-match .cgp-sched__pick { border-left: 3px solid var(--cgp-brand); }
+html.cgp-on .cgp-sched__title { font-weight: 600; color: var(--cgp-ink-strong); overflow-wrap: anywhere; }
+html.cgp-on .cgp-sched__badge { font-weight: 500; font-size: 10.5px; color: #fff; background: var(--cgp-brand); border-radius: 999px; padding: 1px 6px; margin-left: 4px; vertical-align: 1px; white-space: nowrap; }
+html.cgp-on .cgp-sched__time { color: var(--cgp-muted); font-size: 12px; }
+html.cgp-on .cgp-sched__alt {
+  flex: 0 0 auto;
+  padding: 0 9px;
+  border: 1px solid var(--cgp-hairline);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--cgp-brand-dark);
+  font-size: 12px;
+}
+html.cgp-on .cgp-sched__alt:hover,
+html.cgp-on .cgp-sched__alt:focus-visible { border-color: var(--cgp-brand); background: var(--cgp-brand-wash); outline: none; }
+html.cgp-on .cgp-sched__msg { margin: 8px 4px; color: var(--cgp-muted); }
+html.cgp-on .cgp-sched__msg--err { color: #a0281c; }
+html.cgp-on .cgp-sched__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--cgp-hairline); color: var(--cgp-muted); font-size: 11.5px; }
+html.cgp-on .cgp-sched__foot > span { flex: 1 1 180px; }
+html.cgp-on .cgp-sched__warn { color: #8a5a00; }
+html.cgp-on .cgp-sched__cta {
+  border: 1px solid var(--cgp-brand); border-radius: 6px;
+  background: var(--cgp-brand); color: #fff;
+  padding: 5px 12px; font-size: 12.5px; font-weight: 600;
+}
+html.cgp-on .cgp-sched__cta:hover { background: var(--cgp-brand-dark); border-color: var(--cgp-brand-dark); }

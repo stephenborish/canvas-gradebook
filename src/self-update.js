@@ -12,6 +12,8 @@
  * landed keeps working (its writes go straight to Canvas) but loses
  * chrome.storage until it is reloaded. */
 
+import { isCustomCanvasOrigin } from './script-manifest.js';
+
 export const CHECK_INTERVAL_MS = 60 * 60 * 1000;
 const LAST_CHECK_KEY = 'cgp.lastUpdateCheck';
 const CANVAS_PATTERN = '*://*.instructure.com/courses/*';
@@ -23,7 +25,7 @@ async function canvasPatterns(chrome) {
   try {
     const perms = await chrome.permissions.getAll();
     (perms.origins || []).forEach((o) => {
-      if (o.includes('instructure.com') || o === '*://*/*') return;
+      if (!isCustomCanvasOrigin(o)) return;   // a calendar's site, or instructure.com
       patterns.push(o.replace(/\/\*$/, '/courses/*'));
     });
   } catch (e) { /* instructure.com alone */ }

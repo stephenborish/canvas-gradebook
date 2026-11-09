@@ -130,16 +130,15 @@ suite('copy to sections: dates', (test) => {
     a.eq(S().withTime('2026-03-07T08:55', '13:45'), '2026-03-07T13:45');
   });
 
-  test('a section time can be a period shortcut, a 24-hour or a 12-hour time', () => {
-    const cuts = [{ key: '1', time: '08:55' }, { key: '3', time: '12:30' }];
-    a.eq(S().parseClock('3', cuts), '12:30');
-    a.eq(S().parseClock('13:45', cuts), '13:45');
-    a.eq(S().parseClock('1:45 pm', cuts), '13:45');
-    a.eq(S().parseClock('12am', cuts), '00:00');
-    a.eq(S().parseClock('12:15 PM', cuts), '12:15');
-    a.eq(S().parseClock('9a', cuts), '09:00');
-    a.eq(S().parseClock('7', cuts), null, 'not a shortcut, not a time');
-    a.eq(S().parseClock('13 pm', cuts), null);
+  test('a section time can be a 24-hour or a 12-hour time', () => {
+    a.eq(S().parseClock('13:45'), '13:45');
+    a.eq(S().parseClock('1:45 pm'), '13:45');
+    a.eq(S().parseClock('8:55 AM'), '08:55', 'what the class-schedule picker puts in');
+    a.eq(S().parseClock('12am'), '00:00');
+    a.eq(S().parseClock('12:15 PM'), '12:15');
+    a.eq(S().parseClock('9a'), '09:00');
+    a.eq(S().parseClock('3'), null, 'a bare number (an old period-shortcut key) is not a time');
+    a.eq(S().parseClock('13 pm'), null);
   });
 
   test('dates are checked in the order Canvas enforces', () => {
@@ -1037,7 +1036,6 @@ suite('copy to sections: PR review (Codex)', (test) => {
 });
 
 suite('copy to sections: from Canvas’s own editor', (test) => {
-  const cuts = [{ key: '4', time: '13:45' }];
   const src = { due_at: '2026-11-03T13:55:00Z', unlock_at: null, lock_at: null };
   const F = ['due_at', 'unlock_at', 'lock_at'];
 
@@ -1051,19 +1049,19 @@ suite('copy to sections: from Canvas’s own editor', (test) => {
     a.eq(S().editPageFromPath('/courses/1/assignments'), null);
   });
 
-  test('blank is this section’s; a time alone (or a period) is this section’s day at that time', () => {
-    a.deep(S().resolveInline(F, src, {}, TZ, cuts).iso, src);
-    a.eq(S().resolveInline(F, src, { due_at: { time: '4' } }, TZ, cuts).iso.due_at, '2026-11-03T18:45:00.000Z');
-    a.eq(S().resolveInline(F, src, { due_at: { time: '1:45 pm' } }, TZ, cuts).iso.due_at, '2026-11-03T18:45:00.000Z');
-    a.eq(S().resolveInline(F, src, { due_at: { date: '2026-11-05' } }, TZ, cuts).iso.due_at, '2026-11-05T13:55:00.000Z', 'a date keeps the time of day');
-    a.eq(S().resolveInline(F, src, { due_at: { date: '2026-11-05', time: '4' } }, TZ, cuts).iso.due_at, '2026-11-05T18:45:00.000Z');
-    a.eq(S().resolveInline(F, {}, { due_at: { date: '2026-11-05' } }, TZ, cuts).iso.due_at, '2026-11-06T04:59:59.000Z', 'no time anywhere: end of that day');
+  test('blank is this section’s; a time alone is this section’s day at that time', () => {
+    a.deep(S().resolveInline(F, src, {}, TZ).iso, src);
+    a.eq(S().resolveInline(F, src, { due_at: { time: '13:45' } }, TZ).iso.due_at, '2026-11-03T18:45:00.000Z');
+    a.eq(S().resolveInline(F, src, { due_at: { time: '1:45 pm' } }, TZ).iso.due_at, '2026-11-03T18:45:00.000Z');
+    a.eq(S().resolveInline(F, src, { due_at: { date: '2026-11-05' } }, TZ).iso.due_at, '2026-11-05T13:55:00.000Z', 'a date keeps the time of day');
+    a.eq(S().resolveInline(F, src, { due_at: { date: '2026-11-05', time: '1:45 PM' } }, TZ).iso.due_at, '2026-11-05T18:45:00.000Z');
+    a.eq(S().resolveInline(F, {}, { due_at: { date: '2026-11-05' } }, TZ).iso.due_at, '2026-11-06T04:59:59.000Z', 'no time anywhere: end of that day');
   });
 
   test('what cannot be read, or cannot be placed, is said', () => {
-    a.ok(/not a time/.test(S().resolveInline(F, src, { due_at: { time: '7' } }, TZ, cuts).errors[0]));
-    a.ok(/no date to put that time on/.test(S().resolveInline(F, {}, { due_at: { time: '4' } }, TZ, cuts).errors[0]));
-    a.ok(/after Due/.test(S().resolveInline(F, src, { unlock_at: { date: '2026-11-09' } }, TZ, cuts).errors[0]));
+    a.ok(/not a time/.test(S().resolveInline(F, src, { due_at: { time: '7' } }, TZ).errors[0]));
+    a.ok(/no date to put that time on/.test(S().resolveInline(F, {}, { due_at: { time: '1:45 pm' } }, TZ).errors[0]));
+    a.ok(/after Due/.test(S().resolveInline(F, src, { unlock_at: { date: '2026-11-09' } }, TZ).errors[0]));
   });
 });
 
@@ -1120,6 +1118,78 @@ suite('copy to sections: the editor’s Save', (test) => {
     a.ok(await inline({ id: 9 }).matchSaved({ id: '9', armedAt: t, savedAt: t + 1000, type: 'discussion' }, d));
   });
 
+  /* Two of the teacher's computers: their own chrome.storage.local, and one
+   * chrome.storage.sync between them (what Chrome sync converges on). */
+  function computers() {
+    const bag = (data) => ({
+      data,
+      get: async (k) => (k in data ? { [k]: JSON.parse(JSON.stringify(data[k])) } : {}),
+      set: async (o) => { Object.keys(o).forEach((k) => { data[k] = JSON.parse(JSON.stringify(o[k])); }); },
+      remove: async (k) => { delete data[k]; }
+    });
+    const synced = bag({});
+    return { synced, school: { storage: { local: bag({}), sync: synced } }, laptop: { storage: { local: bag({}), sync: synced } } };
+  }
+  async function on(chromeFake, fn) {
+    const prev = globalThis.chrome;
+    globalThis.chrome = chromeFake;
+    try { return await fn(); } finally { globalThis.chrome = prev; }
+  }
+  function withChoices(ic, rows) {
+    ic.state = { sibs: Object.keys(rows), rows, origins: {} };
+    return ic;
+  }
+
+  test('the classes ticked, and each one’s usual due time, follow the teacher to their other computers', async () => {
+    const c = computers();
+    await on(c.school, async () => {
+      const ic = withChoices(inline({ id: 9 }), {
+        12: { on: true, entry: { due_at: { date: '', time: '1:45 PM' } } },
+        13: { on: false, entry: {} },
+        14: { on: true, entry: {} }
+      });
+      ic.savePrefs();
+      await ic._prefsWrite;
+    });
+    const read = await on(c.laptop, () => inline({ id: 9 }).readPrefs());
+    a.deep(read, { 12: { on: true, time: '1:45 PM' }, 13: { on: false, time: '' } }, 'a class ticked with no time is the default');
+    a.ok(S().CLASS_PREFS_KEY in c.synced.data);
+  });
+
+  test('choices this computer kept before they synced are still read, and move into Chrome sync on the next save', async () => {
+    const c = computers();
+    const ic = inline({ id: 9 });
+    c.school.storage.local.data[ic.prefsKey()] = { 12: { on: false, time: '' } };
+    await on(c.school, async () => {
+      a.deep(await ic.readPrefs(), { 12: { on: false, time: '' } });
+      withChoices(ic, { 12: { on: false, entry: {} } }).savePrefs();
+      await ic._prefsWrite;
+    });
+    a.eq(ic.prefsKey() in c.school.storage.local.data, false, 'the old copy is gone');
+    a.deep(await on(c.laptop, () => inline({ id: 9 }).readPrefs()), { 12: { on: false, time: '' } });
+  });
+
+  test('when Chrome sync refuses the write, the choices are kept on this computer', async () => {
+    const c = computers();
+    c.synced.set = async () => { throw new Error('QUOTA_BYTES quota exceeded'); };
+    const ic = withChoices(inline({ id: 9 }), { 12: { on: false, entry: {} } });
+    await on(c.school, async () => { ic.savePrefs(); await ic._prefsWrite; });
+    a.deep(c.school.storage.local.data[ic.prefsKey()], { 12: { on: false, time: '' } });
+  });
+
+  test('the synced choices stay small: the courses used longest ago go first', () => {
+    let map = {};
+    for (let i = 0; i < 60; i++) {
+      map = S().fitClassPrefs(map, 'https://school.instructure.com.' + (100 + i), { 1: { on: false }, 2: { on: true, time: '10:10 AM' } }, 1000 + i);
+    }
+    const bytes = Buffer.byteLength(S().CLASS_PREFS_KEY + JSON.stringify(map));
+    a.ok(bytes <= S().CLASS_PREFS_BYTES, 'fits its budget: ' + bytes);
+    a.ok('https://school.instructure.com.159' in map, 'the newest kept');
+    a.not('https://school.instructure.com.100' in map, 'the oldest dropped');
+    a.eq(S().classPrefsFor(map, 'nope'), null);
+    a.deep(S().classPrefsFor({ x: { at: 1, p: { 7: { on: true, time: '' }, bad: { on: false } } } }, 'x'), {}, 'junk and defaults are left out');
+  });
+
   test('Save buttons are told apart from Cancel', () => {
     load();
     ['Save', 'Save & Publish', 'save and publish', ' Save ', 'Add Module', 'Update Module'].forEach((x) => a.ok(globalThis.CGP.inlineCopy.SAVE_TEXT.test(x), x));
@@ -1130,9 +1200,9 @@ suite('copy to sections: the editor’s Save', (test) => {
 suite('copy to sections: existing copies without a date', (test) => {
   test('a copy with no due date keeps none; typing one in gives it that date', () => {
     const src = { due_at: '2026-11-03T13:55:00Z', unlock_at: null, lock_at: null };
-    a.eq(S().resolveInline(['due_at'], src, { due_at: { date: '', time: '', none: true } }, TZ, []).iso.due_at, null);
-    a.eq(S().resolveInline(['due_at'], src, { due_at: { date: '2026-11-04', time: '', none: true } }, TZ, []).iso.due_at, '2026-11-04T13:55:00.000Z');
-    a.eq(S().resolveInline(['due_at'], src, { due_at: { date: '', time: '' } }, TZ, []).iso.due_at, '2026-11-03T13:55:00Z', 'a new copy: blank is this class’s');
+    a.eq(S().resolveInline(['due_at'], src, { due_at: { date: '', time: '', none: true } }, TZ).iso.due_at, null);
+    a.eq(S().resolveInline(['due_at'], src, { due_at: { date: '2026-11-04', time: '', none: true } }, TZ).iso.due_at, '2026-11-04T13:55:00.000Z');
+    a.eq(S().resolveInline(['due_at'], src, { due_at: { date: '', time: '' } }, TZ).iso.due_at, '2026-11-03T13:55:00Z', 'a new copy: blank is this class’s');
   });
 });
 

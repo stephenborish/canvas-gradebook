@@ -18,7 +18,7 @@ export const CONTENT_JS = [
   'src/core/studio-class.js',
   'src/core/roster-format.js',
   'src/core/snippets.js',
-  'src/core/time-shortcuts.js',
+  'src/core/course-calendar.js',
   'src/core/section-sync.js',
   'src/core/ui.js',
   'src/core/model.js',
@@ -47,7 +47,7 @@ export const CONTENT_JS = [
   'src/gradebook/course-menu.js',
   'src/gradebook/tray-layout.js',
   'src/studio/canvas-relay.js',
-  'src/assignments/time-shortcuts.js',
+  'src/assignments/course-schedule.js',
   'src/sections/sync-runner.js',
   'src/sections/sync-dialog.js',
   'src/sections/sync-board.js',
@@ -60,3 +60,15 @@ export const CONTENT_CSS = [
   'src/styles/gradebook.css',
   'src/styles/speedgrader.css'
 ];
+
+/* Which granted host permissions are self-hosted Canvas domains. The
+ * options page grants those as "*://host/*" (Course & Domains), and a
+ * class-schedule calendar's site as "https://host/*" (calendar-sync.js), so
+ * the pattern's scheme tells them apart; instructure.com is covered by the
+ * manifest, and "*://*\/*" is the optional all-sites entry, not a domain.
+ * src/options/options.js listDomains() applies the same rule (it cannot
+ * import this module). */
+export function isCustomCanvasOrigin(origin) {
+  const o = String(origin || '');
+  return o.startsWith('*://') && !o.includes('instructure.com') && o !== '*://*/*';
+}

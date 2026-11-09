@@ -46,6 +46,11 @@
     return local || null;
   }
 
+  function syncStore() {
+    var sync = typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync;
+    return sync || null;
+  }
+
   function InlineSectionCopy(ctx) {
     this.api = ctx.api;
     this.courseId = String(ctx.courseId);
@@ -65,7 +70,10 @@
     if (!this.tabToken) this.tabToken = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
     return INTENT_PREFIX + this.origin + '|' + this.tabToken;
   };
+  // This computer's copy, from versions that kept the choices here only.
   P.prefsKey = function () { return PREFS_PREFIX + this.origin + '.' + this.courseId; };
+  // The course's entry in the synced item (CGP.sectionSync.fitClassPrefs).
+  P.syncPrefsKey = function () { return this.origin + '.' + this.courseId; };
 
   P.siblings = function () {
     return S().siblings(this.settings.values.sectionGroups, this.origin, this.courseId);
@@ -108,8 +116,9 @@
       sibs.forEach(function (d) {
         var pref = prefs[d] || {};
         var row = st.rows[d] = { on: pref.on !== false, entry: {} };
-        // A section's usual due time (its class period) is remembered.
-        if (pref.time && st.fields.length) row.entry.due_at = { date: '', time: pref.time };
+        // A section's usual due time (its class period) is remembered. (A
+        // period-shortcut key saved by an older version is not a time.)
+        if (pref.time && S().parseClock(pref.time) && st.fields.length) row.entry.due_at = { date: '', time: pref.time };
       });
       return self.findExisting();
     }).then(function () {
@@ -171,7 +180,7 @@
               var local = S().isoToLocal(dd && dd[f], st.tz);
               // Its date, or that it has none: kept as it is unless changed
               // here (blank would otherwise mean "same as this class").
-              row.entry[f] = local ? { date: local.slice(0, 10), time: CGP.timeShortcuts.format(local.slice(11)) } : { date: '', time: '', none: true };
+              row.entry[f] = local ? { date: local.slice(0, 10), time: CGP.courseCalendar.formatClock(local.slice(11)) } : { date: '', time: '', none: true };
             });
           }, function () { /* boxes stay as they are */ });
         }));
@@ -239,7 +248,7 @@
         var e = row.entry[f] || {};
         return '<label class="cgp-inline__date"><span>' + esc(S().DATE_LABELS[f]) + '</span>' +
           '<input type="date" data-d="' + esc(d) + '" data-f="' + f + '" data-part="date" value="' + esc(e.date || '') + '"' + (row.on ? '' : ' disabled') + '>' +
-          '<input type="text" class="cgp-inline__time" data-d="' + esc(d) + '" data-f="' + f + '" data-part="time" value="' + esc(e.time || '') + '" placeholder="' + (e.none ? 'none there' : 'time or period') + '"' + (row.on ? '' : ' disabled') + '></label>';
+          '<input type="text" class="cgp-inline__time" data-d="' + esc(d) + '" data-f="' + f + '" data-part="time" value="' + esc(e.time || '') + '" placeholder="' + (e.none ? 'none there' : 'time') + '"' + (row.on ? '' : ' disabled') + '></label>';
       };
       var more = fields.length > 1
         ? '<details class="cgp-inline__more"' + (fields.slice(1).some(function (f) { var e = row.entry[f] || {}; return e.date || e.time; }) ? ' open' : '') +
@@ -256,14 +265,10 @@
     el.innerHTML = '<div class="cgp-inline__head"><strong>Also post to your other classes</strong>' +
       '<span class="cgp-inline__count">' + (on ? on + ' of ' + st.sibs.length + ' will get it when you save' : 'None ticked') + '</span></div>' +
       rows +
-      (fields.length ? '<p class="cgp-inline__hint">Leave a date blank for the same as this class. A time alone (or a period shortcut, like ' +
-        esc(this.firstShortcut()) + ') means this class’s day at that time. Times are in ' + esc(st.tz || 'your time zone') + '.</p>' : '') +
+      (fields.length ? '<p class="cgp-inline__hint">Leave a date blank for the same as this class. A time alone (like “1:45 pm”) means this class’s day at that time' +
+        (this.settings.values.courseScheduleEnabled && this.settings.values.courseCalendarUrl ? ' – click a time box to pick from that class’s schedule' : '') +
+        '. Times are in ' + esc(st.tz || 'your time zone') + '.</p>' : '') +
       '<p class="cgp-inline__hint">The copies are made when the saved ' + esc(thing) + ' opens, through Canvas’s own course copy.</p>';
-  };
-
-  P.firstShortcut = function () {
-    var list = this.settings.values.timeShortcuts || [];
-    return list.length ? '“' + list[list.length > 3 ? 3 : 0].key + '”' : '“1:45 pm”';
   };
 
   /* Problems with a row's boxes, checked against a stand-in for this
@@ -275,7 +280,7 @@
     var errs = [];
     st.fields.forEach(function (f) {
       var e = row.entry[f] || {};
-      if (e.time && !S().parseClock(e.time, this.settings.values.timeShortcuts)) errs.push((S().DATE_LABELS[f]) + ': “' + e.time + '” is not a time or period shortcut');
+      if (e.time && !S().parseClock(e.time)) errs.push((S().DATE_LABELS[f]) + ': “' + e.time + '” is not a time');
     }, this);
     return errs;
   };
@@ -303,11 +308,21 @@
     if (final) this.savePrefs();
   };
 
+  /* The course's choices as Chrome sync holds them (made on any of the
+   * teacher's computers), else this computer's own from before they synced. */
   P.readPrefs = function () {
-    var local = store();
-    var k = this.prefsKey();
-    if (!local) return Promise.resolve({});
-    return local.get(k).then(function (r) { return (r && r[k]) || {}; }, function () { return {}; });
+    var local = store(), sync = syncStore();
+    var k = this.prefsKey(), sk = this.syncPrefsKey();
+    var KEY = S().CLASS_PREFS_KEY;
+    var fromSync;
+    try {
+      fromSync = sync ? sync.get(KEY).then(function (r) { return S().classPrefsFor(r && r[KEY], sk); }, function () { return null; }) : Promise.resolve(null);
+    } catch (e) { fromSync = Promise.resolve(null); }
+    return fromSync.then(function (p) {
+      if (p) return p;
+      if (!local) return {};
+      return local.get(k).then(function (r) { return (r && r[k]) || {}; }, function () { return {}; });
+    });
   };
 
   /* Which sections were ticked, and each one's due time, for next time. */
@@ -322,9 +337,26 @@
       if (st.origins && st.origins[d]) { prefs[d] = (st.prefs && st.prefs[d]) || { on: true, time: '' }; return; }
       prefs[d] = { on: row.on !== false, time: row.entry && row.entry.due_at && !row.entry.due_at.date ? row.entry.due_at.time || '' : '' };
     });
-    var o = {};
-    o[this.prefsKey()] = prefs;
-    local.set(o).catch(function () { return null; });
+    var k = this.prefsKey(), sk = this.syncPrefsKey();
+    var KEY = S().CLASS_PREFS_KEY;
+    var sync = syncStore();
+    var keepHere = function () {
+      var o = {};
+      o[k] = prefs;
+      try { local.set(o).catch(function () { return null; }); } catch (e) { /* orphaned tab */ }
+    };
+    if (!sync) { keepHere(); return; }
+    // One write after another: each reads what the last one stored.
+    this._prefsWrite = (this._prefsWrite || Promise.resolve()).then(function () {
+      return sync.get(KEY).then(function (r) {
+        var o = {};
+        o[KEY] = S().fitClassPrefs(r && r[KEY], sk, prefs, Date.now());
+        return sync.set(o);
+      }).then(function () {
+        // Now in Chrome sync: this computer's old copy is not needed.
+        return local.remove(k).catch(function () { return null; });
+      });
+    }).catch(keepHere);
   };
 
   P.titleOnPage = function () {
@@ -494,7 +526,7 @@
           banner.set(d, { error: 'Not copied: it already has “' + info.lookalike.title + '”, which was not copied from here. Copy to other classes can add it anyway.' });
           return null;
         }
-        var res = sync.resolveInline(sync.dateFields(item), item.dates || {}, (intent.sections[d] || {}).entry, tz, self.settings.values.timeShortcuts);
+        var res = sync.resolveInline(sync.dateFields(item), item.dates || {}, (intent.sections[d] || {}).entry, tz);
         if (res.errors.length) { banner.set(d, { error: 'Not copied: ' + res.errors.join('; ') + '.' }); return null; }
         var existing = !!(info.destId && info.status !== 'restore');
         var keep = existing && !sync.defaultReplace(info.status);

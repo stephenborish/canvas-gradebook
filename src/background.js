@@ -5,13 +5,15 @@
  * domains the teacher has granted, applies Web Store updates promptly
  * (self-update.js), relays "this submission changed" announcements
  * between the open tabs of one course (live-sync.js) - ids only, never
- * stored - and checks this computer in through Chrome sync (settings-times.js). It
+ * stored - checks this computer in through Chrome sync (settings-times.js),
+ * and fetches the teacher's class-schedule calendar (calendar-sync.js). It
  * never reads or stores Canvas data itself. */
 
-import { CONTENT_JS, CONTENT_CSS } from './script-manifest.js';
+import { CONTENT_JS, CONTENT_CSS, isCustomCanvasOrigin } from './script-manifest.js';
 import { createSelfUpdater } from './self-update.js';
 import { createLiveRelay, LIVE_SYNC_TYPE } from './live-relay.js';
 import { createSettingsTimes } from './settings-times.js';
+import { createCalendarSync, CALENDAR_REFRESH } from './calendar-sync.js';
 
 const DYNAMIC_ID = 'cgp-custom-domains';
 const DYNAMIC_BRIDGE_ID = 'cgp-custom-domains-bridge';
@@ -54,7 +56,8 @@ async function registerWithFallback(script, optionalKeys) {
 async function syncDynamicScripts() {
   try {
     const perms = await chrome.permissions.getAll();
-    const origins = (perms.origins || []).filter((o) => !o.includes('instructure.com') && o !== '*://*/*');
+    // A class-schedule calendar's site is granted too, and gets no scripts.
+    const origins = (perms.origins || []).filter(isCustomCanvasOrigin);
     const ids = [DYNAMIC_ID, DYNAMIC_BRIDGE_ID, DYNAMIC_WATCH_ID];
     const existing = await chrome.scripting.getRegisteredContentScripts({ ids }).catch(() => []);
     if (existing.length) await chrome.scripting.unregisterContentScripts({ ids: existing.map((s) => s.id) });
@@ -118,6 +121,7 @@ createSelfUpdater(chrome).start();
 const settingsTimes = createSettingsTimes(chrome);
 settingsTimes.start();
 const liveRelay = createLiveRelay(chrome);
+const calendarSync = createCalendarSync(chrome);
 
 chrome.action.onClicked.addListener(() => {
   chrome.runtime.openOptionsPage();
@@ -126,6 +130,15 @@ chrome.action.onClicked.addListener(() => {
 chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   if (msg && msg.type === LIVE_SYNC_TYPE) {
     liveRelay.relay(msg, sender).catch(() => 0);
+    return false;
+  }
+  if (msg && msg.type === CALENDAR_REFRESH) {
+    calendarSync.refresh(msg.url, { force: !!msg.force })
+      .then(respond, (e) => respond({ ok: false, error: String(e && e.message) }));
+    return true;
+  }
+  if (msg && msg.type === 'cgp.openOptions') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/options/options.html#schedule') });
     return false;
   }
   if (msg && msg.type === 'cgp.checkIn') {

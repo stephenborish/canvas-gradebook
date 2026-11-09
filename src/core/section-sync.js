@@ -402,15 +402,55 @@
     return m[1] + '-' + m[2] + '-' + m[3] + 'T' + c;
   }
 
-  /** What a teacher types as a time: a period shortcut from the Time
-   * Shortcuts list ("3"), "13:45", "1:45 pm", "9am". -> "HH:MM" or null. */
-  function parseClock(text, shortcuts) {
+  /* "Also post to your other classes" remembers, per course, which classes
+   * were ticked and each one's usual due time. Every course's choices share
+   * one chrome.storage.sync item, so they follow the teacher to every
+   * computer signed in to the same Chrome profile:
+   *   {"<origin>.<courseId>": {at, p: {"<class course id>": {on, time}}}}
+   * A class ticked with no usual time is the default and is left out. The
+   * item is kept small - Chrome sync's 100KB is shared with the settings and
+   * snippets - by dropping the courses used longest ago. */
+  var CLASS_PREFS_KEY = 'cgp.classPrefs';
+  var CLASS_PREFS_BYTES = 2500;
+
+  function cleanClassPrefs(p) {
+    var out = {};
+    Object.keys(p && typeof p === 'object' ? p : {}).forEach(function (d) {
+      if (!/^\d+$/.test(d)) return;
+      var e = p[d] || {};
+      var time = String(e.time == null ? '' : e.time).trim().slice(0, 20);
+      if (e.on !== false && !time) return;
+      out[d] = { on: e.on !== false, time: time };
+    });
+    return out;
+  }
+
+  /** `map` (the stored item) with `key`'s choices set to `prefs`, trimmed to fit. */
+  function fitClassPrefs(map, key, prefs, now) {
+    var out = {};
+    Object.keys(map && typeof map === 'object' ? map : {}).forEach(function (k) {
+      var e = map[k];
+      if (e && typeof e === 'object' && e.p && typeof e.p === 'object') out[k] = { at: Number(e.at) || 0, p: cleanClassPrefs(e.p) };
+    });
+    if (key) out[key] = { at: Number(now) || 0, p: cleanClassPrefs(prefs) };
+    var size = function () { return CGP.util.byteLength(CLASS_PREFS_KEY + JSON.stringify(out)); };
+    var oldest = Object.keys(out).filter(function (k) { return k !== key; }).sort(function (x, y) { return out[x].at - out[y].at; });
+    while (oldest.length && size() > CLASS_PREFS_BYTES) delete out[oldest.shift()];
+    if (key && size() > CLASS_PREFS_BYTES) out[key].p = {};
+    return out;
+  }
+
+  /** One course's choices from the stored item, or null if it has none. */
+  function classPrefsFor(map, key) {
+    var e = map && typeof map === 'object' ? map[key] : null;
+    return e && e.p && typeof e.p === 'object' ? cleanClassPrefs(e.p) : null;
+  }
+
+  /** What a teacher types (or the class-schedule picker puts in) as a
+   * time: "13:45", "1:45 pm", "9am". -> "HH:MM" or null. */
+  function parseClock(text) {
     var raw = String(text == null ? '' : text).trim().toLowerCase();
     if (!raw) return null;
-    if (CGP.timeShortcuts && shortcuts) {
-      var hit = CGP.timeShortcuts.lookup(raw, shortcuts);
-      if (hit) return CGP.normalizeClock(hit.time);
-    }
     var m = /^(\d{1,2})(?::(\d{2}))?\s*([ap])\.?\s*m?\.?$/.exec(raw);
     if (m) {
       var h = Number(m[1]), min = m[2] ? Number(m[2]) : 0;
@@ -1070,15 +1110,14 @@
   }
 
   /* One section's dates from the editor panel. For each field the teacher
-   * gives a date ("YYYY-MM-DD") and/or a time (anything parseClock reads,
-   * period shortcuts included):
+   * gives a date ("YYYY-MM-DD") and/or a time (anything parseClock reads):
    *   both blank  -> the same as this section's (as saved)
    *   date only   -> that date, at this section's time of day (11:59 PM
    *                  when this section has none)
    *   time only   -> this section's day, at that time
    *   both        -> exactly that
    * src: this section's ISO dates. Returns {iso: {field: iso|null}, errors}. */
-  function resolveInline(fields, src, entry, tz, shortcuts) {
+  function resolveInline(fields, src, entry, tz) {
     src = src || {};
     entry = entry || {};
     var iso = {};
@@ -1093,8 +1132,8 @@
       // A copy that has no such date keeps having none, unless one is
       // typed in (e.none: what the box showed for it).
       if (!d && !t) { iso[f] = e.none ? null : base; return; }
-      var clock = t ? parseClock(t, shortcuts) : null;
-      if (t && !clock) { errors.push(label + ': “' + t + '” is not a time or one of your period shortcuts'); return; }
+      var clock = t ? parseClock(t) : null;
+      if (t && !clock) { errors.push(label + ': “' + t + '” is not a time'); return; }
       if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) { errors.push(label + ': not a date'); return; }
       if (!d && !baseLocal) { errors.push(label + ': this section has no date to put that time on; pick a date too'); return; }
       var day = d || baseLocal.slice(0, 10);
@@ -1146,6 +1185,10 @@
     shiftLocal: shiftLocal,
     withTime: withTime,
     parseClock: parseClock,
+    CLASS_PREFS_KEY: CLASS_PREFS_KEY,
+    CLASS_PREFS_BYTES: CLASS_PREFS_BYTES,
+    fitClassPrefs: fitClassPrefs,
+    classPrefsFor: classPrefsFor,
     checkDates: checkDates,
     sameInstant: sameInstant,
     datesWrite: datesWrite,

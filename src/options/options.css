@@ -663,47 +663,57 @@ input.switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2p
 }
 
 
-/* ----------------------------------------------------------- time shortcuts */
+/* ----------------------------------------------------------- class schedule */
 
-.time-shortcuts-list { display: grid; gap: 8px; }
-.time-shortcut-row {
+.schedule-connect { padding: 13px 0; border-bottom: 1px solid var(--line); }
+.schedule-connect .setting__label { display: block; }
+.schedule-connect__row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.schedule-connect__url {
+  flex: 1 1 320px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font: 13px/1.4 "SFMono-Regular", Menlo, Consolas, monospace;
+  background: #fff;
+  color: var(--ink);
+}
+.schedule-connect__url:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(3, 116, 181, 0.18); }
+.schedule-status { margin: 8px 0 0; font-size: 13px; color: var(--muted); line-height: 1.5; min-height: 1.5em; }
+.schedule-status.is-ok { color: #0b7a45; }
+.schedule-status.is-error { color: #b91c1c; }
+.btn--attention { box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.35); animation: cgp-attention 1.6s ease-in-out 3; }
+@keyframes cgp-attention { 50% { box-shadow: 0 0 0 6px rgba(2, 132, 199, 0.12); } }
+@media (prefers-reduced-motion: reduce) { .btn--attention { animation: none; } }
+.schedule-select { padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; background: #fff; }
+
+.schedule-preview { margin: 18px 0 22px; }
+.schedule-preview__bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.schedule-preview__nav { display: flex; align-items: center; gap: 6px; }
+.schedule-preview__day { min-width: 150px; text-align: center; font-weight: 600; color: var(--ink); font-size: 13.5px; }
+.schedule-preview__list { display: grid; gap: 6px; }
+.schedule-preview__tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.schedule-preview__tag {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eef6fb;
+  color: #045486;
+  border: 1px solid #cfe3f0;
+}
+.schedule-preview__row {
   display: flex;
-  align-items: center;
+  align-items: baseline;
+  justify-content: space-between;
   gap: 12px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 10px;
-  padding: 10px 16px;
+  padding: 9px 14px;
 }
-.time-shortcut-row:focus-within { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
-.time-shortcut-row__key {
-  width: 110px;
-  padding: 5px 10px;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  background: #f1f5f9;
-  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
-  font-size: 13px;
-  font-weight: 600;
-}
-.time-shortcut-row__time {
-  padding: 5px 8px;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  font: inherit;
-}
-.time-shortcut-row__preview { flex: 1 1 auto; color: var(--muted); font-size: 13px; }
-.time-shortcut-row__delete {
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 6px;
-}
-.time-shortcut-row__delete:hover { color: #b91c1c; background: var(--bg); }
+.schedule-preview__title { font-weight: 600; color: var(--ink); }
+.schedule-preview__time { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.schedule-preview__empty { color: var(--muted); font-size: 13px; margin: 0; }
 
 .section-group {
   flex: 1 0 100%;

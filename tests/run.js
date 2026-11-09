@@ -33,7 +33,7 @@ require('./test-write-safety');
 require('./test-comments-ui');
 require('./test-grid-reliability');
 require('./test-test-student');
-require('./test-time-shortcuts');
+require('./test-course-calendar');
 require('./test-score-stats');
 require('./test-student-insights');
 require('./test-studio-class');

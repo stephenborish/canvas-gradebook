@@ -354,122 +354,170 @@
     }
   }
 
-  /* ------------------------------------------------------- time shortcuts */
+  /* ------------------------------------------------------- class schedule */
 
-  var MAX_TIME_SHORTCUTS = (CGP.SETTINGS_LIMITS && CGP.SETTINGS_LIMITS.MAX_TIME_SHORTCUTS) || 10;
-  var MAX_TIME_KEY = (CGP.SETTINGS_LIMITS && CGP.SETTINGS_LIMITS.MAX_TIME_SHORTCUT_KEY) || 12;
-  var currentTimeShortcuts = [];
+  var CAL_KEY = 'cgp.calendar';
+  var CAL_REFRESH = 'cgp.calendar.refresh';
+  var scheduleDay = null;
+  var lastCalendar = null;
 
-  function updateTimeShortcutsCounter() {
-    var el = $('time-shortcuts-counter');
-    if (el) el.textContent = currentTimeShortcuts.length + ' of ' + MAX_TIME_SHORTCUTS + ' shortcuts';
-    var add = $('btn-add-time-shortcut');
-    if (add) add.disabled = currentTimeShortcuts.length >= MAX_TIME_SHORTCUTS;
+  function Cal() { return CGP.courseCalendar; }
+
+  function calendarHost(url) {
+    try { return new URL(url).hostname; } catch (e) { return 'that site'; }
   }
 
-  function timePreview(row) {
-    var key = CGP.normalizeTimeKey(row.key);
-    var shown = CGP.timeShortcuts.format(row.time, { hour12: true });
-    return key && shown ? 'Typing \u201c' + key + '\u201d fills in ' + shown : '';
+  /** The address as typed, as a feed address ('' for none, null for junk). */
+  function typedCalendarUrl() {
+    var raw = String($('courseCalendarUrl').value || '').trim();
+    if (!raw) return '';
+    return Cal().normalizeUrl(raw);
   }
 
-  function renderTimeShortcuts(list) {
-    currentTimeShortcuts = (Array.isArray(list) ? list : []).map(function (r) {
-      return { key: String((r && r.key) || ''), time: String((r && r.time) || '') };
-    });
-    var container = $('time-shortcuts-list');
-    if (!container) return;
-    container.innerHTML = '';
-    if (!currentTimeShortcuts.length) {
-      var empty = document.createElement('div');
-      empty.className = 'snippets-empty';
-      empty.innerHTML = '<p>No time shortcuts. Click <strong>+ Add Shortcut</strong>, or <strong>Restore period defaults</strong>.</p>';
-      container.appendChild(empty);
+  function setCalendarStatus(text, kind) {
+    var el = $('calendarStatus');
+    if (!el) return;
+    el.textContent = text || '';
+    el.classList.toggle('is-error', kind === 'error');
+    el.classList.toggle('is-ok', kind === 'ok');
+  }
+
+  /* Asks Chrome to let the extension read the feed's site - only from a
+   * click, which Chrome requires - then has the service worker read it. */
+  function connectCalendar() {
+    var url = typedCalendarUrl();
+    if (url === '') { setCalendarStatus('Paste your calendar\u2019s address first.', 'error'); return Promise.resolve(false); }
+    if (!url) {
+      setCalendarStatus('That is not a calendar address. In Google Calendar: Settings, your calendar, Integrate calendar, and copy \u201cSecret address in iCal format\u201d.', 'error');
+      return Promise.resolve(false);
     }
-    currentTimeShortcuts.forEach(function (row) {
-      var el = document.createElement('div');
-      el.className = 'time-shortcut-row';
-
-      var key = document.createElement('input');
-      key.type = 'text';
-      key.className = 'time-shortcut-row__key';
-      key.maxLength = MAX_TIME_KEY;
-      key.value = row.key;
-      key.placeholder = 'key';
-      key.setAttribute('aria-label', 'Shortcut key');
-      key.spellcheck = false;
-
-      var time = document.createElement('input');
-      time.type = 'time';
-      time.className = 'time-shortcut-row__time';
-      time.value = row.time;
-      time.setAttribute('aria-label', 'Start time');
-
-      var preview = document.createElement('span');
-      preview.className = 'time-shortcut-row__preview';
-      preview.textContent = timePreview(row);
-
-      var del = document.createElement('button');
-      del.type = 'button';
-      del.className = 'time-shortcut-row__delete';
-      del.title = 'Delete shortcut';
-      del.setAttribute('aria-label', 'Delete shortcut');
-      del.textContent = '\u00d7';
-
-      key.addEventListener('input', function () { row.key = key.value; preview.textContent = timePreview(row); });
-      time.addEventListener('input', function () { row.time = time.value; preview.textContent = timePreview(row); });
-      del.addEventListener('click', function () {
-        currentTimeShortcuts.splice(currentTimeShortcuts.indexOf(row), 1);
-        renderTimeShortcuts(currentTimeShortcuts);
+    $('courseCalendarUrl').value = url;
+    var host = calendarHost(url);
+    return chrome.permissions.request({ origins: [Cal().originPattern(url)] }).then(function (granted) {
+      if (!granted) {
+        setCalendarStatus('Chrome was not allowed to let Gradebook+ read ' + host + ', so the calendar cannot be read.', 'error');
+        return false;
+      }
+      setCalendarStatus('Reading your calendar\u2026');
+      return new Promise(function (resolve) {
+        chrome.runtime.sendMessage({ type: CAL_REFRESH, url: url, force: true }, function (res) {
+          void chrome.runtime.lastError;
+          renderCalendarStatus().then(function () {
+            if (res && res.ok && url !== (baseline && baseline.courseCalendarUrl)) status('Calendar connected \u2014 click Save changes to keep it.');
+            resolve(!!(res && res.ok));
+          });
+        });
       });
-
-      el.appendChild(key);
-      el.appendChild(time);
-      el.appendChild(preview);
-      el.appendChild(del);
-      container.appendChild(el);
+    }, function (e) {
+      setCalendarStatus('Not connected: ' + String(e && e.message), 'error');
+      return false;
     });
-    updateTimeShortcutsCounter();
   }
 
-  /** The rows as entered, minus ones left completely blank. */
-  function readRawTimeShortcuts() {
-    return currentTimeShortcuts.filter(function (r) { return String(r.key).trim() || r.time; })
-      .map(function (r) { return { key: String(r.key).trim(), time: r.time }; });
-  }
-
-  /* What sanitizeSettings would silently drop from these rows, by key, so
-   * nothing the teacher typed vanishes on Save without saying so. */
-  function timeShortcutProblems(raw) {
-    var notes = [];
-    var seen = Object.create(null);
-    raw.forEach(function (r) {
-      var key = CGP.normalizeTimeKey(r.key);
-      if (!key) { notes.push('A time (' + r.time + ') has no usable key (letters, numbers, - and _ only).'); return; }
-      if (key !== r.key.toLowerCase()) notes.push('The key \u201c' + r.key + '\u201d can only use letters, numbers, - and _ (up to ' + MAX_TIME_KEY + ').');
-      if (!CGP.normalizeClock(r.time)) notes.push('The key \u201c' + key + '\u201d needs a start time.');
-      if (seen[key]) notes.push('The key \u201c' + key + '\u201d is used twice.');
-      seen[key] = true;
+  function disconnectCalendar() {
+    var url = typedCalendarUrl() || Cal().normalizeUrl(baseline && baseline.courseCalendarUrl);
+    $('courseCalendarUrl').value = '';
+    scheduleDay = null;
+    chrome.runtime.sendMessage({ type: CAL_REFRESH, url: '' }, function () {
+      void chrome.runtime.lastError;
+      renderCalendarStatus();
     });
-    return notes;
+    if (url && chrome.permissions.remove) chrome.permissions.remove({ origins: [Cal().originPattern(url)] }).catch(function () { return false; });
+    status('Calendar removed below \u2014 click Save changes to keep it that way.');
   }
 
-  function initTimeShortcutsUI() {
-    var add = $('btn-add-time-shortcut');
-    if (add) {
-      add.addEventListener('click', function () {
-        if (currentTimeShortcuts.length >= MAX_TIME_SHORTCUTS) return;
-        currentTimeShortcuts.push({ key: '', time: '' });
-        renderTimeShortcuts(currentTimeShortcuts);
-        var keys = document.querySelectorAll('.time-shortcut-row__key');
-        if (keys.length) keys[keys.length - 1].focus();
-      });
+  function fmtWhen(ms) {
+    if (!ms) return '';
+    try { return new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return ''; }
+  }
+
+  /** What is stored for the address in the box: connected or not, how many
+   * classes, any error, and the preview. */
+  function renderCalendarStatus() {
+    var url = typedCalendarUrl();
+    var get = chrome.storage && chrome.storage.local ? chrome.storage.local.get(CAL_KEY) : Promise.resolve({});
+    var perm = url && chrome.permissions && chrome.permissions.contains
+      ? chrome.permissions.contains({ origins: [Cal().originPattern(url)] }).catch(function () { return false; })
+      : Promise.resolve(true);
+    return Promise.all([get, perm]).then(function (r) {
+      var rec = (r[0] && r[0][CAL_KEY]) || null;
+      var granted = r[1];
+      lastCalendar = rec && url && rec.url === url ? rec : null;
+      if (url === '') setCalendarStatus('No calendar connected.');
+      else if (!url) setCalendarStatus('That is not a calendar address yet.', 'error');
+      else if (!granted) {
+        // Typically the address arrived through Chrome sync from another
+        // computer: Chrome asks for the site's permission on each one.
+        setCalendarStatus('Your calendar is saved in your settings, but Chrome asks once on each computer: click Connect to let Gradebook+ read ' +
+          calendarHost(url) + ' here.', 'error');
+      }
+      else if (!lastCalendar) setCalendarStatus('Not read yet \u2014 click Connect.');
+      else if (!lastCalendar.ok) {
+        setCalendarStatus(lastCalendar.error + (lastCalendar.occ ? ' (Showing the schedule read ' + fmtWhen(lastCalendar.lastOk) + '.)' : ''), 'error');
+      } else {
+        var timed = (lastCalendar.occ || []).filter(function (o) { return !o.a; }).length;
+        setCalendarStatus('\u2713 Connected' + (lastCalendar.name ? ' to \u201c' + lastCalendar.name + '\u201d' : '') + ': ' +
+          timed + ' class meeting' + (timed === 1 ? '' : 's') + ' between ' + fmtDay(lastCalendar.from) + ' and ' + fmtDay(lastCalendar.to) +
+          '. Read ' + fmtWhen(lastCalendar.fetchedAt) + '.', timed ? 'ok' : 'error');
+      }
+      var needsConnect = !!url && !granted;
+      var btn = $('connectCalendar');
+      btn.classList.toggle('btn--attention', needsConnect);
+      // Sent here from the schedule panel in Canvas ("Allow on this computer").
+      if (needsConnect && location.hash === '#schedule' && !renderCalendarStatus.focused) {
+        renderCalendarStatus.focused = true;
+        btn.focus();
+      }
+      renderSchedulePreview();
+    });
+  }
+
+  // With the year whenever it is not this one: the range read runs from
+  // weeks ago to more than a year ahead.
+  function fmtDay(key) { return key ? Cal().formatDay(key, undefined, String(new Date().getFullYear())) : ''; }
+
+  function renderSchedulePreview() {
+    var box = $('schedulePreview');
+    if (!box) return;
+    var rec = lastCalendar;
+    if (!rec || !Array.isArray(rec.occ) || !rec.occ.length) { box.hidden = true; return; }
+    box.hidden = false;
+    // The calendar's own zone - the one the teacher thinks in - else this
+    // computer's (Canvas's own zone is only known on a Canvas page).
+    var tz = (rec.zone && Cal().validZone(rec.zone)) ? rec.zone : Cal().localZone();
+    var today = Cal().today(tz);
+    if (!scheduleDay) {
+      scheduleDay = Cal().dayView(rec.occ, today, tz).classes.length ? today : (Cal().nextClassDay(rec.occ, today, tz, 1, 60) || today);
     }
-    var reset = $('btn-reset-time-shortcuts');
-    if (reset) {
-      reset.addEventListener('click', function () {
-        renderTimeShortcuts(DEFAULTS.timeShortcuts);
-        status('Period defaults restored below \u2014 click Save changes to keep them.');
+    var h12 = Cal().uses12Hour(navigator.language);
+    var view = Cal().dayView(rec.occ, scheduleDay, tz);
+    $('scheduleDay').textContent = Cal().formatDay(scheduleDay, undefined, today.slice(0, 4)) + (scheduleDay === today ? ' (today)' : '');
+    var html = '';
+    if (view.allDay.length) {
+      html += '<div class="schedule-preview__tags">' + view.allDay.map(function (t) {
+        return '<span class="schedule-preview__tag">' + escapeHtml(t) + '</span>';
+      }).join('') + '</div>';
+    }
+    html += view.classes.length ? view.classes.map(function (c) {
+      return '<div class="schedule-preview__row"><span class="schedule-preview__title">' + escapeHtml(c.title) + '</span>' +
+        '<span class="schedule-preview__time">' + escapeHtml(Cal().formatRange(c.start, c.end, { hour12: h12 })) +
+        (c.loc ? ' \u00b7 ' + escapeHtml(c.loc) : '') + '</span></div>';
+    }).join('') : '<p class="schedule-preview__empty">No classes on this day.</p>';
+    $('scheduleDayList').innerHTML = html;
+  }
+
+  function initScheduleUI() {
+    $('connectCalendar').addEventListener('click', function () { connectCalendar(); });
+    $('disconnectCalendar').addEventListener('click', disconnectCalendar);
+    $('courseCalendarUrl').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); connectCalendar(); }
+    });
+    $('courseCalendarUrl').addEventListener('input', CGP.util.debounce(function () { scheduleDay = null; renderCalendarStatus(); }, 300));
+    $('schedulePrev').addEventListener('click', function () { scheduleDay = Cal().addDays(scheduleDay, -1); renderSchedulePreview(); });
+    $('scheduleNext').addEventListener('click', function () { scheduleDay = Cal().addDays(scheduleDay, 1); renderSchedulePreview(); });
+    if (chrome.storage && chrome.storage.onChanged) {
+      chrome.storage.onChanged.addListener(function (changes, area) {
+        if (area === 'local' && changes[CAL_KEY]) renderCalendarStatus();
       });
     }
   }
@@ -484,7 +532,10 @@
     var snips = Array.isArray(values.snippets) ? values.snippets.slice() : [];
     renderSnippetCards(snips);
     $('snippets').value = snippetsToText(snips);
-    renderTimeShortcuts(values.timeShortcuts);
+    $('courseCalendarUrl').value = values.courseCalendarUrl || '';
+    $('courseScheduleTime').value = values.courseScheduleTime === 'end' ? 'end' : 'start';
+    scheduleDay = null;
+    renderCalendarStatus();
     renderSectionGroups(values.sectionGroups);
     currentRosterPrefs = values.rosterPrefs;
   }
@@ -670,7 +721,11 @@
     BOOLS.forEach(function (k) { var el = $(k); if (el) patch[k] = el.checked; });
     NUMS.forEach(function (k) { var el = $(k); if (el) patch[k] = Number(el.value); });
     patch.snippets = readRawSnippets();
-    patch.timeShortcuts = readRawTimeShortcuts();
+    // Stored as the feed address it stands for (a Public URL or share link
+    // becomes its .ics address); left as typed if it is not one, so save()
+    // can say so.
+    patch.courseCalendarUrl = typedCalendarUrl() || String($('courseCalendarUrl').value || '').trim();
+    patch.courseScheduleTime = $('courseScheduleTime').value;
     patch.gradingScale = CGP.totals.textToScale($('gradingScale').value);
     patch.totalHighlightRules = currentThresholds.slice();
     patch.sectionGroups = currentGroups;
@@ -822,10 +877,15 @@
     }
     var thresholdProblem = thresholdProblems(currentThresholds);
     if (thresholdProblem) { status('Not saved: ' + thresholdProblem, { error: true }); return Promise.resolve(); }
-    var timeProblems = timeShortcutProblems(readRawTimeShortcuts());
-    if (timeProblems.length) {
-      status('Not saved: ' + timeProblems.join(' ') + ' Fix or remove those time shortcuts, then save again.', { error: true });
+    var calUrl = typedCalendarUrl();
+    if (calUrl === null) {
+      status('Not saved: the Class Schedule calendar address is not a calendar address. Fix it or click Remove, then save again.', { error: true });
       return Promise.resolve();
+    }
+    // A new address needs Chrome's permission for its site, which can only
+    // be asked from this click.
+    if (calUrl && calUrl !== Cal().normalizeUrl(baseline && baseline.courseCalendarUrl) && !(lastCalendar && lastCalendar.url === calUrl && lastCalendar.ok)) {
+      connectCalendar();
     }
     var raw = readRawSnippets();
     var values = read();
@@ -915,8 +975,11 @@
 
   function listDomains() {
     chrome.permissions.getAll().then(function (perms) {
+      // The rule in isCustomCanvasOrigin (src/script-manifest.js): Canvas
+      // domains are granted as "*://host/*", a class-schedule calendar's
+      // site as "https://host/*".
       var extra = (perms.origins || []).filter(function (o) {
-        return o.indexOf('instructure.com') === -1 && o !== '*://*/*';
+        return o.indexOf('*://') === 0 && o.indexOf('instructure.com') === -1 && o !== '*://*/*';
       });
       $('domainList').textContent = extra.length
         ? 'Enabled here: ' + extra.join(', ')
@@ -1018,6 +1081,9 @@
       });
     });
 
+    // A link straight to one tab (the class-schedule picker's "settings").
+    var wanted = String(location.hash || '').replace(/^#/, '');
+    if (wanted && activate(wanted, { silent: true })) return;
     var stored = null;
     try { stored = localStorage.getItem(TAB_STORAGE_KEY); } catch (e) { /* private mode, ignore */ }
     if (!stored || !activate(stored, { silent: true })) activate(tabs[0].dataset.tab, { silent: true });
@@ -1217,13 +1283,13 @@
   function initVersion() {
     var el = $('extensionVersion');
     if (!el) return;
-    var ver = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest && chrome.runtime.getManifest().version) || CGP.VERSION || '1.27.0';
+    var ver = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest && chrome.runtime.getManifest().version) || CGP.VERSION || '1.28.0';
     el.textContent = ver;
   }
 
   initTabs();
   initSnippetsUI();
-  initTimeShortcutsUI();
+  initScheduleUI();
   initVersion();
 
   followRemoteChanges();
