@@ -55,6 +55,7 @@ export const CONTENT_JS = [
   'src/speedgrader/comment-layout.js',
   'src/speedgrader/sidebar-layout.js',
   'src/speedgrader/content.js',
+  'src/tour/tour-state.js',
   'src/gradebook/content.js'
 ];
 

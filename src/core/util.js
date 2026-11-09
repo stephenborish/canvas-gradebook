@@ -7,7 +7,7 @@
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.util) return;
 
-  CGP.VERSION = '1.29.0';
+  CGP.VERSION = '1.30.0';
 
   /* Default letter-grade scale: the lowest rounded percentage (to 0.1) that
    * earns each letter. The last entry is the floor and always has min 0. */
@@ -266,19 +266,36 @@
     try { return root === win || walk(root, 0); } catch (e) { return false; }
   };
 
-  util.pool = function (limit) {
-    var active = 0, queue = [];
+  /* At most `limit` tasks at once; the rest wait their turn.
+   *
+   * gate(task, { priority: 'high' | 'low' }): high-priority tasks (what the
+   * teacher is looking at right now) jump the queue, and may use up to
+   * opts.reserve extra slots so they never wait for a long background read
+   * to finish; low-priority ones (prefetching) run only when nothing else is
+   * waiting. Without a priority, tasks run in order as before. */
+  util.pool = function (limit, opts) {
+    var reserve = (opts && opts.reserve) || 0;
+    var active = 0;
+    var queues = { high: [], normal: [], low: [] };
+    function take() {
+      if (queues.high.length && active < limit + reserve) return queues.high.shift();
+      if (active >= limit) return null;
+      return queues.normal.shift() || queues.low.shift() || null;
+    }
     function next() {
-      if (active >= limit || !queue.length) return;
-      var job = queue.shift();
+      var job;
+      while ((job = take())) run(job);
+    }
+    function run(job) {
       active++;
       Promise.resolve().then(job.task).then(
         function (v) { active--; job.res(v); next(); },
         function (e) { active--; job.rej(e); next(); }
       );
     }
-    return function (task) {
-      return new Promise(function (res, rej) { queue.push({ task: task, res: res, rej: rej }); next(); });
+    return function (task, o) {
+      var q = queues[(o && o.priority) || 'normal'] || queues.normal;
+      return new Promise(function (res, rej) { q.push({ task: task, res: res, rej: rej }); next(); });
     };
   };
 

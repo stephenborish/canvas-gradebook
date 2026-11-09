@@ -24,7 +24,28 @@
 
   var SI = function () { return CGP.studentInsights; };
   var esc = function (s) { return CGP.util.escapeHtml(String(s === null || s === undefined ? '' : s)); };
+  // A student's data is shown at once from memory for this long; after
+  // that it is still shown at once, and re-read from Canvas behind it.
   var CACHE_MS = 90 * 1000;
+  // Reads for the student on screen: ahead of the gradebook's background
+  // warming, numbered pages read in parallel, and a stalled connection given
+  // up on (and retried) instead of leaving the panel waiting forever.
+  var FAST = { priority: 'high', timeoutMs: 20000, parallel: true };
+  // Hovering a name: in turn with the rest of the page, but with the same
+  // time limit, since the panel opened next reuses this read.
+  var HOVER = { priority: 'normal', timeoutMs: 20000, parallel: true };
+  // Prefetching (the next and previous students): only when nothing else waits.
+  var SLOW = { priority: 'low', timeoutMs: 30000, parallel: true };
+  var RANK = { low: 0, normal: 1, high: 2 };
+  // Students' data held for this page, at most (the oldest read goes first).
+  var CACHE_MAX = 40;
+  // A read that failed even after its retries - not the same as Canvas
+  // saying "not available here" (null), so it is offered again.
+  var FAILED = { failed: true };
+  function isFailed(v) { return v === FAILED; }
+  // A failure worth trying again (the connection, Canvas busy or down), not
+  // a refusal that will only be refused again.
+  function transient(err) { return !!(err && (err.network || err.status >= 500 || err.status === 429)); }
   var DAY = 86400000;
 
   var STATUS = {
@@ -74,6 +95,11 @@
     this._summaries = null;        // promise: student_summaries or null
     this._classLoad = null;        // promise: every column loaded
     this._gen = 0;
+    var api = this.api;
+    var view = function (d) { return api && typeof api.withDefaults === 'function' ? api.withDefaults(d) : api; };
+    this.fast = view(FAST);
+    this.hover = view(HOVER);
+    this.slow = view(SLOW);
   }
 
   var P = StudentInsightsController.prototype;
@@ -81,6 +107,37 @@
   P.start = function () {
     var self = this;
     document.addEventListener('click', function (e) { self.onClick(e); }, true);
+    // Resting the pointer on a name starts reading that student, so the
+    // panel usually opens with everything already there.
+    var timer = null;
+    document.addEventListener('mouseover', function (e) {
+      var link = e.target && e.target.closest && e.target.closest('a');
+      if (!link || link === self._hoverLink) return;
+      self._hoverLink = link;
+      clearTimeout(timer);
+      var uid = self.studentForClick({ target: e.target, button: 0 });
+      if (!uid) return;
+      timer = setTimeout(function () { self.prefetch(uid, 'normal'); }, 150);
+    }, true);
+    document.addEventListener('mouseout', function (e) {
+      if (self._hoverLink && (!e.relatedTarget || !self._hoverLink.contains(e.relatedTarget))) {
+        self._hoverLink = null;
+        clearTimeout(timer);
+      }
+    }, true);
+  };
+
+  /* Starts reading a student (and, the first time, the course-wide data)
+   * before their panel is open. */
+  P.prefetch = function (uid, priority) {
+    if (!this.settings.values.studentInsights) return;
+    var self = this;
+    var go = function () {
+      self.studentData(String(uid), { priority: priority });
+      if (priority !== 'low') { self.courseInfo(); self.summaries(); }
+    };
+    if (this.model && this.model.ready === false) return;
+    go();
   };
 
   /* The student behind a click on a name in the grid, or null. */
@@ -128,9 +185,12 @@
     var self = this;
     if (!this._course) {
       this._course = Promise.all([
-        this.api.assignmentGroups(this.courseId).catch(function () { return []; }),
-        this.api.course(this.courseId).catch(function () { return null; })
+        this.fast.assignmentGroups(this.courseId).catch(function (err) { return transient(err) ? FAILED : null; }),
+        this.fast.course(this.courseId).catch(function (err) { return transient(err) ? FAILED : null; })
       ]).then(function (r) {
+        // A failed read is tried again the next time a panel opens.
+        if (isFailed(r[0]) || isFailed(r[1])) self._course = null;
+        r = r.map(function (x) { return isFailed(x) ? null : x; });
         // Studio names its course after the Canvas course's real name;
         // `name` is the teacher's nickname for the course when one is set.
         var c = r[1] || {};
@@ -150,8 +210,11 @@
   P.courseIndex = function () {
     if (!this._index) {
       var self = this;
-      var api = this.api, cid = this.courseId;
-      var soft = function (p) { return p.catch(function () { return []; }); };
+      var api = this.fast, cid = this.courseId;
+      var anyFailed = false;
+      // Only a failed connection is read again; a list Canvas refuses stays
+      // refused, and is not re-read (all five lists) on every panel.
+      var soft = function (p) { return p.catch(function (err) { if (transient(err)) anyFailed = true; return []; }); };
       this._index = Promise.all([
         soft(api.assignments(cid)),
         soft(api.courseItems(cid, 'quiz')),
@@ -159,6 +222,8 @@
         soft(api.pagesWithBodies(cid).then(function (list) { return self.pageBodies(list || []); })),
         soft(api.modulesWithItems(cid))
       ]).then(function (r) {
+        // What was read is used now; the next panel tries the rest again.
+        if (anyFailed) self._index = null;
         return SI().courseIndex({ courseId: cid, assignments: r[0], quizzes: r[1], discussions: r[2], pages: r[3], modules: r[4] });
       }).catch(function () { self._index = null; return null; });
     }
@@ -169,7 +234,7 @@
    * its own (four at a time), so a video embedded only in a page is still
    * found. A page that can't be read is left as it was. */
   P.pageBodies = function (list) {
-    var api = this.api, cid = this.courseId;
+    var api = this.fast, cid = this.courseId;
     if (!list.length || list.some(function (o) { return o && o.body !== undefined; })) return Promise.resolve(list);
     var gate = CGP.util.pool(4);
     return Promise.all(list.map(function (o) {
@@ -182,7 +247,7 @@
   P.summaries = function () {
     if (!this._summaries) {
       var self = this;
-      this._summaries = this.api.studentSummaries(this.courseId).catch(function () { self._summaries = null; return null; });
+      this._summaries = this.fast.studentSummaries(this.courseId).catch(function () { self._summaries = null; return null; });
     }
     return this._summaries;
   };
@@ -201,19 +266,58 @@
     return this._classLoad;
   };
 
-  P.studentData = function (uid, fresh) {
-    var self = this;
+  /* One student's own data: their work (submissions with comments), their
+   * analytics and their enrollment, as promises, held for this page.
+   *   - Within CACHE_MS it is reused as is.
+   *   - Older, or with a part that failed, it is read again; the previous
+   *     read stays on entry.prev so the panel can show it meanwhile.
+   *   - A prefetch (hover or neighbour) still waiting in the queue is not
+   *     reused by a more urgent read: an open reads at high priority instead.
+   * opts.priority: 'high' (default, the panel), 'normal' (hover), 'low'. */
+  P.studentData = function (uid, opts) {
+    opts = opts || {};
+    var priority = opts.priority || 'high';
     var hit = this._cache.get(uid);
-    if (hit && !fresh && Date.now() - hit.at < CACHE_MS) return hit;
-    var entry = {
-      at: Date.now(),
-      work: this.api.studentWork(this.courseId, uid),
-      activity: this.api.studentActivity(this.courseId, uid).catch(function () { return null; }),
-      enrollment: this.api.enrollmentForUser(this.courseId, uid, this.model.gradingPeriodId).catch(function () { return null; })
-    };
-    entry.work.catch(function () { if (self._cache.get(uid) === entry) self._cache.delete(uid); });
+    // A prefetch (a hover, a neighbour) still waiting its turn is not
+    // reused by a read that matters more: that one goes ahead on its own.
+    var waitingBehind = hit && !hit.settled && RANK[hit.priority] < RANK[priority];
+    if (hit && !opts.fresh && !hit.workFailed && !waitingBehind && Date.now() - hit.at < CACHE_MS) {
+      // Their work is good: only a part that failed (analytics, enrollment)
+      // is read again, not the whole student.
+      if (priority !== 'low') this.readParts(hit, uid, this.fast, true);
+      return hit;
+    }
+    if (hit && priority === 'low' && !opts.fresh) return hit; // a prefetch never replaces anything
+    var api = priority === 'low' ? this.slow : priority === 'normal' ? this.hover : this.fast;
+    var entry = { at: Date.now(), priority: priority, prev: null };
+    // The last good read, to show while this one arrives.
+    var prev = hit && hit.settled && !hit.workFailed ? hit : (hit && hit.prev) || null;
+    if (prev) { prev.prev = null; entry.prev = prev; }
+    entry.work = api.studentWork(this.courseId, uid);
+    entry.work.then(function () { entry.settled = true; }, function () { entry.workFailed = true; entry.settled = true; });
+    this.readParts(entry, uid, api, false);
+    this._cache.delete(uid);
     this._cache.set(uid, entry);
+    if (this._cache.size > CACHE_MAX) this._cache.delete(this._cache.keys().next().value);
     return entry;
+  };
+
+  /* A student's analytics and enrollment; with onlyFailed, just the ones
+   * whose last read failed. */
+  P.readParts = function (entry, uid, api, onlyFailed) {
+    // The Access Report and profile are read when their tab is shown; one
+    // that failed is dropped here so that tab reads it again.
+    if (onlyFailed && entry.contentFailed) { entry.content = null; entry.pageViews = null; entry.contentFailed = false; }
+    if (onlyFailed && entry.profileFailed) { entry.profile = null; entry.profileFailed = false; }
+    if (!onlyFailed || entry.activityFailed) {
+      entry.activityFailed = false;
+      entry.activity = api.studentActivity(this.courseId, uid).catch(function () { entry.activityFailed = true; return FAILED; });
+    }
+    if (!onlyFailed || entry.enrollmentFailed) {
+      entry.enrollmentFailed = false;
+      entry.enrollment = api.enrollmentForUser(this.courseId, uid, this.model.gradingPeriodId)
+        .catch(function () { entry.enrollmentFailed = true; return null; });
+    }
   };
 
   /* -------------------------------------------------------------- dialog */
@@ -237,25 +341,40 @@
     var data = this.studentData(uid);
     var parts = { work: null, activity: undefined, enrollment: null, course: null, summaries: undefined, classReady: false,
       content: undefined, pageViews: undefined, index: undefined };
-    function draw() {
+    // Every piece of data that arrives redraws; arrivals in the same frame
+    // are drawn once.
+    var draw = CGP.util.rafBatch(function () {
       if (gen !== self._gen || !self._root) return;
       if (!parts.work) return;
       self.renderAll(uid, parts);
-    }
+    }, 'studentInsights.draw');
     this._open = { uid: uid, gen: gen, parts: parts, draw: draw, data: data };
+    var o0 = this._open;
     if (this._tab === 'activity') this.loadContent();
     if (this._tab === 'work') this.ensureStudio();
     if (this._tab === 'profile') this.loadProfile();
     var ready = this.model.ready ? Promise.resolve() : this.model.init();
     ready.then(function () {
       if (gen !== self._gen) return;
-      data.work.then(function (w) { parts.work = w || []; draw(); }, function () {
+      // An earlier read of this student is drawn straight away while the
+      // fresh one arrives; the fresh one then replaces it.
+      var prev = data.prev;
+      if (prev) {
+        prev.work.then(function (w) { if (!parts.workFresh) { parts.work = w || []; draw(); } }, function () {});
+        prev.activity.then(function (a) { if (parts.activity === undefined && !isFailed(a)) { parts.activity = a; draw(); } });
+        prev.enrollment.then(function (en) { if (!parts.enrollment) { parts.enrollment = en; draw(); } });
+      }
+      data.work.then(function (w) {
+        parts.work = w || []; parts.workFresh = true; draw();
+        self.afterOpen(o0);
+      }, function () {
         if (gen !== self._gen) return;
+        if (parts.work) { parts.stale = true; draw(); return; } // keep the earlier read on screen
         self.setBody('<div class="cgp-si__empty"><b>Couldn’t read this student’s work from Canvas.</b>' +
           '<span>Check your connection and try again.</span><button type="button" class="cgp-si__btn" data-si-retry>Try again</button></div>');
       });
-      data.activity.then(function (a) { parts.activity = a; draw(); });
-      data.enrollment.then(function (en) { parts.enrollment = en; draw(); });
+      data.activity.then(function (a) { if (!isFailed(a) || parts.activity === undefined) parts.activity = a; draw(); });
+      data.enrollment.then(function (en) { if (en) parts.enrollment = en; draw(); });
       self.courseInfo().then(function (c) { parts.course = c; draw(); }, function () {});
       self.summaries().then(function (s) { parts.summaries = s; draw(); });
       self.courseIndex().then(function (idx) { parts.index = idx; draw(); });
@@ -265,23 +384,88 @@
     });
   };
 
+  /* Once the overview is on screen: the other tabs' data for this student,
+   * so switching tab is instant, and the previous and next students, so
+   * stepping with the arrows is too. Only while this student stays open. */
+  P.afterOpen = function (o) {
+    var self = this;
+    if (!o || o.prefetched) return;
+    o.prefetched = true;
+    setTimeout(function () {
+      if (!self._open || self._open !== o || o.gen !== self._gen) return;
+      // Low priority: the panel's own reads, and the gradebook, come first.
+      // Opening one of these tabs before it's done reads it at high priority.
+      self.loadContent({ prefetch: true });
+      self.loadProfile({ prefetch: true });
+      var list = self.roster();
+      var i = list.indexOf(o.uid);
+      if (i < 0 || list.length < 2) return;
+      [list[(i + 1) % list.length], list[(i - 1 + list.length) % list.length]].forEach(function (uid) {
+        if (uid !== o.uid) self.prefetch(uid, 'low');
+      });
+    }, 600);
+  };
+
+  /* "Try again" on one section that failed (analytics, Access Report),
+   * without re-reading the rest. */
+  P.retryPart = function (part) {
+    var o = this._open;
+    if (!o || o.gen !== this._gen) return;
+    var d = o.data, api = this.fast, cid = this.courseId, uid = o.uid;
+    if (part === 'activity') {
+      o.parts.activity = undefined;
+      d.activityFailed = false;
+      d.activity = api.studentActivity(cid, uid).catch(function () { d.activityFailed = true; return FAILED; });
+      d.activity.then(function (a) { o.parts.activity = a; o.draw(); });
+    } else if (part === 'content') {
+      o.parts.content = undefined; o.parts.pageViews = undefined;
+      d.content = null; d.pageViews = null;
+      this.loadContent();
+    } else if (part === 'profile') {
+      o.parts.profile = undefined;
+      d.profile = null;
+      this.loadProfile();
+    }
+    o.draw();
+  };
+
   /* What the student opened in the course (Access Report) and, where
    * Canvas allows, their page views: read only once the Activity tab is
    * shown, since paging through page views costs several requests. */
   var PAGE_VIEW_DAYS = 60;
-  P.loadContent = function () {
+  P.loadContent = function (opts) {
     var o = this._open;
     if (!o || o.gen !== this._gen) return;
     var d = o.data;
-    if (!d.content) {
-      d.content = this.api.studentContentAccess(this.courseId, o.uid).catch(function () { return null; });
-      d.pageViews = this.api.studentPageViews(o.uid, Date.now() - PAGE_VIEW_DAYS * DAY).catch(function () { return null; });
+    var prefetch = !!(opts && opts.prefetch);
+    // The Activity tab's Studio videos; not for a prefetch, which would
+    // launch Studio for a teacher who never opens that tab.
+    if (!prefetch) this.ensureStudio();
+    // A prefetch reads at low priority. Opening the tab before it has
+    // finished reads again at high priority, rather than waiting its turn
+    // behind the gradebook's background work.
+    var upgrade = !prefetch && d.content && d.contentLow && !d.contentSettled;
+    if (!d.content || upgrade) {
+      var api = prefetch ? this.slow : this.fast;
+      d.contentFailed = false;
+      d.contentLow = prefetch;
+      d.contentSettled = false;
+      var content = d.content = api.studentContentAccess(this.courseId, o.uid).catch(function () { d.contentFailed = true; return FAILED; });
+      d.pageViews = api.studentPageViews(o.uid, Date.now() - PAGE_VIEW_DAYS * DAY).catch(function () { return null; });
+      content.then(function () { if (d.content === content) d.contentSettled = true; });
     }
-    if (o.loading) return;
-    o.loading = true;
-    d.content.then(function (c) { o.parts.content = c; o.draw(); });
-    d.pageViews.then(function (v) { o.parts.pageViews = v; o.draw(); });
-    this.ensureStudio();
+    this.wireContent(o);
+  };
+
+  /* Draws the Access Report and page views as they arrive - only the most
+   * recent read of each, so a superseded low-priority read can't overwrite
+   * the one that replaced it. */
+  P.wireContent = function (o) {
+    var d = o.data;
+    if (o.wiredContent === d.content) return;
+    var content = o.wiredContent = d.content, views = d.pageViews;
+    content.then(function (c) { if (d.content === content) { o.parts.content = c; o.draw(); } });
+    views.then(function (v) { if (d.pageViews === views) { o.parts.pageViews = v; o.draw(); } });
   };
 
   /* Studio's videos, once per student shown: for the Activity tab's
@@ -325,21 +509,34 @@
    * observers), the course's sections, their profile where Canvas allows,
    * and their other classes with this teacher. Course-wide reads are shared
    * by every student. A read Canvas refuses comes back null. */
-  P.loadProfile = function () {
+  P.loadProfile = function (opts) {
     var o = this._open;
     if (!o || o.gen !== this._gen) return;
     var d = o.data;
-    var api = this.api, cid = this.courseId, uid = o.uid;
+    var prefetch = !!(opts && opts.prefetch);
+    var api = prefetch ? this.slow : this.fast, cid = this.courseId, uid = o.uid;
     var self = this;
     var none = function () { return null; };
-    // Course-wide, read once per page; a failed read is tried again next time.
+    var meta = this._sharedMeta || (this._sharedMeta = {});
+    // Course-wide, read once per page; a failed read is tried again next
+    // time, and one still waiting at low priority is read again at high
+    // priority when the tab is opened.
     var shared = function (key, read) {
-      if (!self[key]) self[key] = read().catch(function () { self[key] = null; return null; });
-      return self[key];
+      var m = meta[key];
+      if (self[key] && !(m && m.low && !m.settled && !prefetch)) return self[key];
+      var p = self[key] = read().catch(function () { if (self[key] === p) self[key] = null; return null; });
+      meta[key] = { low: prefetch, settled: false };
+      p.then(function () { if (self[key] === p) meta[key].settled = true; });
+      return p;
     };
-    if (!d.profile) {
-      var user = api.courseUser(cid, uid).catch(none);
-      d.profile = Promise.all([
+    var upgrade = !prefetch && d.profile && d.profileLow && !d.profileSettled;
+    if (!d.profile || upgrade) {
+      d.profileLow = prefetch;
+      d.profileSettled = false;
+      // Refused (a role without the right) reads as "not shown"; a failed
+      // connection reads as failed, and the tab offers to try again.
+      var user = api.courseUser(cid, uid).catch(function (err) { return transient(err) ? FAILED : null; });
+      var profile = d.profile = Promise.all([
         user,
         shared('_observers', function () { return api.courseObservers(cid); }),
         shared('_sections', function () { return api.courseSections(cid); }),
@@ -350,14 +547,17 @@
         // The course's recent_students list only when the student's own record
         // doesn't give a login time (Canvas answers last_login: null on
         // course user records even for students who log in every day).
-        user.then(function (u) { return u && u.last_login ? null : shared('_recent', function () { return api.recentStudents(cid); }); })
+        user.then(function (u) { return u && !isFailed(u) && u.last_login ? null : shared('_recent', function () { return api.recentStudents(cid); }); })
       ]).then(function (r) {
-        return { user: r[0], observers: r[1], sections: r[2], emails: r[3], profile: r[4], enrollments: r[5], courses: r[6], recent: r[7] };
+        var failed = isFailed(r[0]);
+        if (failed && d.profile === profile) d.profileFailed = true;
+        return { failed: failed, user: failed ? null : r[0], observers: r[1], sections: r[2], emails: r[3], profile: r[4], enrollments: r[5], courses: r[6], recent: r[7] };
       });
+      profile.then(function () { if (d.profile === profile) d.profileSettled = true; });
     }
-    if (o.profileLoading) return;
-    o.profileLoading = true;
-    d.profile.then(function (p) { o.parts.profile = p; o.draw(); });
+    if (o.wiredProfile === d.profile) return;
+    var current = o.wiredProfile = d.profile;
+    current.then(function (p) { if (d.profile === current) { o.parts.profile = p; o.draw(); } });
   };
 
   /* Students' email addresses, to match them to Studio's viewers. */
@@ -469,7 +669,11 @@
     if (t.closest('[data-si-close]')) { this.close(); return; }
     if (t.closest('[data-si-prev]')) { this.step(-1); return; }
     if (t.closest('[data-si-next]')) { this.step(1); return; }
-    if (t.closest('[data-si-retry]')) { this._cache.delete(this._uid); this.open(this._uid); return; }
+    // Their work failed, so the open reads it again - and keeps any earlier
+    // read on screen meanwhile, which dropping the cache entry would lose.
+    if (t.closest('[data-si-retry]')) { this.open(this._uid); return; }
+    var part = t.closest('[data-si-retry-part]');
+    if (part) { this.retryPart(part.getAttribute('data-si-retry-part')); return; }
     var tab = t.closest('[data-si-tab]');
     if (tab) { this.selectTab(tab.getAttribute('data-si-tab'), tab.getAttribute('data-si-filter')); return; }
     if (t.closest('[data-si-copy]')) { this.copyReport(); return; }
@@ -769,11 +973,14 @@
         if (id === uid) return student.totalActivityTime;
         var s = model.students.get(id); return s && s.totalActivityTime;
       }),
-      activity: parts.activity || null,
+      activity: isFailed(parts.activity) ? null : (parts.activity || null),
       summaries: parts.summaries || null
     });
     r.analyticsKnown = parts.activity !== undefined;
+    r.analyticsFailed = isFailed(parts.activity);
     r.analyticsOff = parts.activity === null;
+    r.contentFailed = isFailed(parts.content);
+    r.stale = !!parts.stale;
     r.summariesKnown = parts.summaries !== undefined;
     r.contentKnown = parts.content !== undefined;
     r.studio = this.studioFor(uid, student, parts.studio);
@@ -782,7 +989,7 @@
     r.groupNames = {};
     (parts.course ? parts.course.groups : []).forEach(function (g) { if (g && g.id !== undefined) r.groupNames[String(g.id)] = g.name || ''; });
     r.pageViewsLoading = parts.content !== undefined && parts.pageViews === undefined;
-    r.content = parts.content ? SI().contentActivity({
+    r.content = parts.content && !isFailed(parts.content) ? SI().contentActivity({
       courseId: this.courseId,
       accesses: parts.content,
       pageViews: parts.pageViews || null,
@@ -815,6 +1022,8 @@
     }).join('');
     this.wireTabKeys();
     body.innerHTML =
+      (r.stale ? '<div class="cgp-si__retry cgp-si__retry--top" role="status"><span>Showing what was read earlier: Canvas didn’t answer just now.</span>' +
+        '<button type="button" class="cgp-si__btn" data-si-retry>Try again</button></div>' : '') +
       this.panel('overview', this.overview(r)) +
       this.panel('work', this.work(r)) +
       this.panel('activity', this.activityPanel(r)) +
@@ -1306,6 +1515,8 @@
     var left;
     if (!r.analyticsKnown) {
       left = '<div class="cgp-si__card cgp-si__act-main"><div class="cgp-si__loading cgp-si__loading--inline" role="status"><span class="cgp-si__spinner" aria-hidden="true"></span>Reading Canvas analytics…</div></div>';
+    } else if (r.analyticsFailed) {
+      left = '<div class="cgp-si__card cgp-si__act-main">' + retryNote('Couldn’t reach Canvas analytics just now.', 'activity') + '</div>';
     } else if (!a) {
       left = '<div class="cgp-si__card cgp-si__act-main"><p class="cgp-si__note">Canvas analytics isn’t available for this course, so page views by day and hour can’t be shown. ' +
         'Last activity and time in the course come from the enrollment and are shown above.</p></div>';
@@ -1504,12 +1715,21 @@
     return isFinite(t) ? SI().lastActiveText(t, Date.now()) : 'Never';
   }
 
+  /* A section whose read failed: says so, with a button that reads just it again. */
+  function retryNote(text, part) {
+    return '<div class="cgp-si__retry" role="status"><span>' + esc(text) + '</span>' +
+      '<button type="button" class="cgp-si__btn" data-si-retry-part="' + esc(part) + '">Try again</button></div>';
+  }
+
   function pct(n) { return typeof n === 'number' && isFinite(n) ? (Math.round(n * 10) / 10) + '%' : ''; }
 
   P.profilePanel = function (uid, student, parts) {
     var p = parts.profile;
     if (p === undefined) {
       return '<div class="cgp-si__loading" role="status"><span class="cgp-si__spinner" aria-hidden="true"></span>Reading this student’s profile from Canvas…</div>';
+    }
+    if (p.failed) {
+      return retryNote('Couldn’t read this student’s profile from Canvas just now.', 'profile');
     }
     var user = p.user || {};
     var prof = p.profile || {};
@@ -1621,6 +1841,9 @@
         '<div class="cgp-si__loading cgp-si__loading--inline" role="status"><span class="cgp-si__spinner" aria-hidden="true"></span>Reading this student’s Access Report…</div></div>';
     }
     var c = r.content;
+    if (r.contentFailed) {
+      return section('Course content opened', retryNote('Couldn’t read this student’s Access Report just now.', 'content'));
+    }
     if (!c) {
       return section('Course content opened', '<p class="cgp-si__note">Canvas didn’t share this student’s Access Report with your account ' +
         '(it needs the “View usage reports” permission), so the pages, files and assignments they opened can’t be shown.</p>');

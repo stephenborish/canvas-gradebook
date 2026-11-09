@@ -17,10 +17,16 @@ Install it from the Chrome Web Store (unlisted, so use this link):
 Then open your course gradebook: `https://<yourschool>.instructure.com/courses/<id>/gradebook`.
 
 A store install follows your Chrome profile: with Chrome sync on, it installs itself on every
-computer you sign into, and its settings come with it. New versions arrive on their own; the
-extension checks for one when Chrome starts and when you open a Canvas course (at most hourly),
-and switches over as soon as it is downloaded. A gradebook tab that was already open keeps
-working, but reload it to pick up the new version and any settings changes.
+computer you sign into, and its settings come with it. New versions arrive on their own, but
+not instantly: Chrome checks the Web Store for each extension about every five hours, and lets an
+extension ask for a check only that often (a check in between answers "throttled" without asking).
+The extension spends that one check as early as Chrome allows: it tries when Chrome starts, when you
+open a Canvas course and every 20 minutes (a throttled try costs nothing), and installs a new
+version the moment it has downloaded. Canvas tabs that were already open keep running the old
+version until they are reloaded, so they show a small **Gradebook+ was updated · Reload** notice.
+**Options → Diagnostics → Updates** shows the installed version, when Chrome last checked and when
+it will next, and has **Check for updates now**. To update immediately, open `chrome://extensions`,
+switch on **Developer mode** and click **Update**.
 
 If you used an earlier unpacked copy (**Load unpacked** on `chrome://extensions`), remove it
 once the store version is installed, or both will run on the gradebook. Its settings don't
@@ -506,7 +512,31 @@ If Canvas analytics is off for the course, the Activity tab says so and still sh
 and time in the course from the enrollment.
 
 Everything is read from Canvas when the panel opens — that student's submissions and comments,
-their analytics, the course's assignment groups — and held in memory for that page only. Turn it
+their analytics, the course's assignment groups — and held in memory for that page only.
+
+It is built to open fast and to keep working on a poor connection:
+
+- **Reading starts before the click.** Resting the pointer on a name starts reading that student;
+  once a panel is open, the other tabs' data and the previous and next students are read in the
+  background at low priority, so switching tab or pressing **←** / **→** is usually instant. Open a
+  tab before its background read has finished and it is read again at high priority, rather than
+  waiting its turn.
+- **The panel goes first.** Its reads jump the gradebook's shared request queue (and have two
+  reserved slots), so they never wait behind the background loading of every column. Background
+  prefetches go last.
+- **Long lists are read in parallel.** Where Canvas numbers its pages, up to four pages are
+  requested at once instead of one after another (more would only invite Canvas's rate limiting).
+- **Nothing hangs.** A read Canvas hasn't started answering within 20 seconds is abandoned and
+  retried, like any dropped connection. Once the answer is arriving, a large list on a slow
+  connection gets a minute to finish, so a slow download isn't mistaken for a stall.
+- **Failures are local, and say so.** If analytics, the Access Report or the profile can't be read,
+  that section says *Couldn't … just now* with its own **Try again**, instead of claiming the
+  course doesn't offer it; the rest of the panel is unaffected. Only that part is read again next
+  time, not the whole student.
+- **Earlier data is shown at once.** A student read in the last 90 seconds opens from memory;
+  after that, the earlier read is still shown immediately while a fresh one arrives. If the fresh
+  read fails, the earlier one stays, with a note and **Try again**.
+- Data arriving in the same frame is drawn once, so the panel doesn't flicker as pieces land. Turn it
 off with *Clicking a student's name opens their overview* in the options page.
 
 ### Copy the class roster
@@ -547,6 +577,55 @@ graded — Canvas's own `Submission#resubmitted?`: a real student submission tha
 graded again (`grade_matches_current_submission` false). Canvas only sets that when a student
 submits over an existing score, so on-paper and no-submission work, and excused cells, never show
 it.
+
+### A welcome tour, once per install
+
+The first time a gradebook opens after the extension is installed, a guided tour runs on top of it
+— the teacher's real gradebook, not a mock-up. A spotlight moves from one real element to the next,
+and a card beside it says what Gradebook+ does there, with a small animated illustration. It comes
+in two parts, each on the page it is about:
+
+**Part 1 — the gradebook.** Comment bubbles, submission badges, the `M`/`L`/`E` keys, spreadsheet
+entry, the column **Post** button, then **a real student overview**: the tour opens one (or the
+teacher clicks the name) and walks through it live — the grade and tiles, *What stands out*, the
+**Assignments** tab with *Copy List of Missing/Late Work*, and the **Activity** tab's analytics —
+closing it again afterwards. Then the frozen Total, the column `⋮` menus, the course switcher, Find
+student and the breadcrumb gear. The last card hands over to part 2, or finishes there.
+
+**Part 2 — the course page.** Linking class periods once with **Copy to other classes** (step 1 of
+its dialog: *which of your classes are the same course as this one?*), copying work to every period
+with its own dates, **Compare classes** and *Also post to your other classes*, and the **class
+schedule**: what it does in Canvas's Assign To boxes and the two steps to connect a calendar.
+**Connect my calendar** opens the options page's Class Schedule tab with a guided setup on top
+(switch on, copy the link from Google Calendar, paste and Connect, Save) that lets the teacher
+type and click as they go.
+
+- `←` / `→` move between stops, `Esc` ends the tour. **Skip tour** is on the first card, and every
+  card has a close button.
+- Stops marked **Try it** let the click through to the page (a comment thread, a student overview,
+  the course menu, the copy dialog); the tour folds into a small pill until **Next stop**.
+- Nothing is read from or written to Canvas beyond what opening a student overview reads anyway.
+  While a card is up on a Canvas page, keystrokes outside it are held back, so an `M` or a digit
+  can never land in a grade cell behind the tour.
+- A stop for a feature that is switched off is left out, or shown with its illustration and a note
+  saying where it lives, rather than pointing at nothing.
+- It is offered **once per install**: a fresh install marks it due on that computer
+  (`chrome.storage.local`, so Chrome sync never carries it between computers). Finishing part 1
+  records that part 2 is next; finishing or skipping clears it for good. Updates never show it.
+- Progress is kept: a reload, or a **Try it** that leads to another page (a course picked from the
+  switcher), carries on from the same stop rather than starting over.
+- On any other course page, a small card in the corner offers whichever part is next (or *Pick up
+  where you left off?*) and opens the right page for it. SpeedGrader never shows either.
+- **Replay the welcome tour** in the options page's sidebar marks it due again, from part 1.
+
+The tour is drawn in a shadow root, so Canvas's stylesheet and the extension's own never reach it.
+It lives in `src/tour/`: `tour-state.js` (whether it is due, which part and which stop),
+`tour-content.js` (what each stop says and points at) and `tour.js` (the spotlight, the cards and the
+invitation). Only `tour-state.js` is a content script: on a course page where the tour is wanted it
+asks the service worker to inject the other two into that tab, so the rest of the time the tour
+costs a single storage read. `background.js` imports the same file, so the stored record is defined
+once. The spotlight follows its element on scroll, on resize (a `ResizeObserver`) and on a slow
+heartbeat, never with a per-frame loop.
 
 ### Every view stays in step
 

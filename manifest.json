@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Canvas Gradebook+",
-  "version": "1.29.0",
+  "version": "1.30.0",
   "author": "stephenborish",
   "description": "Grade faster in Canvas: see your feedback at a glance, grade like a spreadsheet, post grades in one click, pick due times by class.",
   "minimum_chrome_version": "116",
   "permissions": [
     "storage",
-    "scripting"
+    "scripting",
+    "alarms"
   ],
   "host_permissions": [
     "*://*.instructure.com/*",
@@ -119,6 +120,7 @@
         "src/speedgrader/comment-layout.js",
         "src/speedgrader/sidebar-layout.js",
         "src/speedgrader/content.js",
+        "src/tour/tour-state.js",
         "src/gradebook/content.js"
       ],
       "css": [

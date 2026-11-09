@@ -53,10 +53,14 @@
       </nav>
 
       <div class="sidebar__foot">
-        <div class="sidebar__version">Version <span id="extensionVersion">1.29.0</span></div>
+        <div class="sidebar__version">Version <span id="extensionVersion">1.30.0</span></div>
         <div class="sidebar__actions">
           <button id="save" type="button" class="btn btn--primary">Save changes</button>
           <button id="reset" type="button" class="btn btn--quiet">Restore defaults</button>
+          <button id="replayTour" type="button" class="btn btn--quiet btn--tour">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5l1.7 4.6 4.8 1.7-4.8 1.8L10 15.2 8.3 10.6 3.5 8.8l4.8-1.7z"/></svg>
+            Replay the welcome tour
+          </button>
         </div>
         <p id="status" class="status" role="status" aria-live="polite"></p>
       </div>
@@ -659,6 +663,18 @@
             <h1>Diagnostics</h1>
             <p>Counts and ids only. Student names, grades and comment text are never written to the log.</p>
           </header>
+          <h2 class="panel__group">Updates</h2>
+          <div class="updates">
+            <p id="updateStatus" class="updates__status" role="status" aria-live="polite">Reading update status…</p>
+            <div class="action-row">
+              <button id="checkUpdates" type="button" class="btn btn--secondary">Check for updates now</button>
+            </div>
+            <p class="hint updates__hint">Chrome checks for new versions about every five hours, and lets an extension ask
+              only that often. Tabs that were open during an update show a <strong>Reload</strong> notice. To update right
+              away: open <code>chrome://extensions</code>, switch on <strong>Developer mode</strong> (top right) and click
+              <strong>Update</strong>.</p>
+          </div>
+          <h2 class="panel__group">Diagnostics log</h2>
           <div class="setting">
             <label class="setting__label" for="diagnostics">Record diagnostics while the gradebook is open</label>
             <input id="diagnostics" type="checkbox" class="switch">
@@ -678,6 +694,9 @@
   <script src="../core/totals.js"></script>
   <script src="../core/snippets.js"></script>
   <script src="../core/course-calendar.js"></script>
+  <script src="../tour/tour-state.js"></script>
+  <script src="../tour/tour-content.js"></script>
+  <script src="../tour/tour.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

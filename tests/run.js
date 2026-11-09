@@ -46,6 +46,8 @@ require('./test-self-update');
 require('./test-section-sync');
 require('./test-quick-copy');
 require('./test-settings-mirror');
+require('./test-tour-state');
+require('./test-dossier-loading');
 
 // run() awaits each case, so the process must not exit before it settles.
 harness.run().then((okAll) => {

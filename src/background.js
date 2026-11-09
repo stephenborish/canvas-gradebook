@@ -10,10 +10,15 @@
  * never reads or stores Canvas data itself. */
 
 import { CONTENT_JS, CONTENT_CSS, isCustomCanvasOrigin } from './script-manifest.js';
-import { createSelfUpdater } from './self-update.js';
+import { createSelfUpdater, CHECK_NOW } from './self-update.js';
 import { createLiveRelay, LIVE_SYNC_TYPE } from './live-relay.js';
 import { createSettingsTimes } from './settings-times.js';
 import { createCalendarSync, CALENDAR_REFRESH } from './calendar-sync.js';
+// The welcome tour's record (a plain script that adds CGP.TourState to
+// globalThis), so its shape is defined in one place.
+import './tour/tour-state.js';
+
+const TourState = globalThis.CGP.TourState;
 
 const DYNAMIC_ID = 'cgp-custom-domains';
 const DYNAMIC_BRIDGE_ID = 'cgp-custom-domains-bridge';
@@ -103,7 +108,18 @@ async function syncDynamicScripts() {
 // No settings are written here. Defaults need no storing (every reader fills
 // them in), and writing them on a fresh install raced the teacher's real
 // settings on their way in through Chrome sync.
-chrome.runtime.onInstalled.addListener(async () => {
+//
+// The one exception is the welcome tour (src/tour/): a fresh install - never
+// an update - marks it due on this computer, and the first gradebook that
+// shows it clears the mark again. chrome.storage.local, so it is per install.
+chrome.runtime.onInstalled.addListener(async (details) => {
+  if (details && details.reason === 'install') {
+    // write() swallows storage errors: the tour never blocks setup.
+    await new TourState(chrome.storage.local).markInstalled();
+  }
+  // A new version: the Canvas tabs already open still run the old one until
+  // they are reloaded, so they are told (self-update.js).
+  if (details && details.reason === 'update') await selfUpdater.afterUpdate(details);
   await syncDynamicScripts();
 });
 
@@ -116,7 +132,8 @@ if (chrome.permissions && chrome.permissions.onAdded) {
   chrome.permissions.onRemoved.addListener(() => { syncDynamicScripts(); });
 }
 
-createSelfUpdater(chrome).start();
+const selfUpdater = createSelfUpdater(chrome);
+selfUpdater.start();
 // This computer's Chrome sync check-in (shown on the options page).
 const settingsTimes = createSettingsTimes(chrome);
 settingsTimes.start();
@@ -138,8 +155,25 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     return true;
   }
   if (msg && msg.type === 'cgp.openOptions') {
-    chrome.tabs.create({ url: chrome.runtime.getURL('src/options/options.html#schedule') });
+    const tab = typeof msg.hash === 'string' && /^[a-z]+(-tour)?$/.test(msg.hash) ? msg.hash : 'schedule';
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/options/options.html#' + tab) });
     return false;
+  }
+  // A course page that wants the welcome tour (tour-state.js decided): the
+  // tour itself goes into that frame only now, never on every page.
+  if (msg && msg.type === TourState.INJECT) {
+    if (sender && sender.tab && sender.tab.id !== undefined) {
+      chrome.scripting.executeScript({
+        target: { tabId: sender.tab.id, frameIds: [sender.frameId || 0] },
+        files: TourState.FILES
+      }).catch(() => 0);
+    }
+    return false;
+  }
+  // The options page's "Check for updates now".
+  if (msg && msg.type === CHECK_NOW) {
+    selfUpdater.checkForUpdate({ force: true }).then(respond, (e) => respond({ status: 'error', error: String(e && e.message) }));
+    return true;
   }
   if (msg && msg.type === 'cgp.checkIn') {
     settingsTimes.checkIn(true).then(() => respond({ ok: true }), (e) => respond({ ok: false, error: String(e && e.message) }));
