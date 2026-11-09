@@ -512,14 +512,17 @@ It is built to open fast and to keep working on a poor connection:
 
 - **Reading starts before the click.** Resting the pointer on a name starts reading that student;
   once a panel is open, the other tabs' data and the previous and next students are read in the
-  background, so switching tab or pressing **←** / **→** is usually instant.
+  background at low priority, so switching tab or pressing **←** / **→** is usually instant. Open a
+  tab before its background read has finished and it is read again at high priority, rather than
+  waiting its turn.
 - **The panel goes first.** Its reads jump the gradebook's shared request queue (and have two
   reserved slots), so they never wait behind the background loading of every column. Background
   prefetches go last.
-- **Long lists are read in parallel.** Where Canvas numbers its pages, every page is requested at
-  once instead of one after another.
-- **Nothing hangs.** A read that stalls is abandoned after 20 seconds and retried, like any dropped
-  connection.
+- **Long lists are read in parallel.** Where Canvas numbers its pages, up to four pages are
+  requested at once instead of one after another (more would only invite Canvas's rate limiting).
+- **Nothing hangs.** A read Canvas hasn't started answering within 20 seconds is abandoned and
+  retried, like any dropped connection. Once the answer is arriving, a large list on a slow
+  connection gets a minute to finish, so a slow download isn't mistaken for a stall.
 - **Failures are local, and say so.** If analytics, the Access Report or the profile can't be read,
   that section says *Couldn't … just now* with its own **Try again**, instead of claiming the
   course doesn't offer it; the rest of the panel is unaffected. Only that part is read again next

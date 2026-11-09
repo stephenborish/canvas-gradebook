@@ -96,6 +96,49 @@ suite('student overview loading: the Canvas client', (test) => {
     a.eq(init0.signal, undefined);
   });
 
+  test('a slow download that is arriving is not cut off: the short limit covers only the wait for an answer', async () => {
+    let calls = 0;
+    const api = new CGP.CanvasApi({ origin: 'https://x.instructure.com', fetch: (url, init) => {
+      calls++;
+      // Headers at once; the body takes 3x the answer limit, under the body limit.
+      return Promise.resolve({
+        ok: true, status: 200, headers: { get: () => null },
+        text: () => new Promise((res, rej) => {
+          const t = setTimeout(() => res('[1]'), 60);
+          init.signal.addEventListener('abort', () => { clearTimeout(t); rej(new Error('aborted')); });
+        })
+      });
+    } }).withDefaults({ timeoutMs: 20, bodyTimeoutMs: 200 });
+    a.deep(await api.get('/api/v1/x'), [1]);
+    a.eq(calls, 1, 'not abandoned and retried');
+  });
+
+  test('a download that stalls part-way is abandoned after the body limit', async () => {
+    const api = new CGP.CanvasApi({ origin: 'https://x.instructure.com', fetch: (url, init) => Promise.resolve({
+      ok: true, status: 200, headers: { get: () => null },
+      text: () => new Promise((res, rej) => init.signal.addEventListener('abort', () => rej(new Error('aborted'))))
+    }) }).withDefaults({ timeoutMs: 20, bodyTimeoutMs: 40 });
+    let err = null;
+    await api.request('/api/v1/x', { retries: 0 }).catch((e) => { err = e; });
+    a.ok(err && err.timedOut);
+  });
+
+  test('one long list reads at most 4 pages at a time', async () => {
+    let inFlight = 0, most = 0;
+    const base = 'https://x.instructure.com/api/v1/y?per_page=100';
+    const api = new CGP.CanvasApi({ origin: 'https://x.instructure.com', concurrency: 20, fetch: (url) => {
+      inFlight++; most = Math.max(most, inFlight);
+      const page = Number(new URL(url).searchParams.get('page') || 1);
+      const link = page === 1 ? '<' + base + '&page=2>; rel="next", <' + base + '&page=12>; rel="last"' : '';
+      return new Promise((r) => setTimeout(() => { inFlight--; r(response(200, JSON.stringify([page]), { Link: link })); }, 5));
+    } }).withDefaults({ parallel: true });
+    const all = await api.getAll('/api/v1/y');
+    a.eq(all.length, 12);
+    a.deep(all.slice(0, 3), [1, 2, 3]);
+    a.ok(most <= 4, 'at most 4 at once (saw ' + most + ')');
+    a.ok(most >= 3, 'still in parallel');
+  });
+
   test('numbered pages are read at once, in order, when Canvas gives the last page', async () => {
     const urls = [];
     let inFlight = 0, most = 0;
@@ -237,6 +280,33 @@ suite('student overview loading: the panel’s data', (test) => {
     const c = ctl(fakeApi().api);
     const html = c.profilePanel('7', { name: 'A' }, { profile: { failed: true } });
     a.ok(html.includes('data-si-retry-part="profile"'));
+  });
+
+  test('the other tabs prefetch at low priority, and opening one reads it again at high priority', async () => {
+    const seen = [];
+    let releaseLow;
+    const lowGate = new Promise((r) => { releaseLow = r; });
+    const api = {
+      studentContentAccess() { const pr = this._defaults.priority; seen.push(pr);
+        return pr === 'low' ? lowGate.then(() => ['old']) : Promise.resolve(['fresh']); },
+      studentPageViews() { return Promise.resolve(null); }
+    };
+    api.withDefaults = (d) => Object.assign(Object.create(api), { _defaults: d });
+    const c = ctl(api);
+    c.ensureStudio = () => {};
+    c._gen = 1;
+    let drawn = 0;
+    c._open = { uid: '7', gen: 1, parts: {}, draw: () => { drawn++; }, data: {} };
+    c.loadContent({ prefetch: true });
+    a.deep(seen, ['low']);
+    c.loadContent();                       // the teacher opens Activity
+    a.deep(seen, ['low', 'high'], 'read again at high priority');
+    await tick(); await tick();
+    a.deep(c._open.parts.content, ['fresh']);
+    releaseLow(); await tick(); await tick();
+    a.deep(c._open.parts.content, ['fresh'], 'the late low-priority answer does not overwrite it');
+    c.loadContent();
+    a.eq(seen.length, 2, 'a settled read is not read again');
   });
 
   test('"Try again" on one section reads only that section', async () => {

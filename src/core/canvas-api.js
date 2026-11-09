@@ -80,7 +80,8 @@
 
   /* The same client, with request defaults for everything sent through it:
    *   priority: 'high' | 'low'  - place in the shared queue (see util.pool)
-   *   timeoutMs                 - give up on one attempt after this long (a
+   *   timeoutMs                 - give up on one attempt when Canvas hasn't
+   *                               started answering after this long (a
    *                               stalled connection), then retry as for a
    *                               network error
    *   parallel                  - read numbered pages of a list at once
@@ -116,6 +117,9 @@
     opts = Object.assign({}, this._defaults || {}, opts || {});
     var method = (opts.method || 'GET').toUpperCase();
     var timeoutMs = opts.timeoutMs > 0 && method === 'GET' ? opts.timeoutMs : 0;
+    // Once Canvas has answered, the body gets longer: a large list arriving
+    // steadily over a slow connection is not a stall.
+    var bodyTimeoutMs = timeoutMs ? (opts.bodyTimeoutMs > 0 ? opts.bodyTimeoutMs : Math.max(60000, timeoutMs * 3)) : 0;
     var u = this.url(path, opts.params);
     var headers = {
       'Accept': 'application/json+canvas-string-ids, application/json',
@@ -150,7 +154,8 @@
         // or a retry's backoff), for reading Canvas's clock off its Date.
         var sentAt = Date.now();
         // A read that stalls (a dropped connection that never errors) is
-        // abandoned after timeoutMs and retried like any network failure.
+        // abandoned and retried like any network failure: after timeoutMs
+        // with no answer at all, or bodyTimeoutMs once the answer started.
         var ctl = timeoutMs && typeof AbortController === 'function' ? new AbortController() : null;
         var timer = ctl ? setTimeout(function () { ctl.abort(); }, timeoutMs) : null;
         var init = {
@@ -160,6 +165,10 @@
         if (ctl) init.signal = ctl.signal;
         var clear = function () { if (timer) { clearTimeout(timer); timer = null; } };
         return self.fetchImpl(u.toString(), init).then(function (res) {
+          if (timer) {
+            clearTimeout(timer);
+            timer = setTimeout(function () { ctl.abort(); }, bodyTimeoutMs);
+          }
           return res.text().then(function (text) {
             if (!res.ok) {
               // Canvas answers 401 both for "not logged in" (status
@@ -252,7 +261,12 @@
           var rest = page === 0 && parallel ? numberedPages(next, lastLink(r.link)) : null;
           if (rest) {
             var want = rest.slice(0, maxPages - 1);
-            return Promise.all(want.map(function (url) { return self.request(url, {}); })).then(function (rs) {
+            // A few pages at a time, not all of them: one long list must not
+            // fill the shared queue (or set off Canvas's rate limiting).
+            var pageGate = util.pool(PARALLEL_PAGES);
+            return Promise.all(want.map(function (url) {
+              return pageGate(function () { return self.request(url, {}); });
+            })).then(function (rs) {
               rs.forEach(add);
               if (rest.length > want.length) truncated();
               return out;
@@ -266,6 +280,9 @@
     }
     return step(this.url(path, merged).toString(), 0);
   };
+
+  // How many pages of one list are read at once (see getAll's parallel).
+  var PARALLEL_PAGES = 4;
 
   function lastLink(header) {
     var m = /<([^>]+)>;\s*rel="last"/.exec(String(header || ''));

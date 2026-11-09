@@ -393,8 +393,10 @@
     o.prefetched = true;
     setTimeout(function () {
       if (!self._open || self._open !== o || o.gen !== self._gen) return;
+      // Low priority: the panel's own reads, and the gradebook, come first.
+      // Opening one of these tabs before it's done reads it at high priority.
       self.loadContent({ prefetch: true });
-      self.loadProfile();
+      self.loadProfile({ prefetch: true });
       var list = self.roster();
       var i = list.indexOf(o.uid);
       if (i < 0 || list.length < 2) return;
@@ -417,15 +419,11 @@
       d.activity.then(function (a) { o.parts.activity = a; o.draw(); });
     } else if (part === 'content') {
       o.parts.content = undefined; o.parts.pageViews = undefined;
-      d.contentFailed = false;
-      d.content = api.studentContentAccess(cid, uid).catch(function () { d.contentFailed = true; return FAILED; });
-      d.pageViews = api.studentPageViews(uid, Date.now() - PAGE_VIEW_DAYS * DAY).catch(function () { return null; });
-      d.content.then(function (c) { o.parts.content = c; o.draw(); });
-      d.pageViews.then(function (v) { o.parts.pageViews = v; o.draw(); });
+      d.content = null; d.pageViews = null;
+      this.loadContent();
     } else if (part === 'profile') {
       o.parts.profile = undefined;
       d.profile = null;
-      o.profileLoading = false;
       this.loadProfile();
     }
     o.draw();
@@ -439,18 +437,35 @@
     var o = this._open;
     if (!o || o.gen !== this._gen) return;
     var d = o.data;
+    var prefetch = !!(opts && opts.prefetch);
     // The Activity tab's Studio videos; not for a prefetch, which would
     // launch Studio for a teacher who never opens that tab.
-    if (!(opts && opts.prefetch)) this.ensureStudio();
-    if (!d.content) {
+    if (!prefetch) this.ensureStudio();
+    // A prefetch reads at low priority. Opening the tab before it has
+    // finished reads again at high priority, rather than waiting its turn
+    // behind the gradebook's background work.
+    var upgrade = !prefetch && d.content && d.contentLow && !d.contentSettled;
+    if (!d.content || upgrade) {
+      var api = prefetch ? this.slow : this.fast;
       d.contentFailed = false;
-      d.content = this.fast.studentContentAccess(this.courseId, o.uid).catch(function () { d.contentFailed = true; return FAILED; });
-      d.pageViews = this.fast.studentPageViews(o.uid, Date.now() - PAGE_VIEW_DAYS * DAY).catch(function () { return null; });
+      d.contentLow = prefetch;
+      d.contentSettled = false;
+      var content = d.content = api.studentContentAccess(this.courseId, o.uid).catch(function () { d.contentFailed = true; return FAILED; });
+      d.pageViews = api.studentPageViews(o.uid, Date.now() - PAGE_VIEW_DAYS * DAY).catch(function () { return null; });
+      content.then(function () { if (d.content === content) d.contentSettled = true; });
     }
-    if (o.loading) return;
-    o.loading = true;
-    d.content.then(function (c) { o.parts.content = c; o.draw(); });
-    d.pageViews.then(function (v) { o.parts.pageViews = v; o.draw(); });
+    this.wireContent(o);
+  };
+
+  /* Draws the Access Report and page views as they arrive - only the most
+   * recent read of each, so a superseded low-priority read can't overwrite
+   * the one that replaced it. */
+  P.wireContent = function (o) {
+    var d = o.data;
+    if (o.wiredContent === d.content) return;
+    var content = o.wiredContent = d.content, views = d.pageViews;
+    content.then(function (c) { if (d.content === content) { o.parts.content = c; o.draw(); } });
+    views.then(function (v) { if (d.pageViews === views) { o.parts.pageViews = v; o.draw(); } });
   };
 
   /* Studio's videos, once per student shown: for the Activity tab's
@@ -494,23 +509,34 @@
    * observers), the course's sections, their profile where Canvas allows,
    * and their other classes with this teacher. Course-wide reads are shared
    * by every student. A read Canvas refuses comes back null. */
-  P.loadProfile = function () {
+  P.loadProfile = function (opts) {
     var o = this._open;
     if (!o || o.gen !== this._gen) return;
     var d = o.data;
-    var api = this.fast, cid = this.courseId, uid = o.uid;
+    var prefetch = !!(opts && opts.prefetch);
+    var api = prefetch ? this.slow : this.fast, cid = this.courseId, uid = o.uid;
     var self = this;
     var none = function () { return null; };
-    // Course-wide, read once per page; a failed read is tried again next time.
+    var meta = this._sharedMeta || (this._sharedMeta = {});
+    // Course-wide, read once per page; a failed read is tried again next
+    // time, and one still waiting at low priority is read again at high
+    // priority when the tab is opened.
     var shared = function (key, read) {
-      if (!self[key]) self[key] = read().catch(function () { self[key] = null; return null; });
-      return self[key];
+      var m = meta[key];
+      if (self[key] && !(m && m.low && !m.settled && !prefetch)) return self[key];
+      var p = self[key] = read().catch(function () { if (self[key] === p) self[key] = null; return null; });
+      meta[key] = { low: prefetch, settled: false };
+      p.then(function () { if (self[key] === p) meta[key].settled = true; });
+      return p;
     };
-    if (!d.profile) {
+    var upgrade = !prefetch && d.profile && d.profileLow && !d.profileSettled;
+    if (!d.profile || upgrade) {
+      d.profileLow = prefetch;
+      d.profileSettled = false;
       // Refused (a role without the right) reads as "not shown"; a failed
       // connection reads as failed, and the tab offers to try again.
       var user = api.courseUser(cid, uid).catch(function (err) { return transient(err) ? FAILED : null; });
-      d.profile = Promise.all([
+      var profile = d.profile = Promise.all([
         user,
         shared('_observers', function () { return api.courseObservers(cid); }),
         shared('_sections', function () { return api.courseSections(cid); }),
@@ -524,13 +550,14 @@
         user.then(function (u) { return u && !isFailed(u) && u.last_login ? null : shared('_recent', function () { return api.recentStudents(cid); }); })
       ]).then(function (r) {
         var failed = isFailed(r[0]);
-        if (failed) d.profileFailed = true;
+        if (failed && d.profile === profile) d.profileFailed = true;
         return { failed: failed, user: failed ? null : r[0], observers: r[1], sections: r[2], emails: r[3], profile: r[4], enrollments: r[5], courses: r[6], recent: r[7] };
       });
+      profile.then(function () { if (d.profile === profile) d.profileSettled = true; });
     }
-    if (o.profileLoading) return;
-    o.profileLoading = true;
-    d.profile.then(function (p) { o.parts.profile = p; o.draw(); });
+    if (o.wiredProfile === d.profile) return;
+    var current = o.wiredProfile = d.profile;
+    current.then(function (p) { if (d.profile === current) { o.parts.profile = p; o.draw(); } });
   };
 
   /* Students' email addresses, to match them to Studio's viewers. */
