@@ -1086,7 +1086,10 @@
   var EDIT_GAP = 16;       // px: kept free below it, above the window's edge
   var TEXTAREA_MIN = 56;
 
-  function CommentGrow() {
+  function CommentGrow(opts) {
+    // gap(): px to keep free below the editor (SpeedGrader keeps its
+    // attach / record / Submit row in view under it).
+    this.gapFn = opts && typeof opts.gap === 'function' ? opts.gap : null;
     this.editor = null;
     this.doc = null;     // the RCE iframe's document, while listened to
     this.height = '';
@@ -1137,9 +1140,11 @@
    * told (the RCE still loading). */
   CG.measure = function (ed) {
     var winH = typeof window !== 'undefined' && window.innerHeight;
+    var gap = EDIT_GAP;
+    if (this.gapFn) { try { gap = Math.max(EDIT_GAP, Number(this.gapFn()) || 0); } catch (e) { gap = EDIT_GAP; } }
     if (ed.tagName === 'TEXTAREA') {
       var top = ed.getBoundingClientRect().top;
-      var max = winH ? Math.floor(winH - top - EDIT_GAP) : Infinity;
+      var max = winH ? Math.floor(winH - top - gap) : Infinity;
       // Measured at its natural height: 'auto' lets it shrink back again.
       ed.style.setProperty('--cgp-tray-edit-h', 'auto');
       this.height = '';
@@ -1157,7 +1162,7 @@
       ['input', 'keyup', 'paste', 'cut'].forEach(function (t) { doc.addEventListener(t, this.onInput); }, this);
     }
     var areaTop = area.getBoundingClientRect().top;
-    var limit = winH ? Math.floor(winH - areaTop - EDIT_GAP) : Infinity;
+    var limit = winH ? Math.floor(winH - areaTop - gap) : Infinity;
     var content = contentHeight(doc);
     return Math.max(EDIT_MIN, Math.min(content, limit));
   };
@@ -1212,4 +1217,13 @@
   function toArray(list) { return Array.prototype.slice.call(list || []); }
 
   CGP.TrayLayoutController = TrayLayoutController;
+  // Shared with SpeedGrader's comment box (speedgrader/comment-layout.js),
+  // which gets the same editor treatment.
+  CGP.trayCommentParts = {
+    RCE_SELECTOR: RCE_SELECTOR,
+    outermostRce: outermostRce,
+    tagStatusBar: tagStatusBar,
+    tagWordCount: tagWordCount,
+    CommentGrow: CommentGrow
+  };
 })();

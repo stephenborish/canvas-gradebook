@@ -178,6 +178,14 @@
     studentInsights: true,
     speedgraderDrafts: true,
     speedgraderStickySubmit: true,
+    // SpeedGrader's comment box laid out like the Grade Detail Tray's: all
+    // formatting buttons on show, an editor that grows with its text, and
+    // the attach / media / speech / Submit row as one tidy bar
+    // (speedgrader/comment-layout.js).
+    speedgraderTidyComments: true,
+    // DocViewer (the annotation tools over a submitted file): Free Draw and
+    // Point annotations start in red (speedgrader/annotation-color.js).
+    annotationDefaultRed: true,
     // Class schedule beside Canvas's Assign To date and time boxes, read from
     // the teacher's own calendar (a Google Calendar's iCal address, or any
     // .ics feed): pick a class on a day and its start (or end) time - and the

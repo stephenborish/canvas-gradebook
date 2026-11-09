@@ -52,6 +52,7 @@ export const CONTENT_JS = [
   'src/sections/sync-dialog.js',
   'src/sections/sync-board.js',
   'src/sections/inline-copy.js',
+  'src/speedgrader/comment-layout.js',
   'src/speedgrader/content.js',
   'src/gradebook/content.js'
 ];

@@ -73,3 +73,86 @@ html.cgp-speedgrader .cgp-sg-stale__dismiss:focus-visible {
   outline: 2px solid #8fd1ff;
   outline-offset: 2px;
 }
+
+/* ------------------------------------------------ tidy comment box
+ * speedgrader/comment-layout.js, while html.cgp-sg-tidy is on. The editor
+ * itself shares the Grade Detail Tray's rules (gradebook.css, keyed on
+ * [data-cgp-tray-rce]). Here: the row of Canvas's comment tools under it -
+ * attach a file, record / upload media, speech to text - as evenly sized
+ * icon buttons on the left, Submit Comment larger on the right. Nothing in
+ * the row is hidden. */
+html.cgp-sg-tidy [data-cgp-tray-rce] {
+  margin-bottom: 0 !important;
+}
+/* The editor's status bar - the element path ("p"), the keyboard shortcuts
+ * and accessibility checker buttons, the word count - is hidden. It is
+ * tagged [data-cgp-tray-hide] when found; these catch it by Canvas's and
+ * TinyMCE's own names as well, in case the tagging misses it. */
+html.cgp-sg-tidy [data-cgp-tray-rce] [data-testid="RCEStatusBar"],
+html.cgp-sg-tidy [data-cgp-tray-rce] .tox-statusbar,
+html.cgp-sg-tidy #speedgrader_comment_textarea_mount_point [data-testid="RCEStatusBar"],
+html.cgp-sg-tidy #speedgrader_comment_textarea_mount_point .tox-statusbar {
+  display: none !important;
+}
+html.cgp-sg-tidy [data-cgp-sg-actions] {
+  display: flex !important;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  margin: 8px 0 0 !important;
+  padding: 6px 0 !important;
+  float: none !important;
+  text-align: left !important;
+}
+html.cgp-sg-tidy [data-cgp-sg-actions] > * {
+  float: none !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+html.cgp-sg-tidy [data-cgp-sg-tool] {
+  box-sizing: border-box !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  height: 40px;
+  margin: 0 !important;
+  padding: 0 8px !important;
+  border: 1px solid #c7cdd1 !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+  color: #2d3b45 !important;
+  font-size: 18px !important;
+  line-height: 1 !important;
+  box-shadow: none !important;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+html.cgp-sg-tidy [data-cgp-sg-tool] i,
+html.cgp-sg-tidy [data-cgp-sg-tool] svg {
+  font-size: 18px !important;
+  width: 18px;
+  height: 18px;
+}
+html.cgp-sg-tidy [data-cgp-sg-tool]:hover {
+  background: #eef4f9 !important;
+  border-color: #0374b5 !important;
+}
+html.cgp-sg-tidy [data-cgp-sg-tool]:focus-visible {
+  outline: 2px solid #0374b5 !important;
+  outline-offset: 2px;
+}
+/* Submit Comment: pushed to the far end, bigger and easier to hit. Canvas's
+ * own colours (the school's theme) are kept. */
+html.cgp-sg-tidy [data-cgp-sg-actions] > [data-cgp-sg-submit],
+html.cgp-sg-tidy [data-cgp-sg-actions] > :has([data-cgp-sg-submit]) {
+  margin-left: auto !important;
+}
+html.cgp-sg-tidy [data-cgp-sg-submit] {
+  min-height: 40px;
+  padding: 0 20px !important;
+  border-radius: 8px !important;
+  font-size: 1rem !important;
+  font-weight: 700 !important;
+}

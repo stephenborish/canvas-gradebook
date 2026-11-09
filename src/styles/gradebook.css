@@ -3974,11 +3974,13 @@ html.cgp-tray-tidy .cgp-tstat__unit {
   html.cgp-tray-tidy .cgp-tstat__opt[data-pending] .cgp-tstat__dot { animation-duration: 1.6s; }
 }
 
-/* Comments: one card - Cancel / Submit as a slim bar on top, a single row
+/* Comments: one card (the rules keyed on [data-cgp-tray-rce] also style
+ * SpeedGrader's comment editor, under html.cgp-sg-tidy - see
+ * speedgrader/comment-layout.js) - Cancel / Submit as a slim bar on top, a single row
  * of formatting buttons, a shorter editing area, no status bar. Before
  * anything is typed Canvas shows no buttons, so the editor alone is the
  * card; once they appear the card grows the bar. */
-html.cgp-tray-tidy [data-cgp-tray-rce] {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] {
   box-sizing: border-box !important;
   border: 1px solid #c7cdd1 !important;
   border-radius: 8px !important;
@@ -3988,40 +3990,40 @@ html.cgp-tray-tidy [data-cgp-tray-rce] {
   height: auto !important;
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
-html.cgp-tray-tidy [data-cgp-tray-rce]:focus-within {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce]:focus-within {
   border-color: #0374b5 !important;
   box-shadow: 0 0 0 2px rgba(3, 116, 181, 0.2) !important;
 }
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-tinymce {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-tinymce {
   border: 0 !important;
   border-radius: 0 !important;
   box-shadow: none !important;
   height: auto !important;
   min-height: 0 !important;
 }
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-container {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-editor-container {
   height: auto !important;
 }
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-editor-header {
   padding: 0 !important;
   border: 0 !important;
   border-bottom: 1px solid #e3e6e8 !important;
   background: #f7f8f9 !important;
   box-shadow: none !important;
 }
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-toolbar-overlord,
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-toolbar,
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-toolbar__primary,
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-toolbar__overflow,
-html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-toolbar-overlord,
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-toolbar,
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-toolbar__primary,
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-toolbar__overflow,
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) .tox-tinymce-aux .tox-toolbar__overflow {
   background: transparent none !important;
   border: 0 !important;
   box-shadow: none !important;
 }
 /* Every row of buttons is ONE row: the "more" (⋮) drawer included. */
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-toolbar__primary,
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-toolbar__overflow,
-html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-toolbar__primary,
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-toolbar__overflow,
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) .tox-tinymce-aux .tox-toolbar__overflow {
   display: flex !important;
   flex-wrap: nowrap !important;
   align-items: center !important;
@@ -4030,29 +4032,29 @@ html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow {
   overflow-y: hidden !important;
   scrollbar-width: none;
 }
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-toolbar__overflow {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-toolbar__overflow {
   border-top: 1px solid #e3e6e8 !important;
 }
-html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) .tox-tinymce-aux .tox-toolbar__overflow {
   background: #f7f8f9 !important;
   border: 1px solid #c7cdd1 !important;
   border-radius: 8px !important;
   box-shadow: 0 4px 14px rgba(19, 33, 44, 0.15) !important;
 }
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-toolbar__group,
-html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow .tox-toolbar__group {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-toolbar__group,
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) .tox-tinymce-aux .tox-toolbar__overflow .tox-toolbar__group {
   flex: 0 0 auto !important;
   flex-wrap: nowrap !important;
   padding: 0 2px !important;
   margin: 0 !important;
   border: 0 !important;
 }
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-toolbar__group + .tox-toolbar__group,
-html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow .tox-toolbar__group + .tox-toolbar__group {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-toolbar__group + .tox-toolbar__group,
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) .tox-tinymce-aux .tox-toolbar__overflow .tox-toolbar__group + .tox-toolbar__group {
   border-left: 1px solid #e3e6e8 !important;
 }
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-tbtn,
-html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow .tox-tbtn {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-tbtn,
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) .tox-tinymce-aux .tox-toolbar__overflow .tox-tbtn {
   height: 28px !important;
   min-width: 28px !important;
   width: auto !important;
@@ -4060,17 +4062,17 @@ html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow .tox-tbtn {
   padding: 0 3px !important;
   border-radius: 6px !important;
 }
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-split-button,
-html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow .tox-split-button {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-split-button,
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) .tox-tinymce-aux .tox-toolbar__overflow .tox-split-button {
   margin: 4px 1px !important;
   border-radius: 6px !important;
 }
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-split-button .tox-tbtn,
-html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow .tox-split-button .tox-tbtn {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-split-button .tox-tbtn,
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) .tox-tinymce-aux .tox-toolbar__overflow .tox-split-button .tox-tbtn {
   margin: 0 !important;
 }
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-split-button__chevron,
-html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow .tox-split-button__chevron {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-split-button__chevron,
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) .tox-tinymce-aux .tox-toolbar__overflow .tox-split-button__chevron {
   width: 14px !important;
   min-width: 14px !important;
   padding: 0 !important;
@@ -4090,7 +4092,7 @@ html.cgp-tray-tidy .tox-tinymce-aux .tox-toolbar__overflow .tox-split-button__ch
  * .tox-tbtn--select - shows only while ⋮ is "open", and then leads the row;
  * ⋮ sits at the right end of the last line. With an empty drawer there is no ⋮ to
  * press, so nothing is hidden. */
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar-overlord {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar-overlord {
   display: flex !important;
   flex-wrap: wrap !important;
   align-items: center !important;
@@ -4100,29 +4102,29 @@ html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__over
 }
 /* Groups are set apart by a gap, not dividers: a divider would hang at the
  * left edge of every wrapped line. */
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__group { border-left: 0 !important; }
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__primary,
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__overflow {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__group { border-left: 0 !important; }
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__primary,
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__overflow {
   display: contents !important;
   /* TinyMCE's closed drawer is visibility: hidden, which its groups inherit. */
   visibility: visible !important;
 }
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__primary > .tox-toolbar__group { order: 1; }
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__overflow > .tox-toolbar__group { order: 2; }
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__group:has(.tox-tbtn--select) { order: 0; }
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__primary > .tox-toolbar__group { order: 1; }
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__overflow > .tox-toolbar__group { order: 2; }
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__group:has(.tox-tbtn--select) { order: 0; }
 /* ⋮: TinyMCE appends it as the primary row's last group. */
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__primary > .tox-toolbar__group:last-child:not(:has(.tox-tbtn--select)) {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__primary > .tox-toolbar__group:last-child:not(:has(.tox-tbtn--select)) {
   order: 3;
   margin-left: auto !important;
 }
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow--closed > .tox-toolbar__group) .tox-toolbar__group:has(.tox-tbtn--select) {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow--closed > .tox-toolbar__group) .tox-toolbar__group:has(.tox-tbtn--select) {
   display: none !important;
 }
 /* "Paragraph": as wide as its word, not a fixed 7em. */
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-tbtn--select {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-tbtn--select {
   padding: 0 2px 0 6px !important;
 }
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-tbtn__select-label {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-tbtn__select-label {
   width: auto !important;
   margin: 0 2px 0 0 !important;
   font-size: 0.8125rem !important;
@@ -4131,19 +4133,19 @@ html.cgp-tray-tidy [data-cgp-tray-rce] .tox-tbtn__select-label {
  * the ⋮ drawer never squeezes it. It starts short and grows with the text,
  * down to the bottom of the window (--cgp-tray-edit-h, set by CommentGrow in
  * tray-layout.js); past that the text scrolls inside it. */
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-sidebar-wrap {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-sidebar-wrap {
   flex: 0 0 auto !important;
   height: var(--cgp-tray-edit-h, 104px) !important;
   min-height: 104px !important;
 }
 /* Across, it still fills the width (the sidebar row is a flex row). */
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-edit-area {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-edit-area {
   flex: 1 1 auto !important;
   width: 100% !important;
   height: var(--cgp-tray-edit-h, 104px) !important;
   min-height: 104px !important;
 }
-html.cgp-tray-tidy [data-cgp-tray-rce] .tox-edit-area__iframe {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-rce] .tox-edit-area__iframe {
   height: 100% !important;
 }
 
@@ -4260,7 +4262,7 @@ html.cgp-tray-tidy [data-cgp-tray-comment-editor] textarea {
   overflow-y: auto;
   resize: none;
 }
-html.cgp-tray-tidy [data-cgp-tray-hide] {
+:is(html.cgp-tray-tidy, html.cgp-sg-tidy) [data-cgp-tray-hide] {
   display: none !important;
 }
 

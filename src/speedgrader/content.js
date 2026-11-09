@@ -576,6 +576,12 @@
       pinSubmitButton();
     }
 
+    // The comment box laid out like the Grade Detail Tray's (comment-layout.js).
+    if (CGP.SpeedGraderCommentLayout) {
+      try { new CGP.SpeedGraderCommentLayout({ settings: CGP.settings }).start(); } catch (e) {
+        CGP.diag.error('speedgraderLayout.startFailed', { message: String(e && e.message) });
+      }
+    }
     // Document-level and bound once, so neither needs the poll below.
     bindDraftListeners();
     watchSubmit();
