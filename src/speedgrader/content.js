@@ -667,6 +667,12 @@
         CGP.diag.error('speedgraderLayout.startFailed', { message: String(e && e.message) });
       }
     }
+    // The sidebar as cards (sidebar-layout.js), on the same setting.
+    if (CGP.SpeedGraderSidebarLayout) {
+      try { new CGP.SpeedGraderSidebarLayout({ settings: CGP.settings }).start(); } catch (e) {
+        CGP.diag.error('speedgraderSidebar.startFailed', { message: String(e && e.message) });
+      }
+    }
     // Document-level and bound once, so neither needs the poll below.
     bindDraftListeners();
     watchSubmit();
