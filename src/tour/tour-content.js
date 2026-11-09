@@ -103,11 +103,31 @@
     var cell = (tour && tour.siCell && tour.siCell.isConnected) ? tour.siCell : studentName();
     var link = cell && (cell.matches && cell.matches('a') ? cell : cell.querySelector('a'));
     if (!link) return Promise.resolve(false);
+    // If nothing opens the overview for this click (it is off in settings,
+    // or this is the test student), the click must not reach Canvas either:
+    // no navigation to the grades page, no context tray mid-tour.
+    var hold = function (e) { e.preventDefault(); e.stopPropagation(); };
+    link.addEventListener('click', hold);
     if (tour) tour.synthetic = true;
-    try { link.click(); } finally { if (tour) tour.synthetic = false; }
+    try { link.click(); } finally {
+      if (tour) tour.synthetic = false;
+      link.removeEventListener('click', hold);
+    }
     return waitFor(function () { return !!document.querySelector('.cgp-si__panel'); }, 1500).then(function (opened) {
       return opened ? waitFor(loaded, 10000) : false;
     });
+  }
+
+  /* The overview on one of its tabs (Back from a later tab returns here). */
+  function openTab(name, ready, ms) {
+    return function (tour) {
+      return openOverview(tour).then(function (ok) {
+        if (!ok) return false;
+        var tab = document.querySelector('.cgp-si__tabs [data-si-tab="' + name + '"]');
+        if (tab && tab.getAttribute('aria-selected') !== 'true') tab.click();
+        return waitFor(function () { return pick(ready); }, ms);
+      });
+    };
   }
 
   function closeOverview() {
@@ -295,7 +315,7 @@
       title: 'Their standing at a glance',
       body: 'Canvas’s current grade and last activity sit up top. The tiles sum up the term: missing work (with points at stake), late work, on-time rate, average vs. the class, and what needs grading.',
       bullets: ['Click a tile to see those assignments', key('←') + ' ' + key('→') + ' move to the previous or next student'],
-      enter: openOverview,
+      enter: openTab('overview', '#cgp-si-panel-overview .cgp-si__tiles', 4000),
       target: function () {
         var head = pick('.cgp-si__head');
         var tiles = pick('#cgp-si-panel-overview .cgp-si__tiles, .cgp-si__tiles');
@@ -320,7 +340,7 @@
       title: 'What’s worth a closer look',
       body: 'Gradebook+ scans their record and ranks what needs attention: a pile of missing work, a rising late rate, a quiet week in Canvas, a trend up or down, or an unanswered reply to your feedback.',
       bullets: ['Beside it: their submission record and average by category vs. the class'],
-      enter: openOverview,
+      enter: openTab('overview', '#cgp-si-panel-overview .cgp-si__card', 4000),
       target: function () {
         var cards = Array.prototype.slice.call(document.querySelectorAll('.cgp-si__card'));
         var hit = cards.filter(function (c) {
@@ -351,14 +371,7 @@
         'Filter to Missing, Late, Needs grading or Upcoming',
         '<b>View work</b> opens their submission, even in Turnitin or Edpuzzle'
       ],
-      enter: function (tour) {
-        return openOverview(tour).then(function (ok) {
-          if (!ok) return false;
-          var tab = document.querySelector('.cgp-si__tabs [data-si-tab="work"]');
-          if (tab) tab.click();
-          return waitFor(function () { return pick('#cgp-si-panel-work .cgp-si__share, #cgp-si-panel-work .cgp-si__card'); }, 4000);
-        });
-      },
+      enter: openTab('work', '#cgp-si-panel-work .cgp-si__share, #cgp-si-panel-work .cgp-si__card', 4000),
       target: function () {
         var share = pick('#cgp-si-panel-work .cgp-si__share');
         if (share) return share.closest('.cgp-si__card') || share;
@@ -385,14 +398,7 @@
         '<b>Course content:</b> every page and file they’ve opened',
         'One search box finds any video or page by name or module'
       ],
-      enter: function (tour) {
-        return openOverview(tour).then(function (ok) {
-          if (!ok) return false;
-          var tab = document.querySelector('.cgp-si__tabs [data-si-tab="activity"]');
-          if (tab) tab.click();
-          return waitFor(function () { return pick('#cgp-si-panel-activity .cgp-si__card'); }, 6000);
-        });
-      },
+      enter: openTab('activity', '#cgp-si-panel-activity .cgp-si__card', 6000),
       target: function () {
         var heat = pick('#cgp-si-panel-activity .cgp-si__heat-cell');
         if (heat && heat.closest('.cgp-si__card')) return heat.closest('.cgp-si__card');

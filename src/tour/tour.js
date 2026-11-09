@@ -428,7 +428,9 @@
     window.addEventListener('keydown', this._onKey, true);
     window.addEventListener('keyup', this._onKey, true);
     window.addEventListener('keypress', this._onKey, true);
-    document.addEventListener('click', this._onPageClick, true);
+    // On window, not document: page handlers that stop a click at document
+    // capture (student-insights.js on a name) would otherwise hide it from us.
+    window.addEventListener('click', this._onPageClick, true);
     window.addEventListener('resize', this._onResize);
     var self = this;
     requestAnimationFrame(function () {
@@ -839,7 +841,7 @@
     window.removeEventListener('keydown', this._onKey, true);
     window.removeEventListener('keyup', this._onKey, true);
     window.removeEventListener('keypress', this._onKey, true);
-    document.removeEventListener('click', this._onPageClick, true);
+    window.removeEventListener('click', this._onPageClick, true);
     window.removeEventListener('resize', this._onResize);
   };
 
