@@ -691,7 +691,7 @@ suite('class schedule: the Assign To picker', (test) => {
     a.eq(pair.date.value, '2026-11-09');
   });
 
-  test('“Also post to your other classes”: a blank class date stays blank (this class’s day) unless another day is chosen', async () => {
+  test('“Also post to your other classes”: a blank class date gets the day shown, and a day stepped to replaces it', async () => {
     const { ctrl, handlers, root } = bootPicker(cache, { courseCalendarUrl: URL_ });
     const page = duePair('Mon, Nov 9, 2026');          // this class's own Due date
     const date = new FakeInput({ type: 'date', 'data-f': 'due_at' });
@@ -706,7 +706,7 @@ suite('class schedule: the Assign To picker', (test) => {
     a.ok(/This course/.test(ctrl.panel.innerHTML), 'the row’s own class is marked');
     await ctrl.pick(1, 'start');
     a.eq(time.value, '1:30 PM');
-    a.eq(date.value, '', 'still “same as this class”');
+    a.eq(date.value, '2026-11-09', 'the day shown goes in');
     handlers.focusin({ target: time });
     ctrl.onButton({ getAttribute: (k) => (k === 'data-act' ? 'next' : null) });
     await ctrl.pick(0, 'start');

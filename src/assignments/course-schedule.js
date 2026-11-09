@@ -391,17 +391,17 @@
 
   /** Whether picking a class on `day` also puts `day` in the date box.
    * Always when the teacher chose the day here (stepped to it, or the end
-   * of a meeting that runs past midnight). Otherwise only an empty Canvas
-   * date box is filled: a date this cannot read (another language's
-   * format) is left as the teacher set it, and an empty class date in
-   * "Also post to your other classes" already means this class's day. */
+   * of a meeting that runs past midnight). Otherwise only an empty date
+   * box is filled - Canvas's own, or a class's in "Also post to your other
+   * classes" (so the teacher sees the day the time belongs to): a date
+   * this cannot read (another language's format) is left as it was. */
   P.writesDay = function (day, chose) {
     var g = this.group;
     if (!g || !g.date) return false;
     var boxDay = this.boxDate();
     if (boxDay === day) return false;
     if (chose || this.view) return true;
-    return g.kind !== 'inline' && boxDay === null && !String(g.date.value || '').trim();
+    return boxDay === null && !String(g.date.value || '').trim();
   };
 
   P.currentDay = function () {
