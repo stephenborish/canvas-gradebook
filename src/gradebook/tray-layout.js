@@ -291,11 +291,13 @@
    * to its labels, measured, in up to three steps - never by cutting a
    * label short while there is any other way:
    *
-   *  1. roomy: dot and label, as designed (the usual four);
-   *  2. compact: no dots, tighter padding, each label in its own status
-   *     colour instead - the colour cue kept, ~25% narrower (five or six);
+   *  1. roomy: one segmented bar, a status-coloured dot and label in each
+   *     segment, the current one filled in its colour (the usual four);
+   *  2. compact: smaller dots, tighter padding, a little smaller text;
    *  3. compact, and the tray widened just enough to fit, up to 28em (and
-   *     never past the window).
+   *     never past the window);
+   *  4. tight: as wide as allowed, the dots dropped too (the current
+   *     status is still filled in its colour).
    *
    * Only if even that is not enough (a long custom label, a tiny window)
    * do the labels share the width and the longest end in "…", the full name
@@ -328,6 +330,13 @@
         var cap = Math.min(FIT_MAX_EM * em, (typeof window !== 'undefined' ? window.innerWidth : 1e9) - 24);
         var width = Math.min(Math.ceil(frame.offsetWidth + need + 2), Math.floor(cap));
         if (width > frame.offsetWidth) frame.style.setProperty('--cgp-tray-w', width + 'px');
+        avail = root.clientWidth;
+      }
+      // Still short at the widest: the dots go (the filled segment still
+      // shows its colour) before any label is cut.
+      if (this.natural() > avail) {
+        mode = 'tight';
+        setAttr(root, 'data-fit', mode);
       }
     }
     avail = root.clientWidth;
