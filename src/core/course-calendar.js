@@ -480,7 +480,13 @@
       }
       var n2 = dayNum(date);
       if (n2 < fromN || n2 > toN) return;
-      var o = { d: date, s: time, e: minToClock(clockToMin(time) + ev.dur), t: ev.title };
+      // The end is the start moment plus the meeting's length, read back on
+      // the zone's clock: across a daylight-saving change, 00:30 plus three
+      // hours is 02:30, not 03:30.
+      var end = validZone(zone)
+        ? zoneParts(wallToMs(date, time, zone) + ev.dur * 60000, zone).time
+        : minToClock(clockToMin(time) + ev.dur);
+      var o = { d: date, s: time, e: end, t: ev.title };
       if (zone) o.z = zone;
       if (ev.loc) o.l = ev.loc;
       out.push(o);
@@ -548,9 +554,11 @@
       return { date: o.d, start: o.s, end: o.e, endDate: clockToMin(o.e) < clockToMin(o.s) ? addDays(o.d, 1) : o.d };
     }
     var s = zoneParts(wallToMs(o.d, o.s, o.z), tz);
-    var len = clockToMin(o.e) - clockToMin(o.s);
-    if (len < 0) len += 1440;
-    var e = zoneParts(wallToMs(o.d, o.s, o.z) + len * 60000, tz);
+    // From the end's own wall time (the next day for one past midnight),
+    // not start + the clock difference, which is an hour off across a
+    // daylight-saving change.
+    var endDay = clockToMin(o.e) < clockToMin(o.s) ? addDays(o.d, 1) : o.d;
+    var e = zoneParts(wallToMs(endDay, o.e, o.z), tz);
     return { date: s.date, start: s.time, end: e.time, endDate: e.date };
   }
 

@@ -239,6 +239,30 @@ suite('class schedule: reading the calendar', (test) => {
     a.deep(Cal().expand(c, '2026-11-01', '2026-11-30').map((x) => x.d + ' ' + x.s), ['2026-11-02 09:00', '2026-11-09 13:00']);
   });
 
+  test('a meeting across a daylight-saving change ends at the right time', () => {
+    // US clocks go back at 2:00 on Nov 1, 2026: 00:30 EDT to 02:30 EST is three hours.
+    const c = Cal().parseIcs([
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT', 'UID:dst', 'SUMMARY:Overnight lab',
+      'DTSTART;TZID=America/New_York:20261101T003000', 'DTEND;TZID=America/New_York:20261101T023000', 'END:VEVENT',
+      'BEGIN:VEVENT', 'UID:spring', 'SUMMARY:Spring lab',
+      'DTSTART;TZID=America/New_York:20270314T013000', 'DTEND;TZID=America/New_York:20270314T033000', 'END:VEVENT',
+      'END:VCALENDAR'
+    ].join('\n'));
+    a.eq(c.events[0].dur, 180);
+    const o = Cal().expand(c, '2026-10-01', '2027-04-01');
+    a.eq(o[0].e, '02:30', 'stored end');
+    a.eq(Cal().dayView(o, '2026-11-01', 'America/New_York').classes[0].end, '02:30', 'shown in the same zone');
+    // In Chicago it starts at 23:30 on Oct 31 and ends at 01:30 CST on Nov 1.
+    const chi = Cal().dayView(o, '2026-10-31', 'America/Chicago').classes[0];
+    a.deep([chi.start, chi.end, chi.endDate], ['23:30', '01:30', '2026-11-01'], 'converted');
+    a.eq(o[1].e, '03:30', 'spring forward: 01:30 EST plus one hour is 03:30 EDT');
+    // Chicago moves its clocks an hour after New York, so 03:30 EDT is still 01:30 CST there:
+    // an hour after the 00:30 CST start, as it should be.
+    const spring = Cal().dayView(o, '2027-03-14', 'America/Chicago').classes[0];
+    a.deep([spring.start, spring.end], ['00:30', '01:30']);
+  });
+
   test('a meeting that runs past midnight ends on the next day', () => {
     const occ = [{ d: '2026-11-09', s: '23:30', e: '00:30', t: 'Night lab', z: 'America/New_York' }];
     const c = Cal().dayView(occ, '2026-11-09', 'America/New_York').classes[0];
