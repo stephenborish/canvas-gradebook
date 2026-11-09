@@ -991,6 +991,86 @@
     return null;
   }
 
+  /* ------------------------------------------------- module links */
+
+  /* External links (Canvas's "External URL" module items) are not content of
+   * their own: Canvas's selective course copy has nothing to select for one
+   * short of the whole module. They are copied by adding the same item to
+   * the matching module there (POST .../modules/:id/items). */
+
+  function normUrl(u) {
+    return String(u || '').trim().replace(/#.*$/, '').replace(/\/+$/, '').toLowerCase();
+  }
+
+  /** Every external link in a course's modules, in module order:
+   * [{type:'link', id, moduleId, moduleName, title, url, newTab, indent,
+   *   published, position}] (position 1-based among its module's items). */
+  function moduleLinks(modules) {
+    var out = [];
+    (modules || []).forEach(function (mod) {
+      (mod.items || []).forEach(function (it, i) {
+        if (!it || it.type !== 'ExternalUrl' || !it.external_url) return;
+        out.push({
+          type: 'link', id: String(it.id), moduleId: String(mod.id), moduleName: mod.name || '',
+          title: it.title || it.external_url, url: it.external_url, newTab: !!it.new_tab,
+          indent: Number(it.indent) || 0, published: it.published !== false, position: i + 1
+        });
+      });
+    });
+    return out;
+  }
+
+  /** Where one link goes in one destination class, and whether it is there
+   * already. destModules: that class's modules with their items; mapping:
+   * the asset_id_mapping of the newest copy from the link's course into it.
+   * -> { module: {id, name} | null, position: number | null (null = end),
+   *      already: {id, moduleName} | null }
+   * The module is the copy of the link's module, else the one module there
+   * with the same name. The link goes right after the copy of the item it
+   * follows here (by Canvas's record, else the same kind and title), else
+   * at the end. "Already" is a link to the same address anywhere there. */
+  function linkPlan(link, srcItems, destModules, mapping) {
+    var list = destModules || [];
+    var want = normUrl(link.url);
+    var already = null;
+    list.forEach(function (m) {
+      (m.items || []).forEach(function (it) {
+        if (!already && it && it.type === 'ExternalUrl' && normUrl(it.external_url) === want) already = { id: String(it.id), moduleName: m.name || '' };
+      });
+    });
+    var mod = destModuleFor({ moduleId: link.moduleId, moduleName: link.moduleName, position: link.position }, mapping, list);
+    var plan = { module: mod ? { id: mod.id, name: mod.name } : null, position: null, already: already };
+    if (!mod) return plan;
+    var dest = null;
+    for (var i = 0; i < list.length; i++) if (String(list[i].id) === String(mod.id)) dest = list[i];
+    var destItems = (dest && dest.items) || [];
+    var src = srcItems || [];
+    var at = -1;
+    for (var j = 0; j < src.length; j++) if (String(src[j].id) === String(link.id)) at = j;
+    var mi = (mapping && mapping.module_items) || {};
+    for (var k = at - 1; k >= 0; k--) {
+      var prev = src[k];
+      var mapped = mi[String(prev.id)];
+      var title = String(prev.title || '').trim().toLowerCase();
+      for (var d = 0; d < destItems.length; d++) {
+        var di = destItems[d];
+        var hit = (typeof mapped === 'string' || typeof mapped === 'number') ? String(di.id) === String(mapped)
+          : (di.type === prev.type && String(di.title || '').trim().toLowerCase() === title && title);
+        if (hit) { plan.position = d + 2; return plan; }
+      }
+    }
+    if (at === 0) plan.position = 1;
+    return plan;
+  }
+
+  /** The module_items body that adds a link (Canvas's Modules API). */
+  function linkItemBody(link, position) {
+    var body = { type: 'ExternalUrl', title: String(link.title || link.url), external_url: String(link.url),
+      new_tab: !!link.newTab, indent: Number(link.indent) || 0 };
+    if (position) body.position = Number(position);
+    return { module_item: body };
+  }
+
   /* -------------------------------------------------------- course items */
 
   /** One Canvas object (from its list API) -> the item the dialog works with.
@@ -1208,6 +1288,9 @@
     trackKey: trackKey,
     moduleIndex: moduleIndex,
     destModuleFor: destModuleFor,
+    moduleLinks: moduleLinks,
+    linkPlan: linkPlan,
+    linkItemBody: linkItemBody,
     toItem: toItem,
     moduleChildren: moduleChildren,
     itemFromPath: itemFromPath

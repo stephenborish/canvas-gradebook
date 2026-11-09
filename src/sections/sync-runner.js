@@ -1007,6 +1007,139 @@
     })).then(function () { return out; });
   };
 
+  /* Of `courseIds` (linked classes with no copy of this item on record),
+   * the ones that already have it all the same, so "this new item is not
+   * in your other classes yet" would be wrong there:
+   *  - the class has an item of this type with the same title. A teacher who
+   *    wants a different due date in each class often makes the item in each
+   *    one by hand; Canvas's copy records know nothing of that, but the item
+   *    is there (and copying would add a second one);
+   *  - the class's students are in THIS course: one of its sections was
+   *    cross-listed here (Canvas keeps the course a section came from as
+   *    nonxlist_course_id). Each section then gets its own due date in this
+   *    item's Assign To, and the class's own course is an empty shell.
+   * Resolves [courseId]. Read only; a class that cannot be read is left in. */
+  P.alreadyThere = function (courseId, item, courseIds) {
+    var self = this;
+    var sync = S();
+    var ids = (courseIds || []).map(String);
+    if (!ids.length || !item) return Promise.resolve([]);
+    var xlisted = typeof this.api.courseSections !== 'function' ? Promise.resolve([])
+      : this.cached('xlist.' + courseId, MIGS_TTL_MS, function () {
+        return self.api.courseSections(courseId).then(function (list) {
+          var from = [];
+          (list || []).forEach(function (s) {
+            var c = s && s.nonxlist_course_id;
+            if (c !== null && c !== undefined && String(c) !== String(courseId) && from.indexOf(String(c)) < 0) from.push(String(c));
+          });
+          return from;
+        });
+      }).catch(function () { return []; });
+    return xlisted.then(function (from) {
+      var found = ids.filter(function (d) { return from.indexOf(d) >= 0; });
+      var rest = ids.filter(function (d) { return found.indexOf(d) < 0; });
+      if (!item.title || item.type === 'module') return found;
+      var t = item.type === 'announcement' ? 'discussion' : item.type;
+      return Promise.all(rest.map(function (d) {
+        return self.api.courseItems(d, item.type).then(function (list) {
+          // toItem drops what is not really of this type (the assignment
+          // behind a classic quiz or a graded discussion): a quiz named like
+          // a new assignment is not that assignment.
+          var mine = (list || []).filter(function (o) { return o && o.workflow_state !== 'deleted'; })
+            .map(function (o) { return sync.toItem(t, o); })
+            .filter(function (it) { return it && it.type === item.type; });
+          if (sync.lookalike(mine, item.title)) found.push(d);
+        }, function () { /* cannot read that class: say nothing about it */ });
+      })).then(function () { return ids.filter(function (d) { return found.indexOf(d) >= 0; }); });
+    });
+  };
+
+  /* ------------------------------------------------- module links */
+
+  /* Copying external links (module "External URL" items) into linked
+   * classes. Canvas's course copy cannot pick one out of a module, so each is
+   * added to the matching module there with the Modules API.
+   *
+   * planLinks reads each class once (its modules with their items, and the
+   * record of the newest copy from here) and says, per link, where it would
+   * go and whether that class has it already:
+   * -> [{ courseId, error, modules: [{id, name}], plans: {linkId: plan} }]
+   * (plan as sectionSync.linkPlan). Read only. */
+  P.planLinks = function (srcCourseId, links, srcModules, destIds) {
+    var self = this;
+    var sync = S();
+    var srcItems = {};
+    (srcModules || []).forEach(function (m) { srcItems[String(m.id)] = m.items || []; });
+    return Promise.all((destIds || []).map(function (d) {
+      var out = { courseId: String(d), error: null, modules: [], plans: {}, raw: [], mapping: {} };
+      return Promise.all([
+        self.api.modulesWithItems(d),
+        self.mappingFor(d, srcCourseId).catch(function () { return null; })
+      ]).then(function (r) {
+        out.raw = r[0] || [];
+        out.mapping = r[1] || {};
+        out.modules = out.raw.map(function (m) { return { id: String(m.id), name: m.name || '' }; });
+        links.forEach(function (l) { out.plans[l.id] = sync.linkPlan(l, srcItems[l.moduleId], out.raw, out.mapping); });
+        return out;
+      }, function (err) {
+        out.error = CGP.util.isPermissionDeniedError(err)
+          ? 'You can’t change this class’s modules in Canvas (your role there may not allow it, or the course has concluded).'
+          : describe(err, 'Couldn’t read this class’s modules from Canvas');
+        return out;
+      });
+    }));
+  };
+
+  /* Add the links to one class, in their order here. dest: one entry of
+   * planLinks (its modules are kept up to date as links are added, so a run
+   * of new links lands in order). choice: {srcModuleId: destModuleId} where
+   * the teacher picked a module; a picked module other than the planned one
+   * gets the link at its end. Links that class already has are left out
+   * unless opts.duplicates. Each link is reported on its own:
+   * -> [{ link, ok, skipped, error, destId, moduleId, url, warning }] */
+  P.copyLinks = function (srcCourseId, links, srcModules, dest, choice, opts) {
+    var self = this;
+    var sync = S();
+    opts = opts || {};
+    choice = choice || {};
+    var srcItems = {};
+    (srcModules || []).forEach(function (m) { srcItems[String(m.id)] = m.items || []; });
+    var results = [];
+    return links.reduce(function (chain, link) {
+      return chain.then(function () {
+        var plan = sync.linkPlan(link, srcItems[link.moduleId], dest.raw, dest.mapping);
+        var res = { link: link, ok: false, skipped: false, error: null, destId: null, moduleId: null, url: null, warning: null };
+        results.push(res);
+        if (plan.already && !opts.duplicates) { res.skipped = true; res.ok = true; return null; }
+        var picked = choice[link.moduleId];
+        var moduleId = picked || (plan.module && plan.module.id);
+        if (!moduleId) { res.error = 'there is no module named “' + link.moduleName + '” there. Pick one.'; return null; }
+        var position = (!picked || (plan.module && String(picked) === String(plan.module.id))) ? plan.position : null;
+        return self.api.createModuleItem(dest.courseId, moduleId, sync.linkItemBody(link, position)).then(function (made) {
+          res.ok = true;
+          res.moduleId = String(moduleId);
+          res.destId = made && made.id ? String(made.id) : null;
+          res.url = '/courses/' + dest.courseId + '/modules#' + (res.destId ? 'context_module_item_' + res.destId : 'context_module_' + moduleId);
+          // Keep that class's picture current: the next link may follow this one.
+          var mod = (dest.raw || []).filter(function (m) { return String(m.id) === String(moduleId); })[0];
+          if (mod) {
+            mod.items = mod.items || [];
+            var row = { id: res.destId, type: 'ExternalUrl', title: link.title, external_url: link.url, published: made ? made.published : null };
+            var at = position ? Math.min(Math.max(position - 1, 0), mod.items.length) : mod.items.length;
+            mod.items.splice(at, 0, row);
+          }
+          var isPub = made && made.published !== undefined ? !!made.published : null;
+          if (!res.destId || isPub === null || isPub === !!link.published) return null;
+          return self.api.updateModuleItem(dest.courseId, moduleId, res.destId, { module_item: { published: !!link.published } }).catch(function (err) {
+            res.warning = 'It was added, but its published state could not be set. ' + describe(err, 'Canvas refused');
+          });
+        }, function (err) {
+          res.error = describe(err, 'Canvas refused');
+        });
+      });
+    }, Promise.resolve()).then(function () { return results; });
+  };
+
   /* An original (in origCourse) and its copy (in copyCourse): which side
    * changed since the copy. {side, orig, copy} with both items read in full
    * (null side when either could not be read, or the copy was deleted). */

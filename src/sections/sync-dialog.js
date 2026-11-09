@@ -93,6 +93,8 @@
       self2.open(spot.kind === 'item' ? null : { pick: true });
     });
     if (spot.kind === 'item' && this.settings.values.sectionCopyNudge) this.checkPage();
+    // External links in modules get their own copy icon (link-copy.js).
+    if (spot.kind === 'modules' && this.decorateLinkRows) this.decorateLinkRows();
   };
 
   P.unmount = function () {
@@ -237,7 +239,17 @@
             var copiedTo = rel.to.map(function (r) { return r.courseId; });
             var missing = sibs.filter(function (d) { return copiedTo.indexOf(String(d)) < 0 && (rel.unreadable || []).indexOf(String(d)) < 0; });
             var fresh = item.createdAt && Date.now() - Date.parse(item.createdAt) <= NUDGE_WINDOW_MS;
-            if (fresh && !rel.from.length && missing.length) notes.push({ kind: 'new', courses: missing });
+            if (!fresh || rel.from.length || !missing.length || self.inlineCopying) return null;
+            // Not on record as copied is not the same as not there: the class
+            // may have its own item (made there by hand, with its own due
+            // date), or its section may be cross-listed into this course.
+            return self.copier.alreadyThere(self.courseId, item, missing).then(function (there) {
+              var still = missing.filter(function (d) { return there.indexOf(String(d)) < 0; });
+              // The copy "Also post to your other classes" started may have
+              // begun while this was being read.
+              if (still.length && !self.inlineCopying) notes.push({ kind: 'new', courses: still });
+            });
+          }).then(function () {
             return self.copier.backups(self.courseId, item.type, item.id).then(function (list) {
               var last = list[0];
               if (last && Date.now() - Number(last.at || 0) < 7 * 86400000) notes.push({ kind: 'undo', course: last.from, backup: last });
@@ -848,7 +860,9 @@
     var tabs = PICK_TYPES.map(function (t) {
       return '<button type="button" class="cgp-sections__tab' + (pk.type === t ? ' is-on' : '') + '" data-pick-type="' + t + '">' +
         esc(sync.TYPES[t].plural) + '</button>';
-    }).join('');
+    }).join('') +
+      // External links in modules are copied on their own (link-copy.js).
+      (this.openLinks ? '<button type="button" class="cgp-sections__tab" data-act="open-links" title="External links in this course’s modules">Links</button>' : '');
     var list = pk.lists[pk.type];
     var rows;
     if (list === undefined) { rows = '<p class="cgp-stats__note">Loading…</p>'; this.loadPickList(pk.type); }
@@ -1154,6 +1168,7 @@
     if (a === 'pick') { st.view = 'pick'; st.picker.chosen = {}; this.render(); return; }
     if (a === 'pick-cancel') { st.view = 'main'; this.render(); return; }
     if (a === 'pick-done') return this.pickDone();
+    if (a === 'open-links' && this.openLinks) return this.openLinks();
     if (a === 'resurvey') return this.resurvey();
     if (a === 'adjust') return this.applyAdjust(act.getAttribute('data-dest'));
     if (a === 'reset') return this.resetDest(act.getAttribute('data-dest'));

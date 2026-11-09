@@ -848,6 +848,37 @@ suite('copy to sections: changes made in a copy', (test) => {
     a.ok(api.calls.some((x) => x[0] === 'customData' && x[1] === 'fp/11/assignment_5/22'));
   });
 
+  test('a class with its own same-titled item, or cross-listed here, already has it (no "not in your other classes" nag)', async () => {
+    // Period 2 (11) made "Lab 4" with its due date; Period 4 (22) made its own
+    // "Lab 4" by hand with a different due date - no copy on record. Period 6
+    // (33) was cross-listed into 11, so its students get theirs here. Period 8
+    // (44) really has none.
+    const api = fakeCanvas({ lists: {
+      '22:assignment': [{ id: '900', name: 'lab 4 ', due_at: '2026-11-11T18:45:00Z' }],
+      '44:assignment': [{ id: '901', name: 'Lab 5' }, { id: '902', name: 'Lab 4', workflow_state: 'deleted' }]
+    } });
+    api.courseSections = () => Promise.resolve([
+      { id: 1, course_id: 11, nonxlist_course_id: null },
+      { id: 2, course_id: 11, nonxlist_course_id: 33 }
+    ]);
+    const c = copier(api);
+    const item = { type: 'assignment', id: '5', title: 'Lab 4' };
+    const rel = await c.relations('11', item, ['22', '33', '44']);
+    a.deep(rel.to, []);
+    a.deep(await c.alreadyThere('11', item, ['22', '33', '44']), ['22', '33']);
+    // A classic quiz or graded discussion named like the new assignment is
+    // not it: its backing assignment is not counted.
+    const api2 = fakeCanvas({ lists: {
+      '22:assignment': [{ id: '903', name: 'Lab 4', quiz_id: 77, submission_types: ['online_quiz'] }],
+      '44:assignment': [{ id: '904', name: 'Lab 4', submission_types: ['discussion_topic'] }]
+    } });
+    a.deep(await copier(api2).alreadyThere('11', item, ['22', '44']), []);
+    // A class that cannot be read, or a Canvas without the sections call, is left as it was.
+    delete api.courseSections;
+    api.courseItems = (d) => d === '22' ? Promise.reject(new Error('403')) : Promise.resolve([]);
+    a.deep(await copier(api).alreadyThere('11', item, ['22', '44']), []);
+  });
+
   test('bringing a change back: links and a new file are moved over, notes stay put, backup and undo', async () => {
     let api;
     api = fakeCanvas({ onComplete: (dest, m) => {
@@ -1607,5 +1638,134 @@ suite('keeping classes in step: code review', (test) => {
     a.ok(results.get(tasks[0]).ok, JSON.stringify(results.get(tasks[0])));
     a.not(results.get(tasks[1]).ok);
     a.eq(api.calls.filter((x) => x[0] === 'copy').length, 3, 'the shared copy, then one each');
+  });
+});
+
+suite('copy to sections: external links in modules', (test) => {
+  // Period 2 (11): Unit 3 = [Lab 4 (assignment), Video (link), Sim (link)].
+  // Period 4 (22): Unit 3 (copy of 11's module 3 as 303) = [Lab 4, Reading].
+  function srcModules() {
+    return [{ id: 3, name: 'Unit 3', items: [
+      { id: 31, type: 'Assignment', title: 'Lab 4', content_id: 5 },
+      { id: 32, type: 'ExternalUrl', title: 'Protein video', external_url: 'https://www.youtube.com/watch?v=abc', new_tab: true, indent: 1, published: true },
+      { id: 33, type: 'ExternalUrl', title: 'Folding sim', external_url: 'https://phet.colorado.edu/sim', new_tab: false, indent: 0, published: false },
+      { id: 34, type: 'SubHeader', title: 'Extras' }
+    ] }];
+  }
+  function destModules() {
+    return [
+      { id: 303, name: 'Unit 3 (P4)', items: [{ id: 901, type: 'Assignment', title: 'Lab 4' }, { id: 902, type: 'Page', title: 'Reading' }] },
+      { id: 304, name: 'Unit 4', items: [] }
+    ];
+  }
+
+  test('links are read from the modules, with their settings; other items are not links', () => {
+    const links = S().moduleLinks(srcModules());
+    a.deep(links.map((l) => [l.id, l.moduleId, l.position, l.newTab, l.indent, l.published]),
+      [['32', '3', 2, true, 1, true], ['33', '3', 3, false, 0, false]]);
+    a.deep(S().linkItemBody(links[0], 2), { module_item: { type: 'ExternalUrl', title: 'Protein video',
+      external_url: 'https://www.youtube.com/watch?v=abc', new_tab: true, indent: 1, position: 2 } });
+    a.lacksKey(S().linkItemBody(links[1], null).module_item, 'position');
+  });
+
+  test('a link goes in the copy of its module, right after the copy of the item before it', () => {
+    const links = S().moduleLinks(srcModules());
+    const mapping = { modules: { '3': '303' }, module_items: { '31': '901' } };
+    const p = S().linkPlan(links[0], srcModules()[0].items, destModules(), mapping);
+    a.deep(p, { module: { id: '303', name: 'Unit 3 (P4)' }, position: 2, already: null });
+    // No copy record: the same-named module and the same-titled item.
+    const named = destModules();
+    named[0].name = 'unit 3 ';
+    a.deep(S().linkPlan(links[0], srcModules()[0].items, named, {}), { module: { id: '303', name: 'unit 3 ' }, position: 2, already: null });
+    // No module to match: none planned.
+    a.eq(S().linkPlan(links[0], srcModules()[0].items, destModules(), {}).module, null);
+    // Already there (same address, another module): reported.
+    const has = destModules();
+    has[1].items.push({ id: 950, type: 'ExternalUrl', external_url: 'https://www.youtube.com/watch?v=abc#t=1', title: 'x' });
+    a.deep(S().linkPlan(links[0], srcModules()[0].items, has, mapping).already, { id: '950', moduleName: 'Unit 4' });
+  });
+
+  function linkApi(opts) {
+    opts = opts || {};
+    const api = fakeCanvas();
+    const mods = { '11': srcModules(), '22': destModules() };
+    api.db.migrations['22'] = [{ id: '1', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '11' } }];
+    api.db.mappings['22'] = { modules: { '3': '303' }, module_items: { '31': '901' } };
+    let next = 1000;
+    api.modulesWithItems = (c) => opts.unreadable === c ? Promise.reject(Object.assign(new Error('403'), { status: 403 }))
+      : Promise.resolve(JSON.parse(JSON.stringify(mods[c] || [])));
+    api.createModuleItem = (c, m, body) => {
+      api.calls.push(['addItem', c, m, body]);
+      if (opts.refuse) return Promise.reject(Object.assign(new Error('400'), { status: 400 }));
+      return Promise.resolve({ id: next++, published: false });
+    };
+    api.updateModuleItem = (c, m, id, body) => { api.calls.push(['updItem', c, m, id, body]); return Promise.resolve({}); };
+    return api;
+  }
+
+  test('copying adds each link in order to that module, then matches its published state', async () => {
+    const api = linkApi();
+    const c = copier(api);
+    const src = srcModules();
+    const links = S().moduleLinks(src);
+    const plans = await c.planLinks('11', links, src, ['22']);
+    a.eq(plans[0].error, null);
+    a.eq(plans[0].plans['33'].module.id, '303');
+    const res = await c.copyLinks('11', links, src, plans[0], {});
+    a.deep(res.map((r) => [r.ok, r.skipped, r.destId]), [[true, false, '1000'], [true, false, '1001']]);
+    const adds = api.calls.filter((x) => x[0] === 'addItem');
+    a.deep(adds.map((x) => [x[2], x[3].module_item.title, x[3].module_item.position]),
+      [['303', 'Protein video', 2], ['303', 'Folding sim', 3]], 'the second follows the first');
+    a.deep(api.calls.filter((x) => x[0] === 'updItem').map((x) => [x[3], x[4]]), [['1000', { module_item: { published: true } }]]);
+    a.not(api.calls.some((x) => x[0] === 'copy'), 'no course copy');
+    // Pressed again: both are there now, nothing is added.
+    const again = await c.copyLinks('11', links, src, plans[0], {});
+    a.ok(again.every((r) => r.skipped));
+    a.eq(api.calls.filter((x) => x[0] === 'addItem').length, 2);
+  });
+
+  test('a module picked by the teacher gets the link at its end; failures are reported per link', async () => {
+    const api = linkApi();
+    const c = copier(api);
+    const src = srcModules();
+    const links = S().moduleLinks(src).slice(0, 1);
+    const plans = await c.planLinks('11', links, src, ['22']);
+    await c.copyLinks('11', links, src, plans[0], { '3': '304' });
+    const add = api.calls.filter((x) => x[0] === 'addItem')[0];
+    a.eq(add[2], '304');
+    a.lacksKey(add[3].module_item, 'position');
+
+    const bad = linkApi({ refuse: true });
+    const p2 = await copier(bad).planLinks('11', links, src, ['22']);
+    const r2 = await copier(bad).copyLinks('11', links, src, p2[0], {});
+    a.not(r2[0].ok);
+    a.ok(r2[0].error);
+
+    const locked = linkApi({ unreadable: '22' });
+    const p3 = await copier(locked).planLinks('11', links, src, ['22']);
+    a.ok(/modules/.test(p3[0].error));
+  });
+
+  test('the dialog lists the links by module, plans each class, and counts what will be added', async () => {
+    if (!globalThis.CGP.SectionCopyController) vm.runInThisContext(fs.readFileSync(path.join(__dirname, '../src/sections/sync-dialog.js'), 'utf8'));
+    if (!globalThis.CGP.SectionCopyController.prototype.openLinks) vm.runInThisContext(fs.readFileSync(path.join(__dirname, '../src/sections/link-copy.js'), 'utf8'));
+    const api = linkApi();
+    const src = srcModules();
+    const links = S().moduleLinks(src);
+    const plans = await copier(api).planLinks('11', links, src, ['22']);
+    const d = Object.create(globalThis.CGP.SectionCopyController.prototype);
+    d.courseId = '11';
+    d.courseName = (id) => 'Block ' + id;
+    d.state = { view: 'links', courses: [], lk: { links, srcModules: src, chosen: { '32': true }, q: '', dests: ['22'], destOn: { '22': true },
+      plans, choice: {}, running: false, results: null } };
+    let html = d.renderLinkMain();
+    a.ok(html.includes('Unit 3') && html.includes('Protein video') && html.includes('Folding sim'));
+    a.ok(html.includes('Add 1 link'));
+    a.ok(/<option value="303" selected>/.test(html), 'its module there is chosen');
+    // A class with no matching module waits for the teacher to pick one.
+    plans[0].plans['32'].module = null;
+    html = d.renderLinkMain();
+    a.ok(html.includes('No module chosen'));
+    a.ok(/data-lk-act="run" disabled/.test(html));
   });
 });
