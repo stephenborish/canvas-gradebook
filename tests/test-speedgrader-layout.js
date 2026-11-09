@@ -110,6 +110,32 @@ suite('SpeedGrader tidy comment box', (test) => {
     a.not(has(t.row, 'data-cgp-sg-proxied'), 'and shows Canvas’s row again');
   });
 
+  test('Canvas swaps in new, identical tool nodes: the bar presses the new ones', () => {
+    const t = setupSg();
+    t.ctl.start();
+    const fresh = el('button', { id: 'add_attachment', 'aria-label': 'Attach file' });
+    let clicks = 0;
+    fresh.addEventListener('click', () => { clicks++; });
+    t.row.insertBefore(fresh, t.attach);
+    t.attach.remove();
+    t.ctl.scan();
+    t.doc.querySelector('.cgp-sgbar__tool[data-kind="attach"]').click();
+    a.eq(clicks, 1);
+    t.ctl.apply.call(Object.assign(t.ctl, { settings: { values: {} } }));
+  });
+
+  test('found by its text: our own Submit is never taken for Canvas’s', () => {
+    const t = setupSg();
+    t.submit.removeAttribute('id');
+    t.ctl.start();
+    t.ctl.scan(); t.ctl.scan();
+    const bar = t.doc.querySelector('.cgp-sgbar');
+    a.not(has(bar, 'data-cgp-sg-proxied'), 'the bar is not hidden');
+    a.not(has(bar, 'data-cgp-sg-actions'), 'the bar is not taken for Canvas’s row');
+    a.ok(has(t.row, 'data-cgp-sg-proxied'), 'Canvas’s row still the one hidden');
+    t.ctl.apply.call(Object.assign(t.ctl, { settings: { values: {} } }));
+  });
+
   test('a tool Canvas hides is left out; a disabled Submit is disabled on the bar too', () => {
     const t = setupSg();
     t.speech.style.display = 'none';

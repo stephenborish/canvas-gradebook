@@ -155,6 +155,8 @@
     if (btn) return btn;
     var buttons = document.querySelectorAll('button');
     for (var i = 0; i < buttons.length; i++) {
+      // Never our own footer's Submit, which stands in for Canvas's.
+      if (buttons[i].closest && buttons[i].closest('[data-cgp-sg-own]')) continue;
       if (/^\s*submit comment\s*$/i.test(buttons[i].textContent || '')) return buttons[i];
     }
     return null;
@@ -289,6 +291,7 @@
     this.row = null;
     this.submit = null;
     this.sig = '';
+    this.toolNodes = [];   // the Canvas controls the tool buttons press
   }
 
   var B = SgBar.prototype;
@@ -351,8 +354,13 @@
     // Canvas's whole row is hidden only when it holds nothing but the
     // controls the bar stands in for; otherwise just those controls are.
     proxyRow(row, submit);
-    if (sig === this.sig && this.root.isConnected) return;
+    // Canvas may swap in new nodes that look the same: the buttons must
+    // press the controls on the page now, not the ones it threw away.
+    var same = tools.length === this.toolNodes.length &&
+      tools.every(function (t, i) { return t === this.toolNodes[i]; }, this);
+    if (sig === this.sig && same && this.root.isConnected) return;
     this.sig = sig;
+    this.toolNodes = tools;
     this.renderTools(tools);
     if (this.submitBtn.textContent !== label) this.submitBtn.textContent = label;
     var off = isOff(submit);
@@ -401,6 +409,7 @@
     if (this.row) unproxy(this.row);
     this.anchor = this.row = this.submit = null;
     this.sig = '';
+    this.toolNodes = [];
   };
 
   B.destroy = function () {
