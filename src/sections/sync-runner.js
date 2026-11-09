@@ -1007,6 +1007,49 @@
     })).then(function () { return out; });
   };
 
+  /* Of `courseIds` (linked classes with no copy of this item on record),
+   * the ones that already have it all the same, so "this new item is not
+   * in your other classes yet" would be wrong there:
+   *  - the class has an item of this type with the same title. A teacher who
+   *    wants a different due date in each class often makes the item in each
+   *    one by hand; Canvas's copy records know nothing of that, but the item
+   *    is there (and copying would add a second one);
+   *  - the class's students are in THIS course: one of its sections was
+   *    cross-listed here (Canvas keeps the course a section came from as
+   *    nonxlist_course_id). Each section then gets its own due date in this
+   *    item's Assign To, and the class's own course is an empty shell.
+   * Resolves [courseId]. Read only; a class that cannot be read is left in. */
+  P.alreadyThere = function (courseId, item, courseIds) {
+    var self = this;
+    var sync = S();
+    var ids = (courseIds || []).map(String);
+    if (!ids.length || !item) return Promise.resolve([]);
+    var xlisted = typeof this.api.courseSections !== 'function' ? Promise.resolve([])
+      : this.cached('xlist.' + courseId, MIGS_TTL_MS, function () {
+        return self.api.courseSections(courseId).then(function (list) {
+          var from = [];
+          (list || []).forEach(function (s) {
+            var c = s && s.nonxlist_course_id;
+            if (c !== null && c !== undefined && String(c) !== String(courseId) && from.indexOf(String(c)) < 0) from.push(String(c));
+          });
+          return from;
+        });
+      }).catch(function () { return []; });
+    return xlisted.then(function (from) {
+      var found = ids.filter(function (d) { return from.indexOf(d) >= 0; });
+      var rest = ids.filter(function (d) { return found.indexOf(d) < 0; });
+      if (!item.title || item.type === 'module') return found;
+      var t = item.type === 'announcement' ? 'discussion' : item.type;
+      return Promise.all(rest.map(function (d) {
+        return self.api.courseItems(d, item.type).then(function (list) {
+          var mine = (list || []).filter(function (o) { return o && o.workflow_state !== 'deleted'; })
+            .map(function (o) { return sync.toItem(t, o) || { title: o.title || o.name }; });
+          if (sync.lookalike(mine, item.title)) found.push(d);
+        }, function () { /* cannot read that class: say nothing about it */ });
+      })).then(function () { return ids.filter(function (d) { return found.indexOf(d) >= 0; }); });
+    });
+  };
+
   /* An original (in origCourse) and its copy (in copyCourse): which side
    * changed since the copy. {side, orig, copy} with both items read in full
    * (null side when either could not be read, or the copy was deleted). */

@@ -237,7 +237,17 @@
             var copiedTo = rel.to.map(function (r) { return r.courseId; });
             var missing = sibs.filter(function (d) { return copiedTo.indexOf(String(d)) < 0 && (rel.unreadable || []).indexOf(String(d)) < 0; });
             var fresh = item.createdAt && Date.now() - Date.parse(item.createdAt) <= NUDGE_WINDOW_MS;
-            if (fresh && !rel.from.length && missing.length) notes.push({ kind: 'new', courses: missing });
+            if (!fresh || rel.from.length || !missing.length || self.inlineCopying) return null;
+            // Not on record as copied is not the same as not there: the class
+            // may have its own item (made there by hand, with its own due
+            // date), or its section may be cross-listed into this course.
+            return self.copier.alreadyThere(self.courseId, item, missing).then(function (there) {
+              var still = missing.filter(function (d) { return there.indexOf(String(d)) < 0; });
+              // The copy "Also post to your other classes" started may have
+              // begun while this was being read.
+              if (still.length && !self.inlineCopying) notes.push({ kind: 'new', courses: still });
+            });
+          }).then(function () {
             return self.copier.backups(self.courseId, item.type, item.id).then(function (list) {
               var last = list[0];
               if (last && Date.now() - Number(last.at || 0) < 7 * 86400000) notes.push({ kind: 'undo', course: last.from, backup: last });

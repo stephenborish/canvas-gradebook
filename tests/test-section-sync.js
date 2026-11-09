@@ -848,6 +848,30 @@ suite('copy to sections: changes made in a copy', (test) => {
     a.ok(api.calls.some((x) => x[0] === 'customData' && x[1] === 'fp/11/assignment_5/22'));
   });
 
+  test('a class with its own same-titled item, or cross-listed here, already has it (no "not in your other classes" nag)', async () => {
+    // Period 2 (11) made "Lab 4" with its due date; Period 4 (22) made its own
+    // "Lab 4" by hand with a different due date - no copy on record. Period 6
+    // (33) was cross-listed into 11, so its students get theirs here. Period 8
+    // (44) really has none.
+    const api = fakeCanvas({ lists: {
+      '22:assignment': [{ id: '900', name: 'lab 4 ', due_at: '2026-11-11T18:45:00Z' }],
+      '44:assignment': [{ id: '901', name: 'Lab 5' }, { id: '902', name: 'Lab 4', workflow_state: 'deleted' }]
+    } });
+    api.courseSections = () => Promise.resolve([
+      { id: 1, course_id: 11, nonxlist_course_id: null },
+      { id: 2, course_id: 11, nonxlist_course_id: 33 }
+    ]);
+    const c = copier(api);
+    const item = { type: 'assignment', id: '5', title: 'Lab 4' };
+    const rel = await c.relations('11', item, ['22', '33', '44']);
+    a.deep(rel.to, []);
+    a.deep(await c.alreadyThere('11', item, ['22', '33', '44']), ['22', '33']);
+    // A class that cannot be read, or a Canvas without the sections call, is left as it was.
+    delete api.courseSections;
+    api.courseItems = (d) => d === '22' ? Promise.reject(new Error('403')) : Promise.resolve([]);
+    a.deep(await copier(api).alreadyThere('11', item, ['22', '44']), []);
+  });
+
   test('bringing a change back: links and a new file are moved over, notes stay put, backup and undo', async () => {
     let api;
     api = fakeCanvas({ onComplete: (dest, m) => {

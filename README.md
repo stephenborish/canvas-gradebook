@@ -942,7 +942,11 @@ original's, whichever you are looking at.
   version* offer the ordinary copy, already set up.
 - When both changed, or there is no record of which one did, both choices are offered with each
   version's last-changed time.
-- A new item (made in the last three hours) that is in no other section yet is pointed out too.
+- A new item (made in the last three hours) that is in no other section yet is pointed out too. A class
+  that already has an item of that kind with the same title (made there by hand, say, with its own
+  due date) is not counted as missing, nor is a class whose section is cross-listed into this course
+  (each section's due date is then set in this item's own Assign To). While *Also post to your other
+  classes* is copying the item, the notice waits rather than report the classes it is filling.
 
 The notice can be hidden (×) until something changes again. Turn notices off under *Show a notice
 on an item's page…*. Only the title and instructions are brought back. Points, settings, the

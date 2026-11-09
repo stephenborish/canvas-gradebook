@@ -453,6 +453,9 @@
         });
       }, Promise.resolve(null)).then(function (hit) {
         if (!hit) return null;
+        // The page's own "not in your other classes yet" notice waits for
+        // this copy instead of reporting the classes it is about to fill.
+        if (self.controller) self.controller.inlineCopying = true;
         // Used once: a reload of this page must not copy again.
         return local.remove(hit.x.key).then(function () { return self.copyNow(hit.item, hit.x.intent); });
       });
