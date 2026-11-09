@@ -59,8 +59,18 @@ function buildTray(opts) {
   const comments = el('div', { id: 'comments' }, [el('p', {}, [el('button', { text: 'Delete' })]), form]);
   const content = el('div', {}, [el('fieldset', {}, [el('legend', { text: 'Status' }), row]), comments]);
   if (o.footer) content.appendChild(el('div', { class: 'footer' }, [el('button', { text: 'Close' })]));
+  // Canvas's SpeedGrader link and Submit for Student button, each in its own
+  // centred block, ahead of the status fieldset.
+  const sgLink = el('a', { href: '/courses/1/gradebook/speed_grader?assignment_id=2&student_id=3' }, [el('span', { text: 'SpeedGrader' })]);
+  const sfsBtn = el('button', { type: 'button' }, [el('span', { text: 'Submit for Student' })]);
+  const sgSlot = el('div', { class: 'sg' }, [sgLink]);
+  const sfsSlot = el('div', { class: 'sfs' }, [sfsBtn]);
+  const blocks = [];
+  if (!o.noSpeedGrader) blocks.push(sgSlot);
+  if (!o.noSubmit) blocks.push(sfsSlot);
+  blocks.slice().reverse().forEach((b) => content.insertBefore(b, content.children[0]));
   const tray = el('span', o.noDialog ? {} : { role: 'dialog', 'aria-label': 'Submission tray' }, [content]);
-  return { tray, row, rce, statusBar, form, actions, cancel, submit, comments, content };
+  return { tray, row, rce, statusBar, form, actions, cancel, submit, comments, content, sgLink, sfsBtn, sgSlot, sfsSlot };
 }
 
 function setup(opts) {
@@ -407,5 +417,118 @@ suite('Grade Detail Tray layout', (test) => {
     t.doc.body.appendChild(stray);
     t.ctl.scan();
     a.not(has(stray, 'data-cgp-tray-status'));
+  });
+  test('SpeedGrader and Submit for Student: Canvas’s blocks hidden, copies side by side in one row', () => {
+    const t = setup();
+    t.ctl.start();
+    const row = t.doc.querySelector('.cgp-tact');
+    a.ok(row, 'row added');
+    a.eq(row.getAttribute('data-count'), '2');
+    a.ok(row.nextSibling === t.sgSlot, 'row sits right before Canvas’s first block');
+    a.ok(has(t.sgSlot, 'data-cgp-tray-action-proxied') && has(t.sfsSlot, 'data-cgp-tray-action-proxied'), 'Canvas’s blocks hidden');
+    a.deep(row.children.map((c) => c.getAttribute('data-cgp-tray-action')), ['speedgrader', 'submit']);
+    a.not(has(row.children[0], 'data-cgp-tray-action-proxied'), 'the copy itself is not hidden');
+    t.ctl.scan(); t.ctl.tick();
+    a.eq(t.doc.querySelectorAll('.cgp-tact').length, 1, 're-scans never add another');
+    a.eq(row.children.length, 2);
+    t.ctl.stopPolling();
+  });
+
+  test('the Submit for Student copy presses Canvas’s own button', () => {
+    const t = setup();
+    t.ctl.start();
+    let clicks = 0;
+    t.sfsBtn.addEventListener('click', () => { clicks++; });
+    t.doc.querySelector('[data-cgp-tray-action="submit"]').click();
+    a.eq(clicks, 1);
+    t.ctl.stopPolling();
+  });
+
+  test('the SpeedGrader copy follows Canvas’s current address', () => {
+    const t = setup();
+    t.ctl.start();
+    t.sgLink.setAttribute('href', '/courses/1/gradebook/speed_grader?assignment_id=2&student_id=9');
+    const copy = t.doc.querySelector('[data-cgp-tray-action="speedgrader"]');
+    copy.click();
+    a.eq(copy.getAttribute('href'), '/courses/1/gradebook/speed_grader?assignment_id=2&student_id=9');
+    t.ctl.stopPolling();
+  });
+
+  test('only one of the two shown by Canvas: that one alone, centred, the other block untouched', () => {
+    const t = setup({ noSubmit: true });
+    t.ctl.start();
+    const row = t.doc.querySelector('.cgp-tact');
+    a.eq(row.getAttribute('data-count'), '1');
+    a.deep(row.children.map((c) => c.getAttribute('data-cgp-tray-action')), ['speedgrader']);
+    t.ctl.stopPolling();
+
+    const u = setup({ noSpeedGrader: true });
+    u.ctl.start();
+    const row2 = u.doc.querySelector('.cgp-tact');
+    a.eq(row2.getAttribute('data-count'), '1');
+    a.deep(row2.children.map((c) => c.getAttribute('data-cgp-tray-action')), ['submit']);
+    u.ctl.stopPolling();
+  });
+
+  test('a button Canvas stops rendering: its copy goes, the row drops to one; neither: no row', () => {
+    const t = setup();
+    t.ctl.start();
+    t.sfsSlot.remove();
+    t.ctl.scan();
+    const row = t.doc.querySelector('.cgp-tact');
+    a.eq(row.getAttribute('data-count'), '1');
+    a.eq(row.children.length, 1);
+    t.sgSlot.remove();
+    t.ctl.scan();
+    a.eq(t.doc.querySelectorAll('.cgp-tact').length, 0);
+    t.ctl.stopPolling();
+  });
+
+  test('a [hidden] Canvas button counts as not shown', () => {
+    const t = setup();
+    t.sfsSlot.setAttribute('hidden', '');
+    t.ctl.start();
+    a.eq(t.doc.querySelector('.cgp-tact').getAttribute('data-count'), '1');
+    t.ctl.stopPolling();
+  });
+
+  test('setting off: the row is removed and Canvas’s blocks shown again', () => {
+    const t = setup();
+    t.ctl.start();
+    t.settings.values.trayLayout = false;
+    t.ctl.apply();
+    a.eq(t.doc.querySelectorAll('.cgp-tact').length, 0);
+    a.not(has(t.sgSlot, 'data-cgp-tray-action-proxied'));
+    a.not(has(t.sfsSlot, 'data-cgp-tray-action-proxied'));
+  });
+
+  test('comment box grows with its text, down to the window’s bottom, then stops', () => {
+    const t = setup();
+    global.window = { innerHeight: 800 };
+    // The RCE's editing area and its iframe document.
+    const lastP = el('p').setRect({ top: 0, height: 60 });
+    const body = el('body', {}, [lastP]);
+    body.lastElementChild = lastP;
+    lastP.previousElementSibling = null;
+    const frameDoc = { body, defaultView: { getComputedStyle: () => ({}), pageYOffset: 0 }, documentElement: {},
+      addEventListener() {}, removeEventListener() {} };
+    const frame = el('iframe', { class: 'tox-edit-area__iframe' });
+    frame.contentDocument = frameDoc;
+    const area = el('div', { class: 'tox-edit-area' }, [frame]).setRect({ top: 500 });
+    t.rce.children[0].appendChild(area);
+    t.ctl.start();
+    const h = () => t.rce.style.getPropertyValue('--cgp-tray-edit-h');
+    a.eq(h(), '104px', 'short text: the resting height');
+    lastP.setRect({ top: 0, height: 200 });
+    t.ctl.tick();
+    a.eq(h(), '200px', 'grows with the text');
+    lastP.setRect({ top: 0, height: 900 });
+    t.ctl.tick();
+    a.eq(h(), '284px', 'stops at the window’s bottom (800 - 500 - 16)');
+    lastP.setRect({ top: 0, height: 20 });
+    t.ctl.tick();
+    a.eq(h(), '104px', 'shrinks back when the text is cleared');
+    t.ctl.stopPolling();
+    delete global.window;
   });
 });

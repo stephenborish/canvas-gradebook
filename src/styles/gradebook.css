@@ -3813,14 +3813,14 @@ html.cgp-tray-tidy .cgp-tstat__opt {
   justify-content: center;
   flex: 1 0 auto;
   gap: 5px;
-  height: 30px;
+  height: 36px;
   margin: 0;
   padding: 0 6px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: #4b5862;
-  font-size: 0.8125rem;
+  font-size: 0.9375rem;
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0;
@@ -3857,8 +3857,8 @@ html.cgp-tray-tidy .cgp-tstat__opt:disabled {
 }
 html.cgp-tray-tidy .cgp-tstat__dot {
   flex: 0 0 auto;
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--cgp-tstat-c);
 }
@@ -3900,7 +3900,7 @@ html.cgp-tray-tidy .cgp-tstat__late {
 html.cgp-tray-tidy .cgp-tstat__late[hidden] { display: none; }
 @keyframes cgp-tstat-in { from { opacity: 0; transform: translateY(-3px); } }
 html.cgp-tray-tidy .cgp-tstat__late-lbl {
-  font-size: 0.8125rem;
+  font-size: 1rem;
   font-weight: 700;
   color: color-mix(in srgb, var(--cgp-tstat-c) 85%, #000);
   white-space: nowrap;
@@ -3908,7 +3908,7 @@ html.cgp-tray-tidy .cgp-tstat__late-lbl {
 html.cgp-tray-tidy .cgp-tstat__stepper {
   display: inline-flex;
   align-items: stretch;
-  height: 30px;
+  height: 36px;
   border: 1px solid #c7cdd1;
   border-radius: 6px;
   background: #fff;
@@ -3920,15 +3920,15 @@ html.cgp-tray-tidy .cgp-tstat__stepper:focus-within {
   box-shadow: 0 0 0 2px rgba(3, 116, 181, 0.2);
 }
 html.cgp-tray-tidy .cgp-tstat__step {
-  flex: 0 0 28px;
-  width: 28px;
+  flex: 0 0 32px;
+  width: 32px;
   margin: 0;
   padding: 0;
   border: 0;
   border-radius: 0;
   background: #f5f7f8;
   color: #4b5862;
-  font-size: 1rem;
+  font-size: 1.125rem;
   font-weight: 400;
   line-height: 1;
   box-shadow: none;
@@ -3943,7 +3943,7 @@ html.cgp-tray-tidy .cgp-tstat__step:hover:not(:disabled) {
 }
 html.cgp-tray-tidy .cgp-tstat__step:disabled { cursor: not-allowed; opacity: 0.45; }
 html.cgp-tray-tidy .cgp-tstat__days {
-  width: 44px;
+  width: 52px;
   height: 100%;
   min-height: 0;
   margin: 0;
@@ -3955,7 +3955,7 @@ html.cgp-tray-tidy .cgp-tstat__days {
   background: #fff;
   box-shadow: none;
   color: #2d3b45;
-  font-size: 0.875rem;
+  font-size: 1rem;
   font-weight: 700;
   line-height: normal;
   font-variant-numeric: tabular-nums;
@@ -3964,7 +3964,7 @@ html.cgp-tray-tidy .cgp-tstat__days {
 html.cgp-tray-tidy .cgp-tstat__days:focus { outline: none; box-shadow: none; }
 html.cgp-tray-tidy .cgp-tstat__days:disabled { background: #f5f7f8; color: #8b969e; }
 html.cgp-tray-tidy .cgp-tstat__unit {
-  font-size: 0.8125rem;
+  font-size: 1rem;
   color: #4b5862;
   white-space: nowrap;
 }
@@ -4127,18 +4127,20 @@ html.cgp-tray-tidy [data-cgp-tray-rce] .tox-tbtn__select-label {
   margin: 0 2px 0 0 !important;
   font-size: 0.8125rem !important;
 }
-/* The editing area: a fixed, shorter height whatever the toolbar does, so
- * opening the ⋮ drawer never squeezes it. */
+/* The editing area: its own height whatever the toolbar does, so opening
+ * the ⋮ drawer never squeezes it. It starts short and grows with the text,
+ * down to the bottom of the window (--cgp-tray-edit-h, set by CommentGrow in
+ * tray-layout.js); past that the text scrolls inside it. */
 html.cgp-tray-tidy [data-cgp-tray-rce] .tox-sidebar-wrap {
   flex: 0 0 auto !important;
-  height: 104px !important;
+  height: var(--cgp-tray-edit-h, 104px) !important;
   min-height: 104px !important;
 }
 /* Across, it still fills the width (the sidebar row is a flex row). */
 html.cgp-tray-tidy [data-cgp-tray-rce] .tox-edit-area {
   flex: 1 1 auto !important;
   width: 100% !important;
-  height: 104px !important;
+  height: var(--cgp-tray-edit-h, 104px) !important;
   min-height: 104px !important;
 }
 html.cgp-tray-tidy [data-cgp-tray-rce] .tox-edit-area__iframe {
@@ -4254,10 +4256,54 @@ html.cgp-tray-tidy [data-cgp-tray-btn][aria-disabled="true"] {
 html.cgp-tray-tidy textarea[data-cgp-tray-comment-editor],
 html.cgp-tray-tidy [data-cgp-tray-comment-editor] textarea {
   min-height: 3.5em;
-  max-height: 9em;
+  height: var(--cgp-tray-edit-h, auto);
+  overflow-y: auto;
+  resize: none;
 }
 html.cgp-tray-tidy [data-cgp-tray-hide] {
   display: none !important;
+}
+
+/* SpeedGrader / Submit for Student: Canvas's own are hidden and copies of
+ * them (ActionsControl in tray-layout.js) sit in one row - two share the
+ * width equally, a lone one keeps its size, centred. */
+html.cgp-tray-tidy [data-cgp-tray-action-proxied] {
+  display: none !important;
+}
+html.cgp-tray-tidy .cgp-tact {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  align-items: stretch;
+  gap: 8px;
+  margin: 10px 0;
+}
+html.cgp-tray-tidy .cgp-tact > [data-cgp-tray-action] {
+  margin: 0 !important;
+  max-width: 100%;
+}
+html.cgp-tray-tidy .cgp-tact[data-count="1"] > [data-cgp-tray-action] {
+  flex: 0 1 auto;
+}
+html.cgp-tray-tidy .cgp-tact[data-count="2"] > [data-cgp-tray-action] {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+/* InstUI's inner layers fill the button, so the label centres in the half
+ * and wraps rather than spilling out on a narrow tray. */
+html.cgp-tray-tidy .cgp-tact[data-count="2"] > [data-cgp-tray-action] > span,
+html.cgp-tray-tidy .cgp-tact[data-count="2"] > [data-cgp-tray-action] > span > span {
+  width: 100%;
+  justify-content: center;
+}
+html.cgp-tray-tidy .cgp-tact[data-count="2"] > [data-cgp-tray-action] span {
+  white-space: normal !important;
+  min-width: 0;
 }
 
 /* ------------------------------------------------- class schedule picker

@@ -16,15 +16,21 @@
  *    "more" button now reveals only the Paragraph dropdown - the reverse of
  *    TinyMCE's own split), a shorter editing area, and no status bar under
  *    it (the element path, word count and accessibility checker button).
+ *    The editing area grows with what is typed, down to the bottom of the
+ *    window, and scrolls from there (CommentGrow below).
+ *  - SpeedGrader and Submit for Student sit side by side, sharing the width
+ *    equally (ActionsControl below); when Canvas shows only one of them, that
+ *    one keeps its own size, centred.
  *
  * None of Canvas's nodes is moved: the tray is React's, and moving its nodes
  * would break its next render. They are only tagged with data-cgp-tray-*
  * attributes (never classes: React rewrites className whenever Canvas
  * toggles one of its own) and the CSS keyed off those attributes and
- * html.cgp-tray-tidy does the rest. The one node we add is the status
- * control, a sibling right after Canvas's radio group. Turning the setting
- * off removes it and drops the root class, which puts the tray back exactly
- * as Canvas draws it.
+ * html.cgp-tray-tidy does the rest. The nodes we add are the status
+ * control, a sibling right after Canvas's radio group, and the SpeedGrader /
+ * Submit for Student row, a sibling right before the first of Canvas's two.
+ * Turning the setting off removes them and drops the root class, which puts
+ * the tray back exactly as Canvas draws it.
  *
  * Every lookup is anchored on the radios' `name` (SubmissionTrayRadioInput),
  * which Canvas never localizes, rather than on labels or emotion-generated
@@ -46,6 +52,8 @@
     this.observer = null;
     this.tray = null;   // the tray dialog last seen, while it is on the page
     this.status = null; // the StatusControl standing in for Canvas's radios
+    this.actions = null; // the ActionsControl standing in for SpeedGrader / Submit for Student
+    this.grow = null;   // the CommentGrow sizing the comment editor
     this.timer = null;
     this.scheduleScan = CGP.util.rafBatch(function () { self.scan(); }, 'trayLayout');
   }
@@ -72,7 +80,9 @@
       this.disconnect();
       this.stopPolling();
       if (this.status) this.status.destroy();
-      this.status = null;
+      if (this.actions) this.actions.destroy();
+      if (this.grow) this.grow.destroy();
+      this.status = this.actions = this.grow = null;
     }
   };
 
@@ -136,7 +146,13 @@
     // to the whole page would restyle any other textarea + buttons on it
     // (the gradebook's own comment popover, say).
     this.tray = trayFor(radios[0]);
-    if (this.tray) tagCommentForms(this.tray);
+    if (this.tray) {
+      var editors = tagCommentForms(this.tray);
+      if (!this.grow) this.grow = new CommentGrow();
+      this.grow.watch(editors[0] || null);
+      if (!this.actions) this.actions = new ActionsControl();
+      this.actions.attach(this.tray);
+    }
     if (row) {
       if (!this.status) this.status = new StatusControl();
       if (this.status.attach(row)) this.startPolling();
@@ -161,7 +177,14 @@
 
   P.tick = function () {
     if (!this.status || !this.enabled()) { this.stopPolling(); return; }
-    if (this.status.connected()) { this.status.sync(); return; }
+    if (this.status.connected()) {
+      this.status.sync();
+      // Canvas's buttons change by attribute (another student's link, a
+      // disabled state), which the childList-only observer never reports.
+      if (this.actions && this.tray) this.actions.attach(this.tray);
+      if (this.grow) this.grow.update();
+      return;
+    }
     // The tray closed, or React swapped the group out: find it afresh.
     this.stopPolling();
     if (this.tray && !this.tray.isConnected) this.tray = null;
@@ -730,6 +753,7 @@
       if (editor.querySelector('[data-cgp-tray-hide]')) return;
       if (!tagStatusBar(editor)) tagWordCount(editor);
     });
+    return editors;
   }
 
   /* The RCE status bar's "N words" count. Matched by Canvas's test id where
@@ -853,6 +877,312 @@
     if (!buttons.length || buttons.length > 3) return false;
     var fields = toArray(el.querySelectorAll('textarea, input, iframe, ' + RCE_SELECTOR));
     return !fields.some(function (f) { return !(f.tagName === 'INPUT' && f.getAttribute('type') === 'hidden'); });
+  }
+
+
+  /* --------------------------------------- SpeedGrader / Submit for Student */
+
+  /* Canvas stacks its SpeedGrader link and its Submit for Student button,
+   * each in its own centred block. Where those blocks sit in Canvas's markup
+   * (one shared parent, a flex column with the carousels...) is not
+   * something to rely on, so - as with the statuses - Canvas's own are
+   * hidden and stand-ins are shown in a row of our own:
+   *
+   *  - each stand-in is a copy of Canvas's control (same look, same icon),
+   *    re-copied whenever Canvas's changes;
+   *  - pressing it presses Canvas's own: a click on a button goes to
+   *    Canvas's button, and a link takes Canvas's current address first (so
+   *    Ctrl/Cmd-click still opens SpeedGrader in a new tab);
+   *  - two found: side by side, equal widths. One found (Canvas leaves the
+   *    other out for this assignment or student): that one alone, its
+   *    natural size, centred. None: nothing is added. */
+  var ACTION_KINDS = ['speedgrader', 'submit'];
+
+  function ActionsControl() {
+    this.root = null;
+    this.items = {};   // kind -> { canvas, slot, proxy, sig }
+  }
+
+  var AC = ActionsControl.prototype;
+
+  /** Finds Canvas's controls in `tray` and shows our row for them. Cheap to
+   * call often: nothing is written unless something changed. */
+  AC.attach = function (tray) {
+    var found = findActions(tray);
+    var kinds = ACTION_KINDS.filter(function (k) { return found[k]; });
+    var self = this;
+    // Forget (and show again) anything Canvas no longer renders.
+    Object.keys(this.items).forEach(function (k) {
+      var it = self.items[k];
+      var f = found[k];
+      if (f && f.canvas === it.canvas && f.slot === it.slot) return;
+      // A slot still in use (by this control's successor, or by the other
+      // control when both share one block) stays hidden.
+      var inUse = ACTION_KINDS.some(function (j) { return found[j] && found[j].slot === it.slot; });
+      if (it.slot && !inUse) it.slot.removeAttribute('data-cgp-tray-action-proxied');
+      if (it.proxy) it.proxy.remove();
+      delete self.items[k];
+    });
+    if (!kinds.length) {
+      if (this.root) this.root.remove();
+      return false;
+    }
+    if (!this.root) {
+      this.root = document.createElement('div');
+      this.root.className = 'cgp-tact';
+      this.root.setAttribute('data-cgp-tray-own', '');
+    }
+    // The row goes right before the first of Canvas's blocks.
+    var first = found[kinds[0]].slot;
+    if (first.parentElement && (this.root.parentElement !== first.parentElement || this.root.nextSibling !== first)) {
+      first.parentElement.insertBefore(this.root, first);
+    }
+    kinds.forEach(function (k) {
+      var f = found[k];
+      var it = self.items[k] || (self.items[k] = { canvas: f.canvas, slot: f.slot, proxy: null, sig: '' });
+      setAttr(f.slot, 'data-cgp-tray-action-proxied', '');
+      var sig = signature(f.canvas);
+      if (!it.proxy || sig !== it.sig) {
+        var proxy = makeProxy(f.canvas, k);
+        if (it.proxy && it.proxy.parentElement === self.root) self.root.insertBefore(proxy, it.proxy);
+        if (it.proxy) it.proxy.remove();
+        it.proxy = proxy;
+        it.sig = sig;
+      }
+    });
+    // Order: Canvas's own (SpeedGrader, then Submit for Student).
+    var want = kinds.map(function (k) { return self.items[k].proxy; });
+    var have = toArray(this.root.children);
+    if (want.length !== have.length || want.some(function (p, i) { return have[i] !== p; })) {
+      want.forEach(function (p) { self.root.appendChild(p); });
+    }
+    setAttr(this.root, 'data-count', String(kinds.length));
+    return true;
+  };
+
+  AC.destroy = function () {
+    var self = this;
+    Object.keys(this.items).forEach(function (k) {
+      var it = self.items[k];
+      if (it.slot) it.slot.removeAttribute('data-cgp-tray-action-proxied');
+    });
+    this.items = {};
+    if (this.root) this.root.remove();
+    this.root = null;
+  };
+
+  /** Canvas's SpeedGrader link and Submit for Student button in the tray,
+   * each with the block it sits in (what gets hidden). */
+  function findActions(tray) {
+    var out = {};
+    var controls = toArray(tray.querySelectorAll('a, button, [role="button"]')).filter(function (c) {
+      if (c.closest && c.closest('[data-cgp-tray-own], [data-cgp-tray-comment], [data-cgp-tray-status], ' + RCE_SELECTOR)) return false;
+      return isShown(c, tray);
+    });
+    controls.forEach(function (c) {
+      var kind = actionKind(c);
+      if (!kind || out[kind]) return;
+      out[kind] = { canvas: c, slot: slotFor(c, tray) };
+    });
+    // Both in one block: hiding that block would hide both, and our row
+    // stands in for both, so that is fine - but the block must hold nothing
+    // else that takes a click.
+    ACTION_KINDS.forEach(function (k) {
+      var f = out[k];
+      if (!f) return;
+      var mine = ACTION_KINDS.map(function (j) { return out[j] && out[j].canvas; }).filter(Boolean);
+      var stray = toArray(f.slot.querySelectorAll('a, button, input, select, textarea, [role="button"]')).filter(function (el) {
+        return !mine.some(function (m) { return m.contains(el); });
+      });
+      if (stray.length) f.slot = f.canvas;
+    });
+    return out;
+  }
+
+  var SPEEDGRADER_HREF = /speed_grader/i;
+  var SPEEDGRADER_TEXT = /^\s*speed\s*grader\s*$/i;
+  var SUBMIT_TEXT = /submit\s+for\s+student/i;
+
+  function actionKind(c) {
+    var testid = String(c.getAttribute('data-testid') || '').toLowerCase();
+    var text = textOf(c).replace(/\s+/g, ' ').trim();
+    if (/submit-for-student|submitforstudent|submit_for_student/.test(testid) || SUBMIT_TEXT.test(text)) return 'submit';
+    if (/speed-?grader/.test(testid) || SPEEDGRADER_HREF.test(String(c.getAttribute('href') || '')) ||
+        SPEEDGRADER_TEXT.test(text)) return 'speedgrader';
+    return null;
+  }
+
+  /** The control's own block: climbs through wrappers that hold only it. */
+  function slotFor(c, tray) {
+    var slot = c;
+    while (slot.parentElement && slot.parentElement !== tray && slot.parentElement.children.length === 1) {
+      slot = slot.parentElement;
+    }
+    return slot;
+  }
+
+  /** Rendered by Canvas: not under a [hidden] or visibility: hidden. Our own
+   * hiding (data-cgp-tray-action-proxied) does not count. */
+  function isShown(el, tray) {
+    var node = el;
+    while (node && node !== tray) {
+      if (node.getAttribute && node.getAttribute('hidden') !== null) return false;
+      node = node.parentElement;
+    }
+    if (typeof getComputedStyle === 'function') {
+      try {
+        var cs = getComputedStyle(el);
+        if (cs && cs.visibility === 'hidden') return false;
+      } catch (e) { /* not an element the browser can style */ }
+    }
+    return true;
+  }
+
+  function signature(c) {
+    if (typeof c.outerHTML === 'string') return c.outerHTML;
+    return [textOf(c), c.getAttribute('href') || '', flag(c, 'disabled') ? 1 : 0].join('\u0001');
+  }
+
+  /** A copy of Canvas's control that presses Canvas's own. */
+  function makeProxy(canvas, kind) {
+    var proxy = canvas.cloneNode(true);
+    stripIds(proxy);
+    setAttr(proxy, 'data-cgp-tray-action', kind);
+    proxy.addEventListener('click', function (e) {
+      if (!canvas.isConnected) return;
+      var isLink = String(proxy.tagName || '').toUpperCase() === 'A' && proxy.getAttribute('href') !== null;
+      if (isLink) {
+        // Let the browser follow the link (new tab with Ctrl/Cmd, and so
+        // on) - to wherever Canvas's link points right now.
+        var href = canvas.getAttribute('href');
+        if (href !== null && proxy.getAttribute('href') !== href) proxy.setAttribute('href', href);
+        return;
+      }
+      if (e && e.preventDefault) e.preventDefault();
+      if (flag(canvas, 'disabled') || canvas.getAttribute('aria-disabled') === 'true') return;
+      canvas.click();
+    });
+    return proxy;
+  }
+
+  function stripIds(el) {
+    if (el.removeAttribute) {
+      el.removeAttribute('id');
+      el.removeAttribute('data-cgp-tray-action-proxied');
+    }
+    toArray(el.children).forEach(stripIds);
+  }
+
+  /* -------------------------------------------------- growing comment box */
+
+  /* The comment editor starts at its usual short height and grows with what
+   * is typed, until its bottom reaches the bottom of the window; from there
+   * the text scrolls inside it (the RCE's own iframe, or the textarea). The
+   * height is handed to the CSS as --cgp-tray-edit-h, since the stylesheet's
+   * sizes are !important. Re-measured on every keystroke in the editor and on
+   * the controller's tick (text put in some other way: a snippet, the box
+   * emptied after Submit). */
+  var EDIT_MIN = 104;      // px: the editor's resting height
+  var EDIT_GAP = 16;       // px: kept free below it, above the window's edge
+  var TEXTAREA_MIN = 56;
+
+  function CommentGrow() {
+    this.editor = null;
+    this.doc = null;     // the RCE iframe's document, while listened to
+    this.height = '';
+    var self = this;
+    this.onInput = function () { self.update(); };
+  }
+
+  var CG = CommentGrow.prototype;
+
+  CG.watch = function (editor) {
+    if (editor !== this.editor) {
+      this.release();
+      this.editor = editor;
+    }
+    this.update();
+  };
+
+  CG.release = function () {
+    if (this.doc) {
+      try {
+        ['input', 'keyup', 'paste', 'cut'].forEach(function (t) { this.doc.removeEventListener(t, this.onInput); }, this);
+      } catch (e) { /* the iframe is gone */ }
+    }
+    if (this.editor && this.editor.style && typeof this.editor.style.removeProperty === 'function') {
+      this.editor.style.removeProperty('--cgp-tray-edit-h');
+    }
+    this.doc = null;
+    this.height = '';
+  };
+
+  CG.destroy = function () {
+    this.release();
+    this.editor = null;
+  };
+
+  CG.update = function () {
+    var ed = this.editor;
+    if (!ed || !ed.isConnected) return;
+    var target = this.measure(ed);
+    if (target === null) return;
+    var value = target + 'px';
+    if (value === this.height) return;
+    this.height = value;
+    if (ed.style && typeof ed.style.setProperty === 'function') ed.style.setProperty('--cgp-tray-edit-h', value);
+  };
+
+  /** The height the editing area should have now, or null when it cannot be
+   * told (the RCE still loading). */
+  CG.measure = function (ed) {
+    var winH = typeof window !== 'undefined' && window.innerHeight;
+    if (ed.tagName === 'TEXTAREA') {
+      var top = ed.getBoundingClientRect().top;
+      var max = winH ? Math.floor(winH - top - EDIT_GAP) : Infinity;
+      // Measured at its natural height: 'auto' lets it shrink back again.
+      ed.style.setProperty('--cgp-tray-edit-h', 'auto');
+      this.height = '';
+      var want = (ed.scrollHeight || 0) + 2;
+      return Math.max(TEXTAREA_MIN, Math.min(want, max));
+    }
+    var area = ed.querySelector('.tox-edit-area');
+    var frame = area && area.querySelector('iframe');
+    if (!area || !frame) return null;
+    var doc = null;
+    try { doc = frame.contentDocument; } catch (e) { doc = null; }
+    if (!doc || !doc.body) return null;
+    if (doc !== this.doc) {
+      this.doc = doc;
+      ['input', 'keyup', 'paste', 'cut'].forEach(function (t) { doc.addEventListener(t, this.onInput); }, this);
+    }
+    var areaTop = area.getBoundingClientRect().top;
+    var limit = winH ? Math.floor(winH - areaTop - EDIT_GAP) : Infinity;
+    var content = contentHeight(doc);
+    return Math.max(EDIT_MIN, Math.min(content, limit));
+  };
+
+  /** How tall the RCE's content is: the bottom of its last real block
+   * (TinyMCE's bogus and off-screen helpers skipped), plus the body's own
+   * bottom padding and margin. */
+  function contentHeight(doc) {
+    var body = doc.body;
+    var win = doc.defaultView;
+    var style = function (el) {
+      try { return win.getComputedStyle(el); } catch (e) { return {}; }
+    };
+    var scrollY = (win && win.pageYOffset) || (doc.documentElement && doc.documentElement.scrollTop) || 0;
+    var last = body.lastElementChild;
+    while (last) {
+      var ls = style(last);
+      if (!last.hasAttribute('data-mce-bogus') && ls.position !== 'absolute' && ls.position !== 'fixed') break;
+      last = last.previousElementSibling;
+    }
+    var bottom;
+    if (last) bottom = last.getBoundingClientRect().bottom + scrollY + (parseFloat(style(last).marginBottom) || 0);
+    else bottom = body.getBoundingClientRect().top + scrollY;
+    var bs = style(body);
+    return Math.ceil(bottom + (parseFloat(bs.paddingBottom) || 0) + (parseFloat(bs.marginBottom) || 0));
   }
 
   /* --------------------------------------------------------------- helpers */
