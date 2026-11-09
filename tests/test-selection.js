@@ -453,13 +453,13 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'manifest.json'), 'utf8'));
     a.ok(manifest.description.length <= 132, 'description is ' + manifest.description.length + ' characters');
   });
-  test('extension version is bumped to 1.30.0 and displayed directly above Save changes button', () => {
+  test('extension version is bumped to 1.31.0 and displayed directly above Save changes button', () => {
     const manifestPath = path.resolve(__dirname, '../manifest.json');
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    a.eq(manifest.version, '1.30.0', 'manifest.json version is 1.30.0');
+    a.eq(manifest.version, '1.31.0', 'manifest.json version is 1.31.0');
 
     const CGP = loadGradebookDom();
-    a.eq(CGP.VERSION, '1.30.0', 'CGP.VERSION is 1.30.0');
+    a.eq(CGP.VERSION, '1.31.0', 'CGP.VERSION is 1.31.0');
 
     const htmlPath = path.resolve(__dirname, '../src/options/options.html');
     const content = fs.readFileSync(htmlPath, 'utf8');
@@ -469,6 +469,6 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     const saveBtnIdx = content.indexOf('id="save"');
     a.ok(versionIdx > 0, 'sidebar__version element exists');
     a.ok(saveBtnIdx > versionIdx, 'sidebar__version appears directly above save button');
-    a.ok(content.includes('id="extensionVersion">1.30.0<'), 'displays 1.30.0 version number');
+    a.ok(content.includes('id="extensionVersion">1.31.0<'), 'displays 1.31.0 version number');
   });
 });
