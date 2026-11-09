@@ -1042,8 +1042,12 @@
       var t = item.type === 'announcement' ? 'discussion' : item.type;
       return Promise.all(rest.map(function (d) {
         return self.api.courseItems(d, item.type).then(function (list) {
+          // toItem drops what is not really of this type (the assignment
+          // behind a classic quiz or a graded discussion): a quiz named like
+          // a new assignment is not that assignment.
           var mine = (list || []).filter(function (o) { return o && o.workflow_state !== 'deleted'; })
-            .map(function (o) { return sync.toItem(t, o) || { title: o.title || o.name }; });
+            .map(function (o) { return sync.toItem(t, o); })
+            .filter(function (it) { return it && it.type === item.type; });
           if (sync.lookalike(mine, item.title)) found.push(d);
         }, function () { /* cannot read that class: say nothing about it */ });
       })).then(function () { return ids.filter(function (d) { return found.indexOf(d) >= 0; }); });

@@ -866,6 +866,13 @@ suite('copy to sections: changes made in a copy', (test) => {
     const rel = await c.relations('11', item, ['22', '33', '44']);
     a.deep(rel.to, []);
     a.deep(await c.alreadyThere('11', item, ['22', '33', '44']), ['22', '33']);
+    // A classic quiz or graded discussion named like the new assignment is
+    // not it: its backing assignment is not counted.
+    const api2 = fakeCanvas({ lists: {
+      '22:assignment': [{ id: '903', name: 'Lab 4', quiz_id: 77, submission_types: ['online_quiz'] }],
+      '44:assignment': [{ id: '904', name: 'Lab 4', submission_types: ['discussion_topic'] }]
+    } });
+    a.deep(await copier(api2).alreadyThere('11', item, ['22', '44']), []);
     // A class that cannot be read, or a Canvas without the sections call, is left as it was.
     delete api.courseSections;
     api.courseItems = (d) => d === '22' ? Promise.reject(new Error('403')) : Promise.resolve([]);
