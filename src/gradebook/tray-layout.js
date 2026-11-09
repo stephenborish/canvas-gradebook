@@ -19,8 +19,10 @@
  *    The editing area grows with what is typed, down to the bottom of the
  *    window, and scrolls from there (CommentGrow below).
  *  - SpeedGrader and Submit for Student sit side by side, sharing the width
- *    equally (ActionsControl below); when Canvas shows only one of them, that
- *    one keeps its own size, centred.
+ *    equally as two matching buttons of our own (ActionsControl below);
+ *    when Canvas shows only one of them, that one alone, centred.
+ *  - the tray is a little wider (--cgp-tray-w), so the status control keeps
+ *    every status on one row.
  *
  * None of Canvas's nodes is moved: the tray is React's, and moving its nodes
  * would break its next render. They are only tagged with data-cgp-tray-*
@@ -147,6 +149,7 @@
     // (the gradebook's own comment popover, say).
     this.tray = trayFor(radios[0]);
     if (this.tray) {
+      tagFrame(this.tray);
       var editors = tagCommentForms(this.tray);
       if (!this.grow) this.grow = new CommentGrow();
       this.grow.watch(editors[0] || null);
@@ -888,8 +891,8 @@
    * something to rely on, so - as with the statuses - Canvas's own are
    * hidden and stand-ins are shown in a row of our own:
    *
-   *  - each stand-in is a copy of Canvas's control (same look, same icon),
-   *    re-copied whenever Canvas's changes;
+   *  - each stand-in is a button of our own (makeProxy) with Canvas's
+   *    label, rebuilt whenever Canvas's control changes;
    *  - pressing it presses Canvas's own: a click on a button goes to
    *    Canvas's button, and a link takes Canvas's current address first (so
    *    Ctrl/Cmd-click still opens SpeedGrader in a new tab);
@@ -1044,14 +1047,56 @@
     return [textOf(c), c.getAttribute('href') || '', flag(c, 'disabled') ? 1 : 0].join('\u0001');
   }
 
-  /** A copy of Canvas's control that presses Canvas's own. */
+  /* Our own button for one of Canvas's controls - not a copy of its markup:
+   * InstUI's emotion classes size the copy for a lone, full-width block, so
+   * a copy squeezed into half the row spilled its label out of its border.
+   * Ours are drawn by the stylesheet (.cgp-tact__btn): same height, same
+   * look, icon and label centred on one line. Pressing it presses Canvas's
+   * own control. */
+  var ACTION_ICONS = {
+    // A check in a box (SpeedGrader) and a person with a plus (submit for).
+    speedgrader: 'M4 4h11l-2 2H6v12h12v-5l2-2v9H4z M9.5 10.5l2.5 2.5 7-7 1.5 1.5-8.5 8.5-4-4z',
+    submit: 'M10 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM3 20c0-3.3 3.1-6 7-6 1 0 1.9.2 2.8.5l-.9 1.8A6 6 0 0 0 10 16c-2.6 0-4.7 1.5-5 3.5V20zm15-6h2v3h3v2h-3v3h-2v-3h-3v-2h3z'
+  };
+  var ACTION_LABELS = { speedgrader: 'SpeedGrader', submit: 'Submit for Student' };
+
   function makeProxy(canvas, kind) {
-    var proxy = canvas.cloneNode(true);
-    stripIds(proxy);
+    var isLink = String(canvas.tagName || '').toUpperCase() === 'A' && canvas.getAttribute('href') !== null;
+    var proxy = document.createElement(isLink ? 'a' : 'button');
+    proxy.className = 'cgp-tact__btn';
     setAttr(proxy, 'data-cgp-tray-action', kind);
+    if (isLink) {
+      proxy.setAttribute('href', canvas.getAttribute('href'));
+      var target = canvas.getAttribute('target');
+      if (target) proxy.setAttribute('target', target);
+    } else {
+      proxy.setAttribute('type', 'button');
+    }
+    var off = flag(canvas, 'disabled') || canvas.getAttribute('aria-disabled') === 'true';
+    if (off) {
+      proxy.setAttribute('aria-disabled', 'true');
+      if (!isLink) { proxy.disabled = true; proxy.setAttribute('disabled', ''); }
+    }
+    var label = textOf(canvas).replace(/\s+/g, ' ').trim() || ACTION_LABELS[kind];
+    proxy.setAttribute('title', label);
+    if (typeof document.createElementNS === 'function') {
+      var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.setAttribute('aria-hidden', 'true');
+      svg.setAttribute('focusable', 'false');
+      svg.setAttribute('class', 'cgp-tact__icon');
+      var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', ACTION_ICONS[kind]);
+      path.setAttribute('fill', 'currentColor');
+      svg.appendChild(path);
+      proxy.appendChild(svg);
+    }
+    var txt = document.createElement('span');
+    txt.className = 'cgp-tact__txt';
+    txt.textContent = label;
+    proxy.appendChild(txt);
     proxy.addEventListener('click', function (e) {
       if (!canvas.isConnected) return;
-      var isLink = String(proxy.tagName || '').toUpperCase() === 'A' && proxy.getAttribute('href') !== null;
       if (isLink) {
         // Let the browser follow the link (new tab with Ctrl/Cmd, and so
         // on) - to wherever Canvas's link points right now.
@@ -1064,14 +1109,6 @@
       canvas.click();
     });
     return proxy;
-  }
-
-  function stripIds(el) {
-    if (el.removeAttribute) {
-      el.removeAttribute('id');
-      el.removeAttribute('data-cgp-tray-action-proxied');
-    }
-    toArray(el.children).forEach(stripIds);
   }
 
   /* -------------------------------------------------- growing comment box */
@@ -1203,6 +1240,25 @@
   }
 
   /* --------------------------------------------------------------- helpers */
+
+  /* The tray's outer box - the one InstUI gives its width (20em) and pins to
+   * the window's edge: the dialog itself or the nearest fixed / absolute
+   * ancestor a few levels up. Tagged so the stylesheet can widen it a little
+   * (room for every status on one row). */
+  function tagFrame(tray) {
+    var node = tray;
+    var frame = null;
+    for (var depth = 0; node && node !== document.body && depth < 4; depth++) {
+      var pos = '';
+      if (typeof getComputedStyle === 'function') {
+        try { pos = (getComputedStyle(node) || {}).position || ''; } catch (e) { pos = ''; }
+      }
+      if (pos === 'fixed' || pos === 'absolute') { frame = node; break; }
+      node = node.parentElement;
+    }
+    if (frame) setAttr(frame, 'data-cgp-tray-frame', '');
+    return frame;
+  }
 
   function trayFor(el) {
     return (el.closest && el.closest('[role="dialog"]')) || null;
