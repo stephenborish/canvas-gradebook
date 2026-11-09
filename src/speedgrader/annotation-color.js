@@ -38,7 +38,7 @@
   var RED_LABEL = /^\s*(red|rojo|roja|rouge|rot|rosso|vermelho|rood|czerwony|красный|红色?|赤)\s*$/i;
   var COLOR_LABEL = /^\s*(red|orange|yellow|gold|brown|green|blue|light\s*blue|dark\s*blue|navy|cyan|teal|pink|magenta|purple|violet|black|gr[ae]y|white)\s*$/i;
   // DocViewer names its swatches "Annotation markup color Red" (title "Red"):
-  // the colour is what follows "color", or the last word or two.
+  // the colour is what follows "color" (or the last word or two of that).
   var COLOR_PREFIX = /^.*\b(colou?r|farbe|couleur|kleur)\b\s*:?\s*/i;
   var SWATCH_SELECTOR = 'button, [role="radio"], [role="button"], [role="option"], [role="menuitemradio"], li, a';
   var SWATCH_CLASS = /(^|\s)ColorButton(\s|$)|colou?r-?(button|swatch|option)/i;
@@ -209,13 +209,20 @@
     var candidates = toArray(doc.querySelectorAll(
       'button, [role="button"], [role="radio"], [role="tab"], [role="menuitemradio"], [role="option"]'));
     for (var i = 0; i < candidates.length; i++) {
-      var el = candidates[i];
-      if (!isActive(el)) continue;
-      var label = labelOf(el);
-      if (!label || NOT_TOOLS.test(label) || colorNameOf(el) || SWATCH_CLASS.test(classOf(el))) continue;
-      if (TOOL_PATTERNS.point.test(label)) return 'point';
-      if (TOOL_PATTERNS.freedraw.test(label)) return 'freedraw';
+      var tool = toolOf(candidates[i]);
+      if (tool) return tool;
     }
+    return null;
+  }
+
+  /** 'freedraw' or 'point' when `el` is that tool's button and is active;
+   * never a colour swatch or one of the other tools. */
+  function toolOf(el) {
+    if (!isActive(el)) return null;
+    var label = labelOf(el);
+    if (!label || NOT_TOOLS.test(label) || colorNameOf(el, label) || SWATCH_CLASS.test(classOf(el))) return null;
+    if (TOOL_PATTERNS.point.test(label)) return 'point';
+    if (TOOL_PATTERNS.freedraw.test(label)) return 'freedraw';
     return null;
   }
 
@@ -270,9 +277,7 @@
     var bars = toArray(doc.querySelectorAll('[role="toolbar"]'));
     for (var i = 0; i < bars.length; i++) {
       var active = toArray(bars[i].querySelectorAll('button, [role="button"], [role="radio"]')).some(function (el) {
-        if (!isActive(el)) return false;
-        var label = labelOf(el);
-        return TOOL_PATTERNS.point.test(label) || TOOL_PATTERNS.freedraw.test(label);
+        return !!toolOf(el);
       });
       if (active) return bars[i];
     }
@@ -348,14 +353,20 @@
   /** The colour a control is named for ("red", "light blue"), or ''. Reads
    * its title and aria-label each on its own: "Annotation markup color Red"
    * and "Red" both give "red". */
-  function colorNameOf(el) {
-    var texts = [el.getAttribute('title'), el.getAttribute('aria-label'), el.getAttribute('data-color-name'), labelOf(el)];
+  function colorNameOf(el, label) {
+    var texts = [el.getAttribute('title'), el.getAttribute('aria-label'), el.getAttribute('data-color-name'),
+      label !== undefined ? label : labelOf(el)];
     for (var i = 0; i < texts.length; i++) {
       var t = String(texts[i] || '').replace(/\s+/g, ' ').trim();
       if (!t || t.length > 60) continue;
       var tail = t.replace(COLOR_PREFIX, '');
-      var words = tail.split(' ');
-      var tries = [t, tail, words.slice(-2).join(' '), words[words.length - 1]];
+      var tries = [t];
+      // The last word or two only after a "color" prefix: a link or list
+      // item that merely ends in one ("Sam Green") is not a swatch.
+      if (tail !== t) {
+        var words = tail.split(' ');
+        tries.push(tail, words.slice(-2).join(' '), words[words.length - 1]);
+      }
       for (var j = 0; j < tries.length; j++) {
         if (COLOR_LABEL.test(tries[j]) || RED_LABEL.test(tries[j])) return tries[j].trim().toLowerCase();
       }
@@ -366,10 +377,10 @@
   /** A colour swatch: named for a colour, a ColorButton, or a small
    * square-ish control painted in one. */
   function isSwatch(el) {
-    if (colorNameOf(el)) return true;
+    var label = labelOf(el);
+    if (colorNameOf(el, label)) return true;
     var painted = !!parseColor(swatchColor(el));
     if (SWATCH_CLASS.test(classOf(el)) && painted) return true;
-    var label = labelOf(el);
     if (label && label.length > 2 && !/^#|^rgb/i.test(label)) return false;
     var r = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
     if (!r || r.width < 10 || r.height < 10 || r.width > 56 || r.height > 56) return false;

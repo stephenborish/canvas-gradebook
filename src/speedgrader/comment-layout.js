@@ -231,7 +231,7 @@
   var TOOL_KINDS = [
     { kind: 'screen', test: /screen/i, label: 'Record your screen',
       icon: 'M3 5h18v11H3zm2 2v7h14V7zM8 18h8v2H8zM4 3h3v1.5H5.5V6H4zm16 0v3h-1.5V4.5H17V3z' },
-    { kind: 'speech', test: /speech|dictat|microphone|\bmic\b|\bvoice\b|icon-audio|\baudio\b/i, label: 'Speech to text',
+    { kind: 'speech', test: /speech|dictat|microphone|\bmic\b|\bvoice\b|\baudio\b/i, label: 'Speech to text',
       icon: 'M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3zm-1.2 3v6a1.2 1.2 0 0 0 2.4 0V6a1.2 1.2 0 0 0-2.4 0zM6 11h1.8a4.2 4.2 0 0 0 8.4 0H18a6 6 0 0 1-5.1 5.9V20H16v1.5H8V20h3.1v-3.1A6 6 0 0 1 6 11z' },
     { kind: 'media', test: /media|video|record|camera|kaltura|studio/i, label: 'Record or upload media',
       icon: 'M3 6.5h12a1.5 1.5 0 0 1 1.5 1.5v1.8L21 7v10l-4.5-2.8V16a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 16V8A1.5 1.5 0 0 1 3 6.5zm.3 1.8v7.4h11.4V8.3z' },
