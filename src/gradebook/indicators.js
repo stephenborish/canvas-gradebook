@@ -798,7 +798,13 @@
             self.requested.add(aid);
             neededAssignments.push(aid);
           }
-          if (self.settings && self.settings.values && self.settings.values.commentIndicator &&
+          // The comment check is a second read of a column, so it waits
+          // until the first has landed (the 'cells' it emits repaints and
+          // gets here again): sent together, the two raced each other for
+          // the same request slots and slowed the screenful being opened.
+          var columnLoaded = !!((self.model.everLoadedAssignments && self.model.everLoadedAssignments.has(aid)) ||
+            (self.model.loadedAssignments && self.model.loadedAssignments.has(aid)));
+          if (columnLoaded && self.settings && self.settings.values && self.settings.values.commentIndicator &&
               self.model.commentVerifiedAssignments && !self.model.commentVerifiedAssignments.has(aid) &&
               !self.requestedComments.has(aid) && self.mayRequest(self.commentFailures, aid, now)) {
             self.requestedComments.add(aid);

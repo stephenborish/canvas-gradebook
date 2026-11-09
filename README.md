@@ -1101,11 +1101,12 @@ Student names, grades and comment text are never written to the log — only cou
 ## How it is put together
 
 ```
-manifest.json                     MV3 manifest; one content-script entry, ordered
+manifest.json                     MV3 manifest; the ordered content-script entry (course page only)
 src/background.js                 service worker: defaults, options, custom-domain registration
 src/settings-times.js             service worker: this computer's Chrome sync check-in
 src/calendar-sync.js              service worker: fetches the class-schedule calendar, keeps its classes
 src/script-manifest.js            the ordered file list (mirror of the manifest entry)
+src/frame-gate.js                 the one script frames get; adds snippets to comment-editor frames
 
 src/core/                         pure logic - no DOM, no chrome.* at load time
   util.js                         settings, defaults, sanitizing, diagnostics, small helpers
@@ -1170,6 +1171,10 @@ Design rules the code sticks to:
   never inferred from a grade; entering a grade never adds a status.
 - **The DOM is for display and identity only.** All grid-markup knowledge lives in
   `dom-adapter.js`; if Canvas ships a new gradebook, that is the file to update.
+- **Nothing waits that does not have to.** The gradebook reads the course while Canvas is still
+  drawing its grid, list pages Canvas numbers are read several at a time, and background warming
+  queues behind the columns on screen. Frames inside a course page (rich-text editors, SpeedGrader's
+  submission preview) get one small gate script instead of the whole content-script set.
 - **One paint pass.** Every repaint is coalesced into a single `requestAnimationFrame`
   callback, mutations the extension itself makes are ignored by the observers, and paint
   signatures stop repeated work — so no render loops.

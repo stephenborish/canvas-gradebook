@@ -1,6 +1,7 @@
 /* Canvas Gradebook+ - the ordered content-script list.
  * Kept in one place so the static manifest entry and the dynamic registration
- * used for self-hosted Canvas domains cannot drift apart.
+ * used for self-hosted Canvas domains cannot drift apart. The page itself
+ * (the top frame) gets these; frames get FRAME_JS below.
  * If you edit this list, mirror it in manifest.json. */
 
 export const CONTENT_JS = [
@@ -58,6 +59,13 @@ export const CONTENT_JS = [
   'src/speedgrader/content.js',
   'src/tour/tour-state.js',
   'src/gradebook/content.js'
+];
+
+/* The course page itself gets CONTENT_JS / CONTENT_CSS; every frame inside
+ * it gets only this (see frame-gate.js), which adds what a comment editor's
+ * frame needs on demand. Mirrored in manifest.json too. */
+export const FRAME_JS = [
+  'src/frame-gate.js'
 ];
 
 export const CONTENT_CSS = [

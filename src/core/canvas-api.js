@@ -63,6 +63,9 @@
     opts = opts || {};
     this.origin = opts.origin || (typeof location !== 'undefined' ? location.origin : '');
     this.fetchImpl = opts.fetch || (typeof fetch === 'function' ? function () { return fetch.apply(null, arguments); } : null);
+    // Clients on the page's own fetch share per-page answers (currentUser);
+    // a client handed its own fetch (tests, a relay) keeps to itself.
+    this._sharePageCache = !opts.fetch;
     // Bulk boot work (assignments + enrollments together, then several
     // 8-assignment submission batches while prefetching) is several
     // independent request chains that all want to run at once; a pool this
@@ -308,7 +311,21 @@
 
   /* ------------------------------------------------------------- endpoints */
 
+  /* Who is signed in cannot change during a page's life, and several parts
+   * of the page ask as it opens (the gradebook model, Switch course, the
+   * settings copy in Canvas): one read answers them all. A failed read is
+   * forgotten, so the next caller tries again. */
+  var pageUser = Object.create(null);
   CanvasApi.prototype.currentUser = function () {
+    if (!this._sharePageCache) return this._readCurrentUser();
+    var key = this.origin;
+    if (!pageUser[key]) {
+      pageUser[key] = this._readCurrentUser().catch(function (e) { delete pageUser[key]; throw e; });
+    }
+    return pageUser[key];
+  };
+
+  CanvasApi.prototype._readCurrentUser = function () {
     return this.get('/api/v1/users/self').then(function (u) {
       if (!u || u.id === undefined) return null;
       return {
