@@ -114,8 +114,8 @@
   CanvasApi.prototype.request = function (path, opts) {
     var self = this;
     opts = Object.assign({}, this._defaults || {}, opts || {});
-    var timeoutMs = opts.timeoutMs > 0 && (opts.method || 'GET').toUpperCase() === 'GET' ? opts.timeoutMs : 0;
     var method = (opts.method || 'GET').toUpperCase();
+    var timeoutMs = opts.timeoutMs > 0 && method === 'GET' ? opts.timeoutMs : 0;
     var u = this.url(path, opts.params);
     var headers = {
       'Accept': 'application/json+canvas-string-ids, application/json',
