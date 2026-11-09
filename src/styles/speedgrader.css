@@ -94,65 +94,151 @@ html.cgp-sg-tidy #speedgrader_comment_textarea_mount_point [data-testid="RCEStat
 html.cgp-sg-tidy #speedgrader_comment_textarea_mount_point .tox-statusbar {
   display: none !important;
 }
-html.cgp-sg-tidy [data-cgp-sg-actions] {
-  display: flex !important;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 6px;
-  margin: 8px 0 0 !important;
-  padding: 6px 0 !important;
-  float: none !important;
-  text-align: left !important;
+/* Canvas's row of comment tools and its Submit Comment: hidden while our
+ * footer bar (.cgp-sgbar, comment-layout.js) stands in for them. Every press
+ * on the bar goes through Canvas's own control. */
+html.cgp-sg-tidy [data-cgp-sg-proxied] {
+  display: none !important;
 }
-html.cgp-sg-tidy [data-cgp-sg-actions] > * {
-  float: none !important;
-  margin-top: 0 !important;
+/* The pinned-Submit option pins our bar instead of Canvas's (hidden) row. */
+html.cgp-sg-tidy .cgp-sticky-submit:not(.cgp-sgbar) {
+  position: static !important;
+  box-shadow: none !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+/* One composer card: the editor on top, the bar joined under it. */
+html.cgp-sg-tidy [data-cgp-sg-composer] {
   margin-bottom: 0 !important;
+  padding-bottom: 0 !important;
 }
-html.cgp-sg-tidy [data-cgp-sg-tool] {
-  box-sizing: border-box !important;
-  display: inline-flex !important;
+html.cgp-sg-tidy [data-cgp-sg-composer][data-cgp-tray-rce],
+html.cgp-sg-tidy [data-cgp-sg-composer] [data-cgp-tray-rce] {
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  border-bottom-color: #e3e7ea !important;
+}
+html.cgp-sg-tidy [data-cgp-sg-composer][data-cgp-tray-rce]:focus-within,
+html.cgp-sg-tidy [data-cgp-sg-composer] [data-cgp-tray-rce]:focus-within {
+  border-color: #0374b5 !important;
+  border-bottom-color: #e3e7ea !important;
+  box-shadow: none !important;
+}
+html.cgp-sg-tidy .cgp-sgbar {
+  --cgp-sgbar-font: LatoWeb, 'Lato Extended', Lato, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --cgp-sgbar-accent: var(--ic-brand-button--primary-bgd, #0374b5);
+  box-sizing: border-box;
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 8px 8px 8px 10px;
+  border: 1px solid #c7cdd1;
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: #f7f8f9;
+  font-family: var(--cgp-sgbar-font);
+  font-size: 14px;
+  line-height: 1;
+  transition: border-color 0.12s ease;
+}
+html.cgp-sg-tidy [data-cgp-sg-composer]:focus-within + .cgp-sgbar {
+  border-color: #0374b5;
+}
+html.cgp-sg-tidy .cgp-sgbar *,
+html.cgp-sg-tidy .cgp-sgbar *::before,
+html.cgp-sg-tidy .cgp-sgbar *::after {
+  box-sizing: border-box;
+}
+/* The tools: one group of matching icon buttons. */
+html.cgp-sg-tidy .cgp-sgbar__tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+html.cgp-sg-tidy .cgp-sgbar__tools[hidden] { display: none; }
+html.cgp-sg-tidy .cgp-sgbar__tool {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 40px;
-  height: 40px;
-  margin: 0 !important;
-  padding: 0 8px !important;
-  border: 1px solid #c7cdd1 !important;
-  border-radius: 8px !important;
-  background: #fff !important;
-  color: #2d3b45 !important;
-  font-size: 18px !important;
-  line-height: 1 !important;
-  box-shadow: none !important;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #4b5862;
+  font: inherit;
   cursor: pointer;
-  transition: background-color 0.12s ease, border-color 0.12s ease;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
-html.cgp-sg-tidy [data-cgp-sg-tool] i,
-html.cgp-sg-tidy [data-cgp-sg-tool] svg {
-  font-size: 18px !important;
+html.cgp-sg-tidy .cgp-sgbar__tool svg,
+html.cgp-sg-tidy .cgp-sgbar__tool i {
+  display: block;
   width: 18px;
   height: 18px;
+  margin: 0;
+  font-size: 18px;
+  line-height: 18px;
 }
-html.cgp-sg-tidy [data-cgp-sg-tool]:hover {
-  background: #eef4f9 !important;
-  border-color: #0374b5 !important;
+html.cgp-sg-tidy .cgp-sgbar__tool i::before { margin: 0; }
+html.cgp-sg-tidy .cgp-sgbar__tool-txt {
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
 }
-html.cgp-sg-tidy [data-cgp-sg-tool]:focus-visible {
-  outline: 2px solid #0374b5 !important;
+html.cgp-sg-tidy .cgp-sgbar__tool:has(.cgp-sgbar__tool-txt) { width: auto; }
+html.cgp-sg-tidy .cgp-sgbar__tool:hover:not(:disabled) {
+  background: #e8eef3;
+  color: #0374b5;
+}
+html.cgp-sg-tidy .cgp-sgbar__tool:active:not(:disabled) { background: #dbe5ed; }
+html.cgp-sg-tidy .cgp-sgbar__tool:disabled { opacity: 0.45; cursor: not-allowed; }
+/* Submit Comment: the one primary action, in the school's button colour. */
+html.cgp-sg-tidy .cgp-sgbar__submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  height: 34px;
+  margin: 0 0 0 auto;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--cgp-sgbar-accent);
+  color: var(--ic-brand-button--primary-text, #fff);
+  font-family: var(--cgp-sgbar-font);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: filter 0.12s ease;
+}
+html.cgp-sg-tidy .cgp-sgbar__submit:hover:not(:disabled) { filter: brightness(0.92); }
+html.cgp-sg-tidy .cgp-sgbar__submit:active:not(:disabled) { filter: brightness(0.85); }
+html.cgp-sg-tidy .cgp-sgbar__submit:disabled { opacity: 0.5; cursor: not-allowed; }
+html.cgp-sg-tidy .cgp-sgbar__tool:focus,
+html.cgp-sg-tidy .cgp-sgbar__submit:focus { outline: none; }
+html.cgp-sg-tidy .cgp-sgbar__tool:focus-visible,
+html.cgp-sg-tidy .cgp-sgbar__submit:focus-visible {
+  outline: 2px solid #0374b5;
   outline-offset: 2px;
-}
-/* Submit Comment: pushed to the far end, bigger and easier to hit. Canvas's
- * own colours (the school's theme) are kept. */
-html.cgp-sg-tidy [data-cgp-sg-actions] > [data-cgp-sg-submit],
-html.cgp-sg-tidy [data-cgp-sg-actions] > :has([data-cgp-sg-submit]) {
-  margin-left: auto !important;
-}
-html.cgp-sg-tidy [data-cgp-sg-submit] {
-  min-height: 40px;
-  padding: 0 20px !important;
-  border-radius: 8px !important;
-  font-size: 1rem !important;
-  font-weight: 700 !important;
 }

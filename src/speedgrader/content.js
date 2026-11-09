@@ -621,6 +621,7 @@
       lastTextScan = now;
       var buttons = document.querySelectorAll('button');
       for (var i = 0; i < buttons.length; i++) {
+        if (buttons[i].closest && buttons[i].closest('[data-cgp-sg-own]')) continue;   // our footer's stand-in
         if (/^\s*submit comment\s*$/i.test(buttons[i].textContent || '')) { cachedSubmit = buttons[i]; return cachedSubmit; }
       }
       return null;

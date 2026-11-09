@@ -3794,16 +3794,27 @@ html.cgp-tray-tidy .cgp-tstat * {
   box-sizing: border-box;
   font-family: var(--cgp-tstat-font) !important;
 }
+/* The tray a little wider than InstUI's 20em, so None / Late / Missing /
+ * Excused always fit on one row (tagFrame in tray-layout.js). */
+html.cgp-tray-tidy [data-cgp-tray-frame] {
+  /* --cgp-tray-w: set by StatusControl.fit only when five or more statuses
+   * need a little more room (never past 28em). */
+  width: var(--cgp-tray-w, 22.5em) !important;
+  max-width: 100vw !important;
+}
 html.cgp-tray-tidy .cgp-tstat__seg {
-  /* Each segment as wide as its label, the spare width shared out; labels
-   * never truncate - a narrow tray (or many custom statuses) wraps instead. */
+  /* One segmented control: an outlined bar split by thin dividers. Always
+   * one row: each segment as wide as its label, the spare width shared out
+   * (StatusControl.fit handles five or more statuses). */
   display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid #c7cdd1;
+  flex-wrap: nowrap;
+  gap: 0;
+  padding: 0;
+  border: 1px solid #b4bcc2;
   border-radius: 8px;
   background: #fff;
+  box-shadow: 0 1px 2px rgba(45, 59, 69, 0.08);
+  overflow: hidden;
 }
 html.cgp-tray-tidy .cgp-tstat__opt {
   --cgp-tstat-c: #5b6770;
@@ -3811,39 +3822,47 @@ html.cgp-tray-tidy .cgp-tstat__opt {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 1 0 auto;
-  gap: 5px;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 6px;
   height: 36px;
   margin: 0;
-  padding: 0 6px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: #4b5862;
-  font-size: 0.9375rem;
-  font-weight: 700;
+  border-radius: 0;
+  background: #fff;
+  color: #2d3b45;
+  font-size: 0.875rem;
+  font-weight: 600;
   line-height: 1;
   letter-spacing: 0;
   text-transform: none;
+  white-space: nowrap;
   box-shadow: none;
   cursor: pointer;
   user-select: none;
   -webkit-appearance: none;
   appearance: none;
   -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.14s ease, color 0.14s ease;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+/* The dividers: a hairline between neighbours, dropped beside the filled one. */
+html.cgp-tray-tidy .cgp-tstat__opt + .cgp-tstat__opt {
+  box-shadow: inset 1px 0 0 #d5dadd;
+}
+html.cgp-tray-tidy .cgp-tstat__opt[aria-pressed="true"],
+html.cgp-tray-tidy .cgp-tstat__opt[aria-pressed="true"] + .cgp-tstat__opt {
+  box-shadow: none;
 }
 html.cgp-tray-tidy .cgp-tstat__opt:hover:not(:disabled):not([aria-pressed="true"]) {
-  background: color-mix(in srgb, var(--cgp-tstat-c) 9%, #fff);
-  color: color-mix(in srgb, var(--cgp-tstat-c) 82%, #000);
+  background: #f2f4f5;
+}
+html.cgp-tray-tidy .cgp-tstat__opt:active:not(:disabled):not([aria-pressed="true"]) {
+  background: #e6eaec;
 }
 html.cgp-tray-tidy .cgp-tstat__opt[aria-pressed="true"] {
   background: var(--cgp-tstat-c);
   color: #fff;
-}
-html.cgp-tray-tidy .cgp-tstat__opt[data-value="none"][aria-pressed="true"] {
-  background: #eef1f3;
-  color: #2d3b45;
 }
 html.cgp-tray-tidy .cgp-tstat__opt:focus { outline: none; }
 html.cgp-tray-tidy .cgp-tstat__opt:focus-visible {
@@ -3854,6 +3873,30 @@ html.cgp-tray-tidy .cgp-tstat__opt:focus-visible {
 html.cgp-tray-tidy .cgp-tstat__opt:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+/* Fitting (StatusControl.fit): measured with every label whole... */
+html.cgp-tray-tidy .cgp-tstat[data-measuring] .cgp-tstat__seg {
+  display: inline-flex;
+  width: max-content;
+}
+html.cgp-tray-tidy .cgp-tstat[data-measuring] .cgp-tstat__opt { flex: 0 0 auto; }
+html.cgp-tray-tidy .cgp-tstat[data-measuring] .cgp-tstat__txt { overflow: visible; }
+/* ...and compact for five or more: tighter, a little smaller; tight (only
+ * when even the widened tray is short) drops the dots as well. */
+html.cgp-tray-tidy .cgp-tstat[data-fit="tight"] .cgp-tstat__opt {
+  gap: 0;
+  padding: 0 7px;
+  font-size: 0.8125rem;
+}
+html.cgp-tray-tidy .cgp-tstat[data-fit="tight"] .cgp-tstat__dot { display: none; }
+html.cgp-tray-tidy .cgp-tstat[data-fit="compact"] .cgp-tstat__opt {
+  gap: 5px;
+  padding: 0 7px;
+  font-size: 0.8125rem;
+}
+html.cgp-tray-tidy .cgp-tstat[data-fit="compact"] .cgp-tstat__dot {
+  width: 6px;
+  height: 6px;
 }
 html.cgp-tray-tidy .cgp-tstat__dot {
   flex: 0 0 auto;
@@ -3867,7 +3910,7 @@ html.cgp-tray-tidy .cgp-tstat__opt[data-value="none"] .cgp-tstat__dot {
   box-shadow: inset 0 0 0 1.5px var(--cgp-tstat-c);
 }
 html.cgp-tray-tidy .cgp-tstat__opt[aria-pressed="true"] .cgp-tstat__dot { background: #fff; }
-html.cgp-tray-tidy .cgp-tstat__opt[data-value="none"][aria-pressed="true"] .cgp-tstat__dot { background: transparent; }
+html.cgp-tray-tidy .cgp-tstat__opt[data-value="none"][aria-pressed="true"] .cgp-tstat__dot { background: transparent; box-shadow: inset 0 0 0 1.5px #fff; }
 /* Sent to Canvas, not yet confirmed: the dot becomes a small spinner. */
 html.cgp-tray-tidy .cgp-tstat__opt[data-pending] .cgp-tstat__dot {
   width: 10px;
@@ -3884,6 +3927,9 @@ html.cgp-tray-tidy .cgp-tstat__opt[data-value="none"][data-pending] .cgp-tstat__
 }
 @keyframes cgp-tstat-spin { to { transform: rotate(360deg); } }
 html.cgp-tray-tidy .cgp-tstat__txt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -4276,36 +4322,65 @@ html.cgp-tray-tidy .cgp-tact {
   display: flex;
   flex-wrap: nowrap;
   justify-content: center;
-  align-items: stretch;
   gap: 8px;
-  margin: 10px 0;
+  margin: 12px 0;
 }
-html.cgp-tray-tidy .cgp-tact > [data-cgp-tray-action] {
-  margin: 0 !important;
-  max-width: 100%;
+/* Two: each as wide as its label, the spare width shared equally - both
+ * labels whole on one line. One: its own size, centred. */
+html.cgp-tray-tidy .cgp-tact[data-count="2"] > .cgp-tact__btn {
+  flex: 1 1 auto;
 }
-html.cgp-tray-tidy .cgp-tact[data-count="1"] > [data-cgp-tray-action] {
-  flex: 0 1 auto;
-}
-html.cgp-tray-tidy .cgp-tact[data-count="2"] > [data-cgp-tray-action] {
-  flex: 1 1 0;
-  min-width: 0;
-  width: auto !important;
-  display: flex !important;
+/* Two matching buttons of our own (makeProxy): same height, icon and label
+ * centred on one line, Canvas's secondary-button look. */
+html.cgp-tray-tidy .cgp-tact__btn {
+  box-sizing: border-box;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  text-align: center;
-}
-/* InstUI's inner layers fill the button, so the label centres in the half
- * and wraps rather than spilling out on a narrow tray. */
-html.cgp-tray-tidy .cgp-tact[data-count="2"] > [data-cgp-tray-action] > span,
-html.cgp-tray-tidy .cgp-tact[data-count="2"] > [data-cgp-tray-action] > span > span {
-  width: 100%;
-  justify-content: center;
-}
-html.cgp-tray-tidy .cgp-tact[data-count="2"] > [data-cgp-tray-action] span {
-  white-space: normal !important;
+  gap: 6px;
   min-width: 0;
+  height: 38px;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid #c7cdd1;
+  border-radius: 6px;
+  background: #f5f5f5;
+  color: #2d3b45 !important;
+  font-family: LatoWeb, 'Lato Extended', Lato, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none !important;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+html.cgp-tray-tidy .cgp-tact__btn:hover {
+  background: #eef4f9;
+  border-color: #0374b5;
+  color: #0374b5 !important;
+}
+html.cgp-tray-tidy .cgp-tact__btn:focus { outline: none; }
+html.cgp-tray-tidy .cgp-tact__btn:focus-visible {
+  outline: 2px solid #0374b5;
+  outline-offset: 2px;
+}
+html.cgp-tray-tidy .cgp-tact__btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+html.cgp-tray-tidy .cgp-tact__icon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+html.cgp-tray-tidy .cgp-tact__txt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ------------------------------------------------- class schedule picker

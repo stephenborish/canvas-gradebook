@@ -83,6 +83,79 @@ suite('SpeedGrader tidy comment box', (test) => {
     t.ctl.apply.call(Object.assign(t.ctl, { settings: { values: {} } }));
   });
 
+  test('one footer bar under the editor: the three tools and Submit, each pressing Canvas’s own', () => {
+    const t = setupSg();
+    t.ctl.start();
+    const bars = t.doc.querySelectorAll('.cgp-sgbar');
+    a.eq(bars.length, 1, 'one bar');
+    const bar = bars[0];
+    a.ok(t.mount.nextSibling === bar, 'right after the editor’s mount point');
+    a.ok(has(t.mount, 'data-cgp-sg-composer'), 'mount joined to the bar');
+    a.ok(has(t.row, 'data-cgp-sg-proxied'), 'Canvas’s row hidden: it holds only what the bar stands in for');
+    const tools = bar.querySelectorAll('.cgp-sgbar__tool');
+    a.deep(tools.map((b) => b.getAttribute('data-kind')), ['attach', 'media', 'speech']);
+    const counts = { attach: 0, media: 0, speech: 0, submit: 0 };
+    t.attach.addEventListener('click', () => { counts.attach++; });
+    t.media.addEventListener('click', () => { counts.media++; });
+    t.speech.addEventListener('click', () => { counts.speech++; });
+    t.submit.addEventListener('click', () => { counts.submit++; });
+    tools.forEach((b) => b.click());
+    bar.querySelector('.cgp-sgbar__submit').click();
+    a.deep(counts, { attach: 1, media: 1, speech: 1, submit: 1 });
+    a.eq(bar.querySelector('.cgp-sgbar__submit').textContent, 'Submit Comment');
+    t.ctl.scan();
+    a.eq(t.doc.querySelectorAll('.cgp-sgbar').length, 1, 're-scans never add another');
+    t.ctl.apply.call(Object.assign(t.ctl, { settings: { values: {} } }));
+    a.eq(t.doc.querySelectorAll('.cgp-sgbar').length, 0, 'setting off removes the bar');
+    a.not(has(t.row, 'data-cgp-sg-proxied'), 'and shows Canvas’s row again');
+  });
+
+  test('Canvas swaps in new, identical tool nodes: the bar presses the new ones', () => {
+    const t = setupSg();
+    t.ctl.start();
+    const fresh = el('button', { id: 'add_attachment', 'aria-label': 'Attach file' });
+    let clicks = 0;
+    fresh.addEventListener('click', () => { clicks++; });
+    t.row.insertBefore(fresh, t.attach);
+    t.attach.remove();
+    t.ctl.scan();
+    t.doc.querySelector('.cgp-sgbar__tool[data-kind="attach"]').click();
+    a.eq(clicks, 1);
+    t.ctl.apply.call(Object.assign(t.ctl, { settings: { values: {} } }));
+  });
+
+  test('found by its text: our own Submit is never taken for Canvas’s', () => {
+    const t = setupSg();
+    t.submit.removeAttribute('id');
+    t.ctl.start();
+    t.ctl.scan(); t.ctl.scan();
+    const bar = t.doc.querySelector('.cgp-sgbar');
+    a.not(has(bar, 'data-cgp-sg-proxied'), 'the bar is not hidden');
+    a.not(has(bar, 'data-cgp-sg-actions'), 'the bar is not taken for Canvas’s row');
+    a.ok(has(t.row, 'data-cgp-sg-proxied'), 'Canvas’s row still the one hidden');
+    t.ctl.apply.call(Object.assign(t.ctl, { settings: { values: {} } }));
+  });
+
+  test('a tool Canvas hides is left out; a disabled Submit is disabled on the bar too', () => {
+    const t = setupSg();
+    t.speech.style.display = 'none';
+    t.submit.setAttribute('disabled', '');
+    t.ctl.start();
+    const bar = t.doc.querySelector('.cgp-sgbar');
+    a.eq(bar.querySelectorAll('.cgp-sgbar__tool').length, 2);
+    a.ok(has(bar.querySelector('.cgp-sgbar__submit'), 'disabled'));
+    t.ctl.apply.call(Object.assign(t.ctl, { settings: { values: {} } }));
+  });
+
+  test('a row holding more than the tools (a file field): only the controls are hidden', () => {
+    const t = setupSg();
+    t.row.appendChild(el('input', { type: 'file' }));
+    t.ctl.start();
+    a.not(has(t.row, 'data-cgp-sg-proxied'));
+    [t.attach, t.media, t.speech, t.submit].forEach((b) => a.ok(has(b, 'data-cgp-sg-proxied')));
+    t.ctl.apply.call(Object.assign(t.ctl, { settings: { values: {} } }));
+  });
+
   test('setting off: no root class, nothing tagged', () => {
     const t = setupSg({ off: true });
     t.ctl.start();
@@ -147,6 +220,67 @@ suite('DocViewer: red by default for Free Draw and Point', (test) => {
     t.ctl.onClick({ isTrusted: true, target: t.swatches[5] });
     a.not(t.ctl.scan(), 'tool left alone after the teacher’s own choice');
     a.eq(t.red.clicks, 0);
+  });
+
+  function withTrigger(t, opts) {
+    t.ctl.schedule = () => {};
+    const trigger = el('button', { 'aria-label': (opts && opts.label) || 'Color', 'aria-haspopup': 'true' });
+    trigger.clicks = 0;
+    trigger.addEventListener('click', () => {
+      trigger.clicks++;
+      if (t.palette.parentElement) t.palette.remove(); else t.doc.body.appendChild(t.palette);
+    });
+    t.tools[0].parentElement.appendChild(trigger);
+    return trigger;
+  }
+
+  test('Free Draw chosen with the palette closed: it is opened, red pressed, and closed again', () => {
+    const t = setupDocViewer({ tool: 'Free Draw', noPalette: true });
+    const trigger = withTrigger(t);
+    t.ctl.scan();
+    a.eq(trigger.clicks, 1, 'colour button pressed to open the palette');
+    a.ok(t.palette.parentElement, 'palette open');
+    t.ctl.scan();
+    a.eq(t.red.clicks, 1, 'red pressed');
+    for (let i = 0; i < 4; i++) t.ctl.scan();
+    a.not(t.palette.parentElement, 'palette closed again');
+    a.eq(t.red.clicks, 1, 'red pressed only once');
+    t.ctl.scan();
+    a.eq(trigger.clicks, 2, 'nothing more once done');
+  });
+
+  test('palette that closes itself on a pick: not toggled open again', () => {
+    const t = setupDocViewer({ tool: 'Point', noPalette: true });
+    const trigger = withTrigger(t);
+    t.red.addEventListener('click', () => t.palette.remove());
+    t.ctl.scan();
+    t.ctl.scan();
+    a.eq(t.red.clicks, 1);
+    t.ctl.scan(); t.ctl.scan();
+    a.eq(trigger.clicks, 1, 'opened once, never re-opened');
+    a.not(t.palette.parentElement);
+  });
+
+  test('colour button already red: nothing opened', () => {
+    const t = setupDocViewer({ tool: 'Free Draw', noPalette: true });
+    const trigger = withTrigger(t, { label: 'Color: Red' });
+    t.ctl.scan();
+    a.eq(trigger.clicks, 0);
+  });
+
+  test('switching back to Free Draw later sets red again on its activation', () => {
+    const t = setupDocViewer({ tool: 'Free Draw', noPalette: true });
+    const trigger = withTrigger(t);
+    t.ctl.scan(); t.ctl.scan();
+    for (let i = 0; i < 4; i++) t.ctl.scan();
+    t.tools[5].setAttribute('aria-pressed', 'false');
+    t.tools[2].setAttribute('aria-pressed', 'true');   // Highlight
+    t.ctl.scan();
+    a.eq(trigger.clicks, 2, 'highlight left alone');
+    t.tools[2].setAttribute('aria-pressed', 'false');
+    t.tools[5].setAttribute('aria-pressed', 'true');
+    t.ctl.scan();
+    a.eq(trigger.clicks, 3, 'Free Draw again: palette opened again');
   });
 
   test('setting off: nothing pressed', () => {

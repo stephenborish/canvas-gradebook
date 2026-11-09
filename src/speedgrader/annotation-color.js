@@ -2,13 +2,19 @@
  *
  * Runs inside DocViewer, the frame SpeedGrader shows a submitted file in
  * (Canvas's annotation tools: point, highlight, text, strikeout, free draw,
- * area). Its colour palette starts on blue; with `annotationDefaultRed` on,
- * whenever a palette appears while the Free Draw or Point tool is the active
- * one, the red swatch is pressed for the teacher - through DocViewer's own
- * button, so DocViewer records the choice exactly as if it were clicked.
+ * area). Its colour starts on blue, and the palette is a pop-up that only
+ * shows when its colour button is pressed - so waiting for the palette to
+ * appear left the first strokes blue. With `annotationDefaultRed` on, the
+ * moment Free Draw or Point becomes the active tool:
  *
- *  - Each palette is handled once (when it appears), so the teacher can
- *    still pick any other colour straight after.
+ *  - if the colour button already shows red, nothing is done;
+ *  - otherwise the palette is opened through DocViewer's own colour button,
+ *    the red swatch is pressed, and the palette is closed again - all
+ *    through DocViewer's own controls, so it records the choice exactly as
+ *    if the teacher had clicked, before the first stroke;
+ *  - a palette the teacher opens with one of these tools active also gets
+ *    red pressed, once (when it appears), so they can still pick any other
+ *    colour straight after.
  *  - A colour the teacher picks themselves for one of these tools is kept:
  *    that tool is left alone for the rest of the session in this tab.
  *  - Other tools (highlight, strikeout, text, area) are never touched.
@@ -34,6 +40,7 @@
   var SWATCH_SELECTOR = 'button, [role="radio"], [role="button"], [role="option"], [role="menuitemradio"], li, a';
   var SESSION_KEY = 'cgp.annotationColor.userChose';
   var SCAN_MS = 120;
+  var WAIT_MS = 1500;   // for the palette to show after its button is pressed
 
   function AnnotationColorDefaults(ctx) {
     this.settings = ctx && ctx.settings;
@@ -43,6 +50,8 @@
     this.observer = null;
     this.timer = null;
     this.ourClick = false;
+    this.lastTool = null;
+    this.pending = null;   // { tool, step, tries, opened, trigger } while setting red
   }
 
   var P = AnnotationColorDefaults.prototype;
@@ -84,20 +93,90 @@
     if (list.push(palette) > 8) list.shift();
   };
 
-  /** Presses red in a newly shown palette, if one of our tools is active. */
+  /** Sets red for the active tool: on the tool's activation (opening the
+   * palette if need be) and in any palette shown while it is active. */
   P.scan = function () {
     if (!this.enabled()) return false;
     var tool = activeTool(this.doc);
-    if (!tool || this.userChose[tool]) return false;
+    if (tool !== this.lastTool) {
+      this.lastTool = tool;
+      this.pending = tool && !this.userChose[tool] ? { tool: tool, step: 'open', tries: 0, opened: false, trigger: null } : null;
+    }
+    if (!tool || this.userChose[tool]) { this.pending = null; return false; }
     var palette = findPalette(this.doc);
+    if (this.pending) return this.advance(palette);
     if (!palette || this.isHandled(tool, palette.root)) return false;
     this.markHandled(tool, palette.root);
+    return this.pressRed(palette, tool);
+  };
+
+  P.pressRed = function (palette, tool) {
     var red = palette.red;
     if (!red || isSelected(red)) return false;
-    this.ourClick = true;
-    try { red.click(); } finally { this.ourClick = false; }
+    this.click(red);
     if (CGP.diag) CGP.diag.bump('annotation.redDefault.' + tool);
     return true;
+  };
+
+  P.click = function (el) {
+    this.ourClick = true;
+    try { el.click(); } finally { this.ourClick = false; }
+  };
+
+  /* One step of setting red for a newly active tool. Each step that changes
+   * the page waits for DocViewer to redraw (the next scan) before the next. */
+  P.advance = function (palette) {
+    var p = this.pending;
+    var tool = p.tool;
+    if (p.step === 'open' || p.step === 'wait') {
+      if (palette) {
+        this.markHandled(tool, palette.root);
+        var pressed = this.pressRed(palette, tool);
+        if (p.opened) { p.step = 'close'; p.tries = 0; this.schedule(); }
+        else this.pending = null;
+        return pressed;
+      }
+      if (p.step === 'wait') {
+        // Opened, but no palette (yet): wait a little, then give up.
+        if (Date.now() > p.until) this.pending = null;
+        else this.schedule();
+        return false;
+      }
+      var trigger = colorTrigger(this.doc);
+      if (!trigger || /\bred\b/i.test(labelOf(trigger)) || isRed(swatchColor(trigger))) {
+        // Red already, or no colour button to be found: nothing to do.
+        this.pending = null;
+        return false;
+      }
+      p.opened = true;
+      p.trigger = trigger;
+      p.step = 'wait';
+      p.until = Date.now() + WAIT_MS;
+      this.click(trigger);
+      this.schedule();
+      return false;
+    }
+    if (p.step === 'close') {
+      // Picking a colour usually closes DocViewer's palette by itself. If it
+      // is still up: its own button again (a toggle), and only then Escape -
+      // which some viewers also take as "drop the tool", so it is the last
+      // resort.
+      if (!palette) { this.pending = null; return true; }
+      p.tries++;
+      if (p.tries === 1) {
+        // One redraw's grace: the pick may still be closing it.
+        this.schedule();
+      } else if (p.tries === 2 && p.trigger && p.trigger.isConnected) {
+        this.click(p.trigger);
+        this.schedule();
+      } else {
+        pressEscape(this.doc, palette.root);
+        this.pending = null;
+      }
+      return true;
+    }
+    this.pending = null;
+    return false;
   };
 
   P.onClick = function (e) {
@@ -154,6 +233,66 @@
       t = ref ? String(ref.textContent || '') : String(el.textContent || '');
     }
     return t.replace(/\s+/g, ' ').trim();
+  }
+
+  /* DocViewer's colour button: the control that opens the palette. Named
+   * "Color" / "Colour" (often with the colour after it), or else a small
+   * control painted in one colour that opens a pop-up. Never a swatch inside
+   * an open palette. Prefers one in the same toolbar as the active tool. */
+  var TRIGGER_LABEL = /colou?r|palette|farbe|couleur|kleur/i;
+
+  function colorTrigger(doc) {
+    var palette = findPalette(doc);
+    var all = toArray(doc.querySelectorAll('button, [role="button"], [aria-haspopup]')).filter(function (el) {
+      if (palette && (palette.root === el || palette.root.contains(el))) return false;
+      if (!visible(el)) return false;
+      var label = labelOf(el);
+      var pops = el.getAttribute('aria-haspopup') !== null || el.getAttribute('aria-expanded') !== null;
+      // A pop-up button named after the colour it shows ("Blue") is the
+      // colour button; a plain button named so is a swatch.
+      if (COLOR_LABEL.test(label) || RED_LABEL.test(label)) return pops && small(el);
+      if (TRIGGER_LABEL.test(label)) return true;
+      return pops && !!parseColor(swatchColor(el)) && small(el);
+    });
+    if (!all.length) return null;
+    var activeBar = activeToolbar(doc);
+    var near = activeBar ? all.filter(function (el) { return activeBar.contains(el); }) : [];
+    return (near[0] || all[0]);
+  }
+
+  function activeToolbar(doc) {
+    var bars = toArray(doc.querySelectorAll('[role="toolbar"]'));
+    for (var i = 0; i < bars.length; i++) {
+      var active = toArray(bars[i].querySelectorAll('button, [role="button"], [role="radio"]')).some(function (el) {
+        if (!isActive(el)) return false;
+        var label = labelOf(el);
+        return TOOL_PATTERNS.point.test(label) || TOOL_PATTERNS.freedraw.test(label);
+      });
+      if (active) return bars[i];
+    }
+    return null;
+  }
+
+  function visible(el) {
+    var r = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    // No layout (a test page): taken as shown.
+    if (!r || (!r.width && !r.height && !r.top && !r.left)) return true;
+    return r.width > 0 && r.height > 0;
+  }
+
+  function small(el) {
+    var r = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    return !r || (r.width <= 64 && r.height <= 64);
+  }
+
+  function pressEscape(doc, target) {
+    var KE = (doc.defaultView && doc.defaultView.KeyboardEvent) || (typeof KeyboardEvent !== 'undefined' ? KeyboardEvent : null);
+    if (!KE) return;
+    var init = { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true };
+    try {
+      (target || doc.body).dispatchEvent(new KE('keydown', init));
+      (target || doc.body).dispatchEvent(new KE('keyup', init));
+    } catch (e) { /* no synthetic keys here */ }
   }
 
   /* ----------------------------------------------------------- the palette */
@@ -277,7 +416,7 @@
   function toArray(list) { return Array.prototype.slice.call(list || []); }
 
   CGP.AnnotationColorDefaults = AnnotationColorDefaults;
-  CGP.annotationColor = { activeTool: activeTool, findPalette: findPalette, isRed: isRed };
+  CGP.annotationColor = { activeTool: activeTool, findPalette: findPalette, colorTrigger: colorTrigger, isRed: isRed };
 
   // Boot: only in a page that is DocViewer (a palette or annotation toolbar
   // shows up); elsewhere the observer simply never finds one.
