@@ -141,6 +141,26 @@ suite('SpeedGrader tidy comment box', (test) => {
     t.ctl.apply.call(Object.assign(t.ctl, { settings: { values: {} } }));
   });
 
+  test('posted comments keep Canvas’s Edit and Delete: never tagged, proxied or hidden', () => {
+    const t = setupSg();
+    const edit = el('a', { class: 'edit_comment_link icon-edit', href: 'javascript:void 0;' }, [el('span', { class: 'screenreader-only', text: 'Edit comment' })]);
+    const del = el('a', { class: 'delete_comment_link icon-x', href: 'javascript:void 0;' }, [el('span', { class: 'screenreader-only', text: 'Delete comment' })]);
+    const publish = el('button', { class: 'submit_comment_button' }, [el('span', { text: 'Submit' })]);
+    t.comments.appendChild(el('div', { class: 'comment' }, [
+      el('div', { class: 'comment_flex' }, [el('span', { class: 'comment', text: 'Nice work' }), edit, publish, del])]));
+    t.ctl.start();
+    t.ctl.scan();
+    [edit, del, publish].forEach((n) => {
+      ['data-cgp-sg-tool', 'data-cgp-sg-proxied', 'data-cgp-sg-submit', 'data-cgp-tray-hide'].forEach((attr) =>
+        a.not(has(n, attr), n.className + ' has no ' + attr));
+    });
+    let clicks = 0;
+    t.submit.addEventListener('click', () => { clicks++; });
+    t.doc.querySelector('.cgp-sgbar__submit').click();
+    a.eq(clicks, 1, 'the bar’s Submit still posts through Canvas’s, not a comment’s Submit');
+    t.ctl.apply.call(Object.assign(t.ctl, { settings: { values: {} } }));
+  });
+
   test('Canvas swaps in new, identical tool nodes: the bar presses the new ones', () => {
     const t = setupSg();
     t.ctl.start();

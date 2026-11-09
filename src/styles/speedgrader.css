@@ -444,6 +444,45 @@ html.cgp-sg-tidy #right_side #comments > div.comment .comment_citation {
   font-size: 12px;
 }
 html.cgp-sg-tidy #right_side #comments > div.comment .avatar { border-radius: 50%; }
+/* Edit, Delete and a draft's Submit stay exactly where Canvas puts them -
+ * Canvas alone decides which show (never forced here) - drawn as clear
+ * icon buttons in the bubble's corner so they are easy to find and hit. */
+html.cgp-sg-tidy #right_side #comments > div.comment .edit_comment_link,
+html.cgp-sg-tidy #right_side #comments > div.comment .delete_comment_link {
+  box-sizing: border-box;
+  min-width: 26px;
+  height: 26px;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 6px;
+  color: var(--cgp-sg-muted);
+  font-size: 14px;
+  line-height: 26px;
+  text-align: center;
+  text-decoration: none;
+  opacity: 1;
+  visibility: visible;
+}
+html.cgp-sg-tidy #right_side #comments > div.comment .edit_comment_link:hover,
+html.cgp-sg-tidy #right_side #comments > div.comment .edit_comment_link:focus-visible {
+  background: #e6eef5;
+  color: var(--cgp-sg-accent);
+}
+html.cgp-sg-tidy #right_side #comments > div.comment .delete_comment_link:hover,
+html.cgp-sg-tidy #right_side #comments > div.comment .delete_comment_link:focus-visible {
+  background: #fbe9e7;
+  color: #c0392b;
+}
+html.cgp-sg-tidy #right_side #comments > div.comment .submit_comment_button {
+  height: 26px;
+  margin-left: 4px;
+  padding: 0 10px;
+  border: 1px solid #c7cdd1;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
 html.cgp-sg-tidy #right_side #add_a_comment { margin-top: 4px; }
 
 /* Reassign and Download Submission Comments: one quiet footer row. */
