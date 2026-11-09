@@ -17,10 +17,16 @@ Install it from the Chrome Web Store (unlisted, so use this link):
 Then open your course gradebook: `https://<yourschool>.instructure.com/courses/<id>/gradebook`.
 
 A store install follows your Chrome profile: with Chrome sync on, it installs itself on every
-computer you sign into, and its settings come with it. New versions arrive on their own; the
-extension checks for one when Chrome starts and when you open a Canvas course (at most hourly),
-and switches over as soon as it is downloaded. A gradebook tab that was already open keeps
-working, but reload it to pick up the new version and any settings changes.
+computer you sign into, and its settings come with it. New versions arrive on their own, but
+not instantly: Chrome checks the Web Store for each extension about every five hours, and lets an
+extension ask for a check only that often (a check in between answers "throttled" without asking).
+The extension spends that one check as early as Chrome allows: it tries when Chrome starts, when you
+open a Canvas course and every 20 minutes (a throttled try costs nothing), and installs a new
+version the moment it has downloaded. Canvas tabs that were already open keep running the old
+version until they are reloaded, so they show a small **Gradebook+ was updated · Reload** notice.
+**Options → Diagnostics → Updates** shows the installed version, when Chrome last checked and when
+it will next, and has **Check for updates now**. To update immediately, open `chrome://extensions`,
+switch on **Developer mode** and click **Update**.
 
 If you used an earlier unpacked copy (**Load unpacked** on `chrome://extensions`), remove it
 once the store version is installed, or both will run on the gradebook. Its settings don't

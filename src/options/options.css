@@ -829,3 +829,12 @@ input.switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2p
 .threshold-row__delete:hover { color: #b91c1c; background: var(--bg); }
 .threshold-actions { display: flex; gap: 8px; }
 .threshold-empty { color: var(--muted); font-size: 13px; margin: 0; }
+
+/* ---------------------------------------------------------------- updates */
+
+.updates { margin: 10px 0 6px; }
+.updates__status { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--ink); }
+.updates__status b { font-weight: 650; }
+.updates__status--warn { color: #8a4b00; }
+.updates__hint { display: block; margin: 4px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--muted); max-width: 70ch; }
+.updates__hint code { font-size: 12px; background: var(--bg); border-radius: 4px; padding: 1px 5px; }

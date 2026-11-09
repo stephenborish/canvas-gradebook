@@ -1307,6 +1307,63 @@
     });
   });
 
+  /* ---------------------------------------------------------------- updates */
+
+  var UPDATE_KEY = 'cgp.update';
+  var CHROME_CHECK_MS = 5 * 60 * 60 * 1000;
+
+  function when(ms) {
+    if (!ms) return '';
+    var d = new Date(ms);
+    var today = new Date();
+    var time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    if (d.toDateString() === today.toDateString()) return 'today at ' + time;
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' at ' + time;
+  }
+
+  /* What is installed, when Chrome last really checked, and - after a
+   * "Check for updates now" - what that check said. */
+  function renderUpdates(result) {
+    var box = $('updateStatus');
+    if (!box || !chrome.storage) return;
+    chrome.storage.local.get(UPDATE_KEY).then(function (got) {
+      var st = (got && got[UPDATE_KEY]) || {};
+      var version = (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || CGP.VERSION;
+      var lines = ['You have version <b>' + version + '</b>' +
+        (st.updatedFrom && st.updatedTo === version ? ', updated from ' + st.updatedFrom + ' ' + when(st.updatedAt) : '') + '.'];
+      var warn = false;
+      var status = result ? result.status : st.lastStatus;
+      if (status === 'update_available') {
+        lines.push('Version <b>' + ((result && result.version) || st.foundVersion || 'new') + '</b> found. Installing it now; this page closes while Gradebook+ restarts.');
+      } else if (status === 'no_update') {
+        lines.push('This is the latest version (checked ' + when(st.lastCheckedAt || Date.now()) + ').');
+      } else if (status === 'throttled') {
+        var next = st.lastCheckedAt ? st.lastCheckedAt + CHROME_CHECK_MS : null;
+        lines.push('Chrome already checked ' + (st.lastCheckedAt ? when(st.lastCheckedAt) : 'recently') +
+          ' and allows the next check ' + (next && next > Date.now() ? 'around ' + when(next) : 'soon') +
+          '. Gradebook+ will check then on its own.');
+      } else if (status === 'error') {
+        warn = true;
+        lines.push('Couldn’t reach the Chrome Web Store' + (st.lastTryAt ? ' (' + when(st.lastTryAt) + ')' : '') + '.');
+      } else if (st.lastCheckedAt) {
+        lines.push('Last checked ' + when(st.lastCheckedAt) + '.');
+      }
+      box.innerHTML = lines.join(' ');
+      box.classList.toggle('updates__status--warn', warn);
+    }).catch(function () { box.textContent = ''; });
+  }
+
+  $('checkUpdates').addEventListener('click', function () {
+    var btn = $('checkUpdates');
+    btn.disabled = true;
+    $('updateStatus').textContent = 'Asking the Chrome Web Store…';
+    chrome.runtime.sendMessage({ type: 'cgp.checkForUpdate' }).then(function (res) {
+      renderUpdates(res || { status: 'error' });
+    }, function () {
+      renderUpdates({ status: 'error' });
+    }).then(function () { btn.disabled = false; });
+  });
+
   $('refreshDiag').addEventListener('click', renderDiag);
   $('clearDiag').addEventListener('click', function () {
     chrome.storage.local.remove('cgp.diag').then(function () {
@@ -1325,6 +1382,7 @@
   initSnippetsUI();
   initScheduleUI();
   initVersion();
+  renderUpdates();
 
   followRemoteChanges();
   load().then(function () {

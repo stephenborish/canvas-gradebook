@@ -10,7 +10,7 @@
  * never reads or stores Canvas data itself. */
 
 import { CONTENT_JS, CONTENT_CSS, isCustomCanvasOrigin } from './script-manifest.js';
-import { createSelfUpdater } from './self-update.js';
+import { createSelfUpdater, CHECK_NOW } from './self-update.js';
 import { createLiveRelay, LIVE_SYNC_TYPE } from './live-relay.js';
 import { createSettingsTimes } from './settings-times.js';
 import { createCalendarSync, CALENDAR_REFRESH } from './calendar-sync.js';
@@ -117,6 +117,9 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     // write() swallows storage errors: the tour never blocks setup.
     await new TourState(chrome.storage.local).markInstalled();
   }
+  // A new version: the Canvas tabs already open still run the old one until
+  // they are reloaded, so they are told (self-update.js).
+  if (details && details.reason === 'update') await selfUpdater.afterUpdate(details);
   await syncDynamicScripts();
 });
 
@@ -129,7 +132,8 @@ if (chrome.permissions && chrome.permissions.onAdded) {
   chrome.permissions.onRemoved.addListener(() => { syncDynamicScripts(); });
 }
 
-createSelfUpdater(chrome).start();
+const selfUpdater = createSelfUpdater(chrome);
+selfUpdater.start();
 // This computer's Chrome sync check-in (shown on the options page).
 const settingsTimes = createSettingsTimes(chrome);
 settingsTimes.start();
@@ -165,6 +169,11 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
       }).catch(() => 0);
     }
     return false;
+  }
+  // The options page's "Check for updates now".
+  if (msg && msg.type === CHECK_NOW) {
+    selfUpdater.checkForUpdate({ force: true }).then(respond, (e) => respond({ status: 'error', error: String(e && e.message) }));
+    return true;
   }
   if (msg && msg.type === 'cgp.checkIn') {
     settingsTimes.checkIn(true).then(() => respond({ ok: true }), (e) => respond({ ok: false, error: String(e && e.message) }));

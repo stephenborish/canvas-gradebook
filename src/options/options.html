@@ -663,6 +663,18 @@
             <h1>Diagnostics</h1>
             <p>Counts and ids only. Student names, grades and comment text are never written to the log.</p>
           </header>
+          <h2 class="panel__group">Updates</h2>
+          <div class="updates">
+            <p id="updateStatus" class="updates__status" role="status" aria-live="polite">Reading update status…</p>
+            <div class="action-row">
+              <button id="checkUpdates" type="button" class="btn btn--secondary">Check for updates now</button>
+            </div>
+            <p class="hint updates__hint">Chrome checks for new versions about every five hours, and lets an extension ask
+              only that often. Tabs that were open during an update show a <strong>Reload</strong> notice. To update right
+              away: open <code>chrome://extensions</code>, switch on <strong>Developer mode</strong> (top right) and click
+              <strong>Update</strong>.</p>
+          </div>
+          <h2 class="panel__group">Diagnostics log</h2>
           <div class="setting">
             <label class="setting__label" for="diagnostics">Record diagnostics while the gradebook is open</label>
             <input id="diagnostics" type="checkbox" class="switch">
