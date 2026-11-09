@@ -1060,6 +1060,7 @@ src/sections/sync-dialog.js       Copy to sections: page button, dialog, page no
 src/sections/sync-board.js        Compare classes: every item against every linked class, bulk fixes
 src/sections/inline-copy.js       the panel in Canvas's own editors; the copies after its Save
 src/speedgrader/content.js        comment draft autosave; live sync with the gradebook
+src/speedgrader/sidebar-layout.js the sidebar as Submission / Assessment / Comments cards
 src/page/env-bridge.js            page context: ENV ids, column widths, Canvas's store and tray
 src/page/write-watch.js           page context: reports Canvas's own submission writes (ids only)
 src/live-relay.js                 service worker: relays change announcements between course tabs

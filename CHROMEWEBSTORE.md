@@ -1,6 +1,6 @@
 # Chrome Web Store Listing — Canvas Gradebook+
 
-> Last Updated: 2026-11-09 · Version 1.28.1
+> Last Updated: 2026-11-09 · Version 1.29.0
 
 Everything the Chrome Developer Dashboard asks for, in one place. Copy each field as it is.
 The Web Store shows plain text only (no Markdown), so the detailed description below is
@@ -21,7 +21,7 @@ which the store shows as the summary)
 Grade faster in Canvas: see your feedback at a glance, grade like a spreadsheet, post grades in one click, pick due times by class.
 ```
 
-**Detailed Description** (6,997/16,000 characters)
+**Detailed Description** (7,525/16,000 characters)
 
 ```
 Canvas Gradebook+ makes the Canvas gradebook and course pages faster and clearer for teachers, right where you already work: no second gradebook, no dashboard, no extra sign-in.
@@ -46,6 +46,7 @@ GRADE FASTER
 • Changes show everywhere: a grade or comment changed in the gradebook, the detail panel or SpeedGrader appears in the others without reloading.
 • Comment snippets: type a shortcut such as /evidence and press Tab to insert saved feedback, in SpeedGrader or the gradebook.
 • SpeedGrader drafts: unsent comments are saved as you type and restored if the page reloads.
+• A tidier SpeedGrader: the sidebar laid out as clear Submission, Assessment and Comments cards; the comment box with its attach, video and microphone tools and Submit Comment in one bar; Edit and Delete on every comment easy to find; and Free Draw and comment annotations start in red.
 
 UNDERSTAND EACH STUDENT
 • Student overview: click a student's name for their current grade, missing and late work, on-time rate, average against the class median, and a short list of what stands out, such as a downward trend, no activity for a week, or a reply to your feedback still waiting.
@@ -90,7 +91,7 @@ PERMISSIONS
 
 Canvas Gradebook+ is an independent tool for teachers. It is not affiliated with or endorsed by Instructure, the maker of Canvas.
 
-Version 1.28.1: new Class Schedule. Connect your Google Calendar and pick due times from your class periods right in Canvas's Assign To boxes (replaces Time Shortcuts). Also: a cleaner SpeedGrader comment box, and Free Draw and Point annotations start in red from the first mark.
+Version 1.29.0: a redesigned SpeedGrader sidebar, with Submission, Assessment and Comments as clear cards, and a comment box with distinct attach, video and microphone tools. Free Draw and comment annotations now start in red reliably. Also new in 1.28: Class Schedule, to pick due times from your Google Calendar's class periods right in Canvas's Assign To boxes.
 ```
 
 **Category:** Education (in the Dashboard: Productivity → Education)
@@ -176,6 +177,7 @@ section can be published as-is (for example as a GitHub Pages page or a public G
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
+| 1.29.0 | 2026-11-09 | SpeedGrader sidebar redesigned as Submission / Assessment / Comments cards (found by content, so it works across Canvas versions and on self-hosted Canvas); comment tools each get their own icon (paperclip, camera, microphone); Edit / Delete on posted comments shown as clear buttons; red annotation default now recognises DocViewer's colour buttons. | Draft |
 | 1.28.1 | 2026-11-09 | Grade detail panel: status buttons always on one row (panel slightly wider); SpeedGrader and Submit for Student as matching, aligned buttons. SpeedGrader comment box: attach / media / speech tools and Submit Comment in one footer bar joined to the editor. Free Draw and Point annotations set to red as soon as the tool is picked. | Draft |
 | 1.28.0 | 2026-11-09 | Class Schedule replaces Time Shortcuts: pick due times from your Google Calendar's class periods; "Also post to your other classes" choices sync across computers; Canvas's settings dialog no longer flashes on gradebook load when View Options are applied automatically; Gradebook Status Icons off by default; review fixes. New optional permission use: the connected calendar's site. | Draft |
 | 1.27.0 | 2026-11-06 | Student overview search, Studio videos embedded in assignments, readable item titles. | Published |
