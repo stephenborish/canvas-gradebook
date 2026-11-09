@@ -2572,6 +2572,18 @@ html.cgp-on .cgp-copyto:hover { background: #e9ecee; color: var(--cgp-ink-strong
 html.cgp-on .cgp-copyto:focus-visible { outline: none; box-shadow: var(--cgp-focus-ring); }
 html.cgp-on .cgp-copyto__glyph { width: 16px; height: 16px; display: block; flex: 0 0 auto; }
 html.cgp-on .cgp-copyto--modules { margin: 0 8px 0 0; }
+/* Modules page: a small icon on each external link's row (link-copy.js). */
+html.cgp-on .cgp-copyto--link { min-height: 28px; padding: 0 7px; margin: 0 6px 0 0; background: transparent; border-color: transparent; }
+html.cgp-on .cgp-copyto--link:hover { border-color: var(--cgp-line); }
+/* The link copy dialog. */
+html.cgp-on .cgp-linkcopy__module { margin: 10px 0 2px; font-weight: 600; color: var(--cgp-ink-strong); }
+html.cgp-on .cgp-linkcopy__url { display: block; font-size: 0.85em; color: var(--cgp-muted); overflow-wrap: anywhere; }
+html.cgp-on .cgp-linkcopy__dest { padding: 8px 0; border-top: 1px solid var(--cgp-line); }
+html.cgp-on .cgp-linkcopy__dest:first-of-type { border-top: 0; }
+html.cgp-on .cgp-linkcopy__dest-name { display: flex; align-items: center; gap: 6px; }
+html.cgp-on .cgp-linkcopy__map { margin: 6px 0 0 24px; }
+html.cgp-on .cgp-linkcopy__map select { margin-left: 4px; max-width: 100%; }
+html.cgp-on .cgp-linkcopy__warn { color: #b45309; }
 /* On an item's page the button sits in the title's row, beside Published,
  * Assign To and Edit: icon-only there (its name is its tooltip), so the
  * title keeps its width. The row may wrap instead of squeezing the title. */

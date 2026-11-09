@@ -828,6 +828,20 @@
     return this.getAll(cpath(courseId) + '/modules/' + encodeURIComponent(String(moduleId)) + '/items', {}, { maxPages: 10 });
   };
 
+  /* Add one item to a module (an external link, when copying one). Not
+   * retried after a lost response: it may already have been added. */
+  CanvasApi.prototype.createModuleItem = function (courseId, moduleId, body) {
+    return this.request(cpath(courseId) + '/modules/' + encodeURIComponent(String(moduleId)) + '/items', {
+      method: 'POST', json: body, retries: 1, idempotent: false
+    }).then(function (r) { return r.data; });
+  };
+
+  CanvasApi.prototype.updateModuleItem = function (courseId, moduleId, itemId, body) {
+    return this.request(cpath(courseId) + '/modules/' + encodeURIComponent(String(moduleId)) + '/items/' + encodeURIComponent(String(itemId)), {
+      method: 'PUT', json: body
+    }).then(function (r) { return r.data; });
+  };
+
   /* Every module with its items. Canvas leaves `items` out of the list for
    * a module with too many of them; those are read on their own. */
   CanvasApi.prototype.modulesWithItems = function (courseId) {

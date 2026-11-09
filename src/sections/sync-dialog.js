@@ -93,6 +93,8 @@
       self2.open(spot.kind === 'item' ? null : { pick: true });
     });
     if (spot.kind === 'item' && this.settings.values.sectionCopyNudge) this.checkPage();
+    // External links in modules get their own copy icon (link-copy.js).
+    if (spot.kind === 'modules' && this.decorateLinkRows) this.decorateLinkRows();
   };
 
   P.unmount = function () {
@@ -858,7 +860,9 @@
     var tabs = PICK_TYPES.map(function (t) {
       return '<button type="button" class="cgp-sections__tab' + (pk.type === t ? ' is-on' : '') + '" data-pick-type="' + t + '">' +
         esc(sync.TYPES[t].plural) + '</button>';
-    }).join('');
+    }).join('') +
+      // External links in modules are copied on their own (link-copy.js).
+      (this.openLinks ? '<button type="button" class="cgp-sections__tab" data-act="open-links" title="External links in this course’s modules">Links</button>' : '');
     var list = pk.lists[pk.type];
     var rows;
     if (list === undefined) { rows = '<p class="cgp-stats__note">Loading…</p>'; this.loadPickList(pk.type); }
@@ -1164,6 +1168,7 @@
     if (a === 'pick') { st.view = 'pick'; st.picker.chosen = {}; this.render(); return; }
     if (a === 'pick-cancel') { st.view = 'main'; this.render(); return; }
     if (a === 'pick-done') return this.pickDone();
+    if (a === 'open-links' && this.openLinks) return this.openLinks();
     if (a === 'resurvey') return this.resurvey();
     if (a === 'adjust') return this.applyAdjust(act.getAttribute('data-dest'));
     if (a === 'reset') return this.resetDest(act.getAttribute('data-dest'));

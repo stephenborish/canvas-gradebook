@@ -1050,6 +1050,92 @@
     });
   };
 
+  /* ------------------------------------------------- module links */
+
+  /* Copying external links (module "External URL" items) into linked
+   * classes. Canvas's course copy cannot pick one out of a module, so each is
+   * added to the matching module there with the Modules API.
+   *
+   * planLinks reads each class once (its modules with their items, and the
+   * record of the newest copy from here) and says, per link, where it would
+   * go and whether that class has it already:
+   * -> [{ courseId, error, modules: [{id, name}], plans: {linkId: plan} }]
+   * (plan as sectionSync.linkPlan). Read only. */
+  P.planLinks = function (srcCourseId, links, srcModules, destIds) {
+    var self = this;
+    var sync = S();
+    var srcItems = {};
+    (srcModules || []).forEach(function (m) { srcItems[String(m.id)] = m.items || []; });
+    return Promise.all((destIds || []).map(function (d) {
+      var out = { courseId: String(d), error: null, modules: [], plans: {}, raw: [], mapping: {} };
+      return Promise.all([
+        self.api.modulesWithItems(d),
+        self.mappingFor(d, srcCourseId).catch(function () { return null; })
+      ]).then(function (r) {
+        out.raw = r[0] || [];
+        out.mapping = r[1] || {};
+        out.modules = out.raw.map(function (m) { return { id: String(m.id), name: m.name || '' }; });
+        links.forEach(function (l) { out.plans[l.id] = sync.linkPlan(l, srcItems[l.moduleId], out.raw, out.mapping); });
+        return out;
+      }, function (err) {
+        out.error = CGP.util.isPermissionDeniedError(err)
+          ? 'You can’t change this class’s modules in Canvas (your role there may not allow it, or the course has concluded).'
+          : describe(err, 'Couldn’t read this class’s modules from Canvas');
+        return out;
+      });
+    }));
+  };
+
+  /* Add the links to one class, in their order here. dest: one entry of
+   * planLinks (its modules are kept up to date as links are added, so a run
+   * of new links lands in order). choice: {srcModuleId: destModuleId} where
+   * the teacher picked a module; a picked module other than the planned one
+   * gets the link at its end. Links that class already has are left out
+   * unless opts.duplicates. Each link is reported on its own:
+   * -> [{ link, ok, skipped, error, destId, moduleId, url, warning }] */
+  P.copyLinks = function (srcCourseId, links, srcModules, dest, choice, opts) {
+    var self = this;
+    var sync = S();
+    opts = opts || {};
+    choice = choice || {};
+    var srcItems = {};
+    (srcModules || []).forEach(function (m) { srcItems[String(m.id)] = m.items || []; });
+    var results = [];
+    return links.reduce(function (chain, link) {
+      return chain.then(function () {
+        var plan = sync.linkPlan(link, srcItems[link.moduleId], dest.raw, dest.mapping);
+        var res = { link: link, ok: false, skipped: false, error: null, destId: null, moduleId: null, url: null, warning: null };
+        results.push(res);
+        if (plan.already && !opts.duplicates) { res.skipped = true; res.ok = true; return null; }
+        var picked = choice[link.moduleId];
+        var moduleId = picked || (plan.module && plan.module.id);
+        if (!moduleId) { res.error = 'there is no module named “' + link.moduleName + '” there. Pick one.'; return null; }
+        var position = (!picked || (plan.module && String(picked) === String(plan.module.id))) ? plan.position : null;
+        return self.api.createModuleItem(dest.courseId, moduleId, sync.linkItemBody(link, position)).then(function (made) {
+          res.ok = true;
+          res.moduleId = String(moduleId);
+          res.destId = made && made.id ? String(made.id) : null;
+          res.url = '/courses/' + dest.courseId + '/modules#' + (res.destId ? 'context_module_item_' + res.destId : 'context_module_' + moduleId);
+          // Keep that class's picture current: the next link may follow this one.
+          var mod = (dest.raw || []).filter(function (m) { return String(m.id) === String(moduleId); })[0];
+          if (mod) {
+            mod.items = mod.items || [];
+            var row = { id: res.destId, type: 'ExternalUrl', title: link.title, external_url: link.url, published: made ? made.published : null };
+            var at = position ? Math.min(Math.max(position - 1, 0), mod.items.length) : mod.items.length;
+            mod.items.splice(at, 0, row);
+          }
+          var isPub = made && made.published !== undefined ? !!made.published : null;
+          if (!res.destId || isPub === null || isPub === !!link.published) return null;
+          return self.api.updateModuleItem(dest.courseId, moduleId, res.destId, { module_item: { published: !!link.published } }).catch(function (err) {
+            res.warning = 'It was added, but its published state could not be set. ' + describe(err, 'Canvas refused');
+          });
+        }, function (err) {
+          res.error = describe(err, 'Canvas refused');
+        });
+      });
+    }, Promise.resolve()).then(function () { return results; });
+  };
+
   /* An original (in origCourse) and its copy (in copyCourse): which side
    * changed since the copy. {side, orig, copy} with both items read in full
    * (null side when either could not be read, or the copy was deleted). */

@@ -748,6 +748,15 @@ the copy in the background, so completion time depends on Canvas.
   mirror image. It opens the item picker. **Compare classes** sits right under it.
 - On the Modules page: beside **+ Module**. It opens the item picker. **Compare classes** sits next to it.
 
+**External links in modules.** A module's *External URL* items (a video, a simulation, a reading on
+another site) can be copied on their own, without copying the whole module: the **Links** tab of the
+item picker, or the copy icon at the start of each external link's controls on the Modules page (that
+link ticked). Tick the links and the classes. Each link is added to the matching module in each class (the
+copy of its module, else the module with the same name; pick another from the list if needed), right
+after the item it follows here, with the same title, address, *open in a new tab* setting, indent and
+published state. A class that already has a link to the same address is left out, so pressing it twice
+never adds a second copy.
+
 **What it does and doesn't** — shown in the dialog in four lines, open the first time and folded away
 after that:
 
