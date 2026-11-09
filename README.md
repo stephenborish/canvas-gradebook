@@ -1089,14 +1089,18 @@ Student names, grades and comment text are never written to the log — only cou
 
 ```
 manifest.json                     MV3 manifest; one content-script entry, ordered
-src/background.js                 service worker: defaults, options, custom-domain registration
+src/background.js                 service worker: defaults, options, custom-domain registration,
+                                   injects the welcome tour on request
+src/self-update.js                service worker: update checks (Chrome-throttled), install at once,
+                                   "reload this tab" notice after an update, the update record
 src/settings-times.js             service worker: this computer's Chrome sync check-in
 src/calendar-sync.js              service worker: fetches the class-schedule calendar, keeps its classes
 src/script-manifest.js            the ordered file list (mirror of the manifest entry)
 
 src/core/                         pure logic - no DOM, no chrome.* at load time
   util.js                         settings, defaults, sanitizing, diagnostics, small helpers
-  canvas-api.js                   same-origin Canvas REST client (CSRF, pagination, retry, pooling)
+  canvas-api.js                   same-origin Canvas REST client (CSRF, pagination, retry, pooling;
+                                   priorities, timeouts and parallel pages via withDefaults())
   settings-mirror.js              settings merged with the copy in the teacher's Canvas account
   grade-ops.js                    token -> Canvas form params + optimistic patch (M / E / L / 0 ...)
   post-ops.js                     which grades are still hidden from their students
@@ -1106,6 +1110,7 @@ src/core/                         pure logic - no DOM, no chrome.* at load time
   totals.js                       letter-grade scale, Total rounding and icon thresholds
   roster-format.js                roster -> email list / TSV / HTML table / CSV
   snippets.js                     /trigger + Tab expansion
+  student-insights.js             the student overview's numbers: summary, insights, medians, activity
   course-calendar.js              iCal parsing, repeats, time zones, one day's classes, course matching
   model.js                        assignments, students, submissions, caches, events
   ui.js                           the one transient toast
@@ -1128,6 +1133,8 @@ src/gradebook/
   roster-export.js                Copy Roster in the Student Name column's menu
   course-switcher.js              breadcrumb course dropdown + shared teaching-course list
   student-search.js               cross-course student search (rosters in memory only)
+  student-insights.js             the student overview panel: reading (prefetch, priorities,
+                                   per-section retry), tabs and rendering
   content.js                      bootstrap (full gradebook, or just the course switcher
                                    elsewhere in the course), single rAF paint pass, observers
 
@@ -1143,6 +1150,10 @@ src/speedgrader/sidebar-layout.js the sidebar as Submission / Assessment / Comme
 src/page/env-bridge.js            page context: ENV ids, column widths, Canvas's store and tray
 src/page/write-watch.js           page context: reports Canvas's own submission writes (ids only)
 src/live-relay.js                 service worker: relays change announcements between course tabs
+src/tour/tour-state.js            welcome tour: whether it is due, which part and stop (content
+                                   script, imported by the service worker, loaded by options)
+src/tour/tour-content.js          welcome tour: every stop's words, illustration and target
+src/tour/tour.js                  welcome tour: spotlight, cards, invitation (injected only when due)
 src/options/                      the only settings UI
 src/styles/                       all CSS, scoped under html.cgp-*
 tests/                            node:vm test harness + suites
@@ -1169,7 +1180,7 @@ Design rules the code sticks to:
 node tests/run.js
 ```
 
-595 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
+853 cases covering the parts where being wrong would be expensive: `M` → Missing and `M`
 again → not Missing, `L` → Late and `L` again → not Late, both leaving the grade untouched either
 way, `E` → Excused, a grade never adding a status (and lifting an applied Missing only when asked),
 statuses read exactly as Canvas computes them, the hand-off to Canvas's own store (and never
@@ -1181,7 +1192,11 @@ ids, student replies), comment cache updates after a save, bulk dedupe and last-
 Total formatting and row alignment, the status a cell must show the instant `M` or `L` is
 pressed, which submissions count as still hidden from their students, settings clamping, and a
 column-wide fetch that was already in flight when a write landed on one of its cells never being
-allowed to overwrite that write once it lands.
+allowed to overwrite that write once it lands. Also: the welcome tour's once-per-install record,
+its two parts, resuming and the order of its saves (`test-tour-state.js`); the student overview's
+request priorities, timeouts, parallel and bookmark pagination, partial re-reads, earlier data shown
+first and per-section retry (`test-dossier-loading.js`); and update checks, throttling, the alarm
+and the after-update notice (`test-self-update.js`).
 
 Syntax-check everything with:
 

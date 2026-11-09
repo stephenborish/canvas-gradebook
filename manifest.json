@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Canvas Gradebook+",
-  "version": "1.30.0",
+  "version": "1.31.0",
   "author": "stephenborish",
   "description": "Grade faster in Canvas: see your feedback at a glance, grade like a spreadsheet, post grades in one click, pick due times by class.",
   "minimum_chrome_version": "116",
