@@ -148,9 +148,9 @@
     {
       id: 'welcome',
       kind: 'hero',
-      eyebrow: 'Welcome to Canvas Gradebook+',
-      title: 'Your gradebook just got a lot faster.',
-      body: 'This short tour runs right here, on your real gradebook. We’ll point at each thing Gradebook+ added so you can see it in place \u2014 first your gradebook and student overviews, then your course page, where you link your class periods and connect your class schedule. <strong>Nothing is changed or saved while you look around.</strong>',
+      eyebrow: 'Welcome to Gradebook+',
+      title: 'Grading in Canvas just got faster.',
+      body: 'Take a quick look around your own gradebook. We’ll point out what’s new, then show you how to link your classes and connect your schedule. <strong>Nothing changes while you look.</strong>',
       art: function () {
         var rows = [
           ['92', BUBBLE, 'in'], ['88', '', 'in'], ['–', '<span class="mk-m">M</span>', 'out'], ['95', BUBBLE + '<span class="mk-cnt">2</span>', 'in'],
@@ -170,57 +170,57 @@
         }
         return html + '</div>';
       },
-      meta: ['2 parts \u00b7 about 3 minutes', 'Use ← → to move', 'Esc to skip']
+      meta: ['2 parts · about 4 minutes', '← → to move', 'Esc to skip']
     },
     {
       id: 'comments',
       icon: 'bubble',
-      eyebrow: 'Cell indicators',
-      title: 'See your feedback at a glance',
-      body: 'A <b class="c-blue">blue bubble</b> means <em>you</em> left a comment on that submission — not a student, not a co-teacher. A small number shows how many. A <b class="c-purple">hollow purple bubble</b> means the student replied after you.',
-      try: 'Click a bubble to read the whole thread and reply — without leaving the gradebook.',
+      eyebrow: 'Feedback bubbles',
+      title: 'See where you’ve left feedback',
+      body: 'A <b class="c-blue">blue bubble</b> means <em>you</em> commented on that submission, and the number counts your comments. A <b class="c-purple">hollow purple bubble</b> means the student has replied since.',
+      try: 'Click a bubble to read the thread and reply right here.',
       target: function () { return cellOf(pick('.cgp-cmt')); },
       fallback: assignmentCell,
-      fallbackNote: 'None of the cells on screen have a comment from you yet. As soon as you leave one, its bubble appears in the cell’s corner.',
+      fallbackNote: 'No comments from you on screen yet. Leave one and its bubble appears in that cell.',
       tryIt: true,
       art: function () {
         return '<div class="legend">' +
           '<div class="lg">' + miniCell('92', BUBBLE) + '<span>You left feedback</span></div>' +
-          '<div class="lg">' + miniCell('88', BUBBLE + '<span class="mk-cnt">3</span>') + '<span>3 of your comments</span></div>' +
-          '<div class="lg">' + miniCell('75', '<span class="mk-cmt mk-cmt--reply"><svg viewBox="0 0 16 16"><path d="M2.5 4.2A1.7 1.7 0 0 1 4.2 2.5h7.6a1.7 1.7 0 0 1 1.7 1.7v4.9a1.7 1.7 0 0 1-1.7 1.7H7.6l-3 2.6v-2.6h-.4a1.7 1.7 0 0 1-1.7-1.7z"/></svg></span>') + '<span>Student replied since</span></div>' +
+          '<div class="lg">' + miniCell('88', BUBBLE + '<span class="mk-cnt">3</span>') + '<span>3 comments from you</span></div>' +
+          '<div class="lg">' + miniCell('75', '<span class="mk-cmt mk-cmt--reply"><svg viewBox="0 0 16 16"><path d="M2.5 4.2A1.7 1.7 0 0 1 4.2 2.5h7.6a1.7 1.7 0 0 1 1.7 1.7v4.9a1.7 1.7 0 0 1-1.7 1.7H7.6l-3 2.6v-2.6h-.4a1.7 1.7 0 0 1-1.7-1.7z"/></svg></span>') + '<span>Student replied</span></div>' +
           '</div>';
       }
     },
     {
       id: 'submissions',
       icon: 'check',
-      eyebrow: 'Cell indicators',
-      title: 'Who handed it in?',
-      body: 'The badge in a cell’s top corner is <b class="c-green">solid green</b> once the student has submitted, and <b class="c-gray">hollow gray</b> while nothing has come in. Hover it for the time and attempt number.',
-      try: 'Click a badge to open that student’s work in SpeedGrader, in a new tab — you keep your place here.',
+      eyebrow: 'Submission badges',
+      title: 'Spot who’s turned it in',
+      body: 'The dot in each cell’s corner is <b class="c-green">solid green</b> once work is submitted and <b class="c-gray">hollow gray</b> until then. Hover it for the time and attempt.',
+      try: 'Click a badge to open that student’s work in SpeedGrader, in a new tab.',
       target: function () { return cellOf(pick('.cgp-sub')); },
       fallback: assignmentCell,
-      fallbackNote: 'Badges show on assignments students submit online. On-paper and no-submission work gets none, on purpose.',
+      fallbackNote: 'Badges only appear on assignments submitted online, so paper work stays clean.',
       tryIt: true,
       art: function () {
         return '<div class="legend">' +
-          '<div class="lg">' + miniCell('94', '<span class="mk-sub mk-sub--in"></span>') + '<span>Handed in</span></div>' +
+          '<div class="lg">' + miniCell('94', '<span class="mk-sub mk-sub--in"></span>') + '<span>Turned in</span></div>' +
           '<div class="lg">' + miniCell('–', '<span class="mk-sub mk-sub--out"></span>') + '<span>Not yet</span></div>' +
-          '<div class="lg">' + miniCell('81', '<span class="mk-resub"></span>') + '<span>Resubmitted since you graded</span></div>' +
+          '<div class="lg">' + miniCell('81', '<span class="mk-resub"></span>') + '<span>Resubmitted after grading</span></div>' +
           '</div>';
       }
     },
     {
       id: 'statuses',
       icon: 'keys',
-      eyebrow: 'One-keystroke statuses',
-      title: 'Missing, Late, Excused — one key each',
-      body: 'Click into any grade cell and press a single key. It’s saved to Canvas right away, so students, SpeedGrader and the Grade Detail Tray all see it.',
+      eyebrow: 'Status keys',
+      title: 'Missing, Late, Excused: one key each',
+      body: 'Click a grade cell and press a key. It saves to Canvas instantly, so students and SpeedGrader see it too.',
       bullets: [
         key('M', 'red') + ' Missing &nbsp;' + key('L', 'amber') + ' Late &nbsp;' + key('E', 'green') + ' Excused',
-        key('M') + ' or ' + key('L') + ' again takes it back off',
+        'Press ' + key('M') + ' or ' + key('L') + ' again to undo it',
         key('-') + ' clears the grade and every status',
-        'Typing a grade never adds a status by itself'
+        'Typing a grade never adds a status'
       ],
       target: assignmentCell,
       art: function () {
@@ -233,13 +233,13 @@
     {
       id: 'spreadsheet',
       icon: 'grid',
-      eyebrow: 'Grade like a spreadsheet',
-      title: 'Move, paste and fill many cells at once',
-      body: 'The grid now behaves the way your hands expect it to.',
+      eyebrow: 'Spreadsheet grading',
+      title: 'Grade like it’s a spreadsheet',
+      body: 'Move, paste and fill many cells at once.',
       bullets: [
-        key('Enter') + ' / ' + key('Tab') + ' move down / right, arrows move anywhere',
-        '<b>Paste</b> a block straight from Sheets or Excel — checked before a single grade is written',
-        key('⌘') + '/' + key('Ctrl') + '-click or ' + key('Shift') + '-click to select cells, then type a grade, ' + key('M') + key('E') + key('L') + ', or ' + key('C') + ' to comment on all of them',
+        key('Enter') + ' and ' + key('Tab') + ' move down and right; arrows go anywhere',
+        '<b>Paste</b> a block from Sheets or Excel. It’s checked before anything saves.',
+        key('⌘') + '/' + key('Ctrl') + '-click or ' + key('Shift') + '-click cells, then type a grade, ' + key('M') + key('E') + key('L') + ', or ' + key('C') + ' to comment on them all',
         '<b>Double-click</b> a cell to open its Grade Detail Tray'
       ],
       target: gridArea,
@@ -256,11 +256,11 @@
       id: 'post',
       icon: 'eye',
       eyebrow: 'Post grades',
-      title: 'Post hidden grades in one click',
-      body: 'When a column holds grades students can’t see yet, its header grows a <b class="c-amber">Post</b> button with the count waiting. Press it and they’re released. Each hidden grade also gets an amber bar down its cell’s edge.',
+      title: 'Release hidden grades in one click',
+      body: 'When students can’t see a column’s grades yet, its header shows a <b class="c-amber">Post</b> button with the count. Each hidden grade gets an amber bar on its cell.',
       target: function () { return headerOf('.cgp-post'); },
       fallback: assignmentHeader,
-      fallbackNote: 'Every grade on screen is already visible to students, so there’s nothing to post. When there is, the button appears right in this header.',
+      fallbackNote: 'Every grade on screen is already visible to students. When one isn’t, the Post button appears in this header.',
       tryIt: false,
       art: function () {
         return '<div class="post-demo" aria-hidden="true">' +
@@ -273,12 +273,12 @@
       id: 'student',
       icon: 'person',
       eyebrow: 'Student overview',
-      title: 'One click on a name tells the whole story',
-      body: 'Every student’s name opens a full overview — their grade, missing and late work, how they compare with the class, and how active they’ve been in Canvas. Let’s open one together.',
-      try: 'Click this name yourself, or press <b>Open their overview</b> below.',
+      title: 'Click a name, see the whole picture',
+      body: 'Each name opens an overview: grade, missing and late work, how they compare with the class, and their Canvas activity. Let’s open one.',
+      try: 'Click the name, or press <b>Open overview</b>.',
       target: studentName,
       tryIt: true,
-      primary: { label: 'Open their overview', run: function (tour) { tour.next(); } },
+      primary: { label: 'Open overview', run: function (tour) { tour.next(); } },
       onShow: function (tour, el) { tour.siCell = el; },
       art: function () {
         return '<div class="si-demo" aria-hidden="true">' +
@@ -291,10 +291,10 @@
       id: 'si-overview',
       group: 'si',
       icon: 'person',
-      eyebrow: 'Student overview · Overview',
-      title: 'Their grade and the numbers that matter',
-      body: 'The header shows Canvas’s own current grade and when they were last active. The tiles below sum up the term: <b>Missing</b> (with the points at stake), <b>Late</b>, <b>on-time rate</b>, <b>average</b> against the class median, <b>needs grading</b> and <b>last active</b>.',
-      bullets: ['Click any tile to jump straight to those assignments', key('←') + ' ' + key('→') + ' move to the previous or next student without closing'],
+      eyebrow: 'Overview tab',
+      title: 'Their standing at a glance',
+      body: 'Canvas’s current grade and last activity sit up top. The tiles sum up the term: missing work (with points at stake), late work, on-time rate, average vs. the class, and what needs grading.',
+      bullets: ['Click a tile to see those assignments', key('←') + ' ' + key('→') + ' move to the previous or next student'],
       enter: openOverview,
       target: function () {
         var head = pick('.cgp-si__head');
@@ -303,7 +303,7 @@
       },
       leave: closeOverview,
       fallbackArt: true,
-      fallbackNote: 'This student’s overview didn’t open here (it may be switched off in settings), so here’s what it looks like.',
+      fallbackNote: 'The overview didn’t open here (it may be off in settings), so here’s what it looks like.',
       art: function () {
         return '<div class="si-demo" aria-hidden="true">' +
           '<div class="si-top"><span class="si-av">JP</span><span class="si-nm">Jordan P.<small>Last active today at 7:50 PM · 14h in course</small></span><span class="si-gr">B+<small>87.4%</small></span></div>' +
@@ -316,10 +316,10 @@
       id: 'si-standout',
       group: 'si',
       icon: 'sparkle',
-      eyebrow: 'Student overview · What stands out',
-      title: 'The things worth noticing, ranked for you',
-      body: 'Gradebook+ reads the student’s whole record and lists what deserves a second look: several missing assignments, a rising late rate, no Canvas activity for a week, scores trending up or down, an unanswered reply to your feedback, or a habit of submitting in the last two hours.',
-      bullets: ['Beside it: the <b>submission record</b> as one bar, and their <b>average by category</b> against the class median'],
+      eyebrow: 'What stands out',
+      title: 'What’s worth a closer look',
+      body: 'Gradebook+ scans their record and ranks what needs attention: a pile of missing work, a rising late rate, a quiet week in Canvas, a trend up or down, or an unanswered reply to your feedback.',
+      bullets: ['Beside it: their submission record and average by category vs. the class'],
       enter: openOverview,
       target: function () {
         var cards = Array.prototype.slice.call(document.querySelectorAll('.cgp-si__card'));
@@ -343,13 +343,13 @@
       id: 'si-work',
       group: 'si',
       icon: 'check',
-      eyebrow: 'Student overview · Assignments',
-      title: 'Every assignment, and a list ready for parents',
-      body: '<b>Copy List of Missing/Late Work</b> builds a tidy list — due dates, days overdue, points, links — that pastes as a table into Gmail, Outlook or Docs. Perfect for a parent or counselor email.',
+      eyebrow: 'Assignments tab',
+      title: 'A missing-work list, ready for parents',
+      body: '<b>Copy List of Missing/Late Work</b> builds a clean list with due dates, days overdue, points and links. Paste it straight into an email to a parent or counselor.',
       bullets: [
-        'Every assignment in one table: due, submitted, score and the class median',
-        'Filter to Missing, Late, Needs grading or Upcoming, or search by name, module or date',
-        '<b>View work</b> opens their submission — or launches Turnitin, Edpuzzle and other tools on their work'
+        'Every assignment in one table, with the class median',
+        'Filter to Missing, Late, Needs grading or Upcoming',
+        '<b>View work</b> opens their submission, even in Turnitin or Edpuzzle'
       ],
       enter: function (tour) {
         return openOverview(tour).then(function (ok) {
@@ -377,13 +377,13 @@
       id: 'si-activity',
       group: 'si',
       icon: 'chart',
-      eyebrow: 'Student overview · Activity',
-      title: 'How they actually engage with your course',
-      body: 'From Canvas course analytics: page views and participation with their percentile in the class, a 16-week calendar of daily activity, when in the day they work, and how close to deadlines they submit.',
+      eyebrow: 'Activity tab',
+      title: 'See how they engage with your course',
+      body: 'Page views and participation against the class, a 16-week activity calendar, and when they tend to work and submit.',
       bullets: [
-        '<b>Studio videos</b>: what share of each video they watched, and where it’s posted',
-        '<b>Course content opened</b>: every page and file from their Access Report, by module',
-        'One search box finds any video or page by name, type or module'
+        '<b>Studio videos:</b> how much of each video they watched',
+        '<b>Course content:</b> every page and file they’ve opened',
+        'One search box finds any video or page by name or module'
       ],
       enter: function (tour) {
         return openOverview(tour).then(function (ok) {
@@ -410,9 +410,9 @@
     {
       id: 'total',
       icon: 'total',
-      eyebrow: 'Total, always in view',
-      title: 'The grade that matters stays put',
-      body: 'Canvas’s Total sits right beside the names however far you scroll, rounded to one decimal. Hover it for the letter grade. Totals that need attention get a flag — you choose the cutoffs and icons in settings.',
+      eyebrow: 'Total column',
+      title: 'The final grade, always in view',
+      body: 'Total stays beside the names however far you scroll, rounded to one decimal. Hover it for the letter grade. Low totals get a flag; set the cutoffs in settings.',
       target: function () { return headerOf('.cgp-header-total') || headerOf('.slick-header-column[id*="total_grade"]'); },
       optional: true,
       art: function () {
@@ -426,9 +426,9 @@
     {
       id: 'menus',
       icon: 'chart',
-      eyebrow: 'In every ⋮ menu',
+      eyebrow: 'Column menus',
       title: 'Analyze scores, copy the roster',
-      body: 'Open an assignment’s <b>⋮</b> menu for <b>Analyze Scores</b>: mean, median, spread, top and bottom five and a histogram by letter grade. The Total has it too. The Student Name menu adds <b>Copy Roster</b> — emails or a tidy table, ready to paste.',
+      body: 'An assignment’s <b>⋮</b> menu has <b>Analyze Scores</b>: mean, median, spread, top and bottom five, and a grade histogram. Total has it too. The Student Name menu has <b>Copy Roster</b>, for emails or a table.',
       target: assignmentHeader,
       art: function () {
         var bars = [18, 34, 62, 88, 54, 26];
@@ -442,8 +442,8 @@
       id: 'switcher',
       icon: 'swap',
       eyebrow: 'Course switcher',
-      title: 'Hop between your courses',
-      body: 'The course name up here is now a menu of every course you teach. Pick one and you land on the same page there — gradebook to gradebook, assignments to assignments.',
+      title: 'Jump between your courses',
+      body: 'The course name is now a menu of everything you teach. Pick a course and land on the same page there.',
       try: 'Click it to see your courses.',
       target: function () { return pick('.cgp-crumb-toggle', function (el) { return !el.classList.contains('cgp-find-student') && !el.classList.contains('cgp-settings-gear'); }); },
       optional: true,
@@ -454,9 +454,9 @@
       id: 'find',
       icon: 'search',
       eyebrow: 'Find student',
-      title: 'Find any student, in any course',
-      body: 'Type a few letters of a name — in any order, like “new tom” — and pick them. Their gradebook opens with their row highlighted, even if they’re in another course.',
-      try: 'Click Find student and type a name.',
+      title: 'Find any student in any course',
+      body: 'Type part of a name, in any order (“new tom” works). Pick them and their gradebook opens with their row highlighted.',
+      try: 'Click <b>Find student</b> and type a name.',
       target: function () { return pick('.cgp-find-student'); },
       optional: true,
       tryIt: true,
@@ -469,10 +469,10 @@
     {
       id: 'gear',
       icon: 'gear',
-      eyebrow: 'A calmer page',
-      title: 'Canvas’s toolbar, tidied away',
-      body: 'Filters, Sync, Import and Export are folded away so the grid gets the whole window. This gear opens Canvas’s own Gradebook Settings — sorting, late policies, posting policy.',
-      bullets: [key('Alt') + key('Shift') + key('H') + ' brings Canvas’s controls back for this page'],
+      eyebrow: 'Gradebook settings',
+      title: 'More room for your grades',
+      body: 'Canvas’s toolbar is tucked away so the grid fills the window. This gear opens Canvas’s Gradebook Settings: sorting, late policy and posting.',
+      bullets: [key('Alt') + key('Shift') + key('H') + ' brings Canvas’s toolbar back for this page'],
       target: function () { return pick('.cgp-settings-gear'); },
       optional: true,
       tryIt: true,
@@ -482,16 +482,16 @@
       id: 'bridge',
       kind: 'center',
       icon: 'sparkle',
-      eyebrow: 'Part 1 done · Up next',
-      title: 'Next: your classes and your calendar',
-      body: 'The rest of Gradebook+ lives on your course page. Part 2 takes about a minute.',
+      eyebrow: 'Part 1 complete',
+      title: 'Next: your classes and calendar',
+      body: 'Part 2 runs on your course page and takes about a minute.',
       tiles: [
-        { icon: 'link', t: 'Link your classes', d: 'Tell Gradebook+ which periods are the same course — once.' },
-        { icon: 'swap', t: 'Copy & compare', d: 'Post work to every period with its own dates, and see what’s out of step.' },
-        { icon: 'calendar', t: 'Class schedule', d: 'Connect your calendar, then click a class to set a due time.' },
-        { icon: 'bubble', t: 'SpeedGrader', d: 'Drafts are protected; <code>/snippet</code> + Tab expands saved comments.' }
+        { icon: 'link', t: 'Link your classes', d: 'Tell Gradebook+ which classes are the same course. Once.' },
+        { icon: 'swap', t: 'Copy and compare', d: 'Post work to every class, each with its own dates.' },
+        { icon: 'calendar', t: 'Class schedule', d: 'Click a class period to set a due time.' },
+        { icon: 'bubble', t: 'SpeedGrader', d: 'Drafts are protected; <code>/snippet</code> + Tab adds a saved comment.' }
       ],
-      primary: { label: 'Continue on my course page', run: function (tour) { tour.goChapter('classes'); } },
+      primary: { label: 'Continue to part 2', run: function (tour) { tour.goChapter('classes'); } },
       secondary: { label: 'Finish for now', run: function (tour) { tour.end('completed'); } }
     },
 
@@ -501,18 +501,18 @@
       chapter: 'classes',
       icon: 'link',
       eyebrow: 'Part 2 · Link your classes',
-      title: 'Teach the same course to several periods? Link them once.',
-      body: 'This button is where it starts. The first time you open it, Gradebook+ asks <b>which of your classes are the same course as this one</b> — your other periods or blocks. Same-named courses in the same term are suggested for you.',
+      title: 'Same course, several classes? Link them.',
+      body: 'Start here. The first time you open <b>Copy to other classes</b>, it asks which of your classes (periods, blocks or sections) are the same course. Likely matches are suggested.',
       bullets: [
-        'You choose once; the link works from every one of those classes',
-        'It follows you to your other computers through Chrome sync',
+        'Choose once; it works from every linked class',
+        'Your links follow you to other computers',
         'Nothing is copied until you press Copy'
       ],
-      try: 'Click <b>Copy to other classes</b> to see step 1 — choosing your classes.',
+      try: 'Click <b>Copy to other classes</b> to pick your classes.',
       target: function () { return pick('.cgp-copyto--home, .cgp-copyto'); },
       tryIt: true,
       fallbackArt: true,
-      fallbackNote: '<b>Copy to other classes</b> sits in the course home’s right sidebar, under Import Existing Content (and beside + Module on the Modules page). If it’s missing, it’s switched off in settings.',
+      fallbackNote: '<b>Copy to other classes</b> is in the course home sidebar and next to <b>+ Module</b> on the Modules page. Don’t see it? It’s off in settings.',
       art: function () {
         return '<div class="link-demo" aria-hidden="true">' +
           '<span class="ld-c ld-c--here">Biology<small>Period 2 · this class</small></span>' +
@@ -530,12 +530,12 @@
       kind: 'center',
       icon: 'swap',
       eyebrow: 'Part 2 · Copy to other classes',
-      title: 'Build it once, post it to every period',
-      body: 'Pick assignments, quizzes, discussions, pages or whole modules and copy them to your linked classes in one step — <b>each class with its own due dates</b>. You see what will happen in each class before anything changes.',
+      title: 'Build it once, post it everywhere',
+      body: 'Copy assignments, quizzes, discussions, pages or whole modules to your linked classes, <b>each with its own due dates</b>. You preview every class before anything changes.',
       bullets: [
-        '<b>Shift</b> a whole class by a few days, or set its <b>due time</b> in one box',
-        'Copies land in the matching module and assignment group, not “Imported Assignments”',
-        'On an assignment’s own page, the copy icon beside <b>Edit</b> copies just that one'
+        '<b>Shift</b> a class by a few days, or give it one due time',
+        'Copies land in the matching module and assignment group',
+        'On an item’s page, the copy icon next to <b>Edit</b> copies just that item'
       ],
       art: function () {
         return '<div class="copy-demo" aria-hidden="true">' +
@@ -553,11 +553,11 @@
       kind: 'center',
       icon: 'grid',
       eyebrow: 'Part 2 · Compare classes',
-      title: 'See what’s out of step between your periods',
-      body: '<b>Compare classes</b> (inside the copy window) lists everything in this class against each linked class: what’s up to date, missing, out of date, or changed there. Tick what to fix and review it in one go.',
+      title: 'Keep every class in step',
+      body: '<b>Compare classes</b>, inside the copy window, checks every item against your other classes: up to date, missing, out of date or changed there. Tick what to fix and review it all at once.',
       bullets: [
-        '<b>Post it while you make it:</b> when you create or edit an assignment, an <b>Also post to your other classes</b> panel sits above Save — tick classes, set their dates, press Save',
-        'An edit made in one period’s copy can be reviewed and brought back to the original'
+        '<b>Post as you create:</b> the assignment editor has an <b>Also post to your other classes</b> panel above Save',
+        'Fixed something in one class’s copy? Send it back to the original'
       ],
       art: function () {
         var rows = [
@@ -581,9 +581,9 @@
       kind: 'center',
       icon: 'calendar',
       eyebrow: 'Part 2 · Class schedule',
-      title: 'Set due dates by class period, in one click',
-      body: 'Connect the calendar that holds your classes, and every <b>Due</b>, <b>Available from</b> and <b>Until</b> box in Canvas’s Assign To shows that day’s schedule beside it. <b>Click a class and its start time goes in</b> (or its end time). The arrows step to another day — “next Tuesday, start of 3rd period” is one click.',
-      bullets: ['Your classes for the course you’re editing are marked <b>This course</b>', 'Works on quizzes, discussions, modules and in Also post to your other classes'],
+      title: 'Set due times by class period',
+      body: 'Connect your class calendar and Canvas’s Due, Available from and Until boxes show that day’s classes. <b>Click a class to use its start time</b>, or its end time. Arrows step to other days.',
+      bullets: ['Classes in the course you’re editing are marked <b>This course</b>', 'Works on assignments, quizzes, discussions and modules'],
       art: function () {
         return '<div class="assign-demo" aria-hidden="true">' +
           '<div class="ad-field"><span class="ad-lab">Due date</span><span class="ad-in">Tue, Oct 14</span><span class="ad-in ad-in--time"><span class="ad-t"></span></span></div>' +
@@ -601,12 +601,12 @@
       kind: 'center',
       icon: 'link',
       eyebrow: 'Part 2 · Connect your calendar',
-      title: 'Two steps to connect it',
+      title: 'Connect it in two steps',
       steps: [
-        { n: '1', t: 'Copy your calendar’s link', d: 'In Google Calendar: <b>Settings</b> → click the calendar that holds your classes → <b>Integrate calendar</b> → copy <b>Public URL to this calendar</b>.' },
-        { n: '2', t: 'Paste it in Gradebook+', d: 'In settings → <b>Class Schedule</b>, paste the link, click <b>Connect</b>, check the preview shows your classes, then <b>Save changes</b>.' }
+        { n: '1', t: 'Copy your calendar link', d: 'In Google Calendar, open <b>Settings</b>, click your class calendar, choose <b>Integrate calendar</b> and copy <b>Public URL to this calendar</b>.' },
+        { n: '2', t: 'Paste it into Gradebook+', d: 'In <b>Class Schedule</b> settings, paste it, click <b>Connect</b>, check the preview, then click <b>Save changes</b>.' }
       ],
-      body: 'Outlook, Apple and school-system <code>.ics</code> links work too. We’ll walk you through it on the settings page.',
+      body: 'Outlook, Apple and other <code>.ics</code> links work too. We’ll guide you on the settings page.',
       art: function () {
         return '<div class="gcal" aria-hidden="true"><span class="gcal-lab">Public URL to this calendar</span>' +
           '<span class="gcal-url">https://calendar.google.com/calendar/embed?src=c_8f2…</span><span class="gcal-copy">Copied!</span></div>';
@@ -618,9 +618,9 @@
       id: 'done',
       chapter: 'classes',
       kind: 'finale',
-      eyebrow: 'You’re all set',
+      eyebrow: 'Tour complete',
       title: 'Happy grading!',
-      body: 'Everything you just saw is already switched on. Each feature can be adjusted or turned off in settings — click the Gradebook+ icon in your Chrome toolbar. You can replay this tour from there any time.'
+      body: 'Everything you saw is already on. To adjust or turn off a feature, click the Gradebook+ icon in your Chrome toolbar. You can replay this tour there too.'
     }
   ];
 
@@ -632,8 +632,8 @@
       id: 'opt-on',
       icon: 'calendar',
       eyebrow: 'Connect your calendar',
-      title: 'Make sure the class schedule is on',
-      body: 'This switch shows your schedule beside Canvas’s date and time boxes. It’s on by default.',
+      title: 'Turn on the class schedule',
+      body: 'This shows your classes next to Canvas’s date and time boxes. It’s on by default.',
       target: function () { var el = document.getElementById('courseScheduleEnabled'); return el ? el.closest('.setting') : null; },
       tryIt: true, padding: 8
     },
@@ -641,8 +641,8 @@
       id: 'opt-copy',
       icon: 'link',
       eyebrow: 'Connect your calendar',
-      title: 'Copy the link from Google Calendar',
-      body: 'Click <b>Open Google Calendar settings</b> (it opens in a new tab), pick the calendar that holds your classes, open <b>Integrate calendar</b>, and copy <b>Public URL to this calendar</b>. Then come back to this tab.',
+      title: 'Copy your link from Google Calendar',
+      body: 'Click <b>Open Google Calendar settings</b>, choose your class calendar, open <b>Integrate calendar</b> and copy <b>Public URL to this calendar</b>. Then come back to this tab.',
       target: function () { return document.querySelector('.schedule-steps'); },
       tryIt: true, padding: 8
     },
@@ -650,9 +650,9 @@
       id: 'opt-paste',
       icon: 'check',
       eyebrow: 'Connect your calendar',
-      title: 'Paste it here and click Connect',
-      body: 'Chrome asks once to let Gradebook+ read <b>calendar.google.com</b> — only to fetch this calendar. A preview then shows the classes it found.',
-      bullets: ['Calendar not public? Use its <b>Secret address in iCal format</b> instead — it works without making it public'],
+      title: 'Paste the link and click Connect',
+      body: 'Chrome asks once for permission to read calendar.google.com, only for this calendar. A preview then shows your classes.',
+      bullets: ['Not a public calendar? Paste its <b>Secret address in iCal format</b> instead'],
       target: function () { return document.querySelector('.schedule-connect'); },
       tryIt: true, padding: 8
     },
@@ -660,17 +660,17 @@
       id: 'opt-save',
       icon: 'sparkle',
       eyebrow: 'Connect your calendar',
-      title: 'Save, and you’re done',
-      body: 'Once the preview shows your classes, click <b>Save changes</b>. Then open any assignment’s Assign To in Canvas and click a Due box — your classes are right there.',
+      title: 'Save your changes',
+      body: 'When the preview shows your classes, click <b>Save changes</b>. Then click any Due box in Canvas to see them.',
       target: function () { return document.getElementById('save'); },
       tryIt: true, padding: 6
     },
     {
       id: 'opt-done',
       kind: 'finale',
-      eyebrow: 'Calendar connected',
-      title: 'Pick due times by class period',
-      body: 'Click any Due, Available from or Until box in Canvas, then click a class. The calendar is re-read every six hours, or with <b>Refresh</b> in the panel.'
+      eyebrow: 'Connect your calendar',
+      title: 'That’s it',
+      body: 'Once it’s saved, click any Due, Available from or Until box in Canvas, then click a class. Your calendar refreshes every six hours, or click <b>Refresh</b> in the panel.'
     }
   ];
 

@@ -540,7 +540,7 @@
 
     html += '<div class="head">' + (s.icon && ICON[s.icon] ? '<span class="ico">' + ICON[s.icon] + '</span>' : '') +
       '<span class="eyebrow">' + s.eyebrow + '</span>' +
-      '<span class="count">' + pos + ' / ' + counted.length + '</span>' +
+      '<span class="count">' + pos + ' of ' + counted.length + '</span>' +
       '<button class="x" type="button" data-act="skip" aria-label="End the tour">' + X_ICON + '</button></div>';
     // A stop shown live (the real overview on screen) lets the page speak for
     // itself; its illustration is for when there is nothing live to show.
@@ -809,7 +809,7 @@
     var counted = this.stops.filter(function (x) { return x.kind !== 'hero' && x.kind !== 'finale'; });
     var pos = counted.indexOf(this.stop()) + 1;
     this.pill.innerHTML = '<span class="pill__spark">' + ((CGP.tourIcons || {}).sparkle || '') + '</span>' +
-      '<span class="pill__txt">Explore away<small>Tour ' + pos + ' / ' + counted.length + '</small></span>' +
+      '<span class="pill__txt">Take a look around<small>Stop ' + pos + ' of ' + counted.length + '</small></span>' +
       '<button class="btn btn--ghost" type="button" data-act="skip">End tour</button>' +
       '<button class="btn btn--primary" type="button" data-act="resume">Next stop ' + NEXT_ICON + '</button>';
     this.pill.classList.add('is-on');
@@ -858,7 +858,7 @@
     this.blocks.forEach(function (b) { place(b, 0, 0, 0, 0); });
     if (how === 'skipped') {
       this.pill.innerHTML = '<span class="pill__spark">' + ((CGP.tourIcons || {}).sparkle || '') + '</span>' +
-        '<span class="pill__txt">Tour closed<small>Replay it any time from Gradebook+ settings</small></span>';
+        '<span class="pill__txt">Tour closed<small>Replay it anytime in Gradebook+ settings</small></span>';
       this.pill.classList.add('is-on');
       setTimeout(function () { self.pill.classList.remove('is-on'); }, 3800);
       setTimeout(function () { self.unmount(); }, 4400);
@@ -886,15 +886,15 @@
 
   var INVITES = {
     gradebook: {
-      eyebrow: 'Gradebook+ is installed',
-      title: 'Take the 3-minute tour?',
-      body: 'See what’s new, live on your own gradebook — feedback bubbles, one-key statuses, student overviews and more.',
+      eyebrow: 'Gradebook+ is ready',
+      title: 'Want a quick tour?',
+      body: 'See what\u2019s new on your own gradebook: feedback bubbles, one-key statuses, student overviews and more.',
       go: function (id) { return '/courses/' + id + '/gradebook#cgp-tour'; }
     },
     classes: {
       eyebrow: 'Tour · Part 2',
       title: 'Ready for part 2?',
-      body: 'Link your class periods, copy work to all of them with their own dates, and connect your class schedule. About a minute.',
+      body: 'Link your classes, copy work to all of them, and connect your class schedule. About a minute.',
       go: function (id) { return '/courses/' + id + '#cgp-tour=classes'; }
     }
   };

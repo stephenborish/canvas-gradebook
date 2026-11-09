@@ -1306,7 +1306,7 @@
       o[KEY] = Object.assign({}, got && got[KEY], { pending: true, chapter: 'gradebook', requestedAt: Date.now() });
       return chrome.storage.local.set(o);
     }).then(function () {
-      status('The tour starts the next time you open a Canvas gradebook.');
+      status('Done. The tour starts next time you open a Canvas gradebook.');
     }, function () {
       status('Could not schedule the tour.', { error: true });
     });
