@@ -147,7 +147,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     return true;
   }
   if (msg && msg.type === 'cgp.openOptions') {
-    const tab = typeof msg.hash === 'string' && /^[a-z]+$/.test(msg.hash) ? msg.hash : 'schedule';
+    const tab = typeof msg.hash === 'string' && /^[a-z]+(-tour)?$/.test(msg.hash) ? msg.hash : 'schedule';
     chrome.tabs.create({ url: chrome.runtime.getURL('src/options/options.html#' + tab) });
     return false;
   }

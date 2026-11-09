@@ -74,7 +74,10 @@
     '.ico{flex:0 0 auto;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:linear-gradient(135deg,#e7f3fb,#efeafe);color:var(--brand)}',
     '.ico svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}',
     '.eyebrow{flex:1 1 auto;font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;background:linear-gradient(90deg,#0374b5,#5b3fd0);-webkit-background-clip:text;background-clip:text;color:transparent}',
-    '.count{font-size:12px;font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums}',
+    '.count{flex:0 0 auto;white-space:nowrap;font-size:12px;font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums}',
+    '.prog{flex:1 1 auto;min-width:40px;max-width:120px;height:5px;border-radius:5px;background:#e6eaef;overflow:hidden;margin-right:auto}',
+    '.prog i{display:block;height:100%;width:var(--to);border-radius:inherit;background:linear-gradient(90deg,#0374b5,#5b3fd0);animation:prog .6s var(--ease) both}',
+    '@keyframes prog{from{width:var(--from)}to{width:var(--to)}}',
     '.x{all:unset;cursor:pointer;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;color:var(--muted);margin-right:-6px}',
     '.x:hover{background:#f1f4f7;color:var(--ink)}',
     '.x:focus-visible{box-shadow:0 0 0 3px rgba(3,116,181,.3)}',
@@ -225,6 +228,90 @@
     '.tile b{display:block;font-size:13.5px;color:var(--ink);margin-bottom:3px}',
     '.tile span{display:block;font-size:12.5px;line-height:1.45;color:var(--soft)}',
 
+    /* waiting for something the stop opens */
+    '.card.is-busy .btn--primary{opacity:.85;cursor:progress}',
+    '.spin{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;animation:spin .8s linear infinite}',
+    '@keyframes spin{to{transform:rotate(360deg)}}',
+    '.dots{min-width:0;overflow:hidden}',
+
+    /* numbered steps */
+    '.steps{list-style:none;margin:14px 0 10px;padding:0;display:grid;gap:10px;counter-reset:none}',
+    '.steps li{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:14px;background:linear-gradient(160deg,#f7fafc,#f4f1ff);border:1px solid #e9e6fb;font-size:13.5px;line-height:1.5;color:var(--soft)}',
+    '.steps li::before{display:none}',
+    '.steps__t{display:block;color:var(--ink);font-size:14px;font-weight:700;margin-bottom:2px}',
+    '.steps b{color:var(--ink)}',
+    '.steps__n{flex:0 0 auto;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:800;color:#fff;background:linear-gradient(135deg,#0374b5,#5b3fd0);box-shadow:0 4px 10px -4px rgba(91,63,208,.6)}',
+
+    /* student overview pieces */
+    '.si-tiles--6{grid-template-columns:repeat(3,1fr)}',
+    '.si-tiles--6 .si-t{font-size:10.5px}',
+    '.si-tiles--6 .si-t:nth-child(4){animation-delay:.24s}.si-tiles--6 .si-t:nth-child(5){animation-delay:.32s}.si-tiles--6 .si-t:nth-child(6){animation-delay:.4s}',
+    '.standout{display:grid;gap:7px}',
+    '.so{display:flex;flex-direction:column;gap:1px;padding:9px 12px 9px 14px;border-radius:11px;background:#f6f8fa;position:relative;font-size:12px;color:var(--muted);animation:pop .45s var(--ease) both}',
+    '.so:nth-child(2){animation-delay:.09s}.so:nth-child(3){animation-delay:.18s}',
+    '.so::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:3px}',
+    '.so b{font-size:13px;color:var(--ink)}',
+    '.so--red{background:#fdf0ef}.so--red::before{background:#d1453b}',
+    '.so--amber{background:#fdf7e6}.so--amber::before{background:#e0a300}',
+    '.so--green{background:#ecf7f0}.so--green::before{background:#0b7a45}',
+    '.mail-demo{border:1px solid #e1e6eb;border-radius:12px;overflow:hidden;background:#fff}',
+    '.md-head{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:linear-gradient(#fdfefe,#eef2f5);font-size:12px;font-weight:700;color:#4a5864}',
+    '.md-btn{font-size:11px;color:#fff;background:linear-gradient(135deg,#0374b5,#4f46d8);border-radius:6px;padding:3px 10px;animation:postGlow 2.2s ease-out infinite}',
+    '.md-row{display:flex;flex-direction:column;padding:7px 12px;border-top:1px solid #eef1f4;font-size:11.5px;color:var(--muted)}',
+    '.md-row b{font-size:12.5px;color:#0a5f95;text-decoration:underline;text-decoration-color:rgba(10,95,149,.3)}',
+    '.md-row--late b{color:#8a5a00}',
+    '.heat{display:grid;grid-template-columns:repeat(16,1fr);grid-auto-flow:column;grid-template-rows:repeat(3,1fr);gap:4px}',
+    '.heat span{aspect-ratio:1;border-radius:3px;background:#eef1f4;animation:pop .4s var(--ease) both;animation-delay:calc(var(--i) * 12ms)}',
+    '.heat .h1{background:#cfe3f7}.heat .h2{background:#93bff0}.heat .h3{background:#5b8def}.heat .h4{background:#4f46d8}',
+    '.heat-cap{display:flex;justify-content:space-between;margin-top:7px;font-size:11.5px;color:var(--muted)}.heat-cap span:last-child{font-weight:700;color:#4f46d8}',
+
+    /* part 2 */
+    '.link-demo{display:flex;align-items:center;gap:0;padding:12px;border-radius:14px;background:linear-gradient(135deg,#f6f9fc,#f3f0ff)}',
+    '.ld-c{flex:0 0 auto;display:flex;flex-direction:column;padding:10px 12px;border-radius:11px;background:#fff;border:1.5px solid #0374b5;font-size:13px;font-weight:700;color:var(--ink);box-shadow:0 6px 16px -10px rgba(3,116,181,.6)}',
+    '.ld-c small{font-size:11px;font-weight:500;color:var(--muted)}',
+    '.ld-line{flex:0 0 22px;height:2px;background:repeating-linear-gradient(90deg,#7a5cff 0 5px,transparent 5px 9px);animation:dash 1s linear infinite}',
+    '@keyframes dash{to{background-position:9px 0}}',
+    '.ld-list{flex:1 1 auto;display:grid;gap:5px;padding:8px;border-radius:11px;background:#fff;border:1px solid #e1e6eb}',
+    '.ld-opt{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink);animation:pop .45s var(--ease) both;animation-delay:calc(.15s + var(--i) * 90ms)}',
+    '.ld-opt em{margin-left:auto;font-style:normal;font-size:10px;font-weight:700;color:#5b3fd0;background:#efeafe;border-radius:999px;padding:1px 7px}',
+    '.ld-box{width:14px;height:14px;border-radius:4px;border:1.5px solid #b8c1ca;flex:0 0 auto}',
+    '.ld-box--on{background:#0374b5 url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 14 14%27%3E%3Cpath d=%27M3.5 7.2l2.3 2.3 4.7-5%27 fill=%27none%27 stroke=%27white%27 stroke-width=%272%27 stroke-linecap=%27round%27/%3E%3C/svg%3E") center/100% no-repeat;border-color:#0374b5}',
+    '.copy-demo{display:flex;align-items:center;gap:10px;padding:14px;border-radius:14px;background:linear-gradient(135deg,#f6f9fc,#f3f0ff)}',
+    '.cd-item{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:11px;background:#fff;border:1px solid #e1e6eb;font-size:12.5px;color:var(--ink);box-shadow:0 6px 16px -12px rgba(9,16,29,.4)}',
+    '.cd-item svg{width:16px;height:16px;fill:none;stroke:#0b7a45;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}',
+    '.cd-arrow{flex:1 1 30px;height:2px;min-width:24px;background:linear-gradient(90deg,#0374b5,#7a5cff);position:relative}',
+    '.cd-arrow::after{content:"";position:absolute;right:-1px;top:-4px;border:5px solid transparent;border-left:7px solid #7a5cff;border-right:0}',
+    '.cd-dests{display:grid;gap:6px}',
+    '.cd-d{display:flex;flex-direction:column;padding:7px 11px;border-radius:10px;background:#fff;border:1px solid #e1e6eb;font-size:11.5px;color:var(--muted);animation:fly .6s var(--ease) both;animation-delay:calc(.25s + var(--i) * 150ms)}',
+    '.cd-d b{font-size:12.5px;color:var(--ink)}',
+    '@keyframes fly{from{opacity:0;transform:translateX(-18px)}to{opacity:1;transform:none}}',
+    '.board-demo{border:1px solid #e1e6eb;border-radius:12px;overflow:hidden;background:#fff;font-size:12px}',
+    '.bd-row{display:grid;grid-template-columns:1.5fr 1fr 1fr;border-top:1px solid #eef1f4;animation:pop .4s var(--ease) both;animation-delay:calc(var(--i) * 70ms)}',
+    '.bd-row>span{padding:7px 10px;color:var(--ink)}',
+    '.bd-head{border-top:0;background:linear-gradient(#fdfefe,#eef2f5);font-weight:700;animation:none}.bd-head>span{color:#4a5864;font-size:11px}',
+    '.bd-c{font-weight:600;font-size:11.5px}',
+    '.bd-c--ok{color:#0b7a45!important}.bd-c--miss{color:#0374b5!important}.bd-c--old{color:#a35f0c!important}.bd-c--chg{color:#6b3fa0!important}',
+    '.assign-demo{display:grid;gap:8px;padding:12px;border-radius:14px;background:linear-gradient(135deg,#f6f9fc,#f3f0ff)}',
+    '.ad-field{display:flex;align-items:center;gap:7px}',
+    '.ad-lab{font-size:12px;font-weight:700;color:#4a5864;margin-right:4px}',
+    '.ad-in{display:inline-flex;align-items:center;height:30px;padding:0 10px;border-radius:7px;background:#fff;border:1px solid #c7cdd1;font-size:12.5px;color:var(--ink)}',
+    '.ad-in--time{border-color:#0374b5;box-shadow:0 0 0 3px rgba(3,116,181,.15);min-width:84px}',
+    '.ad-t::before{content:"";animation:adt 4.4s steps(1) infinite}',
+    '@keyframes adt{0%,52%{content:""}53%,100%{content:"10:45 AM"}}',
+    '.ad-pop{border-radius:12px;background:#fff;border:1px solid #e1e6eb;box-shadow:0 12px 30px -16px rgba(9,16,29,.45);padding:8px}',
+    '.ad-day{display:flex;justify-content:space-between;align-items:center;padding:2px 4px 6px;font-size:12px;color:var(--ink)}.ad-day span{color:var(--muted);font-size:15px}',
+    '.ad-ev--all{font-size:11px;font-weight:700;color:#5b3fd0;background:#efeafe;border-radius:6px;padding:3px 8px;margin-bottom:4px;display:inline-block}',
+    '.ad-cls{display:grid;grid-template-columns:auto 1fr;column-gap:8px;padding:6px 8px;border-radius:8px;font-size:11.5px;color:var(--muted)}',
+    '.ad-cls b{font-size:12.5px;color:var(--ink)}.ad-cls span{grid-column:1/-1}',
+    '.ad-cls em{font-style:normal;font-size:10px;font-weight:700;color:#0b7a45;background:#e8f5ee;border-radius:999px;padding:1px 7px;justify-self:start;align-self:center}',
+    '.ad-cls--pick{animation:pick 4.4s ease infinite}',
+    '@keyframes pick{0%,30%{background:transparent;box-shadow:none}38%,48%{background:#eef6fb;box-shadow:inset 0 0 0 1.5px #0374b5}56%,100%{background:#eef6fb;box-shadow:none}}',
+    '.gcal{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:12px;background:#fff;border:1px solid #dadce0;position:relative;font-family:Roboto,system-ui,sans-serif}',
+    '.gcal-lab{font-size:12px;font-weight:500;color:#3c4043}',
+    '.gcal-url{font-size:12px;color:#1a73e8;background:#f1f3f4;border-radius:4px;padding:6px 8px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;animation:sel2 3.4s ease infinite}',
+    '@keyframes sel2{0%,30%{background:#f1f3f4}40%,100%{background:#c6dafc}}',
+    '.gcal-copy{position:absolute;right:10px;top:9px;font-size:11px;font-weight:700;color:#0b7a45;background:#e8f5ee;border-radius:999px;padding:2px 8px;animation:hit 3.4s ease infinite}',
+
     /* finale */
     '.badge{width:72px;height:72px;margin:6px auto 14px;border-radius:22px;display:grid;place-items:center;background:linear-gradient(135deg,#0374b5,#5b3fd0 60%,#e2589c);box-shadow:0 14px 30px -12px rgba(91,63,208,.7);animation:pop .7s var(--ease) both}',
     '.badge svg{width:38px;height:38px;fill:none;stroke:#fff;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:24;stroke-dashoffset:24;animation:draw .6s .35s ease forwards}',
@@ -262,7 +349,15 @@
   function Tour(opts) {
     opts = opts || {};
     this.state = opts.state || new CGP.TourState();
-    this.allStops = opts.stops || CGP.tourStops || [];
+    this.chapter = opts.chapter || 'gradebook';
+    this.courseId = opts.courseId || null;
+    // On the options page the teacher types into the page, so keys are not held back.
+    this.holdKeys = opts.holdKeys !== false;
+    this.finishLabel = opts.finishLabel || 'Start grading';
+    var chapter = this.chapter;
+    this.allStops = (opts.stops || CGP.tourStops || []).filter(function (s) {
+      return opts.stops ? true : (s.chapter || 'gradebook') === chapter;
+    });
     this.stops = [];
     this.index = 0;
     this.active = false;
@@ -348,40 +443,74 @@
   Tour.prototype.show = function (i, dir) {
     var s = this.stops[i];
     if (!s) return;
+    var prev = this.shown;
+    var self = this;
+    var gen = this._gen = (this._gen || 0) + 1;
+    // Leaving a group of stops (the student overview) closes what it opened.
+    if (prev && prev !== s && prev.leave && (!s.group || s.group !== prev.group)) {
+      try { prev.leave(this); } catch (e) { /* ignore */ }
+    }
     this.index = i;
     this.minimized = false;
     this.pill.classList.remove('is-on');
     this.layer.classList.remove('is-off');
+    if (!s.enter) { this.paint(s, dir); return; }
+    // Something to open first (a student's overview): the card says so meanwhile.
+    this.card.classList.add('is-busy');
+    var busy = this.cardIn.querySelector('[data-act="next"], [data-act="primary"]');
+    if (busy) busy.innerHTML = '<span class="spin"></span>Opening\u2026';
+    var done = false;
+    var go = function () {
+      if (done || gen !== self._gen || !self.active) return;
+      done = true;
+      self.card.classList.remove('is-busy');
+      self.paint(s, dir);
+    };
+    var p;
+    try { p = Promise.resolve(s.enter(this)); } catch (e) { p = Promise.resolve(false); }
+    p.then(go, go);
+    setTimeout(go, 12000);
+  };
 
-    // Resolve the element to point at.
+  Tour.prototype.paint = function (s, dir) {
+    this.shown = s;
+    // Resolve the element(s) to point at.
     var target = null, usedFallback = false;
     if (s.target) { try { target = s.target(); } catch (e) { target = null; } }
     if (!target && s.fallback) { try { target = s.fallback(); usedFallback = !!target; } catch (e) { target = null; } }
     if (s.kind === 'hero' || s.kind === 'center' || s.kind === 'finale') target = null;
-    if (target && target.scrollIntoView) {
-      var r = target.getBoundingClientRect();
+    var first = Array.isArray(target) ? target[0] : target;
+    if (first && first.scrollIntoView) {
+      var r = first.getBoundingClientRect();
       if (r.top < 0 || r.bottom > window.innerHeight) {
-        try { target.scrollIntoView({ block: 'center', inline: 'nearest' }); } catch (e) { /* ignore */ }
+        try { first.scrollIntoView({ block: 'center', inline: 'nearest' }); } catch (e) { /* ignore */ }
       }
     }
     this.targetEl = target;
     this.targetUsedFallback = usedFallback;
+    if (s.onShow && target) { try { s.onShow(this, first); } catch (e) { /* ignore */ } }
 
+    var wide = s.kind === 'center' || (!target && s.fallbackArt);
     this.card.className = 'card' + (s.kind === 'hero' ? ' card--hero' : '') +
-      (s.kind === 'center' ? ' card--center' : '') + (s.kind === 'finale' ? ' card--finale' : '');
+      (wide ? ' card--center' : '') + (s.kind === 'finale' ? ' card--finale' : '');
     this.cardIn.innerHTML = this.render(s, usedFallback, dir);
     this._lastRect = null;
     this.reflow(true);
     this.card.classList.add('is-on');
-    var focusEl = this.cardIn.querySelector('[data-act="next"]') || this.card;
+    var focusEl = this.cardIn.querySelector('[data-act="primary"], [data-act="next"]') || this.card;
     try { focusEl.focus({ preventScroll: true }); } catch (e) { /* ignore */ }
     this.loop();
     if (s.kind === 'finale') this.celebrate();
   };
 
+  /* The stop's element(s), as one list. */
+  Tour.prototype.targets = function () {
+    var t = this.targetEl;
+    return !t ? [] : (Array.isArray(t) ? t : [t]);
+  };
+
   Tour.prototype.render = function (s, usedFallback, dir) {
     var ICON = CGP.tourIcons || {};
-    var n = this.stops.length;
     var i = this.index;
     var counted = this.stops.filter(function (x) { return x.kind !== 'hero' && x.kind !== 'finale'; });
     var pos = counted.indexOf(s) + 1;
@@ -405,7 +534,7 @@
       html += '<span class="eyebrow">' + s.eyebrow + '</span>';
       html += '<h2 id="cgp-tour-title" style="margin-top:6px">' + s.title + '</h2><p>' + s.body + '</p>';
       html += '<div class="foot"><button class="btn btn--ghost" type="button" data-act="back">Back</button>' +
-        '<button class="btn btn--primary btn--lg" type="button" data-act="finish">Start grading</button></div>';
+        '<button class="btn btn--primary btn--lg" type="button" data-act="finish">' + this.finishLabel + '</button></div>';
       return html + '</div>';
     }
 
@@ -413,7 +542,10 @@
       '<span class="eyebrow">' + s.eyebrow + '</span>' +
       '<span class="count">' + pos + ' / ' + counted.length + '</span>' +
       '<button class="x" type="button" data-act="skip" aria-label="End the tour">' + X_ICON + '</button></div>';
-    if (s.art && s.kind !== 'center') html += '<div class="art">' + s.art() + '</div>';
+    // A stop shown live (the real overview on screen) lets the page speak for
+    // itself; its illustration is for when there is nothing live to show.
+    var live = this.targets().length > 0;
+    if (s.art && !(s.fallbackArt && live)) html += '<div class="art">' + s.art() + '</div>';
     html += '<h2 id="cgp-tour-title">' + s.title + '</h2>';
     if (s.body) html += '<p>' + s.body + '</p>';
     if (s.bullets) html += '<ul>' + s.bullets.map(function (b) { return '<li>' + b + '</li>'; }).join('') + '</ul>';
@@ -422,36 +554,47 @@
         return '<div class="tile"><span class="ico">' + (ICON[t.icon] || '') + '</span><b>' + t.t + '</b><span>' + t.d + '</span></div>';
       }).join('') + '</div>';
     }
-    if (usedFallback && s.fallbackNote) html += '<div class="note">' + s.fallbackNote + '</div>';
-    else if (s.try && this.targetEl) html += '<div class="try"><span class="try__dot"></span><span><b>Try it:</b> ' + s.try + '</span></div>';
-
-    var dots = '';
-    for (var d = 0; d < n; d++) {
-      if (this.stops[d].kind === 'hero' || this.stops[d].kind === 'finale') continue;
-      dots += '<span class="dot' + (d < i ? ' is-done' : '') + (d === i ? ' is-now' : '') + '"></span>';
+    if (s.steps) {
+      html += '<ol class="steps">' + s.steps.map(function (st) {
+        return '<li><span class="steps__n">' + st.n + '</span><span><span class="steps__t">' + st.t + '</span>' + st.d + '</span></li>';
+      }).join('') + '</ol>';
     }
-    html += '<div class="foot"><span class="dots" aria-hidden="true">' + dots + '</span>';
-    if (s.action && s.action.type === 'options') html += '<button class="btn btn--soft" type="button" data-act="options">Settings</button>';
-    html += '<button class="btn btn--ghost" type="button" data-act="back">Back</button>' +
-      '<button class="btn btn--primary" type="button" data-act="next">Next ' + NEXT_ICON + '</button></div>';
+    if ((usedFallback || (s.fallbackArt && !live)) && s.fallbackNote) html += '<div class="note">' + s.fallbackNote + '</div>';
+    else if (s.try && live) html += '<div class="try"><span class="try__dot"></span><span><b>Try it:</b> ' + s.try + '</span></div>';
+
+    // Progress as one slim bar: a dot per stop no longer fits sixteen stops.
+    var pct = counted.length ? Math.round(pos / counted.length * 100) : 0;
+    var was = counted.length ? Math.round(Math.max(0, pos - dir) / counted.length * 100) : 0;
+    html += '<div class="foot"><span class="prog" aria-hidden="true"><i style="--from:' + was + '%;--to:' + pct + '%"></i></span>';
+    if (s.secondary) html += '<button class="btn btn--ghost" type="button" data-act="secondary">' + s.secondary.label + '</button>';
+    else if (i > 0) html += '<button class="btn btn--ghost" type="button" data-act="back">Back</button>';
+    html += s.primary
+      ? '<button class="btn btn--primary" type="button" data-act="primary">' + s.primary.label + ' ' + NEXT_ICON + '</button></div>'
+      : '<button class="btn btn--primary" type="button" data-act="next">Next ' + NEXT_ICON + '</button></div>';
     return html + '</div>';
   };
 
   /* ------------------------------------------------------------ geometry */
 
   Tour.prototype.targetRect = function () {
-    var t = this.targetEl;
-    if (!t) return null;
-    if (!t.isConnected) {
+    var list = this.targets();
+    if (!list.length) return null;
+    if (!list.every(function (n) { return n.isConnected; })) {
       // Canvas re-rendered it (a virtualized row); find the stop's element again.
-      var s = this.stop();
+      var s = this.shown || this.stop();
       var again = null;
       try { again = (s.target && s.target()) || (s.fallback && s.fallback()); } catch (e) { again = null; }
       if (!again) return null;
-      this.targetEl = t = again;
+      this.targetEl = again;
+      list = this.targets();
     }
-    var r = t.getBoundingClientRect();
-    var pad = this.stop().padding === undefined ? 6 : this.stop().padding;
+    var r = list.reduce(function (u, n) {
+      var b = n.getBoundingClientRect();
+      if (!u) return { left: b.left, top: b.top, right: b.right, bottom: b.bottom };
+      return { left: Math.min(u.left, b.left), top: Math.min(u.top, b.top), right: Math.max(u.right, b.right), bottom: Math.max(u.bottom, b.bottom) };
+    }, null);
+    var st = this.shown || this.stop();
+    var pad = st.padding === undefined ? 6 : st.padding;
     var vw = window.innerWidth, vh = window.innerHeight;
     var x = Math.max(4, r.left - pad), y = Math.max(4, r.top - pad);
     var x2 = Math.min(vw - 4, r.right + pad), y2 = Math.min(vh - 4, r.bottom + pad);
@@ -479,7 +622,7 @@
     if (!force && (same || (!rect && last === 'none'))) return;
     this._lastRect = rect || 'none';
     var vw = window.innerWidth, vh = window.innerHeight;
-    var s = this.stop();
+    var s = this.shown || this.stop();
 
     // The spotlight (or, with nothing to point at, a dim page and no hole).
     var spot = this.spot;
@@ -577,12 +720,37 @@
     else if (act === 'skip') this.end('skipped');
     else if (act === 'finish') this.end('completed');
     else if (act === 'resume') this.next();
-    else if (act === 'options') {
-      try { chrome.runtime.sendMessage({ type: 'cgp.openOptions', hash: 'layout' }); } catch (err) { /* ignore */ }
+    else if (act === 'primary' || act === 'secondary') {
+      var s = this.stop();
+      var h = s && s[act];
+      if (h && h.run && !this.card.classList.contains('is-busy')) h.run(this);
     }
   };
 
+  /* The settings page, at one tab (a "-tour" suffix starts its guided setup). */
+  Tour.prototype.openOptions = function (hash) {
+    try { chrome.runtime.sendMessage({ type: 'cgp.openOptions', hash: hash }); } catch (err) { /* ignore */ }
+  };
+
+  /* On to the next chapter, on its own page: recorded first, so it is picked
+   * up there even if this navigation is interrupted. */
+  Tour.prototype.goChapter = function (chapter) {
+    var self = this;
+    var courseId = this.courseId || ((/\/courses\/(\d+)/.exec(location.pathname) || [])[1]);
+    var prev = this.shown;
+    if (prev && prev.leave) { try { prev.leave(this); } catch (e) { /* ignore */ } }
+    this.active = false;
+    this.detach();
+    this.card.classList.remove('is-on');
+    this.spot.classList.remove('is-on');
+    Promise.resolve(this.state.setChapter ? this.state.setChapter(chapter) : null).then(function () {
+      if (courseId) location.href = '/courses/' + courseId + '#cgp-tour=' + chapter;
+      else self.unmount();
+    });
+  };
+
   Tour.prototype.next = function () {
+    if (this.card && this.card.classList.contains('is-busy')) return;
     if (this.index >= this.stops.length - 1) { this.end('completed'); return; }
     this.show(this.index + 1, 1);
   };
@@ -603,11 +771,13 @@
   Tour.prototype.onKey = function (e) {
     if (!this.active || this.minimized) return;
     var inside = e.composedPath && e.composedPath().indexOf(this.host) >= 0;
-    if (e.type === 'keydown') {
+    var typing = !inside && e.target && e.target.closest && e.target.closest('input, textarea, select, [contenteditable="true"]');
+    if (e.type === 'keydown' && !typing) {
       if (e.key === 'ArrowRight') { this.next(); swallow(e); return; }
       if (e.key === 'ArrowLeft') { this.back(); swallow(e); return; }
       if (e.key === 'Escape') { this.end(this.stop().kind === 'finale' ? 'completed' : 'skipped'); swallow(e); return; }
     }
+    if (!this.holdKeys && !inside) return;
     if (inside && (e.key === 'Enter' || e.key === ' ' || e.key === 'Tab')) {
       e.stopPropagation(); // the button handles it; Canvas never sees it
       return;
@@ -621,9 +791,10 @@
   // looks, and wait for them to ask for the next stop.
   Tour.prototype.onPageClick = function (e) {
     if (!this.active || this.minimized) return;
-    var s = this.stop();
+    if (this.synthetic) return;
+    var s = this.shown;
     if (!s || !s.tryIt || !this.targetEl || this.targetUsedFallback) return;
-    if (!this.targetEl.contains(e.target)) return;
+    if (!this.targets().some(function (n) { return n.contains(e.target); })) return;
     var self = this;
     setTimeout(function () { self.minimize(); }, 30);
   };
@@ -663,17 +834,23 @@
     setTimeout(function () { if (box.parentNode) box.parentNode.removeChild(box); }, 4800);
   };
 
-  Tour.prototype.end = function (how) {
-    if (!this.active) return;
-    var s = this.stop();
-    this.active = false;
-    this.endedHere = true;
+  Tour.prototype.detach = function () {
     cancelAnimationFrame(this._raf);
     window.removeEventListener('keydown', this._onKey, true);
     window.removeEventListener('keyup', this._onKey, true);
     window.removeEventListener('keypress', this._onKey, true);
     document.removeEventListener('click', this._onPageClick, true);
     window.removeEventListener('resize', this._onResize);
+  };
+
+  Tour.prototype.end = function (how) {
+    if (!this.active) return;
+    var s = this.stop();
+    var shown = this.shown;
+    this.active = false;
+    this.endedHere = true;
+    this.detach();
+    if (shown && shown.leave) { try { shown.leave(this); } catch (e) { /* ignore */ } }
     this.state.markDone(how, s && s.id);
     var self = this;
     this.card.classList.remove('is-on');
@@ -695,12 +872,7 @@
   Tour.prototype.dismissQuietly = function () {
     if (!this.active) return;
     this.active = false;
-    cancelAnimationFrame(this._raf);
-    window.removeEventListener('keydown', this._onKey, true);
-    window.removeEventListener('keyup', this._onKey, true);
-    window.removeEventListener('keypress', this._onKey, true);
-    document.removeEventListener('click', this._onPageClick, true);
-    window.removeEventListener('resize', this._onResize);
+    this.detach();
     this.unmount();
   };
 
@@ -712,7 +884,23 @@
 
   /* ---------------------------------------------------- the invitation */
 
-  function showInvite(state, courseId) {
+  var INVITES = {
+    gradebook: {
+      eyebrow: 'Gradebook+ is installed',
+      title: 'Take the 3-minute tour?',
+      body: 'See what’s new, live on your own gradebook — feedback bubbles, one-key statuses, student overviews and more.',
+      go: function (id) { return '/courses/' + id + '/gradebook#cgp-tour'; }
+    },
+    classes: {
+      eyebrow: 'Tour · Part 2',
+      title: 'Ready for part 2?',
+      body: 'Link your class periods, copy work to all of them with their own dates, and connect your class schedule. About a minute.',
+      go: function (id) { return '/courses/' + id + '#cgp-tour=classes'; }
+    }
+  };
+
+  function showInvite(state, courseId, chapter) {
+    var copy = INVITES[chapter] || INVITES.gradebook;
     var host = el('div', 'cgp-tour-host');
     var root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
     var style = el('style');
@@ -724,10 +912,10 @@
     card.setAttribute('aria-labelledby', 'cgp-invite-title');
     card.innerHTML = '<div class="card__in">' +
       '<div class="head"><span class="brand__mark" style="width:30px;height:30px;border-radius:9px">' + MARK + '</span>' +
-      '<span class="eyebrow">Gradebook+ is installed</span>' +
+      '<span class="eyebrow">' + copy.eyebrow + '</span>' +
       '<button class="x" type="button" data-act="later" aria-label="Not now">' + X_ICON + '</button></div>' +
-      '<h2 id="cgp-invite-title">Take the 2-minute tour?</h2>' +
-      '<p>See what’s new, live on your own gradebook — feedback bubbles, one-key statuses, student overviews and more.</p>' +
+      '<h2 id="cgp-invite-title">' + copy.title + '</h2>' +
+      '<p>' + copy.body + '</p>' +
       '<div class="foot"><button class="btn btn--ghost" type="button" data-act="skip">Skip tour</button>' +
       '<button class="btn btn--primary" type="button" data-act="go">Show me ' + NEXT_ICON + '</button></div></div>';
     layer.appendChild(card);
@@ -742,8 +930,8 @@
       var b = e.target.closest && e.target.closest('[data-act]');
       if (!b) return;
       var act = b.getAttribute('data-act');
-      if (act === 'go') location.href = '/courses/' + courseId + '/gradebook#cgp-tour';
-      else if (act === 'skip') { state.markDone('skipped', 'invite'); close(); }
+      if (act === 'go') location.href = copy.go(courseId);
+      else if (act === 'skip') { state.markDone('skipped', 'invite-' + chapter); close(); }
       else close();
     });
     return { close: close };
@@ -781,43 +969,50 @@
     var m = /\/courses\/(\d+)/.exec(path);
     if (!m) return;
     var courseId = m[1];
-    var isSpeedGrader = /\/gradebook\/speed_grader/i.test(path);
-    if (isSpeedGrader) return;
+    if (/\/gradebook\/speed_grader/i.test(path)) return;
     var isGradebook = /\/courses\/\d+\/gradebook\/?$/i.test(path);
+    var isHome = /^\/courses\/\d+\/?$/.test(path);
     var state = new CGP.TourState();
-    var forced = isGradebook && CGP.TourState.wantsTourFromHash(location.hash);
+    var forced = CGP.TourState.chapterFromHash(location.hash);
     if (forced) {
       try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
     }
 
-    state.isPending().then(function (pending) {
-      if (!pending && !forced) return;
-      if (!isGradebook) {
+    state.read().then(function (v) {
+      if (v.pending !== true && !forced) return;
+      var chapter = forced || (CGP.TourState.CHAPTERS.indexOf(v.chapter) >= 0 ? v.chapter : 'gradebook');
+      var here = chapter === 'gradebook' ? isGradebook : isHome;
+      if (!here) {
         // A little later than the page itself, so it never competes with it.
         setTimeout(function () {
           whenVisible().then(function () {
             state.isPending().then(function (still) {
               if (!still) return;
-              var invite = showInvite(state, courseId);
+              var invite = showInvite(state, courseId, chapter);
               listenForDone(function () { invite.close(); });
             });
           });
         }, 1800);
         return;
       }
-      // The gradebook: wait for Canvas's grid and our first paint of it.
-      waitFor(function () {
-        return document.querySelector('.grid-canvas .slick-row') && document.documentElement.classList.contains('cgp-gradebook');
-      }, 45000).then(function (ready) {
-        if (!ready) return;
-        // Let the bubbles and badges for the screenful arrive.
-        return waitFor(function () { return !!document.querySelector('.cgp-sub, .cgp-cmt'); }, 6000)
-          .then(function () { return new Promise(function (r) { setTimeout(r, 900); }); })
+      var ready = chapter === 'gradebook'
+        // The gradebook: Canvas's grid, our first paint of it, and the
+        // bubbles and badges for the screenful.
+        ? waitFor(function () {
+          return document.querySelector('.grid-canvas .slick-row') && document.documentElement.classList.contains('cgp-gradebook');
+        }, 45000).then(function (ok) {
+          return ok && waitFor(function () { return !!document.querySelector('.cgp-sub, .cgp-cmt'); }, 6000).then(function () { return true; });
+        })
+        // The course home: its Copy to other classes button, if it is on.
+        : waitFor(function () { return !!document.querySelector('.cgp-copyto'); }, 5000).then(function () { return true; });
+      ready.then(function (ok) {
+        if (!ok) return;
+        return new Promise(function (r) { setTimeout(r, 900); })
           .then(whenVisible)
           .then(function () { return forced ? true : state.isPending(); })
           .then(function (go) {
             if (!go || CGP.tourInstance) return;
-            var tour = new Tour({ state: state });
+            var tour = new Tour({ state: state, chapter: chapter, courseId: courseId });
             tour.start();
             listenForDone(function () { if (!tour.endedHere && tour.index === 0) tour.dismissQuietly(); });
           });

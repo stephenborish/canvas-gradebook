@@ -77,13 +77,31 @@
 
   /* "Replay the tour" on the options page. */
   TourState.prototype.request = function () {
-    return this.write({ pending: true, requestedAt: Date.now() });
+    return this.write({ pending: true, chapter: 'gradebook', requestedAt: Date.now() });
   };
 
-  /* The page asked for the tour in its address (#cgp-tour), which is how the
-   * invitation on other course pages and the options page hand over. */
+  /* The tour has two chapters, on two pages: 'gradebook' (the grid and the
+   * student overview) and 'classes' (the course home: linking classes,
+   * Compare classes, the class schedule). Finishing the first records
+   * chapter: 'classes', so the second is picked up wherever the teacher
+   * goes next. */
+  TourState.CHAPTERS = ['gradebook', 'classes'];
+
+  TourState.prototype.setChapter = function (chapter) {
+    return this.write({ chapter: chapter });
+  };
+
+  /* The page asked for the tour in its address - #cgp-tour (the first
+   * chapter) or #cgp-tour=classes - which is how the invitation on other
+   * course pages and the end of the first chapter hand over. */
+  TourState.chapterFromHash = function (hash) {
+    var m = /(?:^#|&)cgp-tour(?:=([a-z]+))?(?:&|$)/.exec(String(hash || ''));
+    if (!m) return null;
+    return TourState.CHAPTERS.indexOf(m[1]) >= 0 ? m[1] : 'gradebook';
+  };
+
   TourState.wantsTourFromHash = function (hash) {
-    return /(^#|&)cgp-tour(&|$)/.test(String(hash || ''));
+    return TourState.chapterFromHash(hash) !== null;
   };
 
   CGP.TourState = TourState;

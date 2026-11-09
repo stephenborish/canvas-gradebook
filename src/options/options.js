@@ -1083,8 +1083,15 @@
     });
 
     // A link straight to one tab (the class-schedule picker's "settings").
+    // "#schedule-tour" (the welcome tour's "Connect my calendar") opens that
+    // tab with its guided setup on top.
     var wanted = String(location.hash || '').replace(/^#/, '');
-    if (wanted && activate(wanted, { silent: true })) return;
+    var guided = /-tour$/.test(wanted);
+    if (guided) wanted = wanted.replace(/-tour$/, '');
+    if (wanted && activate(wanted, { silent: true })) {
+      if (guided && wanted === 'schedule') startScheduleTour();
+      return;
+    }
     var stored = null;
     try { stored = localStorage.getItem(TAB_STORAGE_KEY); } catch (e) { /* private mode, ignore */ }
     if (!stored || !activate(stored, { silent: true })) activate(tabs[0].dataset.tab, { silent: true });
@@ -1274,13 +1281,29 @@
     if (e.key === 'Enter') { e.preventDefault(); grantDomain(); }
   });
 
+  /* The welcome tour's guided calendar setup, on the Class Schedule tab. It
+   * is not the once-per-install tour itself, so it records nothing. */
+  function startScheduleTour() {
+    if (!CGP.Tour || !CGP.tourScheduleStops) return;
+    try { history.replaceState(null, '', location.pathname + '#schedule'); } catch (e) { /* ignore */ }
+    setTimeout(function () {
+      var tour = new CGP.Tour({
+        stops: CGP.tourScheduleStops,
+        state: { markDone: function () { return Promise.resolve(); } },
+        holdKeys: false,
+        finishLabel: 'Done'
+      });
+      tour.start();
+    }, 400);
+  }
+
   /* The welcome tour (src/tour/) is offered once per install; this marks it
    * due again on this computer, and the next gradebook opened shows it. */
   $('replayTour').addEventListener('click', function () {
     var KEY = 'cgp.tour';
     chrome.storage.local.get(KEY).then(function (got) {
       var o = {};
-      o[KEY] = Object.assign({}, got && got[KEY], { pending: true, requestedAt: Date.now() });
+      o[KEY] = Object.assign({}, got && got[KEY], { pending: true, chapter: 'gradebook', requestedAt: Date.now() });
       return chrome.storage.local.set(o);
     }).then(function () {
       status('The tour starts the next time you open a Canvas gradebook.');

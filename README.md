@@ -550,32 +550,45 @@ it.
 
 ### A welcome tour, once per install
 
-The first time a gradebook opens after the extension is installed, a short guided tour runs on
-top of it — the teacher's real gradebook, not a mock-up. A spotlight moves from one real element
-to the next (a comment bubble, a submission badge, a column's **Post** button, a student's name,
-the Total, the course switcher, Find student, the breadcrumb gear), and a card beside it says what
-Gradebook+ does there, with a small animated illustration. Stops marked **Try it** let the click
-through to the page — open a comment thread, a student overview, the course menu — and the tour
-folds into a small pill at the bottom of the screen until **Next stop** is pressed.
+The first time a gradebook opens after the extension is installed, a guided tour runs on top of it
+— the teacher's real gradebook, not a mock-up. A spotlight moves from one real element to the next,
+and a card beside it says what Gradebook+ does there, with a small animated illustration. It comes
+in two parts, each on the page it is about:
+
+**Part 1 — the gradebook.** Comment bubbles, submission badges, the `M`/`L`/`E` keys, spreadsheet
+entry, the column **Post** button, then **a real student overview**: the tour opens one (or the
+teacher clicks the name) and walks through it live — the grade and tiles, *What stands out*, the
+**Assignments** tab with *Copy List of Missing/Late Work*, and the **Activity** tab's analytics —
+closing it again afterwards. Then the frozen Total, the column `⋮` menus, the course switcher, Find
+student and the breadcrumb gear. The last card hands over to part 2, or finishes there.
+
+**Part 2 — the course page.** Linking class periods once with **Copy to other classes** (step 1 of
+its dialog: *which of your classes are the same course as this one?*), copying work to every period
+with its own dates, **Compare classes** and *Also post to your other classes*, and the **class
+schedule**: what it does in Canvas's Assign To boxes and the two steps to connect a calendar.
+**Connect my calendar** opens the options page's Class Schedule tab with a guided setup on top
+(switch on, copy the link from Google Calendar, paste and Connect, Save) that lets the teacher
+type and click as they go.
 
 - `←` / `→` move between stops, `Esc` ends the tour. **Skip tour** is on the first card, and every
   card has a close button.
-- Nothing is read from or written to Canvas. While a card is up, keystrokes outside it are held
-  back, so an `M` or a digit can never land in a grade cell behind the tour.
-- A stop for a feature that is switched off in the options page (or a cell nothing applies to yet)
-  is left out or explained in place rather than pointing at nothing.
+- Stops marked **Try it** let the click through to the page (a comment thread, a student overview,
+  the course menu, the copy dialog); the tour folds into a small pill until **Next stop**.
+- Nothing is read from or written to Canvas beyond what opening a student overview reads anyway.
+  While a card is up on a Canvas page, keystrokes outside it are held back, so an `M` or a digit
+  can never land in a grade cell behind the tour.
+- A stop for a feature that is switched off is left out, or shown with its illustration and a note
+  saying where it lives, rather than pointing at nothing.
 - It is offered **once per install**: a fresh install marks it due on that computer
-  (`chrome.storage.local`, so Chrome sync never carries it between computers), and finishing or
-  skipping it clears the mark. Updates never show it, so teachers who already use the extension
-  are not interrupted.
-- Open any other page in a course first and a small card in the corner offers the tour instead;
-  **Show me** opens the course's gradebook and starts it. SpeedGrader never shows either.
-- **Replay the welcome tour** in the options page's sidebar marks it due again; the next gradebook
-  opened shows it.
+  (`chrome.storage.local`, so Chrome sync never carries it between computers). Finishing part 1
+  records that part 2 is next; finishing or skipping clears it for good. Updates never show it.
+- On any other course page, a small card in the corner offers whichever part is next and opens the
+  right page for it. SpeedGrader never shows either.
+- **Replay the welcome tour** in the options page's sidebar marks it due again, from part 1.
 
 The tour is drawn in a shadow root, so Canvas's stylesheet and the extension's own never reach it.
-It lives in `src/tour/`: `tour-state.js` (whether it is due), `tour-content.js` (what each stop
-says and points at) and `tour.js` (the spotlight, the cards and the invitation).
+It lives in `src/tour/`: `tour-state.js` (whether it is due, and which part), `tour-content.js`
+(what each stop says and points at) and `tour.js` (the spotlight, the cards and the invitation).
 
 ### Every view stays in step
 

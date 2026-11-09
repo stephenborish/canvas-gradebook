@@ -91,7 +91,7 @@ PERMISSIONS
 
 Canvas Gradebook+ is an independent tool for teachers. It is not affiliated with or endorsed by Instructure, the maker of Canvas.
 
-Version 1.30.0: a guided welcome tour, shown once after you install, that walks you through every feature live on your own gradebook (skip it any time, replay it from settings). Version 1.29.0: a redesigned SpeedGrader sidebar, with Submission, Assessment and Comments as clear cards, and a comment box with distinct attach, video and microphone tools. Free Draw and comment annotations now start in red reliably. Also new in 1.28: Class Schedule, to pick due times from your Google Calendar's class periods right in Canvas's Assign To boxes.
+Version 1.30.0: a guided welcome tour, shown once after you install, that walks you through every feature live on your own gradebook and student overviews, then shows you how to link your class periods and connect your class schedule (skip it any time, replay it from settings). Version 1.29.0: a redesigned SpeedGrader sidebar, with Submission, Assessment and Comments as clear cards, and a comment box with distinct attach, video and microphone tools. Free Draw and comment annotations now start in red reliably. Also new in 1.28: Class Schedule, to pick due times from your Google Calendar's class periods right in Canvas's Assign To boxes.
 ```
 
 **Category:** Education (in the Dashboard: Productivity → Education)
@@ -177,7 +177,7 @@ section can be published as-is (for example as a GitHub Pages page or a public G
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
-| 1.30.0 | 2026-11-09 | Welcome tour: a skippable, click-through spotlight tour of the extension on the teacher's own gradebook, shown once per install (never on updates); an invitation on other course pages; Replay the welcome tour in settings. | Draft |
+| 1.30.0 | 2026-11-09 | Welcome tour, shown once per install (never on updates), in two parts: the gradebook with a live walkthrough of a student overview (Overview, What stands out, Assignments, Activity), then the course page (linking class periods, Copy to other classes, Compare classes, class schedule) with a guided calendar setup on the options page. Invitation on other course pages; Replay the welcome tour in settings. | Draft |
 | 1.29.0 | 2026-11-09 | SpeedGrader sidebar redesigned as Submission / Assessment / Comments cards (found by content, so it works across Canvas versions and on self-hosted Canvas); comment tools each get their own icon (paperclip, camera, microphone); Edit / Delete on posted comments shown as clear buttons; red annotation default now recognises DocViewer's colour buttons. | Draft |
 | 1.28.1 | 2026-11-09 | Grade detail panel: status buttons always on one row (panel slightly wider); SpeedGrader and Submit for Student as matching, aligned buttons. SpeedGrader comment box: attach / media / speech tools and Submit Comment in one footer bar joined to the editor. Free Draw and Point annotations set to red as soon as the tool is picked. | Draft |
 | 1.28.0 | 2026-11-09 | Class Schedule replaces Time Shortcuts: pick due times from your Google Calendar's class periods; "Also post to your other classes" choices sync across computers; Canvas's settings dialog no longer flashes on gradebook load when View Options are applied automatically; Gradebook Status Icons off by default; review fixes. New optional permission use: the connected calendar's site. | Draft |
