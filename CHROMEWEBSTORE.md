@@ -1,6 +1,6 @@
 # Chrome Web Store Listing — Canvas Gradebook+
 
-> Last Updated: 2026-11-09 · Version 1.30.0
+> Last Updated: 2026-11-09 · Version 1.31.0
 
 Everything the Chrome Developer Dashboard asks for, in one place. Copy each field as it is.
 The Web Store shows plain text only (no Markdown), so the detailed description below is
@@ -21,7 +21,7 @@ which the store shows as the summary)
 Grade faster in Canvas: see your feedback at a glance, grade like a spreadsheet, post grades in one click, pick due times by class.
 ```
 
-**Detailed Description** (7,525/16,000 characters)
+**Detailed Description** (8,258/16,000 characters)
 
 ```
 Canvas Gradebook+ makes the Canvas gradebook and course pages faster and clearer for teachers, right where you already work: no second gradebook, no dashboard, no extra sign-in.
@@ -58,7 +58,7 @@ UNDERSTAND EACH STUDENT
 
 PLAN AND ASSIGN ACROSS YOUR CLASSES
 • Class schedule: connect your Google Calendar (or any calendar link ending in .ics), and every Due, Available from and Until box in Canvas shows that day's classes beside it. Click a class to use its start time, or its end time with one more click. Step to another day and the date goes in too. Classes that match the course you are editing are marked "This course".
-• Copy to other classes: teach the same course to several sections set up as separate Canvas courses? Build an assignment, quiz, discussion, announcement, page or module once and post it to all of them, each with its own due date.
+• Copy to other classes: teach the same course to several sections set up as separate Canvas courses? Build an assignment, quiz, discussion, announcement, page or module once and post it to all of them, each with its own due date. A module's external links can be copied on their own too.
 • Compare classes: one grid shows every item in this class against your other classes, so you can see what is missing, out of date or changed elsewhere, and fix it in bulk.
 • Switch courses quickly from any course page.
 
@@ -91,7 +91,7 @@ PERMISSIONS
 
 Canvas Gradebook+ is an independent tool for teachers. It is not affiliated with or endorsed by Instructure, the maker of Canvas.
 
-Version 1.30.0: a guided welcome tour, shown once after you install, that walks you through every feature live on your own gradebook and student overviews, then shows you how to link your class periods and connect your class schedule (skip it any time, replay it from settings). Version 1.29.0: a redesigned SpeedGrader sidebar, with Submission, Assessment and Comments as clear cards, and a comment box with distinct attach, video and microphone tools. Free Draw and comment annotations now start in red reliably. Also new in 1.28: Class Schedule, to pick due times from your Google Calendar's class periods right in Canvas's Assign To boxes.
+Version 1.31.0: faster loading (the gradebook reads your course while Canvas is still drawing it), a student overview that opens quicker and keeps working on a slow connection, copying a module's external links to your other classes on their own, fewer false "not in your other classes yet" notices, and new versions picked up as soon as Chrome allows, with a Reload notice on tabs already open. Version 1.30.0: a guided welcome tour, shown once after you install, that walks you through every feature live on your own gradebook and student overviews, then shows you how to link your class periods and connect your class schedule (skip it any time, replay it from settings). Version 1.29.0: a redesigned SpeedGrader sidebar, with Submission, Assessment and Comments as clear cards, and a comment box with distinct attach, video and microphone tools. Free Draw and comment annotations now start in red reliably. Also new in 1.28: Class Schedule, to pick due times from your Google Calendar's class periods right in Canvas's Assign To boxes.
 ```
 
 **Category:** Education (in the Dashboard: Productivity → Education)
@@ -178,6 +178,7 @@ section can be published as-is (for example as a GitHub Pages page or a public G
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
+| 1.31.0 | 2026-11-09 | Faster load: the course is read while Canvas draws its grid, numbered list pages read in parallel, background warming at low priority, frames get a small gate script instead of the full content-script set. Student overview: hover prefetch, high-priority reads, 20 s stall timeout with retry, per-section failures with Try again, earlier data kept on a failed refresh. Copy a module's external links to the other classes (Links tab, copy icon on the Modules page). "Not in N of your other classes" notice counts same-titled items and cross-listed sections. Class-schedule picks for another class fill its date. Update checks every 20 minutes (Chrome allows one real check per ~5 h), Reload notice on open tabs, Options → Diagnostics → Updates. New permission: `alarms` (no install warning). | Draft |
 | 1.30.0 | 2026-11-09 | Welcome tour, shown once per install (never on updates), in two parts: the gradebook with a live walkthrough of a student overview (Overview, What stands out, Assignments, Activity), then the course page (linking class periods, Copy to other classes, Compare classes, class schedule) with a guided calendar setup on the options page. Invitation on other course pages; Replay the welcome tour in settings. | Draft |
 | 1.29.0 | 2026-11-09 | SpeedGrader sidebar redesigned as Submission / Assessment / Comments cards (found by content, so it works across Canvas versions and on self-hosted Canvas); comment tools each get their own icon (paperclip, camera, microphone); Edit / Delete on posted comments shown as clear buttons; red annotation default now recognises DocViewer's colour buttons. | Draft |
 | 1.28.1 | 2026-11-09 | Grade detail panel: status buttons always on one row (panel slightly wider); SpeedGrader and Submit for Student as matching, aligned buttons. SpeedGrader comment box: attach / media / speech tools and Submit Comment in one footer bar joined to the editor. Free Draw and Point annotations set to red as soon as the tool is picked. | Draft |

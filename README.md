@@ -1063,6 +1063,9 @@ Turn on **Record diagnostics** in the options page, open a gradebook, then come 
 **Refresh**. You get course id, student and assignment counts, submissions loaded, instructor
 comments found, mapped and unmapped cells, failed requests, and a recent event log.
 
+The **Updates** section shows the installed version (and the one it updated from), when Chrome
+last checked the Web Store, when it will allow the next check, and **Check for updates now**.
+
 Student names, grades and comment text are never written to the log — only counts and ids.
 
 ## Privacy
@@ -1107,6 +1110,7 @@ src/settings-times.js             service worker: this computer's Chrome sync ch
 src/calendar-sync.js              service worker: fetches the class-schedule calendar, keeps its classes
 src/script-manifest.js            the ordered file list (mirror of the manifest entry)
 src/frame-gate.js                 the one script frames get; adds snippets to comment-editor frames
+src/self-update.js                service worker: update checks, Reload notice on tabs already open
 
 src/core/                         pure logic - no DOM, no chrome.* at load time
   util.js                         settings, defaults, sanitizing, diagnostics, small helpers
@@ -1152,6 +1156,7 @@ src/sections/sync-runner.js       Copy to sections: survey each section, copy, a
 src/sections/sync-dialog.js       Copy to sections: page button, dialog, page notice, review
 src/sections/sync-board.js        Compare classes: every item against every linked class, bulk fixes
 src/sections/inline-copy.js       the panel in Canvas's own editors; the copies after its Save
+src/sections/link-copy.js         Copy a module's external links to the other classes (Modules API)
 src/speedgrader/content.js        comment draft autosave; live sync with the gradebook
 src/speedgrader/sidebar-layout.js the sidebar as Submission / Assessment / Comments cards
 src/page/env-bridge.js            page context: ENV ids, column widths, Canvas's store and tray
