@@ -123,7 +123,9 @@
       form: {
         name: '', by: prefs.by, count: prefs.count, size: prefs.size,
         format: prefs.format, mode: prefs.mode, limit: '', restrict: false, section: '',
-        busy: false, progress: '', error: null
+        busy: false, progress: '', error: null,
+        // The name box shows only for a format that is not one of the tiles.
+        custom: !G().PRESETS.some(function (p) { return p.format === prefs.format; }) && prefs.formats.indexOf(prefs.format) < 0
       },
       board: null, copy: null
     };
@@ -147,12 +149,17 @@
     root.addEventListener('drop', function (e) { self.onDrop(e); });
     root.addEventListener('dragend', function () {
       // Dropped outside every card: nothing moves.
+      if (self.root) self.root.classList.remove('is-dragging');
       if (!self._dragUid) return;
       self._dragUid = null;
       self.render();
     });
     this._onKey = function (e) {
-      if (e.key === 'Escape') { e.stopPropagation(); self.requestClose(); }
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      // A picked student is let go first; a second Escape closes.
+      if (self.state && self.state.board && self.state.board.picked) { self.state.board.picked = null; self.render(); return; }
+      self.requestClose();
     };
     document.addEventListener('keydown', this._onKey, true);
     document.body.appendChild(root);
@@ -270,6 +277,18 @@
 
   /* -------------------------------------------------------------- render */
 
+  var ICONS = {
+    shuffle: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 6h3.2c1.4 0 2.6.7 3.4 1.8l2.8 4.4c.8 1.1 2 1.8 3.4 1.8H17M3 14h3.2c1.4 0 2.6-.7 3.4-1.8M12.4 7.8c.8-1.1 2-1.8 3.4-1.8H17M15 4l2 2-2 2M15 12l2 2-2 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    hand: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 10V4.5a1.3 1.3 0 0 1 2.6 0V9m0-.5V3.3a1.3 1.3 0 0 1 2.6 0V9m0-4.2a1.3 1.3 0 0 1 2.6 0V11c0 3.6-2.3 6-5.6 6-2.4 0-3.7-1.2-4.9-3.2L2.9 11a1.3 1.3 0 0 1 2.2-1.4L7 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    signup: '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3.5" y="3" width="13" height="14.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 7.5h6M7 11h6M7 14.5h3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>'
+  };
+
+  /** A message inside the dialog (a toast would sit on top of it). */
+  P.notice = function (text, kind) {
+    if (!this.state) { CGP.ui.toast(text, kind === 'error' ? { level: 'error' } : undefined); return; }
+    this.state.notice = text ? { text: text, kind: kind || 'ok' } : null;
+  };
+
   P.render = function () {
     if (!this.root || !this.state) return;
     var st = this.state;
@@ -278,22 +297,30 @@
     var active = document.activeElement;
     var focusKey = active && this.root.contains(active) ? active.getAttribute('data-k') : null;
     var sel = focusKey && typeof active.selectionStart === 'number' ? [active.selectionStart, active.selectionEnd] : null;
+    var scroller = this.root.querySelector('.cgp-stats__panel');
+    var scrollTop = scroller ? scroller.scrollTop : 0;
+    var boardEl = this.root.querySelector('.cgp-g-board');
+    var boardTop = boardEl ? boardEl.scrollTop : 0;
 
     var html;
-    if (st.loading) html = '<p class="cgp-stats__note">Reading your students and groups from Canvas…</p>';
-    else if (st.error) html = '<p class="cgp-groups__error">' + esc(st.error) + '</p><button type="button" class="cgp-roster__btn" data-act="retry">Try again</button>';
+    if (st.loading) html = '<div class="cgp-g-empty"><span class="cgp-g-spin" aria-hidden="true"></span>Reading your students and groups from Canvas…</div>';
+    else if (st.error) html = '<div class="cgp-g-notice is-error">' + esc(st.error) + '</div><button type="button" class="cgp-g-btn" data-act="retry">Try again</button>';
     else {
       html = this.renderTabs();
+      if (st.notice) {
+        html += '<div class="cgp-g-notice is-' + st.notice.kind + '" role="status"><span>' + esc(st.notice.text) + '</span>' +
+          (st.changed && st.notice.kind === 'ok' ? '<button type="button" class="cgp-g-link" data-act="reload">Reload the page to see it in Canvas</button>' : '') +
+          '<button type="button" class="cgp-g-x" data-act="dismiss" aria-label="Dismiss">×</button></div>';
+      }
       if (st.view === 'board' && st.board) html += this.renderBoard();
       else if (st.view === 'copy' && st.copy) html += this.renderCopy();
       else if (st.view === 'sets') html += this.renderSets();
       else html += this.renderNew();
-      if (st.changed) {
-        html += '<p class="cgp-groups__reload">Canvas’s own tabs show the changes after a reload. ' +
-          '<button type="button" class="cgp-groups__link" data-act="reload">Reload now</button></p>';
-      }
     }
     body.innerHTML = html;
+    if (scroller) scroller.scrollTop = scrollTop;
+    var boardNow = this.root.querySelector('.cgp-g-board');
+    if (boardNow) boardNow.scrollTop = boardTop;
     if (focusKey) {
       var again = body.querySelector('[data-k="' + focusKey + '"]');
       if (again) {
@@ -306,11 +333,10 @@
     var st = this.state;
     var tab = function (view, label) {
       var on = st.view === view || (view === 'sets' && (st.view === 'board' || st.view === 'copy'));
-      return '<button type="button" class="cgp-sections__tab' + (on ? ' is-on' : '') + '" data-act="view" data-view="' + view + '"' +
-        (on ? ' aria-current="true"' : '') + '>' + esc(label) + '</button>';
+      return '<button type="button" role="tab" class="cgp-g-tab' + (on ? ' is-on' : '') + '" data-act="view" data-view="' + view + '" aria-selected="' + on + '">' + label + '</button>';
     };
-    return '<div class="cgp-sections__tabs cgp-groups__tabs">' +
-      tab('new', 'New group set') + tab('sets', 'Your group sets (' + st.sets.length + ')') + '</div>';
+    return '<div class="cgp-g-tabs" role="tablist">' +
+      tab('new', 'New group set') + tab('sets', 'Your group sets <span class="cgp-g-pill">' + st.sets.length + '</span>') + '</div>';
   };
 
   /* ------------------------------------------------------------ new set */
@@ -334,96 +360,133 @@
     var c = this.formCount();
     var r = G().sizeRange(n, c);
     var each = r.min === r.max ? String(r.min) : r.min + '–' + r.max;
-    return n + ' student' + (n === 1 ? '' : 's') + ' → ' + c + ' group' + (c === 1 ? '' : 's') + ' of ' + each;
+    return c + ' group' + (c === 1 ? '' : 's') + ' of ' + each + ' · ' + n + ' student' + (n === 1 ? '' : 's');
   };
 
+  /* The preview: the groups as they will be made, with how many students
+   * each gets (or may take, for sign-up). */
   P.previewHtml = function () {
+    var f = this.state.form;
     var names = this.formNames();
-    var shown = names.slice(0, 10);
-    var more = names.length - shown.length;
-    return shown.map(function (n) { return '<span class="cgp-sections__chip">' + esc(n) + '</span>'; }).join('') +
-      (more > 0 ? '<span class="cgp-groups__more">and ' + more + ' more</span>' : '');
+    var n = this.formStudents();
+    var c = names.length;
+    var limit = Math.floor(Number(f.limit) || 0);
+    var shown = names.slice(0, 12);
+    var cards = shown.map(function (name, i) {
+      var size = Math.floor(n / c) + (i < n % c ? 1 : 0);
+      var sub = f.mode === 'signup' ? (limit ? 'up to ' + limit : 'open') : (f.mode === 'random' ? size + ' student' + (size === 1 ? '' : 's') : 'empty');
+      return '<li><span class="cgp-g-pv__name">' + esc(name) + '</span><span class="cgp-g-pv__sub">' + esc(sub) + '</span></li>';
+    }).join('');
+    var more = c - shown.length;
+    var foot = f.mode === 'random' ? 'Students are shuffled into these groups when you press Make groups.'
+      : (f.mode === 'manual' ? 'The groups open next, ready for you to drag students in.' : 'Students pick a group themselves in Canvas.');
+    return '<div class="cgp-g-pv__head"><span>Preview</span><b data-part="sizes">' + esc(this.sizeLine()) + '</b></div>' +
+      '<ul class="cgp-g-pv__list">' + cards + (more > 0 ? '<li class="cgp-g-pv__more">+ ' + more + ' more</li>' : '') + '</ul>' +
+      '<p class="cgp-g-pv__foot">' + esc(foot) + '</p>';
+  };
+
+  P.styleTiles = function () {
+    var f = this.state.form;
+    var prefs = CGP.cleanGroupPrefs(this.settings.values.groupPrefs);
+    var set = f.name;
+    var sample = function (format) { return G().formatNames(format, 3, { set: set }).join(', ') + '…'; };
+    var tile = function (format, title, removable) {
+      var on = !f.custom && f.format === format;
+      return '<div class="cgp-g-tile' + (on ? ' is-on' : '') + '">' +
+        '<button type="button" class="cgp-g-tile__btn" data-act="style" data-format="' + esc(format) + '" aria-pressed="' + on + '">' +
+        '<b>' + esc(title) + '</b><span>' + esc(sample(format)) + '</span></button>' +
+        (removable ? '<button type="button" class="cgp-g-tile__x" data-act="forget-format" data-format="' + esc(format) + '" aria-label="Remove ' + esc(title) + ' from your styles" title="Remove from your styles">×</button>' : '') +
+        '</div>';
+    };
+    var tiles = G().PRESETS.map(function (p) { return tile(p.format, p.label, false); }).join('') +
+      prefs.formats.map(function (s) {
+        var title = G().parseFormat(s).kind === 'list' ? 'Your list' : (s.length > 22 ? s.slice(0, 21) + '…' : s);
+        return tile(s, title, true);
+      }).join('') +
+      '<div class="cgp-g-tile cgp-g-tile--custom' + (f.custom ? ' is-on' : '') + '"><button type="button" class="cgp-g-tile__btn" data-act="style-custom" aria-pressed="' + !!f.custom + '">' +
+      '<b>Your own…</b><span>Type a pattern or a list</span></button></div>';
+    return '<div class="cgp-g-tiles">' + tiles + '</div>';
   };
 
   P.renderNew = function () {
     var st = this.state;
     var f = st.form;
     var prefs = CGP.cleanGroupPrefs(this.settings.values.groupPrefs);
-    var presets = G().PRESETS;
-    var known = presets.some(function (p) { return p.format === f.format; }) || prefs.formats.indexOf(f.format) >= 0;
-    var saved = prefs.formats.indexOf(f.format) >= 0;
-    var options = '<optgroup label="Built in">' + presets.map(function (p) {
-      return '<option value="p:' + esc(p.format) + '"' + (p.format === f.format ? ' selected' : '') + '>' + esc(p.label) + '</option>';
-    }).join('') + '</optgroup>';
-    if (prefs.formats.length) {
-      options += '<optgroup label="Your formats">' + prefs.formats.map(function (s) {
-        var label = s.length > 48 ? s.slice(0, 46) + '…' : s;
-        return '<option value="p:' + esc(s) + '"' + (s === f.format ? ' selected' : '') + '>' + esc(label) + '</option>';
-      }).join('') + '</optgroup>';
-    }
-    options += '<option value="custom"' + (known ? '' : ' selected') + '>Your own…</option>';
-
-    var radio = function (name, value, cur, label) {
-      return '<label class="cgp-groups__radio"><input type="radio" name="' + name + '" value="' + value + '" data-f="' + name + '"' +
-        (cur === value ? ' checked' : '') + (f.busy ? ' disabled' : '') + '> ' + label + '</label>';
-    };
-    var sections = st.sections.length ? '<div class="cgp-groups__field"><label class="cgp-groups__label" for="cgp-g-section">Students</label>' +
-      '<select id="cgp-g-section" class="cgp-groups__input" data-f="section"' + (f.busy ? ' disabled' : '') + '>' +
-      '<option value="">Everyone in this class (' + st.roster.length + ')</option>' +
-      st.sections.map(function (s) {
-        return '<option value="' + esc(s.id) + '"' + (f.section === s.id ? ' selected' : '') + '>Only ' + esc(s.name) + ' (' + this.studentsIn(s.id).length + ')</option>';
-      }, this).join('') + '</select></div>' : '';
-
-    var signup = f.mode === 'signup' ? '<div class="cgp-groups__sub">' +
-      '<label class="cgp-groups__inline">At most <input type="number" min="1" max="50" class="cgp-groups__num" data-f="limit" data-k="limit" value="' + esc(f.limit) + '" placeholder="' +
-      esc(G().sizeRange(this.formStudents(), this.formCount()).max) + '"' + (f.busy ? ' disabled' : '') + '> students per group <span class="cgp-groups__hint">(blank: no limit)</span></label>' +
-      (st.sections.length ? '<label class="cgp-groups__inline"><input type="checkbox" data-f="restrict"' + (f.restrict ? ' checked' : '') + (f.busy ? ' disabled' : '') +
-        '> Only with classmates in their own section</label>' : '') +
-      '</div>' : '';
-
+    var dis = f.busy ? ' disabled' : '';
     var count = this.formCount();
+    var byCount = f.by !== 'size';
+    var value = byCount ? f.count : f.size;
+
+    var taken = G().nameTaken(f.name, st.sets.map(function (s) { return s.name; }));
+    var step1 = '<section class="cgp-g-step"><h3><span class="cgp-g-num">1</span>Groups</h3>' +
+      '<label class="cgp-g-field"><span class="cgp-g-label">Name of the group set</span>' +
+      '<input class="cgp-g-input" data-f="name" data-k="name" maxlength="80" value="' + esc(f.name) + '" placeholder="e.g. Lab Groups"' + dis + '>' +
+      '<span class="cgp-g-warn" data-part="taken"' + (taken ? '' : ' hidden') + '>This class already has a group set with this name.</span></label>' +
+      (st.sections.length ? '<label class="cgp-g-field"><span class="cgp-g-label">Students</span>' +
+        '<select class="cgp-g-input" data-f="section"' + dis + '><option value="">Everyone in this class (' + st.roster.length + ')</option>' +
+        st.sections.map(function (s) {
+          return '<option value="' + esc(s.id) + '"' + (f.section === s.id ? ' selected' : '') + '>Only ' + esc(s.name) + ' (' + this.studentsIn(s.id).length + ')</option>';
+        }, this).join('') + '</select></label>' : '') +
+      '<div class="cgp-g-field"><span class="cgp-g-label">Make</span><div class="cgp-g-how">' +
+      '<div class="cgp-g-stepper"><button type="button" data-act="step" data-d="-1" aria-label="Fewer"' + dis + '>−</button>' +
+      '<input type="number" min="1" max="' + (byCount ? 100 : 50) + '" data-f="' + (byCount ? 'count' : 'size') + '" data-k="' + (byCount ? 'count' : 'size') + '" value="' + esc(value) + '" aria-label="' + (byCount ? 'Number of groups' : 'Students per group') + '"' + dis + '>' +
+      '<button type="button" data-act="step" data-d="1" aria-label="More"' + dis + '>+</button></div>' +
+      '<div class="cgp-g-seg" role="group" aria-label="Count by">' +
+      '<button type="button" data-act="by" data-v="count" aria-pressed="' + byCount + '" class="' + (byCount ? 'is-on' : '') + '"' + dis + '>groups</button>' +
+      '<button type="button" data-act="by" data-v="size" aria-pressed="' + !byCount + '" class="' + (!byCount ? 'is-on' : '') + '"' + dis + '>students per group</button>' +
+      '</div></div></div></section>';
+
+    var custom = f.custom ? '<div class="cgp-g-custom">' +
+      '<input class="cgp-g-input" data-f="format" data-k="format" maxlength="400" value="' + esc(f.format) + '" placeholder="e.g. Lab Team {A}  or  Red, Blue, Green" aria-label="Your own group names"' + dis + '>' +
+      '<div class="cgp-g-insert"><span>Insert:</span>' +
+      '<button type="button" data-act="token" data-t="{n}"' + dis + '>1, 2, 3</button>' +
+      '<button type="button" data-act="token" data-t="{nn}"' + dis + '>01, 02, 03</button>' +
+      '<button type="button" data-act="token" data-t="{A}"' + dis + '>A, B, C</button>' +
+      '<button type="button" data-act="token" data-t="{set}"' + dis + '>set name</button>' +
+      (prefs.formats.indexOf(f.format.trim()) < 0 && f.format.trim() ? '<button type="button" class="cgp-g-insert__save" data-act="save-format"' + dis + '>Save to my styles</button>' : '<span class="cgp-g-saved">Saved in your styles</span>') +
+      '</div><p class="cgp-g-help">Or type the names, separated by commas.</p></div>' : '';
+    var step2 = '<section class="cgp-g-step"><h3><span class="cgp-g-num">2</span>Group names</h3>' + this.styleTiles() + custom + '</section>';
+
+    var mode = function (value2, icon, title, text) {
+      var on = f.mode === value2;
+      return '<label class="cgp-g-choice' + (on ? ' is-on' : '') + '"><input type="radio" name="mode" value="' + value2 + '" data-f="mode"' + (on ? ' checked' : '') + dis + '>' +
+        '<span class="cgp-g-choice__icon">' + ICONS[icon] + '</span><span class="cgp-g-choice__text"><b>' + title + '</b><span>' + text + '</span></span></label>';
+    };
+    var signup = f.mode === 'signup' ? '<div class="cgp-g-signup">' +
+      '<label class="cgp-g-inline">At most <input type="number" min="1" max="50" class="cgp-g-small" data-f="limit" data-k="limit" value="' + esc(f.limit) + '" placeholder="any"' + dis + '> students per group</label>' +
+      (st.sections.length ? '<label class="cgp-g-inline"><input type="checkbox" data-f="restrict"' + (f.restrict ? ' checked' : '') + dis + '> Only with classmates in their own section</label>' : '') +
+      '</div>' : '';
+    var step3 = '<section class="cgp-g-step"><h3><span class="cgp-g-num">3</span>How students join</h3><div class="cgp-g-choices">' +
+      mode('random', 'shuffle', 'Shuffle them in', 'Random and even. You can still move anyone.') +
+      mode('manual', 'hand', 'I’ll choose', 'Drag each student into a group.') +
+      mode('signup', 'signup', 'Students sign up', 'They pick a group in Canvas.') +
+      '</div>' + signup + '</section>';
+
     var go = f.busy ? (f.progress || 'Working…') : 'Make ' + count + ' group' + (count === 1 ? '' : 's');
-    return '<div class="cgp-groups__form">' +
-      '<div class="cgp-groups__field"><label class="cgp-groups__label" for="cgp-g-name">Group set name</label>' +
-      '<input id="cgp-g-name" class="cgp-groups__input" data-f="name" data-k="name" maxlength="80" value="' + esc(f.name) + '"' + (f.busy ? ' disabled' : '') + '>' +
-      (G().nameTaken(f.name, st.sets.map(function (s) { return s.name; })) ? '<span class="cgp-groups__warn">This class already has a group set with this name.</span>' : '') +
-      '</div>' +
-      sections +
-      '<div class="cgp-groups__field"><span class="cgp-groups__label">How many</span><div class="cgp-groups__row">' +
-      '<label class="cgp-groups__radio"><input type="radio" name="by" value="count" data-f="by"' + (f.by === 'count' ? ' checked' : '') + (f.busy ? ' disabled' : '') + '> ' +
-      '<input type="number" min="1" max="100" class="cgp-groups__num" data-f="count" data-k="count" value="' + esc(f.count) + '" aria-label="Number of groups"' + (f.busy ? ' disabled' : '') + '> groups</label>' +
-      '<label class="cgp-groups__radio"><input type="radio" name="by" value="size" data-f="by"' + (f.by === 'size' ? ' checked' : '') + (f.busy ? ' disabled' : '') + '> ' +
-      '<input type="number" min="1" max="50" class="cgp-groups__num" data-f="size" data-k="size" value="' + esc(f.size) + '" aria-label="Students per group"' + (f.busy ? ' disabled' : '') + '> students per group</label>' +
-      '</div><div class="cgp-groups__hint" data-part="sizes">' + esc(this.sizeLine()) + '</div></div>' +
-      '<div class="cgp-groups__field"><label class="cgp-groups__label" for="cgp-g-format">Group names</label><div class="cgp-groups__row">' +
-      '<select id="cgp-g-format" class="cgp-groups__input cgp-groups__input--select" data-f="formatPick"' + (f.busy ? ' disabled' : '') + '>' + options + '</select>' +
-      '<input class="cgp-groups__input cgp-groups__input--grow" data-f="format" data-k="format" maxlength="400" value="' + esc(f.format) + '" aria-label="Name format"' + (f.busy ? ' disabled' : '') + '>' +
-      (saved ? '<button type="button" class="cgp-roster__btn" data-act="forget-format"' + (f.busy ? ' disabled' : '') + '>Remove from your formats</button>'
-        : (known ? '' : '<button type="button" class="cgp-roster__btn" data-act="save-format"' + (f.busy ? ' disabled' : '') + '>Save format</button>')) +
-      '</div><div class="cgp-groups__hint">Use <code>{n}</code> for 1, 2, 3 · <code>{nn}</code> for 01, 02 · <code>{A}</code> for A, B, C · <code>{a}</code> for a, b, c · ' +
-      '<code>{set}</code> for the set’s name — or list names separated by commas.</div>' +
-      '<div class="cgp-sections__chips" data-part="preview">' + this.previewHtml() + '</div></div>' +
-      '<div class="cgp-groups__field"><span class="cgp-groups__label">Putting students in groups</span>' +
-      radio('mode', 'random', f.mode, '<b>Sort students at random now</b> <span class="cgp-groups__hint">— groups as even as possible; you can still move anyone afterwards</span>') +
-      radio('mode', 'manual', f.mode, '<b>I’ll place students myself</b> <span class="cgp-groups__hint">— opens the groups so you can drag students in</span>') +
-      radio('mode', 'signup', f.mode, '<b>Let students sign up</b> <span class="cgp-groups__hint">— students join a group themselves in Canvas</span>') +
-      signup + '</div>' +
-      (f.error ? '<p class="cgp-groups__error">' + esc(f.error) + '</p>' : '') +
-      '<div class="cgp-groups__foot"><button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-act="create" data-part="go"' +
-      (f.busy || !String(f.name).trim() ? ' disabled' : '') + '>' + esc(go) + '</button>' +
-      '<span class="cgp-groups__hint">Nothing changes in Canvas until you press this.</span></div>' +
-      '</div>';
+    return '<div class="cgp-g-new"><div class="cgp-g-steps">' + step1 + step2 + step3 +
+      (f.error ? '<div class="cgp-g-notice is-error">' + esc(f.error) + '</div>' : '') + '</div>' +
+      '<aside class="cgp-g-pv" data-part="preview" aria-live="polite">' + this.previewHtml() + '</aside></div>' +
+      '<footer class="cgp-g-foot"><span class="cgp-g-foot__hint">Nothing changes in Canvas until you press Make.</span>' +
+      '<button type="button" class="cgp-g-btn cgp-g-btn--primary" data-act="create" data-part="go"' + (f.busy || !String(f.name).trim() ? ' disabled' : '') + '>' +
+      (f.busy ? '<span class="cgp-g-spin" aria-hidden="true"></span>' : '') + esc(go) + '</button></footer>';
   };
 
   /* Live parts of the form, updated while typing without a full redraw. */
   P.refreshNewLive = function () {
     if (!this.root || this.state.view !== 'new') return;
-    var sizes = this.root.querySelector('[data-part="sizes"]');
-    if (sizes) sizes.textContent = this.sizeLine();
     var prev = this.root.querySelector('[data-part="preview"]');
     if (prev) prev.innerHTML = this.previewHtml();
-    var go = this.root.querySelector('[data-part="go"]');
+    var tiles = this.root.querySelector('.cgp-g-tiles');
+    if (tiles && !this.state.form.custom) {
+      var wrap = document.createElement('div');
+      wrap.innerHTML = this.styleTiles();
+      tiles.parentNode.replaceChild(wrap.firstChild, tiles);
+    }
     var f = this.state.form;
+    var warn = this.root.querySelector('[data-part="taken"]');
+    var taken = G().nameTaken(f.name, this.state.sets.map(function (x) { return x.name; }));
+    if (warn) warn.hidden = !taken;
+    var go = this.root.querySelector('[data-part="go"]');
     if (go && !f.busy) {
       var c = this.formCount();
       go.textContent = 'Make ' + c + ' group' + (c === 1 ? '' : 's');
@@ -494,12 +557,12 @@
       var msg = 'Made “' + name + '” with ' + groups.length + ' group' + (groups.length === 1 ? '' : 's') +
         (f.mode === 'random' ? ' and sorted ' + r.placed + ' student' + (r.placed === 1 ? '' : 's') + ' into them' : '') + '.';
       if (f.mode === 'signup') {
-        CGP.ui.toast(msg + ' Students can now sign up in Canvas.');
+        self.notice(msg + ' Students can now sign up in Canvas.');
         st.view = 'sets';
         self.render();
         return;
       }
-      CGP.ui.toast(msg);
+      self.notice(msg + ' Move anyone you like, then save.');
       self.openBoard(category, msg);
     }).catch(function (err) {
       if (self.state !== st) return;
@@ -530,21 +593,21 @@
   P.renderSets = function () {
     var st = this.state;
     if (!st.sets.length) {
-      return '<p class="cgp-stats__note">This class has no group sets yet. ' +
-        '<button type="button" class="cgp-groups__link" data-act="view" data-view="new">Make one</button></p>';
+      return '<div class="cgp-g-empty"><b>No group sets yet</b><span>Make one in a few seconds.</span>' +
+        '<button type="button" class="cgp-g-btn cgp-g-btn--primary" data-act="view" data-view="new">New group set</button></div>';
     }
     var self = this;
-    return '<ul class="cgp-groups__sets">' + st.sets.map(function (s) {
+    return '<ul class="cgp-g-sets">' + st.sets.map(function (s) {
       var bits = [];
       if (s.groups_count != null) bits.push(s.groups_count + ' group' + (s.groups_count === 1 ? '' : 's'));
-      if (s.self_signup) bits.push('students sign up' + (s.self_signup === 'restricted' ? ' (own section)' : '') + (s.group_limit ? ', ' + s.group_limit + ' max' : ''));
+      if (s.self_signup) bits.push('students sign up' + (s.group_limit ? ' · ' + s.group_limit + ' max' : ''));
       if (s.unassigned_users_count) bits.push(s.unassigned_users_count + ' not in a group');
-      return '<li class="cgp-groups__set">' +
-        '<div class="cgp-groups__set-name"><b>' + esc(s.name) + '</b><span class="cgp-groups__hint">' + esc(bits.join(' · ')) + '</span></div>' +
-        '<div class="cgp-groups__set-acts">' +
-        '<button type="button" class="cgp-roster__btn" data-act="board" data-id="' + esc(s.id) + '">Arrange students</button>' +
-        '<button type="button" class="cgp-roster__btn" data-act="copy" data-id="' + esc(s.id) + '">Copy to…</button>' +
-        '<a class="cgp-groups__link" href="' + esc(self.groupsUrl(self.courseId, s.id)) + '">Open in Canvas</a>' +
+      return '<li class="cgp-g-set">' +
+        '<div class="cgp-g-set__name"><b>' + esc(s.name) + '</b><span>' + esc(bits.join(' · ') || 'Group set') + '</span></div>' +
+        '<div class="cgp-g-set__acts">' +
+        '<a class="cgp-g-link" href="' + esc(self.groupsUrl(self.courseId, s.id)) + '">Open in Canvas</a>' +
+        '<button type="button" class="cgp-g-btn" data-act="copy" data-id="' + esc(s.id) + '">Copy to…</button>' +
+        '<button type="button" class="cgp-g-btn cgp-g-btn--primary" data-act="board" data-id="' + esc(s.id) + '">Arrange students</button>' +
         '</div></li>';
     }).join('') + '</ul>';
   };
@@ -612,67 +675,92 @@
     return !!(s && s.sections.indexOf(b.section) >= 0);
   };
 
+  /* A colour per section, so a mixed group is visible at a glance. */
+  var SECTION_COLORS = ['#0374b5', '#b5470b', '#0b874b', '#8a3ab9', '#c2185b', '#00838f', '#6d4c41', '#5c6bc0'];
+  P.sectionColor = function (id) {
+    var list = this.state.sections;
+    for (var i = 0; i < list.length; i++) if (list[i].id === String(id)) return SECTION_COLORS[i % SECTION_COLORS.length];
+    return '#98a3ab';
+  };
+
+  P.crumbs = function (title) {
+    return '<nav class="cgp-g-crumbs"><button type="button" class="cgp-g-link" data-act="view" data-view="sets">Your group sets</button>' +
+      '<span aria-hidden="true">›</span><b>' + esc(title) + '</b></nav>';
+  };
+
   P.renderBoard = function () {
     var st = this.state;
     var b = st.board;
     var self = this;
-    var head = '<div class="cgp-groups__bar"><button type="button" class="cgp-groups__link" data-act="view" data-view="sets">← Your group sets</button>' +
-      '<h3 class="cgp-groups__title">' + esc(b.set.name) + '</h3>' +
-      '<a class="cgp-groups__link" href="' + esc(this.groupsUrl(this.courseId, b.set.id)) + '">Open in Canvas</a></div>';
-    if (b.loading) return head + '<p class="cgp-stats__note">Reading the groups…</p>';
-    if (b.error) return head + '<p class="cgp-groups__error">' + esc(b.error) + '</p>';
-    if (!b.groups.length) return head + '<p class="cgp-stats__note">This group set has no groups yet.</p>';
+    if (b.loading) return this.crumbs(b.set.name) + '<div class="cgp-g-empty"><span class="cgp-g-spin" aria-hidden="true"></span>Reading the groups…</div>';
+    if (b.error && !b.groups.length) return this.crumbs(b.set.name) + '<div class="cgp-g-notice is-error">' + esc(b.error) + '</div>';
+    if (!b.groups.length) return this.crumbs(b.set.name) + '<div class="cgp-g-empty">This group set has no groups yet.</div>';
 
     var pending = G().moves(b.before, b.after);
+    var showSections = st.sections.length && !b.section;
     var name = function (uid) {
       var s = st.byId[uid];
       return s ? s.name : (b.extra[uid] || ('User ' + uid));
     };
-    var opts = function (cur) {
-      return '<option value=""' + (cur ? '' : ' selected') + '>Not in a group</option>' + b.groups.map(function (g) {
-        return '<option value="' + esc(g.id) + '"' + (cur === g.id ? ' selected' : '') + '>' + esc(g.name) + '</option>';
-      }).join('');
+    var sortKey = function (uid) { var s = st.byId[uid]; return String(s ? s.sortable : b.extra[uid] || ''); };
+    var membersOf = function (gid) {
+      return Object.keys(b.after).filter(function (uid) { return (b.after[uid] || '') === gid && self.boardVisible(uid); })
+        .sort(function (x, y) { return sortKey(x).localeCompare(sortKey(y)); });
     };
-    var cards = [{ id: '', name: 'Not in a group', max: null }].concat(b.groups).map(function (g) {
-      var members = Object.keys(b.after).filter(function (uid) { return (b.after[uid] || '') === g.id; });
-      var shown = members.filter(function (uid) { return self.boardVisible(uid); })
-        .sort(function (x, y) {
-          var a = st.byId[x], c = st.byId[y];
-          return String(a ? a.sortable : b.extra[x] || '').localeCompare(String(c ? c.sortable : b.extra[y] || ''));
-        });
-      var full = g.max && members.length > g.max;
-      var rows = shown.map(function (uid) {
-        var moved = (b.before[uid] || '') !== (b.after[uid] || '');
-        var s = st.byId[uid];
-        var tag = !s ? '<span class="cgp-sections__tag">not enrolled</span>'
-          : (st.sections.length && !b.section && s.sections.length ? '<span class="cgp-sections__tag">' + esc(self.sectionName(s.sections[0])) + '</span>' : '');
-        return '<li class="cgp-groups__member' + (moved ? ' is-moved' : '') + (b.failed[uid] ? ' is-failed' : '') + '" draggable="true" data-uid="' + esc(uid) + '">' +
-          '<span class="cgp-groups__grip" aria-hidden="true">⋮⋮</span><span class="cgp-groups__who">' + esc(name(uid)) + '</span>' + tag +
-          '<select class="cgp-groups__move" data-uid="' + esc(uid) + '" aria-label="Group for ' + esc(name(uid)) + '"' + (b.saving ? ' disabled' : '') + '>' + opts(b.after[uid] || '') + '</select></li>';
-      }).join('');
-      var count = members.length + (g.max ? ' / ' + g.max : '');
-      return '<section class="cgp-groups__card' + (g.id ? '' : ' cgp-groups__card--none') + (full ? ' is-over' : '') + '" data-gid="' + esc(g.id) + '">' +
-        '<h4>' + esc(g.name) + ' <span class="cgp-groups__count">' + esc(count) + '</span></h4>' +
-        '<ul>' + (rows || '<li class="cgp-groups__empty">' + (g.id ? 'Drop students here' : 'Everyone is in a group') + '</li>') + '</ul></section>';
+    var member = function (uid) {
+      var s = st.byId[uid];
+      var moved = (b.before[uid] || '') !== (b.after[uid] || '');
+      var picked = b.picked === uid;
+      var dot = showSections && s && s.sections.length
+        ? '<span class="cgp-g-dot" style="background:' + self.sectionColor(s.sections[0]) + '" title="' + esc(self.sectionName(s.sections[0])) + '"></span>' : '';
+      return '<li class="cgp-g-member' + (moved ? ' is-moved' : '') + (picked ? ' is-picked' : '') + (b.failed[uid] ? ' is-failed' : '') + '" draggable="' + !b.saving + '" data-uid="' + esc(uid) + '">' +
+        '<button type="button" data-act="pick" data-uid="' + esc(uid) + '" aria-pressed="' + picked + '"' + (b.saving ? ' disabled' : '') + '>' + dot +
+        '<span class="cgp-g-member__name">' + esc(name(uid)) + '</span>' + (!s ? '<span class="cgp-g-tag">not enrolled</span>' : '') + '</button></li>';
+    };
+    var moveHere = function (gid) {
+      if (!b.picked || (b.after[b.picked] || '') === gid) return '';
+      return '<button type="button" class="cgp-g-movehere" data-act="drop" data-gid="' + esc(gid) + '">Move ' + esc(name(b.picked).split(' ')[0]) + ' here</button>';
+    };
+
+    var unassigned = membersOf('');
+    var tray = '<section class="cgp-g-tray' + (unassigned.length ? '' : ' is-empty') + '" data-gid="">' +
+      '<h4>Not in a group <span class="cgp-g-count">' + unassigned.length + '</span>' + moveHere('') + '</h4>' +
+      (unassigned.length ? '<ul>' + unassigned.map(member).join('') + '</ul>' : '<p>Everyone is in a group. Drop a student here to take them out.</p>') + '</section>';
+    var cards = b.groups.map(function (g) {
+      var list = membersOf(g.id);
+      var total = Object.keys(b.after).filter(function (uid) { return b.after[uid] === g.id; }).length;
+      var over = g.max && total > g.max;
+      return '<section class="cgp-g-card' + (over ? ' is-over' : '') + (b.picked ? ' is-pickable' : '') + '" data-gid="' + esc(g.id) + '">' +
+        '<h4><span class="cgp-g-card__name">' + esc(g.name) + '</span><span class="cgp-g-count">' + total + (g.max ? ' / ' + g.max : '') + '</span></h4>' +
+        (list.length ? '<ul>' + list.map(member).join('') + '</ul>' : '<p class="cgp-g-card__empty">No students yet</p>') + moveHere(g.id) + '</section>';
     }).join('');
 
-    var sectionPick = st.sections.length ? '<select class="cgp-groups__input cgp-groups__input--select" data-f="boardSection" aria-label="Show students from"' + (b.saving ? ' disabled' : '') + '>' +
-      '<option value="">Everyone</option>' + st.sections.map(function (s) {
-        return '<option value="' + esc(s.id) + '"' + (b.section === s.id ? ' selected' : '') + '>Only ' + esc(s.name) + '</option>';
+    var visible = st.roster.filter(function (s) { return self.boardVisible(s.id); }).length;
+    var legend = showSections ? '<div class="cgp-g-legend">' + st.sections.map(function (s) {
+      return '<span><span class="cgp-g-dot" style="background:' + self.sectionColor(s.id) + '"></span>' + esc(s.name) + '</span>';
+    }).join('') + '</div>' : '';
+    var sectionPick = st.sections.length ? '<select class="cgp-g-input cgp-g-input--auto" data-f="boardSection" aria-label="Show students from"' + (b.saving ? ' disabled' : '') + '>' +
+      '<option value="">All sections</option>' + st.sections.map(function (s) {
+        return '<option value="' + esc(s.id) + '"' + (b.section === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>';
       }).join('') + '</select>' : '';
-    var who = b.section ? ' in ' + esc(this.sectionName(b.section)) : '';
-    var tools = '<div class="cgp-groups__tools">' + sectionPick +
-      '<button type="button" class="cgp-roster__btn" data-act="shuffle-rest"' + (b.saving ? ' disabled' : '') + ' title="Students' + who + ' who are not in a group yet go into the smallest groups, at random">Sort the rest at random</button>' +
-      '<button type="button" class="cgp-roster__btn" data-act="shuffle-all"' + (b.saving ? ' disabled' : '') + ' title="Every student' + who + ' is placed again, at random">Shuffle everyone' + who + '</button>' +
-      '<span class="cgp-groups__hint">Drag a student to another group, or pick one beside their name.</span></div>';
-    var foot = '<div class="cgp-groups__foot">' +
-      '<button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-act="save-board"' + (pending.length && !b.saving ? '' : ' disabled') + '>' +
-      (b.saving ? esc(b.progress || 'Saving…') : 'Save ' + pending.length + ' change' + (pending.length === 1 ? '' : 's')) + '</button>' +
-      '<button type="button" class="cgp-roster__btn" data-act="undo-board"' + (pending.length && !b.saving ? '' : ' disabled') + '>Undo changes</button>' +
-      '<button type="button" class="cgp-roster__btn" data-act="copy" data-id="' + esc(b.set.id) + '"' + (b.saving ? ' disabled' : '') + '>Copy these groups to…</button>' +
-      '<span class="cgp-groups__hint">' + (pending.length ? 'Not saved yet: Canvas changes when you press Save.' : esc(b.message || 'Everything here is saved in Canvas.')) + '</span></div>';
-    return head + tools + (b.error ? '<p class="cgp-groups__error">' + esc(b.error) + '</p>' : '') +
-      '<div class="cgp-groups__board">' + cards + '</div>' + foot;
+
+    var head = this.crumbs(b.set.name) +
+      '<div class="cgp-g-boardbar"><div class="cgp-g-boardbar__left">' + sectionPick +
+      '<button type="button" class="cgp-g-btn" data-act="shuffle-all"' + (b.saving ? ' disabled' : '') + '>' + ICONS.shuffle + 'Shuffle everyone</button>' +
+      (unassigned.length ? '<button type="button" class="cgp-g-btn" data-act="shuffle-rest"' + (b.saving ? ' disabled' : '') + '>Place the ' + unassigned.length + ' not in a group</button>' : '') +
+      '</div><div class="cgp-g-boardbar__right"><span class="cgp-g-meta">' + b.groups.length + ' groups · ' + visible + ' students</span>' +
+      '<a class="cgp-g-link" href="' + esc(this.groupsUrl(this.courseId, b.set.id)) + '">Open in Canvas</a></div></div>' +
+      '<p class="cgp-g-help cgp-g-help--board">' + (b.picked ? '<b>' + esc(name(b.picked)) + '</b> selected — tap a group to move them, or tap them again to cancel.'
+        : 'Tap a student, then tap a group to move them. Or drag them.') + '</p>' + legend;
+
+    var foot = '<footer class="cgp-g-foot">' +
+      '<button type="button" class="cgp-g-btn cgp-g-foot__copy" data-act="copy" data-id="' + esc(b.set.id) + '"' + (b.saving ? ' disabled' : '') + '>Copy to another class…</button>' +
+      '<span class="cgp-g-foot__hint">' + (pending.length ? pending.length + ' unsaved change' + (pending.length === 1 ? '' : 's') : 'All changes saved') + '</span>' +
+      '<button type="button" class="cgp-g-btn" data-act="undo-board"' + (pending.length && !b.saving ? '' : ' disabled') + '>Discard</button>' +
+      '<button type="button" class="cgp-g-btn cgp-g-btn--primary" data-act="save-board"' + (pending.length && !b.saving ? '' : ' disabled') + '>' +
+      (b.saving ? '<span class="cgp-g-spin" aria-hidden="true"></span>' + esc(b.progress || 'Saving…') : 'Save changes') + '</button></footer>';
+    return head + (b.error ? '<div class="cgp-g-notice is-error">' + esc(b.error) + '</div>' : '') +
+      '<div class="cgp-g-board">' + tray + '<div class="cgp-g-cards">' + cards + '</div></div>' + foot;
   };
 
   P.boardShuffle = function (keep) {
@@ -683,7 +771,9 @@
     var plan = G().planRandom({ groups: b.groups, current: b.after, pool: pool, keep: keep });
     pool.forEach(function (uid) { b.after[uid] = plan.placement[uid] || null; });
     b.message = null;
-    if (plan.unplaced.length) CGP.ui.toast(plan.unplaced.length + ' student' + (plan.unplaced.length === 1 ? '' : 's') + ' didn’t fit: every group is full.');
+    b.picked = null;
+    this.notice(plan.unplaced.length ? plan.unplaced.length + ' student' + (plan.unplaced.length === 1 ? '' : 's') + ' didn’t fit: every group is full.'
+      : 'Shuffled. Nothing is saved until you press Save changes.', plan.unplaced.length ? 'error' : 'info');
     this.render();
   };
 
@@ -714,7 +804,7 @@
         b.error = r.failed.length + ' change' + (r.failed.length === 1 ? '' : 's') + ' didn’t save (marked in red): ' +
           CGP.util.describeApiError(r.failed[0].err, { fallback: 'Canvas refused it' }) + ' Press Save to try again.';
       } else {
-        b.message = 'Saved ' + r.done.length + ' change' + (r.done.length === 1 ? '' : 's') + ' in Canvas.';
+        self.notice('Saved ' + r.done.length + ' change' + (r.done.length === 1 ? '' : 's') + ' in Canvas.');
       }
       self.render();
     });
@@ -770,51 +860,51 @@
   P.renderCopy = function () {
     var st = this.state;
     var c = st.copy;
-    var self = this;
-    var head = '<div class="cgp-groups__bar"><button type="button" class="cgp-groups__link" data-act="view" data-view="sets">← Your group sets</button>' +
-      '<h3 class="cgp-groups__title">Copy “' + esc(c.set.name) + '”</h3></div>';
-    if (c.loading) return head + '<p class="cgp-stats__note">Reading the groups…</p>';
-    if (c.error && !c.results) return head + '<p class="cgp-groups__error">' + esc(c.error) + '</p>';
+    var head = this.crumbs('Copy “' + c.set.name + '”');
+    if (c.loading) return head + '<div class="cgp-g-empty"><span class="cgp-g-spin" aria-hidden="true"></span>Reading the groups…</div>';
+    if (c.error && !c.results) return head + '<div class="cgp-g-notice is-error">' + esc(c.error) + '</div>';
 
     if (c.results) {
-      return head + '<ul class="cgp-groups__results">' + c.results.map(function (r) {
-        var link = r.url ? ' <a class="cgp-groups__link" href="' + esc(r.url) + '" target="_blank" rel="noopener">Open</a>' : '';
-        return '<li class="cgp-groups__result is-' + r.status + '"><b>' + esc(r.label) + '</b> — ' + esc(r.text) + link + '</li>';
+      return head + '<ul class="cgp-g-results">' + c.results.map(function (r) {
+        var mark = r.status === 'ok' ? '✓' : (r.status === 'skip' ? '–' : '!');
+        var link = r.url ? '<a class="cgp-g-link" href="' + esc(r.url) + '" target="_blank" rel="noopener">Open</a>' : '';
+        return '<li class="cgp-g-result is-' + r.status + '"><span class="cgp-g-result__mark" aria-hidden="true">' + mark + '</span>' +
+          '<span><b>' + esc(r.label) + '</b><br>' + esc(r.text) + '</span>' + link + '</li>';
       }).join('') + '</ul>' +
-        '<div class="cgp-groups__foot"><button type="button" class="cgp-roster__btn" data-act="view" data-view="sets">Done</button></div>';
+        '<footer class="cgp-g-foot"><span class="cgp-g-foot__hint"></span><button type="button" class="cgp-g-btn cgp-g-btn--primary" data-act="view" data-view="sets">Done</button></footer>';
     }
 
     var signup = c.set.self_signup;
-    var groupLine = c.groups.length + ' group' + (c.groups.length === 1 ? '' : 's') + ': ' +
-      c.groups.slice(0, 6).map(function (g) { return g.name; }).join(', ') + (c.groups.length > 6 ? '…' : '');
     var t = this.copyTargets();
     var row = function (d) {
-      return '<label class="cgp-sections__course"><input type="checkbox" data-dest="' + esc(d.key) + '"' + (c.dests[d.key] ? ' checked' : '') + (c.running ? ' disabled' : '') + '>' +
-        '<span class="cgp-sections__course-name">' + esc(d.label) + '</span>' +
-        (d.linked ? '<span class="cgp-sections__tag cgp-sections__tag--hint">linked class</span>' : '') +
-        (d.sub ? '<span class="cgp-sections__term">' + esc(d.sub) + '</span>' : '') + '</label>';
+      var on = !!c.dests[d.key];
+      return '<label class="cgp-g-dest' + (on ? ' is-on' : '') + '"><input type="checkbox" data-dest="' + esc(d.key) + '"' + (on ? ' checked' : '') + (c.running ? ' disabled' : '') + '>' +
+        '<span class="cgp-g-dest__name">' + esc(d.label) + (d.linked ? ' <span class="cgp-g-tag cgp-g-tag--ok">linked</span>' : '') + '</span>' +
+        (d.sub ? '<span class="cgp-g-dest__sub">' + esc(d.sub) + '</span>' : '') + '</label>';
     };
-    var list = '';
-    if (t.linked.length) list += '<div class="cgp-groups__group-h">Your linked classes</div>' + t.linked.map(row).join('');
-    if (t.sections.length) list += '<div class="cgp-groups__group-h">Another section of this class</div>' + t.sections.map(row).join('');
-    list += '<div class="cgp-groups__group-h">' + (t.linked.length ? 'Other courses you teach' : 'Courses you teach') + (t.term && !c.showAll ? ' · ' + esc(t.term) : '') + '</div>' +
-      (t.others.length ? t.others.map(row).join('') : '<div class="cgp-groups__hint cgp-groups__pad">No other courses' + (t.term && !c.showAll ? ' this term' : '') + '.</div>') +
-      (t.term ? '<button type="button" class="cgp-groups__link cgp-groups__pad" data-act="copy-all-terms">' + (c.showAll ? 'Only this term' : 'Show every term') + '</button>' : '');
+    var block = function (title, rows) { return rows.length ? '<div class="cgp-g-destgroup"><h4>' + esc(title) + '</h4>' + rows.map(row).join('') + '</div>' : ''; };
+    var list = block('Your linked classes', t.linked) + block('Another section of this class', t.sections) +
+      block((t.linked.length ? 'Other courses you teach' : 'Courses you teach') + (t.term && !c.showAll ? ' · ' + t.term : ''), t.others) +
+      (!t.others.length ? '<p class="cgp-g-help">No other courses' + (t.term && !c.showAll ? ' this term' : '') + '.</p>' : '') +
+      (t.term ? '<button type="button" class="cgp-g-link" data-act="copy-all-terms">' + (c.showAll ? 'Only this term' : 'Show courses from every term') + '</button>' : '');
     var n = Object.keys(c.dests).filter(function (k) { return c.dests[k]; }).length;
+    var chips = c.groups.slice(0, 8).map(function (g) { return '<span class="cgp-g-chip">' + esc(g.name) + '</span>'; }).join('') +
+      (c.groups.length > 8 ? '<span class="cgp-g-help">+ ' + (c.groups.length - 8) + ' more</span>' : '');
     return head +
-      '<p class="cgp-stats__note">' + esc(groupLine) + (signup ? ' · students sign up themselves' : '') + '</p>' +
-      '<div class="cgp-groups__field"><label class="cgp-groups__label" for="cgp-g-copyname">Name in the other classes</label>' +
-      '<input id="cgp-g-copyname" class="cgp-groups__input" data-f="copyName" data-k="copyName" maxlength="80" value="' + esc(c.name) + '"' + (c.running ? ' disabled' : '') + '>' +
-      '<span class="cgp-groups__hint">A section of this class gets this name plus the section’s name.</span></div>' +
-      '<div class="cgp-groups__field"><span class="cgp-groups__label">Copy to</span><div class="cgp-sections__courses">' + list + '</div></div>' +
-      '<div class="cgp-groups__field">' + (signup
-        ? '<span class="cgp-groups__hint">Students sign up for these groups themselves, so the copies are sign-up groups too, with the same limit.</span>'
-        : '<label class="cgp-groups__inline"><input type="checkbox" data-f="copyRandom"' + (c.random ? ' checked' : '') + (c.running ? ' disabled' : '') +
-          '> Sort each class’s students into the groups at random</label><span class="cgp-groups__hint">Off: the groups are made empty, for you to fill.</span>') + '</div>' +
-      (c.error ? '<p class="cgp-groups__error">' + esc(c.error) + '</p>' : '') +
-      '<div class="cgp-groups__foot"><button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-act="run-copy"' + (n && !c.running && String(c.name).trim() ? '' : ' disabled') + '>' +
-      (c.running ? esc(c.progress || 'Copying…') : (n ? 'Copy to ' + n + ' place' + (n === 1 ? '' : 's') : 'Pick where to copy')) + '</button>' +
-      '<span class="cgp-groups__hint">Copies the group set, its group names and sizes — never students from this class.</span></div>';
+      '<div class="cgp-g-copy"><div class="cgp-g-copy__main"><section class="cgp-g-step"><h3><span class="cgp-g-num">1</span>Where to</h3>' + list + '</section></div>' +
+      '<div class="cgp-g-copy__side"><section class="cgp-g-step"><h3><span class="cgp-g-num">2</span>What they get</h3>' +
+      '<div class="cgp-g-chips">' + chips + '</div>' +
+      '<label class="cgp-g-field"><span class="cgp-g-label">Group set name</span>' +
+      '<input class="cgp-g-input" data-f="copyName" data-k="copyName" maxlength="80" value="' + esc(c.name) + '"' + (c.running ? ' disabled' : '') + '>' +
+      (t.sections.length ? '<span class="cgp-g-help">A section of this class gets its section name added.</span>' : '') + '</label>' +
+      (signup ? '<p class="cgp-g-help">Students sign up for these groups, so the copies are sign-up groups too.</p>'
+        : '<label class="cgp-g-inline cgp-g-inline--box"><input type="checkbox" data-f="copyRandom"' + (c.random ? ' checked' : '') + (c.running ? ' disabled' : '') +
+          '><span><b>Shuffle each class’s students in</b><br><span class="cgp-g-help">Off: the groups start empty.</span></span></label>') +
+      '</section></div></div>' +
+      (c.error ? '<div class="cgp-g-notice is-error">' + esc(c.error) + '</div>' : '') +
+      '<footer class="cgp-g-foot"><span class="cgp-g-foot__hint">Only the groups are copied — never students from this class.</span>' +
+      '<button type="button" class="cgp-g-btn cgp-g-btn--primary" data-act="run-copy"' + (n && !c.running && String(c.name).trim() ? '' : ' disabled') + '>' +
+      (c.running ? '<span class="cgp-g-spin" aria-hidden="true"></span>' + esc(c.progress || 'Copying…') : (n ? 'Copy to ' + n + (n === 1 ? ' place' : ' places') : 'Choose where to copy')) + '</button></footer>';
   };
 
   P.runCopy = function () {
@@ -909,65 +999,125 @@
 
   /* -------------------------------------------------------------- events */
 
+  P.leaveBoardOk = function () {
+    var st = this.state;
+    return !(st.view === 'board' && st.board && G().moves(st.board.before, st.board.after).length &&
+      typeof confirm === 'function' && !confirm('Leave without saving your changes to the groups?'));
+  };
+
   P.onClick = function (e) {
     var t = e.target.closest ? e.target.closest('[data-act]') : null;
     if (!t || !this.root || !this.root.contains(t) || !this.state) return;
     var st = this.state;
+    var f = st.form;
+    var self = this;
     var act = t.getAttribute('data-act');
     if (act === 'retry') { this.load(); this.render(); return; }
     if (act === 'reload') { location.reload(); return; }
+    if (act === 'dismiss') { st.notice = null; this.render(); return; }
     if (act === 'view') {
-      if (st.board && G().moves(st.board.before, st.board.after).length && st.view === 'board' &&
-          typeof confirm === 'function' && !confirm('Leave without saving your changes to the groups?')) return;
+      if (!this.leaveBoardOk()) return;
       st.view = t.getAttribute('data-view');
+      st.notice = st.notice && st.notice.kind === 'ok' && st.view === 'sets' ? st.notice : null;
       if (st.view !== 'board') st.board = st.board && st.board.saving ? st.board : null;
       this.render();
       return;
     }
     if (act === 'create') { this.create(); return; }
+    if (act === 'by') {
+      f.by = t.getAttribute('data-v');
+      this.render();
+      return;
+    }
+    if (act === 'step') {
+      var k = f.by === 'size' ? 'size' : 'count';
+      var max = k === 'size' ? 50 : 100;
+      f[k] = Math.max(1, Math.min(max, (Math.floor(Number(f[k])) || 1) + Number(t.getAttribute('data-d'))));
+      var input = this.root.querySelector('[data-k="' + k + '"]');
+      if (input) input.value = f[k];
+      this.refreshNewLive();
+      return;
+    }
+    if (act === 'style') { f.format = t.getAttribute('data-format'); f.custom = false; this.render(); return; }
+    if (act === 'style-custom') {
+      if (!f.custom) {
+        f.custom = true;
+        var known = G().PRESETS.some(function (p) { return p.format === f.format; });
+        if (known) f.format = 'Team {n}';
+      }
+      this.render();
+      var box = this.root.querySelector('[data-k="format"]');
+      if (box) { box.focus(); try { box.setSelectionRange(box.value.length, box.value.length); } catch (err) { /* ignore */ } }
+      return;
+    }
+    if (act === 'token') {
+      var fmt = this.root.querySelector('[data-k="format"]');
+      if (!fmt) return;
+      var tok = t.getAttribute('data-t');
+      var a = typeof fmt.selectionStart === 'number' ? fmt.selectionStart : fmt.value.length;
+      var z = typeof fmt.selectionEnd === 'number' ? fmt.selectionEnd : a;
+      fmt.value = fmt.value.slice(0, a) + tok + fmt.value.slice(z);
+      f.format = fmt.value;
+      fmt.focus();
+      try { fmt.setSelectionRange(a + tok.length, a + tok.length); } catch (err) { /* ignore */ }
+      this.refreshNewLive();
+      return;
+    }
     if (act === 'save-format') {
-      var f = st.form;
       var prefs = CGP.cleanGroupPrefs(this.settings.values.groupPrefs);
-      var list = [f.format].concat(prefs.formats.filter(function (x) { return x !== f.format; }));
-      if (list.length > CGP.SETTINGS_LIMITS.MAX_GROUP_FORMATS) CGP.ui.toast('Your oldest saved format made room for this one.');
-      var self = this;
-      this.savePrefs({ formats: list.slice(0, CGP.SETTINGS_LIMITS.MAX_GROUP_FORMATS), format: f.format }).then(function () { self.render(); });
+      var mine = f.format.trim();
+      var list = [mine].concat(prefs.formats.filter(function (x) { return x !== mine; }));
+      var max2 = CGP.SETTINGS_LIMITS.MAX_GROUP_FORMATS;
+      this.savePrefs({ formats: list.slice(0, max2), format: mine }).then(function () {
+        if (self.state !== st) return;
+        f.format = mine;
+        f.custom = false;
+        self.notice('Saved to your styles' + (list.length > max2 ? ' (your oldest style made room for it).' : '. It’s there next time too.'));
+        self.render();
+      });
       return;
     }
     if (act === 'forget-format') {
-      var f2 = st.form;
+      var gone = t.getAttribute('data-format');
       var p2 = CGP.cleanGroupPrefs(this.settings.values.groupPrefs);
-      var self2 = this;
-      this.savePrefs({ formats: p2.formats.filter(function (x) { return x !== f2.format; }) }).then(function () { self2.render(); });
+      this.savePrefs({ formats: p2.formats.filter(function (x) { return x !== gone; }) }).then(function () {
+        if (self.state !== st) return;
+        if (f.format === gone && !f.custom) f.format = G().PRESETS[0].format;
+        self.render();
+      });
       return;
     }
-    if (act === 'board') { var s = this.findSet(t.getAttribute('data-id')); if (s) this.openBoard(s); return; }
+    if (act === 'board') { var s = this.findSet(t.getAttribute('data-id')); if (s) { st.notice = null; this.openBoard(s); } return; }
     if (act === 'copy') {
       var s2 = this.findSet(t.getAttribute('data-id')) || (st.board && st.board.set);
-      if (!s2) return;
-      if (st.view === 'board' && st.board && G().moves(st.board.before, st.board.after).length &&
-          typeof confirm === 'function' && !confirm('Leave without saving your changes to the groups?')) return;
+      if (!s2 || !this.leaveBoardOk()) return;
+      st.notice = null;
       this.openCopy(s2);
       return;
     }
+    var b = st.board;
+    if (act === 'pick' && b) { var uid = t.getAttribute('data-uid'); b.picked = b.picked === uid ? null : uid; this.render(); return; }
+    if (act === 'drop' && b && b.picked) { this.moveTo(b.picked, t.getAttribute('data-gid')); return; }
     if (act === 'shuffle-all') { this.boardShuffle(false); return; }
     if (act === 'shuffle-rest') { this.boardShuffle(true); return; }
-    if (act === 'undo-board') { st.board.after = Object.assign({}, st.board.before); st.board.failed = {}; this.render(); return; }
+    if (act === 'undo-board') { b.after = Object.assign({}, b.before); b.failed = {}; b.picked = null; this.render(); return; }
     if (act === 'save-board') { this.saveBoard(); return; }
     if (act === 'copy-all-terms') { st.copy.showAll = !st.copy.showAll; this.render(); return; }
     if (act === 'run-copy') { this.runCopy(); return; }
+  };
+
+  P.moveTo = function (uid, gid) {
+    var b = this.state.board;
+    b.after[uid] = gid || null;
+    b.picked = null;
+    b.message = null;
+    this.render();
   };
 
   P.onChange = function (e) {
     var t = e.target;
     var st = this.state;
     if (!st || !t) return;
-    if (t.classList && t.classList.contains('cgp-groups__move')) {
-      st.board.after[t.getAttribute('data-uid')] = t.value || null;
-      st.board.message = null;
-      this.render();
-      return;
-    }
     if (t.hasAttribute('data-dest')) {
       st.copy.dests[t.getAttribute('data-dest')] = t.checked;
       this.render();
@@ -976,23 +1126,14 @@
     var k = t.getAttribute('data-f');
     if (!k) return;
     var f = st.form;
-    if (k === 'by' || k === 'mode') { f[k] = t.value; f.error = null; this.render(); return; }
+    if (k === 'mode') { f.mode = t.value; f.error = null; this.render(); return; }
     if (k === 'restrict') { f.restrict = t.checked; return; }
     if (k === 'section') { f.section = t.value; this.render(); return; }
-    if (k === 'formatPick') {
-      if (t.value.indexOf('p:') === 0) f.format = t.value.slice(2);
-      this.render();
-      if (t.value === 'custom') {
-        var input = this.root.querySelector('[data-k="format"]');
-        if (input) { input.focus(); input.select(); }
-      }
-      return;
-    }
-    if (k === 'boardSection') { st.board.section = t.value; this.render(); return; }
+    if (k === 'boardSection') { st.board.section = t.value; st.board.picked = null; this.render(); return; }
     if (k === 'copyRandom') { st.copy.random = t.checked; return; }
-    // Number and text boxes: their final value, with the full redraw that
-    // typing skipped (the format picker follows a typed format, say).
-    if (k === 'format' || k === 'count' || k === 'size' || k === 'name') this.render();
+    // Typed boxes update their live parts as they go (refreshNewLive), never
+    // with a full redraw here: one on leaving the box would swallow the click
+    // that moved focus away (a tile, Make groups).
   };
 
   P.onInput = function (e) {
@@ -1003,9 +1144,8 @@
     var f = st.form;
     if (k === 'name') { f.name = t.value; f.error = null; this.refreshNewLive(); return; }
     if (k === 'format') { f.format = t.value; this.refreshNewLive(); return; }
-    if (k === 'count') { f.count = t.value; if (f.by !== 'count') { f.by = 'count'; this.syncRadio('by', 'count'); } this.refreshNewLive(); return; }
-    if (k === 'size') { f.size = t.value; if (f.by !== 'size') { f.by = 'size'; this.syncRadio('by', 'size'); } this.refreshNewLive(); return; }
-    if (k === 'limit') { f.limit = t.value; return; }
+    if (k === 'count' || k === 'size') { f[k] = t.value; this.refreshNewLive(); return; }
+    if (k === 'limit') { f.limit = t.value; this.refreshNewLive(); return; }
     if (k === 'copyName') {
       st.copy.name = t.value;
       var go = this.root.querySelector('[data-act="run-copy"]');
@@ -1014,23 +1154,21 @@
     }
   };
 
-  P.syncRadio = function (name, value) {
-    var r = this.root.querySelector('input[type="radio"][name="' + name + '"][value="' + value + '"]');
-    if (r) r.checked = true;
-  };
+  /* Drag a student onto another group (or the "Not in a group" tray). */
+  var DROP = '.cgp-g-card, .cgp-g-tray';
 
-  /* Drag a student onto another group's card. */
   P.onDragStart = function (e) {
-    var li = e.target.closest ? e.target.closest('.cgp-groups__member') : null;
+    var li = e.target.closest ? e.target.closest('.cgp-g-member') : null;
     if (!li || !this.state || !this.state.board || this.state.board.saving) return;
     this._dragUid = li.getAttribute('data-uid');
     try { e.dataTransfer.setData('text/plain', this._dragUid); e.dataTransfer.effectAllowed = 'move'; } catch (err) { /* ignore */ }
     li.classList.add('is-dragging');
+    this.root.classList.add('is-dragging');
   };
 
   P.onDragOver = function (e) {
     if (!this._dragUid) return;
-    var card = e.target.closest ? e.target.closest('.cgp-groups__card') : null;
+    var card = e.target.closest ? e.target.closest(DROP) : null;
     if (!card) return;
     e.preventDefault();
     try { e.dataTransfer.dropEffect = 'move'; } catch (err) { /* ignore */ }
@@ -1038,19 +1176,18 @@
   };
 
   P.onDragLeave = function (e) {
-    var card = e.target.closest ? e.target.closest('.cgp-groups__card') : null;
+    var card = e.target.closest ? e.target.closest(DROP) : null;
     if (card && !card.contains(e.relatedTarget)) card.classList.remove('is-target');
   };
 
   P.onDrop = function (e) {
     var uid = this._dragUid;
     this._dragUid = null;
-    var card = e.target.closest ? e.target.closest('.cgp-groups__card') : null;
+    this.root.classList.remove('is-dragging');
+    var card = e.target.closest ? e.target.closest(DROP) : null;
     if (!uid || !card || !this.state || !this.state.board) { this.render(); return; }
     e.preventDefault();
-    this.state.board.after[uid] = card.getAttribute('data-gid') || null;
-    this.state.board.message = null;
-    this.render();
+    this.moveTo(uid, card.getAttribute('data-gid'));
   };
 
   CGP.GroupBuilder = GroupBuilder;

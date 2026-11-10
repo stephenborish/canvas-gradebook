@@ -24,13 +24,13 @@
   /* Built-in formats, shown first in the picker. A format is a template with
    * tokens, or a comma-separated list of names (see parseFormat). */
   var PRESETS = [
-    { label: 'Group 1, Group 2…', format: 'Group {n}' },
-    { label: 'Team A, Team B…', format: 'Team {A}' },
-    { label: 'Table 1, Table 2…', format: 'Table {n}' },
-    { label: 'Lab Group 01, 02…', format: 'Lab Group {nn}' },
-    { label: 'Set name + number', format: '{set} {n}' },
-    { label: 'Elements (Hydrogen, Helium…)', format: 'Hydrogen, Helium, Lithium, Beryllium, Boron, Carbon, Nitrogen, Oxygen, Fluorine, Neon, Sodium, Magnesium, Aluminum, Silicon, Phosphorus, Sulfur, Chlorine, Argon, Potassium, Calcium' },
-    { label: 'Colors (Red, Orange…)', format: 'Red, Orange, Yellow, Green, Blue, Purple, Pink, Teal, Gold, Silver, Black, White' }
+    { label: 'Numbers', format: 'Group {n}' },
+    { label: 'Letters', format: 'Team {A}' },
+    { label: 'Tables', format: 'Table {n}' },
+    { label: 'Lab groups', format: 'Lab Group {nn}' },
+    { label: 'Set name', format: '{set} {n}' },
+    { label: 'Elements', format: 'Hydrogen, Helium, Lithium, Beryllium, Boron, Carbon, Nitrogen, Oxygen, Fluorine, Neon, Sodium, Magnesium, Aluminum, Silicon, Phosphorus, Sulfur, Chlorine, Argon, Potassium, Calcium' },
+    { label: 'Colors', format: 'Red, Orange, Yellow, Green, Blue, Purple, Pink, Teal, Gold, Silver, Black, White' }
   ];
 
   var TOKEN = /\{(n|nn|A|a|set)\}/g;
