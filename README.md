@@ -723,6 +723,38 @@ Canvas's boxes mean. The calendar is read again every six hours, or with **Refre
 This replaces the old period *time shortcuts* (typing `1`–`4` in a time box); a period number left
 in a class's saved due time from before is simply ignored.
 
+### Make groups (People page)
+
+A **Make groups** button sits beside Canvas's own **+ Group Set** on the People and Groups pages (only
+where Canvas shows that button, so only to people who may make groups). It makes a whole group set in
+one step:
+
+- **How many:** a number of groups, or a number of students per group (*26 students → 7 groups of 3–4*).
+  In a course with more than one section, the groups can be for one section's students only.
+- **Group names:** a name format. Built in: *Group 1…*, *Team A…*, *Table 1…*, *Lab Group 01…*, the set's
+  name plus a number, chemical elements and colors. Your own format uses `{n}` (1, 2, 3), `{nn}` (01, 02),
+  `{A}` (A, B, C), `{a}` (a, b, c) and `{set}` (the set's name), or is a list of names separated by commas.
+  A list shorter than the number of groups starts again with a number (*Red 2*). **Save format** keeps
+  it in your formats (up to 12, synced like every other setting), and a preview shows the names first.
+- **Putting students in groups:** sorted at random now (groups within one student of each other),
+  placed by you, or students sign up themselves in Canvas (with an optional limit per group, and
+  optionally only with classmates in their own section).
+
+Nothing changes in Canvas until **Make N groups** is pressed. With random or hand-placed groups, the
+set then opens as a board: one card per group plus *Not in a group*. Drag a student to another card,
+or pick a group from the list beside their name. **Sort the rest at random** places only the students
+who are not in a group yet; **Shuffle everyone** places them all again (just one section's students,
+when a section is picked). Moves are shown highlighted and saved together with **Save N changes**, so
+a shuffle you don't like is never sent. **Your group sets** lists the course's sets, each with
+**Arrange students**, **Copy to…** and **Open in Canvas**.
+
+**Copy to…** makes the same set (name, group names in order, group sizes, sign-up settings) in your
+linked classes (see *Copy to other classes*), any other course you teach (this term's, or every term),
+or another section of this course (named after the section). It can sort each class's own students into
+the new groups at random. A class that already has a set with that name is left alone and the
+result says so. Students from this class are never copied. Every write is Canvas's own Groups API
+(group sets, groups, memberships); Canvas's own tabs show the new groups after a reload.
+
 ### Copy to other classes
 
 For a course you teach to several classes (periods, blocks) that are **separate Canvas courses**
@@ -1157,6 +1189,8 @@ src/sections/sync-dialog.js       Copy to sections: page button, dialog, page no
 src/sections/sync-board.js        Compare classes: every item against every linked class, bulk fixes
 src/sections/inline-copy.js       the panel in Canvas's own editors; the copies after its Save
 src/sections/link-copy.js         Copy a module's external links to the other classes (Modules API)
+src/core/group-builder.js         Make groups: name formats, group counts, random sorting, copies (pure)
+src/groups/group-builder.js       Make groups: People page button, dialog, board, copy to classes
 src/speedgrader/content.js        comment draft autosave; live sync with the gradebook
 src/speedgrader/sidebar-layout.js the sidebar as Submission / Assessment / Comments cards
 src/page/env-bridge.js            page context: ENV ids, column widths, Canvas's store and tray

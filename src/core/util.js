@@ -211,6 +211,12 @@
     // sections yet.
     sectionCopyNudge: true,
     sectionGroups: [],
+    // Make groups, on the People page (groups/group-builder.js): a button
+    // beside Canvas's "+ Group Set" that makes a whole group set at once.
+    groupBuilder: true,
+    // Its last choices, and the name formats the teacher saved
+    // (formats: up to 12, each a template like "Lab {A}" or a list of names).
+    groupPrefs: { format: 'Group {n}', formats: [], by: 'count', count: 6, size: 4, mode: 'random' },
     // Copy Roster's layout choices (Student Name column menu).
     rosterPrefs: { nameFormat: 'first-last', email: true, header: true, sortBy: 'last', separator: 'comma' },
     // Also keep these settings in the teacher's own Canvas account, so they
@@ -510,6 +516,10 @@
         out[k] = cleanSectionGroups(v);
         return;
       }
+      if (k === 'groupPrefs') {
+        out[k] = cleanGroupPrefs(v, d[k]);
+        return;
+      }
       if (k === 'rosterPrefs') {
         var rp = {};
         var given = v && typeof v === 'object' ? v : {};
@@ -605,11 +615,40 @@
     return out;
   }
   CGP.cleanSectionGroups = cleanSectionGroups;
+
+  /* Make groups' remembered choices. A saved format is a name template
+   * ("Lab {A}") or a list of names; at most MAX_GROUP_FORMATS, no repeats. */
+  var MAX_GROUP_FORMATS = 12;
+  var MAX_GROUP_FORMAT = 400;
+
+  function cleanGroupPrefs(v, defaults) {
+    var d = defaults || CGP.DEFAULTS.groupPrefs;
+    var g = v && typeof v === 'object' ? v : {};
+    var formats = [];
+    (Array.isArray(g.formats) ? g.formats : []).forEach(function (f) {
+      var s = String(f == null ? '' : f).trim().slice(0, MAX_GROUP_FORMAT);
+      if (s && formats.indexOf(s) < 0 && formats.length < MAX_GROUP_FORMATS) formats.push(s);
+    });
+    var num = function (x, lo, hi, dv) {
+      var n = Math.floor(Number(x));
+      return isFinite(n) && n >= lo && n <= hi ? n : dv;
+    };
+    return {
+      format: typeof g.format === 'string' && g.format.trim() ? g.format.trim().slice(0, MAX_GROUP_FORMAT) : d.format,
+      formats: formats,
+      by: g.by === 'size' ? 'size' : 'count',
+      count: num(g.count, 1, 100, d.count),
+      size: num(g.size, 1, 50, d.size),
+      mode: ['random', 'manual', 'signup'].indexOf(g.mode) >= 0 ? g.mode : d.mode
+    };
+  }
+  CGP.cleanGroupPrefs = cleanGroupPrefs;
   CGP.SETTINGS_LIMITS = {
     MAX_SNIPPETS: MAX_SNIPPETS, MAX_SNIPPET_TEXT: MAX_SNIPPET_TEXT, MAX_SNIPPET_BYTES: MAX_SNIPPET_BYTES,
     MAX_SNIPPET_ITEM_BYTES: MAX_SNIPPET_ITEM_BYTES,
     MAX_CALENDAR_URL: MAX_CALENDAR_URL,
-    MAX_SECTION_GROUPS: MAX_SECTION_GROUPS, MAX_SECTION_GROUP_COURSES: MAX_SECTION_GROUP_COURSES
+    MAX_SECTION_GROUPS: MAX_SECTION_GROUPS, MAX_SECTION_GROUP_COURSES: MAX_SECTION_GROUP_COURSES,
+    MAX_GROUP_FORMATS: MAX_GROUP_FORMATS
   };
   CGP.normalizeClock = normalizeClock;
 
