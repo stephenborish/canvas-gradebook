@@ -930,11 +930,12 @@
   function gcpath(categoryId) { return '/api/v1/group_categories/' + encodeURIComponent(String(categoryId)); }
   function gpath(groupId) { return '/api/v1/groups/' + encodeURIComponent(String(groupId)); }
 
-  /* The course's group sets the teacher made. Canvas's own "Student Groups"
-   * set (groups students start themselves) is left out: it has a role. */
+  /* Every group set (group category) of the course, Canvas's own ones
+   * included: a new set's name must differ from all of them. Which ones to
+   * show the teacher is groupBuilder.teacherSets(). */
   CanvasApi.prototype.groupCategories = function (courseId) {
     return this.getAll(cpath(courseId) + '/group_categories', {}, { maxPages: 5 }).then(function (list) {
-      return (list || []).filter(function (c) { return c && !c.role; });
+      return (list || []).filter(Boolean);
     });
   };
 

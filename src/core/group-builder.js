@@ -249,6 +249,13 @@
     };
   }
 
+  /** The group sets to show a teacher: not Canvas's own "Student Groups"
+   * (groups students start themselves) and not differentiation tags, which
+   * Canvas keeps as non-collaborative group sets. */
+  function teacherSets(list) {
+    return (list || []).filter(function (c) { return c && c.role !== 'student_organized' && !c.non_collaborative; });
+  }
+
   CGP.groupBuilder = {
     PRESETS: PRESETS,
     MAX_GROUPS: MAX_GROUPS,
@@ -262,6 +269,7 @@
     uniqueSetName: uniqueSetName,
     nameTaken: nameTaken,
     categoryBody: categoryBody,
-    copyPlan: copyPlan
+    copyPlan: copyPlan,
+    teacherSets: teacherSets
   };
 })();

@@ -199,11 +199,55 @@ suite('make groups: what is sent to Canvas', test => {
     a.deep(calls[2].body, { user_id: '11' });
   });
 
-  test('Canvas’s own Student Groups set (it has a role) is not listed', async () => {
+  test('Canvas’s own Student Groups and differentiation tags are not listed, but their names still count as taken', async () => {
     const { api, store } = fakeCanvas();
     store.categories[1].push({ id: '71', name: 'Student Groups', role: 'student_organized' });
-    const list = await api.groupCategories('1');
-    a.deep(list.map(c => c.name), ['Existing']);
+    store.categories[1].push({ id: '72', name: 'Reading support', non_collaborative: true });
+    store.categories[1].push({ id: '73', name: 'Imported', role: 'imported' });
+    const all = await api.groupCategories('1');
+    a.deep(GB().teacherSets(all).map(c => c.name), ['Existing', 'Imported']);
+    const canvas = { api };
+    const b = builder(canvas);
+    b.state.sets = GB().teacherSets(all);
+    b.state.taken = all.map(c => c.name);
+    b.state.form.name = 'Student Groups';
+    b.create();
+    await settle();
+    a.ok(/already has a group set/.test(b.state.form.error), 'refused before Canvas is asked');
+  });
+
+  test('a new set is listed with its real number of groups, not Canvas’s 0 at creation', async () => {
+    const canvas = fakeCanvas();
+    const b = builder(canvas);
+    Object.assign(b.state.form, { mode: 'signup' });
+    b.create();
+    await settle();
+    const made = b.state.sets[b.state.sets.length - 1];
+    a.eq(made.groups_count, 3);
+    a.eq(b.state.view, 'sets');
+  });
+
+  test('every view of the dialog renders without throwing, with what the teacher needs on it', async () => {
+    const canvas = fakeCanvas();
+    const b = builder(canvas);
+    b.setRoster(await canvas.api.studentsWithSections('1'), [{ id: '901', name: 'Block 1' }, { id: '902', name: 'Block 2' }]);
+    const html = b.renderNew();
+    a.ok(html.includes('Make 3 groups'), 'the button names the count');
+    a.ok(html.includes('Team A'), 'the preview shows the names');
+    a.ok(html.includes('Only Block 1'), 'sections can be picked');
+    b.state.form.custom = true;
+    a.ok(b.renderNew().includes('data-act="token"'), 'your own style offers insert buttons');
+    a.ok(b.renderSets().includes('Arrange students'));
+    b.state.board = { set: { id: '70', name: 'Existing' }, groups: [{ id: 'g1', name: 'Red' }, { id: 'g2', name: 'Blue', max: 1 }],
+      before: { 11: 'g1', 12: null }, after: { 11: 'g2', 12: null }, extra: {}, failed: {}, saving: false, section: '', picked: '12' };
+    const board = b.renderBoard();
+    a.ok(board.includes('Not in a group'));
+    a.ok(board.includes('Move S12 here'), 'a picked student can be moved by tapping a group');
+    a.ok(board.includes('Save changes'));
+    b.state.copy = { set: { id: '70', name: 'Existing' }, groups: [{ name: 'Red' }], dests: {}, name: 'Existing', random: true, running: false, results: null, showAll: false };
+    a.ok(b.renderCopy().includes('Choose where to copy'));
+    b.state.copy.results = [{ label: 'Bio 2', status: 'ok', text: 'made it', url: '/courses/2/groups' }];
+    a.ok(b.renderCopy().includes('Bio 2'));
   });
 
   test('Make groups with a random sort: one set, groups named in order, every student placed once, evenly', async () => {

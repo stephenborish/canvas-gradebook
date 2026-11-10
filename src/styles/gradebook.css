@@ -4795,7 +4795,7 @@ html.cgp-on .cgp-g-result.is-error .cgp-g-result__mark { background: #c4372b; }
 
 /* Narrow windows: one column, preview after the steps */
 @media (max-width: 760px) {
-  html.cgp-on .cgp-groups .cgp-stats { padding: 0; }
+  html.cgp-on .cgp-stats.cgp-groups { padding: 0; }
   html.cgp-on .cgp-g-new,
   html.cgp-on .cgp-g-copy { grid-template-columns: minmax(0, 1fr); }
   html.cgp-on .cgp-g-pv { position: static; }

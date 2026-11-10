@@ -75,8 +75,11 @@
     var self = this;
     if (!this.settings.values.groupBuilder || !this.onPage()) { this.unmount(); return; }
     if (this.button && this.button.isConnected) return;
+    this.watch();
     var spot = this.findSpot();
     if (!spot) {
+      // A few quick tries while the page loads; after that the observer
+      // below mounts the button whenever Canvas draws "+ Group Set".
       if (this._tries++ < 60) setTimeout(function () { self.start(); }, 250);
       return;
     }
@@ -92,14 +95,18 @@
       e.stopPropagation();
       self.open();
     });
-    // Canvas redraws this toolbar when a tab changes: put the button back.
-    if (!this._observer && typeof MutationObserver === 'function') {
-      var again = CGP.util.debounce(function () {
-        if (self.settings.values.groupBuilder && !(self.button && self.button.isConnected)) { self._tries = 0; self.start(); }
-      }, 300);
-      this._observer = new MutationObserver(function () { if (!(self.button && self.button.isConnected)) again(); });
-      this._observer.observe(document.querySelector('#content') || document.body, { childList: true, subtree: true });
-    }
+  };
+
+  /* Canvas draws "+ Group Set" late on a slow load, and again when a tab
+   * changes: (re)mount the button whenever it is missing. */
+  P.watch = function () {
+    var self = this;
+    if (this._observer || typeof MutationObserver !== 'function') return;
+    var again = CGP.util.debounce(function () {
+      if (self.settings.values.groupBuilder && !(self.button && self.button.isConnected)) self.start();
+    }, 300);
+    this._observer = new MutationObserver(function () { if (!(self.button && self.button.isConnected)) again(); });
+    this._observer.observe(document.querySelector('#content') || document.body, { childList: true, subtree: true });
   };
 
   P.unmount = function () {
@@ -183,10 +190,11 @@
     ]).then(function (r) {
       if (self.state !== st) return;
       self.setRoster(r[0] || [], r[1] || []);
-      st.sets = r[2] || [];
+      st.sets = G().teacherSets(r[2]);
+      st.taken = (r[2] || []).map(function (s) { return s.name; });
       st.courses = r[3] || [];
       st.loading = false;
-      if (!st.form.name) st.form.name = G().uniqueSetName('Groups', st.sets.map(function (s) { return s.name; }));
+      if (!st.form.name) st.form.name = G().uniqueSetName('Groups', self.takenNames());
       self.root.querySelector('#cgp-groups-title').textContent = self.courseName(self.courseId);
       self.render();
     }, function (err) {
@@ -258,6 +266,12 @@
     return 'Course ' + id;
   };
 
+  /** Every set name the course already uses, Canvas's own sets included. */
+  P.takenNames = function () {
+    var st = this.state;
+    return (st.taken || []).concat(st.sets.map(function (s) { return s.name; }));
+  };
+
   P.sectionName = function (id) {
     var list = (this.state && this.state.sections) || [];
     for (var i = 0; i < list.length; i++) if (list[i].id === String(id)) return list[i].name;
@@ -289,6 +303,17 @@
     this.state.notice = text ? { text: text, kind: kind || 'ok' } : null;
   };
 
+  /* A selector that finds the same control after a redraw: its data-act
+   * (or a radio's name and value) plus the attributes that tell it apart. */
+  var FOCUS_ATTRS = ['data-act', 'data-view', 'data-format', 'data-v', 'data-d', 'data-uid', 'data-gid', 'data-id', 'data-t', 'data-dest', 'data-f'];
+  function cssValue(v) { return String(v).replace(/["\\]/g, '\\$&'); }
+  function focusSelector(el) {
+    if (el.type === 'radio' && el.name) return 'input[name="' + cssValue(el.name) + '"][value="' + cssValue(el.value) + '"]';
+    var parts = FOCUS_ATTRS.filter(function (a) { return el.hasAttribute(a); })
+      .map(function (a) { return '[' + a + '="' + cssValue(el.getAttribute(a)) + '"]'; });
+    return parts.length ? el.tagName.toLowerCase() + parts.join('') : null;
+  }
+
   P.render = function () {
     if (!this.root || !this.state) return;
     var st = this.state;
@@ -296,6 +321,8 @@
     // Keep the caret where the teacher was typing across a redraw.
     var active = document.activeElement;
     var focusKey = active && this.root.contains(active) ? active.getAttribute('data-k') : null;
+    // A pressed button (a tile, a choice, a student) keeps the focus too.
+    var focusSel = !focusKey && active && this.root.contains(active) ? focusSelector(active) : null;
     var sel = focusKey && typeof active.selectionStart === 'number' ? [active.selectionStart, active.selectionEnd] : null;
     var scroller = this.root.querySelector('.cgp-stats__panel');
     var scrollTop = scroller ? scroller.scrollTop : 0;
@@ -321,6 +348,11 @@
     if (scroller) scroller.scrollTop = scrollTop;
     var boardNow = this.root.querySelector('.cgp-g-board');
     if (boardNow) boardNow.scrollTop = boardTop;
+    if (focusSel) {
+      var back = null;
+      try { back = body.querySelector(focusSel); } catch (e) { back = null; }
+      if (back) { try { back.focus(); } catch (e) { /* ignore */ } }
+    }
     if (focusKey) {
       var again = body.querySelector('[data-k="' + focusKey + '"]');
       if (again) {
@@ -417,7 +449,7 @@
     var byCount = f.by !== 'size';
     var value = byCount ? f.count : f.size;
 
-    var taken = G().nameTaken(f.name, st.sets.map(function (s) { return s.name; }));
+    var taken = G().nameTaken(f.name, this.takenNames());
     var step1 = '<section class="cgp-g-step"><h3><span class="cgp-g-num">1</span>Groups</h3>' +
       '<label class="cgp-g-field"><span class="cgp-g-label">Name of the group set</span>' +
       '<input class="cgp-g-input" data-f="name" data-k="name" maxlength="80" value="' + esc(f.name) + '" placeholder="e.g. Lab Groups"' + dis + '>' +
@@ -484,7 +516,7 @@
     }
     var f = this.state.form;
     var warn = this.root.querySelector('[data-part="taken"]');
-    var taken = G().nameTaken(f.name, this.state.sets.map(function (x) { return x.name; }));
+    var taken = G().nameTaken(f.name, this.takenNames());
     if (warn) warn.hidden = !taken;
     var go = this.root.querySelector('[data-part="go"]');
     if (go && !f.busy) {
@@ -507,7 +539,7 @@
     var f = st.form;
     if (f.busy) return;
     var name = String(f.name || '').trim();
-    var taken = st.sets.map(function (s) { return s.name; });
+    var taken = this.takenNames();
     if (!name) return;
     if (G().nameTaken(name, taken)) {
       f.error = 'This class already has a group set called “' + name + '”. Pick another name.';
@@ -525,7 +557,12 @@
 
     var category = null;
     var groups = [];
-    var step = function (text) { f.progress = text; if (self.state === st) self.render(); };
+    // Progress changes only the button's label, not the whole dialog.
+    var step = function (text) {
+      f.progress = text;
+      var go = self.state === st && self.root && self.root.querySelector('[data-part="go"]');
+      if (go) go.innerHTML = '<span class="cgp-g-spin" aria-hidden="true"></span>' + esc(text);
+    };
     this.api.createGroupCategory(this.courseId, body).then(function (cat) {
       category = cat;
       st.changed = true;
@@ -550,10 +587,13 @@
         return { placed: changes.length, unplaced: plan.unplaced };
       });
     }).then(function (r) {
+      // Canvas answered the new set with no groups and nobody placed.
+      category.groups_count = groups.length;
+      category.unassigned_users_count = Math.max(0, st.roster.length - r.placed);
       if (self.state !== st) return;
       f.busy = false;
       f.progress = '';
-      f.name = G().uniqueSetName(name, st.sets.map(function (s) { return s.name; }));
+      f.name = G().uniqueSetName(name, self.takenNames());
       var msg = 'Made “' + name + '” with ' + groups.length + ' group' + (groups.length === 1 ? '' : 's') +
         (f.mode === 'random' ? ' and sorted ' + r.placed + ' student' + (r.placed === 1 ? '' : 's') + ' into them' : '') + '.';
       if (f.mode === 'signup') {
@@ -565,6 +605,7 @@
       self.notice(msg + ' Move anyone you like, then save.');
       self.openBoard(category, msg);
     }).catch(function (err) {
+      if (category) { category.groups_count = groups.length; delete category.unassigned_users_count; }
       if (self.state !== st) return;
       f.busy = false;
       f.progress = '';
@@ -951,10 +992,10 @@
     var id = key.slice(2);
     var courseId = isSection ? this.courseId : id;
     var name = isSection ? baseName + ' – ' + this.sectionName(id) : baseName;
-    var readTaken = isSection ? Promise.resolve(st.sets) : this.api.groupCategories(courseId);
+    var readTaken = isSection ? Promise.resolve(this.takenNames()) : this.api.groupCategories(courseId).then(function (all) { return all.map(function (s) { return s.name; }); });
     var cat = null, made = [];
-    return readTaken.then(function (sets) {
-      var plan = G().copyPlan(c.set, c.groups, (sets || []).map(function (s) { return s.name; }), name);
+    return readTaken.then(function (taken) {
+      var plan = G().copyPlan(c.set, c.groups, taken, name);
       if (plan.conflict) return { status: 'skip', text: 'already has a group set called “' + plan.name + '”, so nothing was made', url: self.groupsUrl(courseId) };
       return self.api.createGroupCategory(courseId, plan.body).then(function (made1) {
         cat = made1;
@@ -979,6 +1020,8 @@
           });
         });
       }).then(function (placed) {
+        cat.groups_count = made.length;
+        if (isSection) cat.unassigned_users_count = Math.max(0, self.studentsIn(id).length - placed);
         return {
           status: 'ok',
           text: 'made “' + plan.name + '” with ' + made.length + ' group' + (made.length === 1 ? '' : 's') +
