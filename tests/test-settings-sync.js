@@ -240,7 +240,8 @@ const NOT_DEFAULT = {
   courseScheduleTime: 'end',
   snippets: [{ trigger: 'lab', text: 'Label both axes.' }, { trigger: 'cite', text: 'Cite the data table.' }],
   sectionGroups: [{ origin: 'https://school.instructure.com', courseIds: ['11', '12'], names: { 11: 'Bio P1', 12: 'Bio P2' } }],
-  rosterPrefs: { nameFormat: 'last-first', email: false, header: false, sortBy: 'first', separator: 'newline' }
+  rosterPrefs: { nameFormat: 'last-first', email: false, header: false, sortBy: 'first', separator: 'newline' },
+  groupPrefs: { format: 'Lab {A}', formats: ['Lab {A}', 'Red, Blue, Green'], by: 'size', count: 8, size: 3, mode: 'signup' }
 };
 
 function everySettingChanged() {

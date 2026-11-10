@@ -732,6 +732,14 @@
     // are read each time a box is focused, so the options page can change
     // them without a reload.
     if (CGP.CanvasCourseSchedule) new CGP.CanvasCourseSchedule({ settings: CGP.settings, api: api, courseId: courseId }).start();
+    // Make groups, beside Canvas's "+ Group Set" on the People and Groups
+    // pages (groups/group-builder.js). start() does nothing elsewhere, and
+    // follows the setting.
+    if (CGP.GroupBuilder) {
+      var groups = new CGP.GroupBuilder({ api: api, courseId: courseId, settings: CGP.settings });
+      groups.start();
+      CGP.settings.onChange(function () { groups.start(); });
+    }
   }
 
   function boot() {

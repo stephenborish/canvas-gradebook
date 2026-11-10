@@ -538,6 +538,7 @@
     renderCalendarStatus();
     renderSectionGroups(values.sectionGroups);
     currentRosterPrefs = values.rosterPrefs;
+    currentGroupPrefs = values.groupPrefs;
   }
 
   /* Total thresholds: one row per rule, "At or below [72.4] % get [Alert] [Red-orange]".
@@ -682,6 +683,9 @@
 
   // Chosen in the gradebook's Copy Roster panel, not here; carried as is.
   var currentRosterPrefs = null;
+  // Make groups' remembered choices and saved name formats: changed only from
+  // the People page, carried through a save here untouched.
+  var currentGroupPrefs = null;
 
   /* Linked sections are edited from Copy to sections in Canvas, where the
    * course list is; here they are listed, and can be unlinked. They are not
@@ -731,6 +735,7 @@
     patch.totalHighlightRules = currentThresholds.slice();
     patch.sectionGroups = currentGroups;
     if (currentRosterPrefs) patch.rosterPrefs = currentRosterPrefs;
+    if (currentGroupPrefs) patch.groupPrefs = currentGroupPrefs;
     return CGP.sanitizeSettings(patch);
   }
 

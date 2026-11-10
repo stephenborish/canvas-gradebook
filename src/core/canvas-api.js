@@ -925,6 +925,71 @@
     return this.getAll(cpath(courseId) + '/assignment_groups', {}, { maxPages: 3 });
   };
 
+  /* ------------------------------------------------------ student groups */
+
+  function gcpath(categoryId) { return '/api/v1/group_categories/' + encodeURIComponent(String(categoryId)); }
+  function gpath(groupId) { return '/api/v1/groups/' + encodeURIComponent(String(groupId)); }
+
+  /* Every group set (group category) of the course, Canvas's own ones
+   * included: a new set's name must differ from all of them. Which ones to
+   * show the teacher is groupBuilder.teacherSets(). */
+  CanvasApi.prototype.groupCategories = function (courseId) {
+    return this.getAll(cpath(courseId) + '/group_categories', {}, { maxPages: 5 }).then(function (list) {
+      return (list || []).filter(Boolean);
+    });
+  };
+
+  CanvasApi.prototype.categoryGroups = function (categoryId) {
+    return this.getAll(gcpath(categoryId) + '/groups', {}, { maxPages: 5 });
+  };
+
+  CanvasApi.prototype.groupUsers = function (groupId) {
+    return this.getAll(gpath(groupId) + '/users', {}, { maxPages: 5 });
+  };
+
+  /* Active students with their enrollments (for each one's section). In
+   * memory only, like courseStudents. */
+  CanvasApi.prototype.studentsWithSections = function (courseId) {
+    return this.getAll(cpath(courseId) + '/users', {
+      'enrollment_type[]': ['student'],
+      'enrollment_state[]': ['active', 'invited'],
+      'include[]': ['enrollments']
+    }, { maxPages: 30 });
+  };
+
+  /* Creating a set or a group is not retried after a lost response: it may
+   * already exist, and a second one would be a duplicate. */
+  CanvasApi.prototype.createGroupCategory = function (courseId, body) {
+    return this.request(cpath(courseId) + '/group_categories', {
+      method: 'POST', json: body, retries: 1, idempotent: false
+    }).then(function (r) { return r.data; });
+  };
+
+  CanvasApi.prototype.createGroup = function (categoryId, body) {
+    return this.request(gcpath(categoryId) + '/groups', {
+      method: 'POST', json: body, retries: 1, idempotent: false
+    }).then(function (r) { return r.data; });
+  };
+
+  /* Put a student in a group. In a group set a student is in one group at
+   * most, so Canvas takes them out of any other group of the set (the
+   * request Canvas's own "Move to" sends). Repeating it changes nothing. */
+  CanvasApi.prototype.addGroupMember = function (groupId, userId) {
+    return this.request(gpath(groupId) + '/memberships', {
+      method: 'POST', json: { user_id: String(userId) }
+    }).then(function (r) { return r.data; });
+  };
+
+  /* Take a student out of a group. Already out is not an error. */
+  CanvasApi.prototype.removeGroupMember = function (groupId, userId) {
+    return this.request(gpath(groupId) + '/users/' + encodeURIComponent(String(userId)), {
+      method: 'DELETE'
+    }).then(function (r) { return r.data; }, function (err) {
+      if (err && err.status === 404) return null;
+      throw err;
+    });
+  };
+
   CGP.CanvasApi = CanvasApi;
   CGP.CanvasApiError = CanvasApiError;
   CGP.apiInternals = { parseBody: parseBody, nextLink: nextLink, isThrottled: isThrottled, retryAfterMs: retryAfterMs, formToJson: formToJson, numberedPages: numberedPages };
