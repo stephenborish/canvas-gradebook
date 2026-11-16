@@ -703,15 +703,92 @@
     return Object.keys(s).sort().map(function (k) { return k + '=' + (s[k] === null ? '' : String(s[k])); }).join(';');
   }
 
+  /** The settings that differ, each side on its own:
+   * [{label: 'Points', a: '10', b: '20'}]. */
+  function settingsPairs(src, dest) {
+    if (!src || !dest) return [];
+    var show = function (v) { return v === null || v === undefined || v === '' ? 'none' : String(v).replace(/_/g, ' '); };
+    return Object.keys(src).filter(function (k) { return k in dest && String(src[k]) !== String(dest[k]); }).map(function (k) {
+      return { label: SETTING_LABELS[k] || k, a: show(src[k]), b: show(dest[k]) };
+    });
+  }
+
   /** What differs, in words: ["Points: 10 here, 20 there"]. */
   function settingsDiff(src, dest, here, there) {
     if (!src || !dest) return [];
     here = here || 'here';
     there = there || 'there';
-    var keys = Object.keys(src).filter(function (k) { return k in dest; });
-    var show = function (v) { return v === null || v === undefined || v === '' ? 'none' : String(v).replace(/_/g, ' '); };
-    return keys.filter(function (k) { return String(src[k]) !== String(dest[k]); }).map(function (k) {
-      return (SETTING_LABELS[k] || k) + ': ' + show(src[k]) + ' ' + here + ', ' + show(dest[k]) + ' ' + there;
+    return settingsPairs(src, dest).map(function (p) {
+      return p.label + ': ' + p.a + ' ' + here + ', ' + p.b + ' ' + there;
+    });
+  }
+
+  /** The update that gives an item `want`'s settings, writing only the
+   * ones that differ from `have` (null when none differ, or the type's
+   * settings are not written this way: only an assignment's are). */
+  function settingsBody(type, want, have) {
+    if (type !== 'assignment' || !want || !have) return null;
+    var out = {};
+    if (String(want.points) !== String(have.points) && 'points' in want) out.points_possible = want.points === null ? null : Number(want.points);
+    if (want.grading && want.grading !== have.grading) out.grading_type = want.grading;
+    if (want.submit && want.submit !== have.submit) out.submission_types = String(want.submit).split(', ');
+    if (want.attempts !== null && want.attempts !== undefined && String(want.attempts) !== String(have.attempts)) {
+      out.allowed_attempts = want.attempts === 'unlimited' ? -1 : Number(want.attempts);
+    }
+    return Object.keys(out).length ? { assignment: out } : null;
+  }
+
+  /** Two texts with what differs marked, for showing two versions side by
+   * side: {a, b} as HTML (escaped), words only in a (or only in b) wrapped
+   * in <mark>. Word-level longest common subsequence; texts too long to
+   * compare quickly come back unmarked (changed: null). */
+  var DIFF_MAX_WORDS = 1500;
+  function wordDiff(a, b) {
+    var esc = function (t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
+    var split = function (t) { return String(t || '').match(/\s+|[^\s]+/g) || []; };
+    var ta = split(a), tb = split(b);
+    var wa = ta.filter(function (x) { return /\S/.test(x); }).length;
+    var wb = tb.filter(function (x) { return /\S/.test(x); }).length;
+    if (wa > DIFF_MAX_WORDS || wb > DIFF_MAX_WORDS) return { a: esc(a), b: esc(b), changed: null };
+    var n = ta.length, m = tb.length;
+    var key = function (x) { return /\S/.test(x) ? x : ' '; };
+    // lcs[i][j]: common length of ta[i..] and tb[j..], in one flat array.
+    var w = m + 1;
+    var lcs = new Uint16Array((n + 1) * w);
+    for (var i = n - 1; i >= 0; i--) {
+      for (var j = m - 1; j >= 0; j--) {
+        lcs[i * w + j] = key(ta[i]) === key(tb[j]) ? lcs[(i + 1) * w + j + 1] + 1 : Math.max(lcs[(i + 1) * w + j], lcs[i * w + j + 1]);
+      }
+    }
+    var outA = [], outB = [], changed = 0;
+    var push = function (out, tok, marked) {
+      if (marked && /\S/.test(tok)) { out.push('<mark>' + esc(tok) + '</mark>'); changed++; } else out.push(esc(tok));
+    };
+    var x = 0, y = 0;
+    while (x < n && y < m) {
+      if (key(ta[x]) === key(tb[y])) { push(outA, ta[x++], false); push(outB, tb[y++], false); }
+      else if (lcs[(x + 1) * w + y] >= lcs[x * w + y + 1]) push(outA, ta[x++], true);
+      else push(outB, tb[y++], true);
+    }
+    while (x < n) push(outA, ta[x++], true);
+    while (y < m) push(outB, tb[y++], true);
+    // Neighbouring marks read as one change.
+    var join = function (h) { return h.join('').replace(/<\/mark>(\s+)<mark>/g, '$1'); };
+    return { a: join(outA), b: join(outB), changed: changed };
+  }
+
+  /** Does a Canvas object still have the settings an update (settingsBody)
+   * wrote? False when any of them was changed since. */
+  function settingsStillAre(o, body) {
+    var want = body && body.assignment;
+    if (!o || !want) return true;
+    var same = function (a, b) { return String(a === undefined || a === null ? '' : a) === String(b === undefined || b === null ? '' : b); };
+    return Object.keys(want).every(function (k) {
+      if (k === 'submission_types') return (o[k] || []).slice().sort().join(',') === (want[k] || []).slice().sort().join(',');
+      if (k === 'points_possible' || k === 'allowed_attempts') {
+        return same(o[k] === null || o[k] === undefined ? null : Number(o[k]), want[k] === null ? null : Number(want[k]));
+      }
+      return same(o[k], want[k]);
     });
   }
 
@@ -1249,6 +1326,10 @@
     settingsOf: settingsOf,
     settingsSig: settingsSig,
     settingsDiff: settingsDiff,
+    settingsBody: settingsBody,
+    settingsPairs: settingsPairs,
+    settingsStillAre: settingsStillAre,
+    wordDiff: wordDiff,
     compareFull: compareFull,
     moduleDrift: moduleDrift,
     safeDecode: safeDecode,

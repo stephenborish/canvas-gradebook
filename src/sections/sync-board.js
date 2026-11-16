@@ -33,25 +33,30 @@
 
   var TYPE_ORDER = ['assignment', 'quiz', 'discussion', 'page', 'module'];
 
-  /* What each status is called, how it looks, and whether it can be
-   * ticked for copying. */
-  var CELL = {
-    same: { label: 'Up to date', mark: '✓', tone: 'ok', pick: false },
-    stale: { label: 'Out of date', mark: '↻', tone: 'warn', pick: true, auto: true },
-    'new': { label: 'Missing', mark: '+', tone: 'miss', pick: true, auto: true },
-    restore: { label: 'Deleted there', mark: '⟲', tone: 'miss', pick: true },
-    edited: { label: 'Changed there', mark: '✎', tone: 'edit', pick: true },
+  /* What a cell is called and how it looks. One vocabulary whichever class
+   * an item was first copied from: the teacher sees this class and that
+   * class, and either can be brought in line with the other.
+   *   pick: can be ticked for the copy dialog
+   *   bulk: ticked by "Select all …" (never a version newer there) */
+  var KIND = {
+    same: { label: 'Same', mark: '✓', tone: 'ok' },
+    missing: { label: 'Not there', mark: '+', tone: 'miss', pick: true, bulk: 'missing' },
+    deleted: { label: 'Deleted there', mark: '+', tone: 'miss', pick: true },
+    // Older, newer or unknown are all "Different" to the teacher; which
+    // side is newer is a small note under it.
+    older: { label: 'Different', note: 'newer here', mark: '≠', tone: 'edit', pick: true, bulk: 'older' },
+    newer: { label: 'Different', note: 'newer there', mark: '≠', tone: 'edit', pick: true },
     differs: { label: 'Different', mark: '≠', tone: 'edit', pick: true },
-    lookalike: { label: 'Has its own', mark: '!', tone: 'muted', pick: false },
-    unknown: { label: 'Not known', mark: '?', tone: 'muted', pick: false }
+    own: { label: 'Has its own', mark: '!', tone: 'muted' },
+    unknown: { label: 'Couldn’t check', mark: '?', tone: 'muted' }
   };
 
-  var ORIGIN = {
-    same: { label: 'Original there · same', mark: '✓', tone: 'ok' },
-    stale: { label: 'Newer there', mark: '↻', tone: 'warn' },
-    edited: { label: 'Changed here', mark: '✎', tone: 'edit' },
-    differs: { label: 'Different from original', mark: '≠', tone: 'edit' }
+  /* Kept for callers that name statuses (sync-runner.js scan). */
+  var CELL = {
+    same: 'same', stale: 'older', 'new': 'missing', restore: 'deleted', edited: 'newer', differs: 'differs', lookalike: 'own', unknown: 'unknown'
   };
+  /* An item here that is that class's copy, from the copy's side. */
+  var ORIGIN = { same: 'same', stale: 'newer', edited: 'older', differs: 'differs' };
 
   /** The statuses that need the teacher's attention. */
   function needsAttention(status) {
@@ -131,68 +136,106 @@
 
   /* ------------------------------------------------------------- model */
 
-  /* Rows to show, after the filters: [{item, origin, cells}]. origin: the
-   * class this item was copied from, with how the two compare. */
+  /* Rows to show, after the filters: [{item, key, origin, cells}]. origin:
+   * the class this item was copied from, with how the two compare. */
   P.boardRows = function () {
     var b = this.state.board;
-    var scan = b.scan;
-    if (!scan) return [];
     var q = String(b.q || '').trim().toLowerCase();
     var self = this;
-    var rows = scan.items.map(function (it) {
-      var k = itemKey(it);
-      var origin = null;
-      var cells = {};
-      scan.dests.forEach(function (d) {
-        if (d.origins && d.origins[k] && !origin) origin = d.origins[k];
-        cells[d.courseId] = d.error ? null : (d.cells[k] || null);
-      });
-      return { item: it, key: k, origin: origin, cells: cells };
-    });
-    rows = rows.filter(function (r) {
+    return this.allBoardRows().filter(function (r) {
       if (b.type !== 'all' && r.item.type !== b.type) return false;
       if (q && String(r.item.title || '').toLowerCase().indexOf(q) < 0) return false;
       if (b.filter === 'attention') return self.rowNeedsAttention(r);
       return true;
     });
-    return rows;
   };
 
-  P.rowNeedsAttention = function (r) {
-    if (r.origin && r.origin.status !== 'same') return true;
-    return Object.keys(r.cells).some(function (d) {
-      var c = r.cells[d];
-      if (!c || (r.origin && r.origin.courseId === d)) return false;
-      return needsAttention(c.status) || c.publishMismatch;
+  /* Every row, before the filters. */
+  P.allBoardRows = function () {
+    var scan = this.state.board.scan;
+    if (!scan) return [];
+    return scan.items.map(function (it) {
+      var k = itemKey(it);
+      var origin = null;
+      var cells = {};
+      scan.dests.forEach(function (d) {
+        if (d.origins && d.origins[k] && !origin) origin = Object.assign({ courseId: d.courseId }, d.origins[k]);
+        cells[d.courseId] = d.error ? null : (d.cells[k] || null);
+      });
+      return { item: it, key: k, origin: origin, cells: cells };
     });
   };
 
-  /* Counts over every row (not only the ones shown). */
+  /* One cell, from this class's side: {kind, ctx (for the side-by-side
+   * review), destId, url, details, publishMismatch}. null: not read. */
+  P.cellView = function (r, d) {
+    var it = r.item;
+    if (r.origin && String(r.origin.courseId) === String(d)) {
+      var o = r.origin;
+      return {
+        kind: ORIGIN[o.status] || 'differs', destId: o.srcId, url: o.url, details: o.diffs || [], publishMismatch: false,
+        ctx: { origCourse: String(d), origRef: { type: it.type, id: o.srcId }, copyCourse: this.courseId, copyId: it.id }
+      };
+    }
+    var c = r.cells[d];
+    if (!c) return null;
+    var kind = CELL[c.status] || 'unknown';
+    var details = (c.diffs || []).slice();
+    if (c.drift && c.drift.missing.length) details.push('Missing there: ' + c.drift.missing.slice(0, 4).join(', ') + (c.drift.missing.length > 4 ? '…' : ''));
+    if (c.drift && c.drift.extra.length) details.push('Only there: ' + c.drift.extra.slice(0, 4).join(', ') + (c.drift.extra.length > 4 ? '…' : ''));
+    if (c.lookalike) details.push('Its own “' + c.lookalike.title + '”, not a copy of this one. Copying would add a second.');
+    if (c.status === 'unknown') details.push(c.unreadable ? 'Canvas didn’t send its text. Check again.' : 'That class has too many of these to read at once.');
+    return {
+      kind: kind, destId: c.destId, url: c.url || (c.lookalike && c.lookalike.url), details: details, publishMismatch: !!c.publishMismatch,
+      ctx: c.destId ? { origCourse: this.courseId, origRef: it, copyCourse: String(d), copyId: c.destId } : null
+    };
+  };
+
+  P.rowNeedsAttention = function (r) {
+    var self = this;
+    return Object.keys(r.cells).concat(r.origin ? [String(r.origin.courseId)] : []).some(function (d) {
+      var v = self.cellView(r, d);
+      return v && ((v.kind !== 'same' && v.kind !== 'unknown') || v.publishMismatch);
+    });
+  };
+
+  /* Counts by kind over every row (not only the ones shown). */
   P.boardCounts = function () {
-    var scan = this.state.board.scan;
-    var out = { same: 0, stale: 0, 'new': 0, restore: 0, edited: 0, differs: 0, lookalike: 0, unknown: 0, publish: 0, origin: 0 };
-    if (!scan) return out;
-    scan.items.forEach(function (it) {
-      var k = itemKey(it);
-      scan.dests.forEach(function (d) {
-        if (d.error) return;
-        if (d.origins && d.origins[k]) { if (d.origins[k].status !== 'same') out.origin++; return; }
-        var c = d.cells[k];
-        if (!c) return;
-        out[c.status] = (out[c.status] || 0) + 1;
-        if (c.publishMismatch) out.publish++;
+    var self = this;
+    var b = this.state.board;
+    var out = { same: 0, missing: 0, deleted: 0, older: 0, newer: 0, differs: 0, own: 0, unknown: 0, publish: 0 };
+    if (!b.scan) return out;
+    this.allBoardRows().forEach(function (r) {
+      b.dests.forEach(function (d) {
+        var v = self.cellView(r, String(d));
+        if (!v) return;
+        out[v.kind]++;
+        if (v.publishMismatch) out.publish++;
       });
     });
     return out;
   };
 
-  /* The cells a quick-select button ticks. */
+  /* The cells a "Select all" link ticks, among the rows shown. */
+  P.cellsOfKind = function (kinds) {
+    var self = this;
+    var out = [];
+    this.boardRows().forEach(function (r) {
+      self.state.board.dests.forEach(function (d) {
+        var v = self.cellView(r, String(d));
+        if (v && kinds.indexOf(v.kind) >= 0) out.push(r.key + '>' + d);
+      });
+    });
+    return out;
+  };
+
+  /* By the scan's own statuses (the copy-side view only). */
   P.cellsWith = function (statuses) {
     var out = [];
     this.boardRows().forEach(function (r) {
       Object.keys(r.cells).forEach(function (d) {
         var c = r.cells[d];
-        if (!c || (r.origin && r.origin.courseId === d)) return;
+        if (!c || (r.origin && String(r.origin.courseId) === d)) return;
         if (statuses.indexOf(c.status) >= 0) out.push(r.key + '>' + d);
       });
     });
@@ -207,7 +250,7 @@
     this.boardRows().forEach(function (r) {
       Object.keys(r.cells).forEach(function (d) {
         var c = r.cells[d];
-        if (!c || !c.publishMismatch || !c.destId || (r.origin && r.origin.courseId === d)) return;
+        if (!c || !c.publishMismatch || !c.destId || (r.origin && String(r.origin.courseId) === d)) return;
         if (r.item.type === 'announcement') return;
         out.push({ courseId: d, type: r.item.type, destId: c.destId, want: !!r.item.published, title: r.item.title, name: self.courseName(d) });
       });
@@ -221,7 +264,7 @@
     if (!this.root || !this.state || this.state.view !== 'board') return;
     var st = this.state;
     var b = st.board;
-    this.root.querySelector('#cgp-sections-title').textContent = this.courseName(this.courseId) + ' and your other classes';
+    this.root.querySelector('#cgp-sections-title').textContent = this.courseName(this.courseId) + ' vs. your other classes';
     var body = this.root.querySelector('.cgp-sections__body');
     var panel = this.root.querySelector('.cgp-stats__panel');
     var wrap = body.querySelector('.cgp-board__wrap');
@@ -238,7 +281,7 @@
     if (!st.courses || b.progress) {
       var p = b.progress;
       body.innerHTML = '<p class="cgp-stats__note" role="status">' +
-        (p ? 'Reading your classes from Canvas… ' + p[0] + ' of ' + p[1] + ' done.' : 'Loading your classes…') + '</p>';
+        (p ? 'Reading your classes… ' + p[0] + ' of ' + p[1] + '.' : 'Loading your classes…') + '</p>';
       return;
     }
     if (b.error) {
@@ -263,26 +306,19 @@
     var c = this.boardCounts();
     var b = this.state.board;
     var bits = [];
-    var add = function (n, text, tone) {
-      if (!n) return;
-      bits.push('<span class="cgp-board__count is-' + tone + '">' + n + ' ' + esc(typeof text === 'string' ? text : text[n === 1 ? 0 : 1]) + '</span>');
-    };
-    add(c['new'], 'missing', 'miss');
-    add(c.stale, 'out of date', 'warn');
-    add(c.edited + c.differs, 'changed there', 'edit');
-    add(c.restore, 'deleted there', 'miss');
+    var add = function (n, text, tone) { if (n) bits.push('<span class="cgp-board__count is-' + tone + '">' + n + ' ' + esc(text) + '</span>'); };
+    add(c.missing + c.deleted, 'not there', 'miss');
+    add(c.older + c.newer + c.differs, 'different', 'edit');
     add(c.publish, 'published differently', 'warn');
-    add(c.origin, ['differs from the class it came from', 'differ from the class they came from'], 'edit');
-    add(c.lookalike, ['class has its own same-titled item', 'classes have their own same-titled item'], 'muted');
     var errs = b.scan.dests.filter(function (d) { return d.error; });
     var allGood = !bits.length && !errs.length;
     return '<section class="cgp-roster__section cgp-board__summary">' +
       (allGood
-        ? '<p class="cgp-board__allgood"><span aria-hidden="true">✓</span> Every item here is the same in your other classes (' + c.same + ' copies checked).</p>'
-        : '<div class="cgp-board__counts">' + bits.join('') + (c.same ? '<span class="cgp-board__count is-ok">' + c.same + ' up to date</span>' : '') + '</div>') +
+        ? '<p class="cgp-board__allgood"><span aria-hidden="true">✓</span> Everything here is the same in your other classes.</p>'
+        : '<div class="cgp-board__counts">' + bits.join('') + (c.same ? '<span class="cgp-board__count is-ok">' + c.same + ' same</span>' : '') + '</div>') +
       errs.map(function (d) { return '<p class="cgp-sections__err">' + esc(this.courseName(d.courseId)) + ': ' + esc(d.error) + '</p>'; }, this).join('') +
       (b.scan.truncated && Object.keys(b.scan.truncated).length
-        ? '<p class="cgp-stats__note">This class has more items than Gradebook+ reads at once; some may not be listed.</p>' : '') +
+        ? '<p class="cgp-stats__note">This class has more items than can be read at once; some may be missing from the list.</p>' : '') +
       '</section>';
   };
 
@@ -294,7 +330,7 @@
     return '<div class="cgp-board__controls">' +
       '<div class="cgp-sections__tabs" role="group" aria-label="Kind of item">' + tabs + '</div>' +
       '<label class="cgp-roster__field">Show <select data-board-role="filter">' +
-      '<option value="attention"' + (b.filter === 'attention' ? ' selected' : '') + '>What needs attention</option>' +
+      '<option value="attention"' + (b.filter === 'attention' ? ' selected' : '') + '>Only what’s not the same</option>' +
       '<option value="all"' + (b.filter === 'all' ? ' selected' : '') + '>Everything</option></select></label>' +
       '<input type="search" class="cgp-sections__filter cgp-board__q" data-board-role="q" placeholder="Filter by title…" value="' + esc(b.q || '') + '" aria-label="Filter by title">' +
       '</div>';
@@ -307,10 +343,10 @@
     var dests = b.dests;
     if (!rows.length) {
       return '<p class="cgp-stats__note cgp-board__empty">' + (b.filter === 'attention'
-        ? 'Nothing here needs attention' + (b.type !== 'all' || b.q ? ' with these filters' : '') + '.'
+        ? 'Everything' + (b.type !== 'all' || b.q ? ' shown' : '') + ' is the same in your other classes.'
         : 'No items match.') + '</p>';
     }
-    var head = '<tr><th scope="col" class="cgp-board__itemcol">Item</th>' + dests.map(function (d) {
+    var head = '<tr><th scope="col" class="cgp-board__itemcol">In ' + esc(this.courseName(this.courseId)) + '</th>' + dests.map(function (d) {
       return '<th scope="col">' + esc(self.courseName(d)) + '</th>';
     }).join('') + '</tr>';
     var body = rows.map(function (r) {
@@ -319,56 +355,37 @@
       var title = '<a href="' + esc(S().itemHtmlPath(self.courseId, it.type, it.id)) + '" target="_blank" rel="noopener">' +
         esc(it.title || '(untitled)') + '</a>';
       var tags = '<span class="cgp-sections__tag">' + esc(t.label) + '</span>' + (it.published ? '' : '<span class="cgp-sections__tag">unpublished</span>');
-      if (r.origin) tags += '<span class="cgp-sections__tag cgp-sections__tag--hint" title="Copied here from ' + esc(self.courseName(r.origin.courseId)) + '">from ' + esc(self.courseName(r.origin.courseId)) + '</span>';
       return '<tr><th scope="row" class="cgp-board__itemcol"><div class="cgp-board__title">' + title + '</div><div class="cgp-board__tags">' + tags + '</div></th>' +
-        dests.map(function (d) { return '<td>' + self.renderBoardCell(r, d) + '</td>'; }).join('') + '</tr>';
+        dests.map(function (d) { return '<td>' + self.renderBoardCell(r, String(d)) + '</td>'; }).join('') + '</tr>';
     }).join('');
     return '<div class="cgp-board__wrap"><table class="cgp-board__table"><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
   };
 
   P.renderBoardCell = function (r, d) {
-    var self = this;
     var b = this.state.board;
     var it = r.item;
     var name = this.courseName(d);
-    if (r.origin && r.origin.courseId === d) {
-      var o = ORIGIN[r.origin.status] || ORIGIN.differs;
-      var acts = [];
-      if (r.origin.status === 'stale' || r.origin.status === 'differs') {
-        acts.push('<button type="button" class="cgp-board__link" data-board-act="pull" data-key="' + esc(r.key) + '" data-dest="' + esc(d) + '">Update this class from it…</button>');
-      }
-      if ((r.origin.status === 'edited' || r.origin.status === 'differs') && S().TYPES[it.type].body) {
-        acts.push('<button type="button" class="cgp-board__link" data-board-act="push-back" data-key="' + esc(r.key) + '" data-dest="' + esc(d) + '">Review and update ' + esc(name) + '…</button>');
-      }
-      return '<div class="cgp-board__cell is-' + o.tone + '"><span class="cgp-board__chip"><span aria-hidden="true">' + o.mark + '</span> ' + esc(o.label) + '</span>' +
-        (r.origin.diffs && r.origin.diffs.length ? '<div class="cgp-board__detail">' + esc(r.origin.diffs.join('; ')) + '</div>' : '') +
-        '<div class="cgp-board__acts"><a class="cgp-board__link" href="' + esc(r.origin.url) + '" target="_blank" rel="noopener">Open</a>' + acts.join('') + '</div></div>';
-    }
-    var c = r.cells[d];
-    if (!c) return '<span class="cgp-stats__note">—</span>';
-    var spec = CELL[c.status] || CELL.unknown;
+    var v = this.cellView(r, d);
+    if (!v) return '<span class="cgp-stats__note">—</span>';
+    var spec = KIND[v.kind] || KIND.unknown;
     var k = r.key + '>' + d;
-    var details = [];
-    if (c.diffs && c.diffs.length) details.push(c.diffs.join('; '));
-    if (c.drift && c.drift.missing.length) details.push('Missing there: ' + c.drift.missing.slice(0, 4).join(', ') + (c.drift.missing.length > 4 ? '…' : ''));
-    if (c.drift && c.drift.extra.length) details.push('Only there: ' + c.drift.extra.slice(0, 4).join(', ') + (c.drift.extra.length > 4 ? '…' : ''));
-    if (c.lookalike) details.push('“' + c.lookalike.title + '” there was not copied from here; copying would add a second one.');
-    if (c.status === 'unknown') details.push(c.unreadable ? 'Canvas did not send this page’s text, so it was not compared. Check again.' : 'That class has too many of these to read at once.');
-    var pub = c.publishMismatch ? '<span class="cgp-board__pub" title="' + esc(it.published ? 'Published here, not there' : 'Not published here, published there') + '">' +
+    var hasBody = !!S().TYPES[it.type].body && it.type !== 'module';
+    var pub = v.publishMismatch ? '<span class="cgp-board__pub" title="' + esc(it.published ? 'Published here, not there' : 'Not published here, published there') + '">' +
       (it.published ? 'unpublished there' : 'published there') + '</span>' : '';
     var box = spec.pick
       ? '<input type="checkbox" data-board-sel="' + esc(k) + '"' + (b.sel[k] ? ' checked' : '') +
         ' aria-label="' + esc('Copy “' + (it.title || '') + '” to ' + name) + '"> '
       : '';
     var acts = [];
-    var link = c.url || (c.lookalike && c.lookalike.url);
-    if (link) acts.push('<a class="cgp-board__link" href="' + esc(link) + '" target="_blank" rel="noopener">Open</a>');
-    if ((c.status === 'edited' || c.status === 'differs') && S().TYPES[it.type].body && c.destId) {
-      acts.push('<button type="button" class="cgp-board__link" data-board-act="review" data-key="' + esc(r.key) + '" data-dest="' + esc(d) + '">Review</button>');
+    if (v.url) acts.push('<a class="cgp-board__link" href="' + esc(v.url) + '" target="_blank" rel="noopener">Open</a>');
+    if (hasBody && v.ctx && (v.kind === 'older' || v.kind === 'newer' || v.kind === 'differs')) {
+      var prefer = v.kind === 'older' ? 'there' : (v.kind === 'newer' ? 'here' : '');
+      acts.push('<button type="button" class="cgp-board__link" data-board-act="match" data-prefer="' + prefer + '" data-key="' + esc(r.key) + '" data-dest="' + esc(d) + '">Pick a version…</button>');
     }
     return '<div class="cgp-board__cell is-' + spec.tone + '"><label class="cgp-board__chip">' + box +
-      '<span aria-hidden="true">' + spec.mark + '</span> ' + esc(spec.label) + '</label>' + pub +
-      (details.length ? '<div class="cgp-board__detail">' + esc(details.join(' · ')) + '</div>' : '') +
+      '<span aria-hidden="true">' + spec.mark + '</span> ' + esc(spec.label) + '</label>' +
+      (spec.note ? '<span class="cgp-board__note">' + esc(spec.note) + '</span>' : '') + pub +
+      (v.details.length ? '<div class="cgp-board__detail">' + esc(v.details.join(' · ')) + '</div>' : '') +
       (acts.length ? '<div class="cgp-board__acts">' + acts.join('') + '</div>' : '') + '</div>';
   };
 
@@ -379,8 +396,8 @@
     scan.dests.forEach(function (d) { (d.orphans || []).forEach(function (o) { list.push(Object.assign({ courseId: d.courseId }, o)); }); });
     if (!list.length) return '';
     return '<details class="cgp-roster__section cgp-board__orphans"><summary>' + list.length +
-      (list.length === 1 ? ' copy is' : ' copies are') + ' in your other classes, but the original is no longer here</summary>' +
-      '<p class="cgp-stats__note">Deleted here after it was copied. Gradebook+ never deletes anything in your other classes; open each to decide.</p>' +
+      (list.length === 1 ? ' item is' : ' items are') + ' in your other classes but no longer here</summary>' +
+      '<p class="cgp-stats__note">Deleted here after copying. Nothing is deleted in your other classes; open each to decide.</p>' +
       '<ul class="cgp-board__orphanlist">' + list.map(function (o) {
         return '<li><span class="cgp-sections__tag">' + esc(S().TYPES[o.type].label) + '</span> ' + esc(o.title || '(untitled)') + ' — ' +
           esc(self.courseName(o.courseId)) + ' <a class="cgp-board__link" href="' + esc(o.url) + '" target="_blank" rel="noopener">Open</a></li>';
@@ -390,21 +407,22 @@
   P.renderBoardActions = function () {
     var b = this.state.board;
     var n = Object.keys(b.sel).filter(function (k) { return b.sel[k]; }).length;
-    var missing = this.cellsWith(['new']).length;
-    var stale = this.cellsWith(['stale']).length;
+    var missing = this.cellsOfKind(['missing', 'deleted']).length;
+    var older = this.cellsOfKind(['older']).length;
     var fixes = this.publishFixes().length;
+    var quick = [];
+    if (missing) quick.push('<button type="button" class="cgp-board__link" data-board-act="sel-missing">all not there (' + missing + ')</button>');
+    if (older) quick.push('<button type="button" class="cgp-board__link" data-board-act="sel-stale">all newer here (' + older + ')</button>');
+    if (n) quick.push('<button type="button" class="cgp-board__link" data-board-act="sel-none">none</button>');
     return '<div class="cgp-roster__row cgp-roster__actions cgp-board__go">' +
-      '<span class="cgp-board__quick">Tick: ' +
-      '<button type="button" class="cgp-board__link" data-board-act="sel-missing"' + (missing ? '' : ' disabled') + '>all missing (' + missing + ')</button> · ' +
-      '<button type="button" class="cgp-board__link" data-board-act="sel-stale"' + (stale ? '' : ' disabled') + '>all out of date (' + stale + ')</button> · ' +
-      '<button type="button" class="cgp-board__link" data-board-act="sel-none"' + (n ? '' : ' disabled') + '>none</button></span>' +
       '<button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-board-act="copy"' + (n && !b.busy ? '' : ' disabled') + '>' +
-      (n ? 'Review and copy ' + n + (n === 1 ? ' item…' : ' items…') : 'Tick what to copy') + '</button>' +
+      (n ? 'Copy ' + n + ' ticked…' : 'Tick what to copy') + '</button>' +
+      (quick.length ? '<span class="cgp-board__quick">Select ' + quick.join(' · ') + '</span>' : '') +
+      '<span class="cgp-board__spacer"></span>' +
       (fixes ? '<button type="button" class="cgp-roster__btn" data-board-act="publish"' + (b.busy ? ' disabled' : '') +
-        ' title="Publish or unpublish the copies shown so each matches this class">Match publishing (' + fixes + ')</button>' : '') +
+        ' title="Publish or unpublish those copies so each matches this class">Match publishing (' + fixes + ')</button>' : '') +
       '<button type="button" class="cgp-roster__btn" data-board-act="rescan"' + (b.busy ? ' disabled' : '') + '>Check again</button>' +
-      '</div><p class="cgp-stats__note">Copy shows each class’s dates and what will happen there before anything is written. ' +
-      'Copies changed in their own class are kept unless you choose to replace them.</p>';
+      '</div>';
   };
 
   /* ------------------------------------------------------------ events */
@@ -427,35 +445,17 @@
     };
     if (a === 'rescan') return this.scanBoard();
     if (a === 'sel-missing' || a === 'sel-stale') {
-      this.cellsWith(a === 'sel-missing' ? ['new'] : ['stale']).forEach(function (k) { b.sel[k] = true; });
+      this.cellsOfKind(a === 'sel-missing' ? ['missing', 'deleted'] : ['older']).forEach(function (k) { b.sel[k] = true; });
       this.renderBoard();
       return;
     }
     if (a === 'sel-none') { b.sel = {}; this.renderBoard(); return; }
     if (a === 'copy') return this.copyFromBoard();
     if (a === 'publish') return this.publishFromBoard();
-    if (a === 'review') {
+    if (a === 'match') {
       var r = rowOf();
-      var cell = r && b.scan.dests.filter(function (x) { return x.courseId === act.getAttribute('data-dest'); })[0];
-      cell = cell && cell.cells[r.key];
-      if (r && cell && cell.destId) return this.openBack({ origCourse: this.courseId, origRef: r.item, copyCourse: act.getAttribute('data-dest'), copyId: cell.destId });
-      return;
-    }
-    if (a === 'push-back' || a === 'pull') {
-      var row = rowOf();
-      var d = act.getAttribute('data-dest');
-      var dest = b.scan.dests.filter(function (x) { return x.courseId === d; })[0];
-      var origin = dest && dest.origins && dest.origins[row && row.key];
-      if (!row || !origin) return;
-      if (a === 'push-back') {
-        return this.openBack({ origCourse: d, origRef: { type: row.item.type, id: origin.srcId }, copyCourse: this.courseId, copyId: row.item.id });
-      }
-      var ctl = new CGP.SectionCopyController({ api: this.api, courseId: d, settings: this.settings });
-      var src = Object.assign({}, origin.item, { htmlLoaded: true });
-      this.close();
-      var only = {};
-      only[itemKey(src) + '>' + this.courseId] = true;
-      return ctl.open({ items: [src], dests: [this.courseId], only: only, full: true });
+      var v = r && r.cells ? this.cellView(r, act.getAttribute('data-dest')) : null;
+      if (v && v.ctx) return this.openMatch(v.ctx, act.getAttribute('data-prefer') || null);
     }
   };
 
@@ -499,7 +499,7 @@
     keys.forEach(function (k) { dests[k.split('>')[1]] = true; });
     var only = {};
     keys.forEach(function (k) { only[k] = true; });
-    this.open({ items: items, dests: Object.keys(dests), only: only, full: true });
+    this.open({ items: items, dests: Object.keys(dests), only: only });
   };
 
   P.publishFromBoard = function () {
@@ -533,5 +533,5 @@
     });
   };
 
-  CGP.sectionBoard = { CELL: CELL, ORIGIN: ORIGIN, needsAttention: needsAttention };
+  CGP.sectionBoard = { KIND: KIND, CELL: CELL, ORIGIN: ORIGIN, needsAttention: needsAttention };
 })();

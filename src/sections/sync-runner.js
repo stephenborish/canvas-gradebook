@@ -204,12 +204,93 @@
       return !!o && o.workflow_state !== 'deleted';
     }, function () { return false; });
     return originCheck.then(function (isCopy) {
-      if (isCopy) {
-        info.status = 'origin';
-        info.origin = { srcId: String(cameFrom) };
-        return info;
-      }
+      if (isCopy) return self.surveyOrigin(srcCourseId, item, destCourseId, String(cameFrom), info);
       return self.surveyCopy(srcCourseId, item, destCourseId, destId, mapping, info, listOf);
+    });
+  };
+
+  /* The item here is that class's copy: the class has the item this one was
+   * copied from. Canvas's copy only goes one way (copying back would give
+   * that class a second one), so updating it there writes this version onto
+   * it instead (runBack). For the teacher it is the same as any other class
+   * that already has it: same, newer here, newer there or different.
+   * info.origin marks it, so the run takes the other road. */
+  P.surveyOrigin = function (srcCourseId, item, destCourseId, origId, info) {
+    var self = this;
+    var sync = S();
+    info.origin = { srcId: origId };
+    info.destId = origId;
+    var ref = { type: item.type, id: origId };
+    return this.compare(destCourseId, ref, srcCourseId, item.id).then(function (cmp) {
+      if (!cmp.side) { info.status = 'differs'; return info; }
+      var there = cmp.orig;
+      info.destTitle = there.title;
+      info.destDates = there.dates || {};
+      info.destPublished = there.published;
+      info.note = sync.splitNote(there.html || '').note;
+      info.destHtml = sync.splitNote(there.html || '').html;
+      info.destSettings = there.settings;
+      info.destUpdatedAt = there.updatedAt || null;
+      info.diffs = sync.settingsDiff(item.settings || cmp.copy.settings, there.settings);
+      // Seen from here: this item is the copy, so "the copy changed" is
+      // newer here, "the original changed" newer there.
+      var side = cmp.side;
+      if (side === 'same') info.status = info.diffs.length ? 'differs' : 'same';
+      else if (side === 'copy') info.status = 'stale';
+      else if (side === 'unknown') info.status = 'differs';
+      else info.status = 'edited';
+      info.textStatus = side === 'same' ? 'same' : info.status;
+      if (sync.TYPES[item.type].datesVia === 'details' && sync.dateFields(item).length) {
+        return self.api.dateDetails(destCourseId, item.type, origId).then(function (dd) {
+          var got = {};
+          sync.dateFields(item).forEach(function (f) { got[f] = (dd && dd[f]) || null; });
+          info.destDates = got;
+          return info;
+        }, function () { if (item.type === 'page') info.destDates = null; return info; });
+      }
+      return info;
+    }, function () { info.status = 'differs'; return info; });
+  };
+
+  /* Update the item a class has that this one was copied from (see
+   * surveyOrigin): this version's title and instructions (and an
+   * assignment's settings) are written onto it, with a backup for Undo,
+   * then its dates. Same result shape as a copy; never rejects. */
+  P.runBack = function (task, onStep) {
+    var self = this;
+    var result = freshResult();
+    onStep = onStep || function () {};
+    var origRef = { type: task.item.type, id: task.destId };
+    onStep('Reading both versions');
+    return this.planBack(task.destCourseId, origRef, task.srcCourseId, task.item.id).then(function (plan) {
+      return self.applyBack(plan, { title: true, settings: true }, onStep).then(function (r) {
+        result.ok = r.ok;
+        result.error = r.error;
+        result.warnings = r.warnings.slice();
+        result.url = r.url;
+        result.destId = String(task.destId);
+        result.undo = { origCourse: plan.origCourse, type: plan.type, origId: plan.origId };
+        if (!r.ok) return result;
+        onStep('Setting dates');
+        return self.applyDates(task.destCourseId, task.item, task.destId, task.dates || {}, result).then(function () {
+          var p = task.publish || 'match';
+          if (p === 'keep' || task.item.type === 'announcement' || plan.orig.published === undefined) return null;
+          var want = p === 'published' ? true : (p === 'unpublished' ? false : !!task.item.published);
+          if (!!plan.orig.published === want) return null;
+          return self.api.setItemPublished(task.destCourseId, task.item.type, task.destId, want).then(null, function (err) {
+            result.warnings.push((want ? 'Not published' : 'Still published') + ' there: ' + describe(err, 'Canvas refused'));
+          });
+        }).then(function () { return result; });
+      });
+    }, function (err) {
+      result.error = describe(err, 'Couldn’t read both versions from Canvas');
+      return result;
+    }).then(null, function (err) {
+      // A later step failed after the original was written: say so, and
+      // keep Undo; runPlan's chain for this class must go on either way.
+      if (result.ok) result.warnings.push('Updated, but a later step failed: ' + describe(err, 'Canvas refused') + ' Check it there.');
+      else result.error = result.error || describe(err, 'Canvas refused the update');
+      return result;
     });
   };
 
@@ -245,6 +326,10 @@
       if (!sync.TYPES[item.type].body) { info.status = 'same'; return pageDates.then(function () { return info; }); }
       var split = sync.splitNote(d.html || '');
       info.note = split.note;
+      // What that class has, to show beside this version.
+      info.destHtml = split.html;
+      info.destSettings = d.settings;
+      info.destUpdatedAt = o.updated_at || null;
       return pageDates.then(function () { return self.record(srcCourseId, item, destCourseId); }).then(function (rec) {
         var cmp = sync.compareFull({ html: item.html || '', settings: item.settings }, { html: d.html || '', settings: d.settings }, rec);
         info.status = cmp.status;
@@ -426,6 +511,9 @@
   P.run = function (task, onStep) {
     onStep = onStep || function () {};
     if (task.mode === 'keep') return this.runKeep(task, onStep);
+    // The class this item was copied from: updated in place, never copied
+    // back (that would add a second one).
+    if (task.origin) return this.runBack(task, onStep);
     return this.runBatch({ tasks: [task] }, function (i, step) { onStep(step); }).then(function (r) { return r[0]; });
   };
 
@@ -516,6 +604,10 @@
     return Promise.all(order.map(function (d) {
       return gate(function () {
         var list = byDest[d];
+        // A class whose item this one was copied from is updated by
+        // writing onto it, not by a course copy (surveyOrigin).
+        var back = list.filter(function (t) { return t.origin && t.mode !== 'keep'; });
+        list = list.filter(function (t) { return !(t.origin && t.mode !== 'keep'); });
         var chain = S().batchTasks(list).reduce(function (p, b) {
           return p.then(function () {
             return self.runBatch(b, function (i, step) { onStep(b.tasks[i], step); }).then(function (rs) {
@@ -532,6 +624,11 @@
             });
           });
         }, Promise.resolve());
+        chain = back.reduce(function (p, t) {
+          return p.then(function () {
+            return self.runBack(t, function (step) { onStep(t, step); }).then(function (r) { onResult(t, r); });
+          });
+        }, chain);
         return list.filter(function (t) { return t.mode === 'keep'; }).reduce(function (p, t) {
           return p.then(function () {
             return self.runKeep(t, function (step) { onStep(t, step); }).then(function (r) { onResult(t, r); });
@@ -851,7 +948,7 @@
    * Canvas (un)publishes its items with it, as the Modules page does. */
   P.publishModule = function (task, destId, result) {
     var self = this;
-    if ((task.publish || 'match') === 'match') return Promise.resolve();
+    if ((task.publish || 'match') === 'match' || task.publish === 'keep') return Promise.resolve();
     var want = task.publish === 'published';
     return this.api.sectionItem(task.destCourseId, 'module', destId).then(function (o) {
       if (!o || o.published === undefined || !!o.published === want) return null;
@@ -910,7 +1007,7 @@
       }
       // "Same as this section" on a copy kept as that section's own leaves
       // its publishing alone too; only an explicit choice changes it.
-      var keepState = task.mode === 'keep' && (task.publish || 'match') === 'match';
+      var keepState = task.publish === 'keep' || (task.mode === 'keep' && (task.publish || 'match') === 'match');
       if (item.type !== 'announcement' && !keepState) {
         var want = task.publish === 'published' ? true : (task.publish === 'unpublished' ? false : !!item.published);
         if (d.published !== undefined && !!d.published !== want) {
@@ -1465,7 +1562,11 @@
         origNoteBlock: sync.splitNote(cmp.orig.html || '').block,
         titleDiffers: String(cmp.orig.title || '') !== String(cmp.copy.title || ''),
         pointsDiffer: cmp.orig.pointsPossible !== undefined && cmp.copy.pointsPossible !== undefined &&
-          Number(cmp.orig.pointsPossible) !== Number(cmp.copy.pointsPossible)
+          Number(cmp.orig.pointsPossible) !== Number(cmp.copy.pointsPossible),
+        // The update that would make the original's settings match the
+        // copy's, and the one that undoes it (assignments only).
+        settingsBody: sync.settingsBody(origRef.type, cmp.copy.settings, cmp.orig.settings),
+        settingsUndo: sync.settingsBody(origRef.type, cmp.orig.settings, cmp.copy.settings)
       };
     });
   };
@@ -1514,6 +1615,7 @@
     var origRef = { type: plan.type, id: plan.origId };
     var written = false;
     var titleWritten = false;
+    var settingsWritten = false;
     var prevSig = null;
     return files.then(function () {
       // The original as it is NOW - not as it was when the review opened -
@@ -1548,6 +1650,15 @@
             result.warnings.push('The title was not changed. ' + describe(err, 'Canvas refused'));
           });
         }).then(function () {
+          // opts.settings: an assignment's points, grading, submission type
+          // and attempts too, so the two really match.
+          if (!opts.settings || !plan.settingsBody) return null;
+          return self.api.updateSectionItem(plan.origCourse, plan.type, plan.origId, plan.settingsBody).then(function () {
+            settingsWritten = true;
+          }, function (err) {
+            result.warnings.push('The points and settings were not changed. ' + describe(err, 'Canvas refused'));
+          });
+        }).then(function () {
           return self.api.sectionItem(plan.origCourse, plan.type, plan.origId).then(function (o2) {
             var back = sync.toItem(plan.type === 'announcement' ? 'discussion' : plan.type, o2) || {};
             if (sync.fingerprint(back.html || '') !== sync.fingerprint(next)) {
@@ -1562,6 +1673,7 @@
               list[0].afterHtml = String(back.html || '');
               list[0].afterTitle = String(back.title || '');
               list[0].titleWritten = titleWritten;
+              if (settingsWritten) { list[0].settingsUndo = plan.settingsUndo; list[0].settingsAfter = plan.settingsBody; }
               var v = {};
               v[self.backupKey(plan.origCourse, plan.type, plan.origId)] = list;
               return self.store.set(v);
@@ -1571,6 +1683,7 @@
             return self.backups(plan.origCourse, plan.type, plan.origId).then(function (list) {
               if (!list[0]) return null;
               list[0].titleWritten = titleWritten;
+              if (settingsWritten) { list[0].settingsUndo = plan.settingsUndo; list[0].settingsAfter = plan.settingsBody; }
               var v = {};
               v[self.backupKey(plan.origCourse, plan.type, plan.origId)] = list;
               return self.store.set(v);
@@ -1581,7 +1694,8 @@
           // Only the text came back: the settings keep the record they had,
           // so a copy whose points were changed there still counts as such.
           var rec = { fp: sync.fingerprint(plan.copy.html || ''), destId: String(plan.copyId), at: self.now() };
-          if (prevSig) rec.sig = prevSig;
+          if (settingsWritten) rec.sig = sync.settingsSig(plan.copy.settings);
+          else if (prevSig) rec.sig = prevSig;
           return self.putRecord(plan.origCourse, origRef, plan.copyCourse, rec);
         });
       }).then(function () {
@@ -1648,13 +1762,15 @@
       // Only over what the bring-back wrote: an edit made to the original
       // since then would otherwise be silently thrown away.
       var changedSince = new Error('The original was changed again after that update, so Undo would throw those changes away. Nothing was changed.');
-      var check = !bk.after ? Promise.resolve() : self.api.sectionItem(ref.origCourse, ref.type, ref.origId).then(function (o) {
+      var check = !bk.after && !bk.settingsAfter ? Promise.resolve() : self.api.sectionItem(ref.origCourse, ref.type, ref.origId).then(function (o) {
         var cur = sync.toItem(ref.type === 'announcement' ? 'discussion' : ref.type, o) || {};
         if (bk.afterHtml !== undefined) {
           if (String(cur.html || '') !== bk.afterHtml || String(cur.title || '') !== bk.afterTitle) throw changedSince;
         } else if (sync.fingerprint(cur.html || '') !== bk.after) {
           throw changedSince;
         }
+        // Settings it wrote (points, attempts…) changed again since: same.
+        if (bk.settingsUndo && bk.settingsAfter && !sync.settingsStillAre(o, bk.settingsAfter)) throw changedSince;
       });
       // The title goes back only when the bring-back changed it (older
       // backups do not say, and keep the earlier behaviour).
@@ -1662,6 +1778,9 @@
       return check.then(function () { return self.api.setItemHtml(ref.origCourse, ref.type, ref.origId, bk.html); }).then(function () {
         if (!restoreTitle) return null;
         return self.api.updateSectionItem(ref.origCourse, ref.type, ref.origId, sync.titleBody(ref.type, bk.title));
+      }).then(function () {
+        if (!bk.settingsUndo) return null;
+        return self.api.updateSectionItem(ref.origCourse, ref.type, ref.origId, bk.settingsUndo);
       }).then(function () {
         return self.putRecord(ref.origCourse, { type: ref.type, id: ref.origId }, bk.from, bk.record || null);
       }).then(function () {

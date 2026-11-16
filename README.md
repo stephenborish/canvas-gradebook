@@ -759,155 +759,145 @@ result says so. Students from this class are never copied. Every write is Canvas
 
 For a course you teach to several classes (periods, blocks) that are **separate Canvas courses**
 (not cross-listed): build an assignment, quiz, discussion, announcement, page or module once, then
-put it in every other class in one step, each with its own dates. Below, each of those classes is
-called a *section*, as in the code; the buttons say *class*, so it is never mistaken for Canvas's own
-sections and Assign To.
+put it in your other classes, each with its own dates. Below, each of those classes is called a
+*section*, as in the code; the buttons say *class*, so it is never mistaken for Canvas's own sections.
 
-**Quick copy of a saved assignment.** Open the assignment and choose **Copy to other classes**.
-The compact view shows destination checkboxes and a due date for each class. Select the class,
-change the due date if needed, then press **Copy**. No destinations are selected automatically.
-Availability dates are folded away; **More options…** opens the full tool without losing your
-selection or date edits. Existing-copy and changed-content checks still apply. Canvas performs
-the copy in the background, so completion time depends on Canvas.
+**The whole workflow: tick a class, check its due date, press Copy.** The window is titled with what
+is being copied (*Copy from Block 6 · Lab 4*) and has one card per class:
 
-**Where the button is.** It sits beside what it copies, not in the breadcrumb:
+- Each card says in one or two words what that class has now: **Not there yet**, **Same**,
+  **Different: points, instructions** (what differs, when it is known), **Deleted there** or **Has its
+  own “Lab 4”** (a same-titled item that was not copied from here).
+- No class starts ticked. Ticking one shows its **Due** date (that class's own date when it already has
+  the item, else this class's). *More dates and a note* folds away *Available from*, *Until* and an
+  optional note for that class only.
+- Only a class whose version is **different** asks a question, and it is a picture, not a paragraph:
+  *Which version should both classes have?* with **both versions as two cards side by side**, named
+  (*Block 8 · this class* | *Block 6*). Words that differ are highlighted; a difference that changes
+  grades is spelled out in bold above the cards (*Points: none in Block 8, 6 in Block 6*) and on each
+  card. The newer one, when that is known, is tagged *newer* and starts picked; otherwise this class's
+  does. Click **Use this one** on either card. Picking Block 6's version gives it to **both** classes:
+  Block 6 keeps it (only its dates change) and this class is updated to it first, so anything copied out
+  afterwards carries it (button: *Use Block 6's version in both*). *Show the full text* opens the cards
+  in place. *Dates and student work stay as they are* sits right under them.
+- The button says exactly what happens (*Copy to Block 6*, *Update dates in Block 6*, *Copy to 3 classes*)
+  and the line beside it says it in words (*Adds it to Block 6.*, *Replaces Block 6's version.*,
+  *1 new · 1 replaced · 1 brought here.*). **Cancel** sits beside it.
+- When it is done: *✓ Done. Block 6 and Block 4 are up to date.*, then each class with the due date it
+  got (*copied, due Nov 13, 11:59 PM*), **Open**, and **Undo** wherever the change was written in place.
+- **Options** (folded): publishing (*Same as this class*, *Leave copies unpublished*, *Publish copies*),
+  *Put new copies in the same module*, *Add more items…*, *Change your classes…* and *Compare all items…*.
+
+Several items at once (from the course home or the Modules page, which open the item picker): each class
+card lists the items with their own ticks and statuses; ticking the class ticks them all, except an item
+that class already has its own of. *Move all of Block 6's dates* shifts that class by a number of days
+and/or gives it one due time (`1:45 pm`).
+
+**It works in both directions.** Which class an item was first copied from never matters to the teacher:
+if this class's item was itself copied from Block 6, Block 6 still shows as *Already there*, and copying
+updates Block 6's item in place (its title, instructions and, for an assignment, points, grading,
+submission type and attempts), with that class's dates. It is never copied back as a second one. A
+backup of what Block 6 had is kept on this computer for Undo.
+
+**Where the button is.** It sits beside what it copies:
 
 - On an assignment, quiz, discussion, announcement or page: a copy icon next to Canvas's **Edit**
-  (hover for *Copy to other classes*). It copies that item. It is icon-only there so the item's
-  title keeps its width; if the title and buttons still don't fit, the buttons wrap under the title.
-  (Not on edit pages: what is copied is the saved version.)
-- On the course home: **Copy to other classes** in the sidebar, under *Import Existing Content*, its
-  mirror image. It opens the item picker. **Compare classes** sits right under it.
+  (hover for *Copy to other classes*). It copies that item. (Not on edit pages: what is copied is the
+  saved version.)
+- On the course home: **Copy to other classes** in the sidebar, under *Import Existing Content*. It opens
+  the item picker. **Compare classes** sits right under it.
 - On the Modules page: beside **+ Module**. It opens the item picker. **Compare classes** sits next to it.
 
-**External links in modules.** A module's *External URL* items (a video, a simulation, a reading on
-another site) can be copied on their own, without copying the whole module: the **Links** tab of the
-item picker, or the copy icon at the start of each external link's controls on the Modules page (that
-link ticked). Tick the links and the classes. Each link is added to the matching module in each class (the
-copy of its module, else the module with the same name; pick another from the list if needed), right
-after the item it follows here, with the same title, address, *open in a new tab* setting, indent and
-published state. A class that already has a link to the same address is left out, so pressing it twice
-never adds a second copy.
+**External links in modules.** A module's *External URL* items can be copied on their own: the **Links** tab
+of the item picker, or the copy icon at the start of each external link's controls on the Modules page.
+Each link is added to the matching module in each class, right after the item it follows here, with the
+same title, address, *open in a new tab* setting, indent and published state. A class that already has a
+link to the same address is left out, so pressing it twice never adds a second copy.
 
-**What it does and doesn't** — shown in the dialog in four lines, open the first time and folded away
-after that:
+**The notice on an item's page.** When another class's version of the item on screen is not the same, one
+short line per class says so, with one button:
 
-- ✓ Makes a copy of what you pick in each class you choose, with that class's own dates.
-- ✓ Shows what will happen in each class first. Nothing changes until you press Copy.
-- ✕ Doesn't copy students, grades or submissions, and doesn't change this class.
-- ✕ Doesn't change copies on its own: a later edit stays where you make it until you copy it again.
-  **Compare classes** shows what is out of step, and fixes it in a few clicks.
+| Line | Button |
+| --- | --- |
+| **Block 6** has a different version. | **Pick a version…** |
+| Not in **Block 6** yet. (a new item, made in the last three hours) | **Copy to Block 6…** |
+| You replaced this with **Block 6**'s version on Nov 12. | **Undo** |
 
-The Copy button names where things go (*Copy to AP Biology (Block 6)*, *Copy to 3 classes*), and the
-line beside it says how many copies are made or updated and that the class you copy from is not
-changed.
+Each button opens **Which version should both classes have?**: the two versions as two big cards, with
+the words that differ highlighted, settings that differ at the top and a *newer* tag when that is known.
+Click **Use this one** on a card (the newer one, when known, starts picked), then the one button
+below it, which says what it will do (**Update Block 6** or **Update this class**). Each class keeps its
+own dates, note, publishing and student work. Afterwards: **Undo** (when the class written to was the
+one the other was copied from), **Open in Block 6**, and **Copy to your other classes too…**.
+
+The notice can be hidden (×) until something changes again, or turned off under *Show a notice on an
+item's page…*. A new item is not counted as missing in a class that already has an item of that kind with
+the same title, nor in a class whose section is cross-listed into this course.
 
 **Post it while you make it.** On Canvas's own page for creating or editing an assignment, quiz,
 discussion or page in a course you have linked, a panel sits just above **Save**: *Also post to your
 other classes*. Each of your other classes has a row with its own **Due** date and time (and, under
-*More dates*, *Available from* and *Until*):
+*More dates*, *Available from* and *Until*). Blank date: same as this class. Time only (`1:45 pm`): this
+class's day at that time (or click the time box and pick that class's period from your class schedule).
+Tick the classes you want (each class's tick and usual due time are remembered), then press Canvas's own
+**Save**. When the saved item opens, it is copied to every ticked class, and a banner at the top shows
+each class's progress.
 
-- Leave a date blank for the same date as this class.
-- Type only a time (`1:45 pm`) for this class's day at that time — or click the time box and pick
-  that class's period from your class schedule.
-- Pick a date to use that date at this class's time of day.
-- A class that already has a copy shows the dates its copy has now, so saving never resets them.
-
-Tick the classes you want (each class's tick and usual due time are remembered for next time), then
-press Canvas's own **Save**. When the saved item opens, it is copied to every ticked class with those
-dates, and a banner at the top shows each class's progress with a link to its copy.
-
-- **Cancel copies nothing.** The copy is made only when the item really was saved since the editor
-  opened. For a new item, it must also be the one created since, with that title.
-- **Saving an edit of an item that is already in your other classes updates their copies.** A copy
-  that was changed in its own class keeps its own version, and only its dates change.
-- **A New Quiz** is copied with Copy to other classes once its questions are in, since it is saved
-  before they are written.
-- **Canvas's Add Module dialog** gets the same checklist, and the new module is copied to the ticked
-  classes once Canvas has created it.
+- **Cancel copies nothing.** The copy is made only when the item really was saved since the editor opened.
+- **Saving an edit of an item that is already in your other classes updates their versions.** A class
+  whose version was edited there says so on its row before you save (*Edited there: saving keeps its
+  version and changes only its dates.*), with **Pick a version…** beside it.
+- **A New Quiz** is copied with Copy to other classes once its questions are in.
+- **Canvas's Add Module dialog** gets the same checklist.
 
 ### Compare classes: keep every class in step
 
-One screen for the question a teacher with several classes keeps asking: *what in this class isn't the
-same in my other classes?* Open it with **Compare classes** on the course home or the Modules page, from
-the copy dialog, or from the notice on an item's page.
+One screen for *what in this class isn't the same in my other classes?* Open it with **Compare classes**
+on the course home or the Modules page, from the copy window's *Options*, or from the notice.
 
 Every assignment, quiz, discussion, page and module in this class gets a row, and each linked class a
-column. Each cell says where that class stands:
+column. Counts across the top (*3 not there · 4 different · 40 same*), and each cell says one of:
 
 | Cell | Meaning | What you can do |
 | --- | --- | --- |
-| ✓ **Up to date** | Its copy has the same instructions and settings. | Nothing to do. |
-| + **Missing** | Never copied there. | Tick it to copy. |
-| ↻ **Out of date** | Changed *here* since it was copied; the copy there was not touched. Also a module whose copy lacks items added here since. | Tick it to update. |
-| ✎ **Changed there** | Its copy was edited in that class since it was copied. | Tick it (you then choose *Replace* or *Keep that class's version*), or **Review** to bring that class's change back here. |
-| ≠ **Different** | Different, and there is no record of which side changed. | As for *Changed there*. |
-| ⟲ **Deleted there** | The copy was deleted in that class. | Tick it to bring it back. |
-| ! **Has its own** | That class has a same-titled item that was not copied from here. | Nothing: copying would add a second one. |
+| ✓ **Same** | Same instructions and settings. | Nothing to do. |
+| + **Not there** / **Deleted there** | Never copied there, or deleted there. | Tick it. |
+| ≠ **Different** | Not the same; *newer here* or *newer there* beside it when that is known. | **Pick a version…**, or tick it to send this class's version. |
+| ! **Has its own** | That class has a same-titled item not copied from here. | Nothing: copying would add a second one. |
 
-Beside a cell, *unpublished there* / *published there* marks a copy whose publishing differs from this
-class's. What differs in the settings is spelled out (*Points: 20 here, 10 there*), and a module's cell
-lists the items missing from its copy (and any that class added on its own).
+What differs in the settings is spelled out under the cell (*Points: none here, 6 there*), a module's cell
+lists the items missing from that class's copy, and *unpublished there* / *published there* marks
+publishing that differs. **Pick a version…** opens the two-card view above.
 
-- **Show** *What needs attention* (the default) or *Everything*; filter by kind and by title.
-- **Tick: all missing / all out of date** selects those cells in one click. **Review and copy…** opens the
-  ordinary copy dialog with exactly the ticked (item, class) pairs ticked and nothing else, so every check
-  below still applies: each class's own dates, a copy changed there kept unless you choose otherwise, a
-  same-titled item never duplicated. Nothing is copied from the board itself.
-- **Match publishing (n)** publishes or unpublishes the copies shown so each matches this class, after a
-  confirmation that says how many go each way. Canvas keeps work students have already submitted published.
-- **Copied here from another class.** An item here that is itself a copy of another class's item is marked
-  *from Period 4*, and its Period 4 cell compares it with that original: *Original there · same*,
-  *Newer there* (**Update this class from it…**) or *Changed here* (**Review and update Period 4…**).
-  Canvas's copy only goes one way, so these are never copied back to where they came from: that would give
-  that class a second one. The copy dialog and the editor panel refuse that too.
-- **Copies whose original was deleted here** are listed under the table, each with a link. Gradebook+ never
-  deletes anything in your other classes.
-- The board reads each class with a handful of Canvas list requests (assignments, quizzes, discussions,
-  pages with their bodies, modules with their items, Canvas's record of what was copied where, and the
-  copy records), never one request per item, so a course of a couple of hundred items is checked in
-  seconds. **Check again** re-reads.
+- **Show** *Only what's not the same* (the default) or *Everything*; filter by kind and by title.
+- **Select all not there / all newer here** ticks those cells in one click (never one newer there). **Copy n
+  ticked…** opens the ordinary copy window with exactly those (item, class) pairs ticked, set to replace,
+  so you see each class's dates before anything is written. Nothing is copied from the board itself.
+- **Match publishing (n)** publishes or unpublishes the copies so each matches this class, after a
+  confirmation. Canvas keeps work students have already submitted published.
+- **Items in your other classes but no longer here** are listed under the table, each with a link.
+  Gradebook+ never deletes anything in your other classes.
+- The board reads each class with a handful of Canvas list requests, never one request per item, so a
+  course of a couple of hundred items is checked in seconds. **Check again** re-reads.
 
 Announcements are not listed (they are one-off posts). A graded discussion's points are compared in the
-copy dialog, not on the board (Canvas's discussion list leaves them out). A module's items in a different
-order there are not counted as out of date.
+copy window, not on the board. A module's items in a different order there are not counted as different.
 
-**Choose your classes once.** The first time (step 1 of 2), it asks which of your classes are the
-same course as this one. It pre-ticks courses with the
+### Copying: the details
+
+**Choose your classes once.** The first time, it asks which of your classes are the same course as
+this one. It pre-ticks courses with the
 same name in the same term once "Period 2", "(P4)", "Section 7", "Block 3" and the like are set aside.
 "Algebra 1" and "Algebra 2" stay different courses. Linked courses can copy to each other from
 any of them. Only course ids (and their names, for the options page) are saved, in your Chrome
 settings, so the links follow you to other computers.
 
-**Copy.** On an item's own page that item is already chosen; **Add items…** picks more from the
-course. Before anything is written, each linked section is checked and the dialog says what will
-happen there:
-
-- **Not in this section yet** — it will be copied.
-- **Already there** — copying again updates that copy instead of adding a second one. This is
-  Canvas's own rule for course copies: it recognises its earlier copy of the same item. When only its
-  settings moved on here (points, display grade as, submission type, allowed attempts; a quiz's points,
-  question count, type and time limit), the line says which, e.g. *Points: 20 here, 10 there*.
-- **A module that is already there but lacks items added here since** — copying the module again adds
-  them. Items that class added to its copy on its own are left alone, and named.
-- **This one was copied here from that section** — not ticked, and cannot be: Canvas's copy only goes
-  one way, so copying it there would add a second one. **Update that section's original with this
-  version…** opens the review described below instead.
-- **Changed in that section since it was copied** (its instructions or its settings) — left alone by default. You choose between
-  *Replace with this section's version* and *Keep that section's own version*, which changes
-  only its dates (and note). If this computer has no record of the copy (it was copied from another
-  computer, say), any difference counts as a change and is kept by default.
-- **That section already has an item with the same title that was not copied from here**
-  (typically both came from last year's course) — that section is unticked, because copying would
-  give it a second one.
-- **Deleted in that section** — copying brings it back.
-
 **Dates for each section.** A section that doesn't have the item yet starts with this section's
 dates; one that already has a copy starts with the dates that copy has there now, so updating a
 copy never quietly resets that section's own dates. Dates are in your Canvas time zone (your
-profile's), exactly as Canvas shows them. Edit any box, or move a whole section at once: **Shift**
-it a number of days from this section's dates and/or set its **Due time**, which accepts a time
-(`1:45 pm`, `13:45`). A due time
+profile's), exactly as Canvas shows them. Edit any box, or, copying several items, move a whole
+class at once (*Move all of Block 6's dates*): **Shift** it a number of days from this class's dates
+and/or set its **Due time** (`1:45 pm`, `13:45`). A due time
 of 11:59:59 PM keeps its seconds. Due, Available from
 and Until are set for assignments, quizzes and graded discussions; Available from/Until for
 ungraded discussions and pages (when Canvas allows dates on pages); Post at/Until for
@@ -915,13 +905,13 @@ announcements; Unlock at for modules. A copied module's assignments, quizzes and
 get their own row. Dates are checked before anything is copied (available from ≤ due ≤ until).
 
 **A note for one section.** Rarely, one section needs something the others don't ("Period 4: we
-start this in class Thursday"). Open *Note for this section only* under that section. The note is
+start this in class Thursday"). Open *More dates and a note* under that class. The note is
 shown at the top of that section's instructions in a highlighted box, and only there. Updating
 the copy later keeps it. A note written into the section you copy *from* is never carried to the
-others. For anything more than a note, edit that section's copy in Canvas directly; it is then
-"changed in that section" and won't be overwritten unless you say so.
+others. For anything more than a note, edit that class's copy in Canvas directly; it then shows as
+*edited there* and won't be replaced unless you choose *Replace with this version*.
 
-**Where the copy goes.** With *Put new copies in the matching module* on (the default), a first
+**Where the copy goes.** With *Put new copies in the same module* on (the default), a first
 copy goes into that section's copy of the same module (or the one module there with the same
 name), at the same position. A first copy also goes into the assignment group with the same name,
 rather than Canvas's "Imported Assignments". Copies follow this section's published state, or you
@@ -961,44 +951,16 @@ one of those two. Announcements post at each section's own *Post at* date.
   shared copy is crossed off as soon as it is done, so only what is left is finished later.
 - Nothing is copied until you press Copy.
 
-**When a copy is edited in its own section.** Copies are independent in Canvas: fixing a typo in
-Period 4's copy does not change Period 2's original, or any other section's copy. So the item's own
-page says so, in a notice at the top. These notices are shown on the copy's page and on the
-original's, whichever you are looking at.
-
-- *You changed this assignment here after it was copied from Period 2, which still has the earlier
-  version.* **Review and update Period 2…** opens a review with both versions side by side. It also
-  lists what will happen: links to files, pages and other items are changed to Period 2's own, and
-  a file only Period 4 has is copied into Period 2 (Canvas's own copy of just that file). It says
-  which links point to something Period 2 does not have, and that the title can come too.
-  **Update Period 2** writes Period 4's instructions onto the original. Period 2 keeps its own
-  section note, and Period 4's note does not come along. Just before writing, Period 2 is read
-  again: if it changed since the review opened (another tab, a co-teacher), nothing is written. A
-  backup of Period 2's version (the last five, for thirty days) is kept on this computer. **Undo**
-  puts it back, from the review or, for a week afterwards, from the notice on Period 2's page. Undo
-  also restores the record of Period 4's copy, so it still counts as changed there. Then **Copy it to your other sections…** carries the
-  fix on to the rest. They show as having the earlier version, so they are updated by default.
-- *Period 4 changed its copy of this assignment.* The same review, seen from the original.
-- *Period 2, where this was copied from, has a newer version* / *Period 6 still has the earlier
-  version* offer the ordinary copy, already set up.
-- When both changed, or there is no record of which one did, both choices are offered with each
-  version's last-changed time.
-- A new item (made in the last three hours) that is in no other section yet is pointed out too. A class
-  that already has an item of that kind with the same title (made there by hand, say, with its own
-  due date) is not counted as missing, nor is a class whose section is cross-listed into this course
-  (each section's due date is then set in this item's own Assign To). While *Also post to your other
-  classes* is copying the item, the notice waits rather than report the classes it is filling.
-
-The notice can be hidden (×) until something changes again. Turn notices off under *Show a notice
-on an item's page…*. Only the title and instructions are brought back. Points, settings, the
-rubric, quiz questions and module contents changed in a copy are not; change those in the
-original and copy it again. The record of what was copied is a fingerprint of each copy's text, and
-of its settings (points, attempts and the rest listed above), so a copy whose points were changed in its
-own class counts as changed there, while one whose original's points were changed counts as out of date.
-A record made before settings were recorded follows what its text says. It
-is kept in your own Canvas account's user data (Canvas's custom data; private to your account, though Canvas admins with the right permissions can see user data) and on
-this computer, so a copy made on one computer is recognised on every other. A title-only change is
-not noticed.
+**The record of what was copied.** Which class changed an item is known from a fingerprint of each copy's
+text and settings, taken when it is copied. It is kept in your own Canvas account's user data (Canvas's
+custom data; private to your account, though Canvas admins with the right permissions can see user data)
+and on this computer, so a copy made on one computer is recognised on every other. Without a record (an
+item copied by hand, say), two versions that differ are just **Different**. A title-only change is not
+noticed. Writing one class's version onto the item another was copied from translates its links to that
+class's own files, pages and items, copies a file only the other class has, keeps that class's own note,
+checks just before writing that it has not changed since the view opened (another tab, a co-teacher), and
+keeps a backup of the last five versions for thirty days for **Undo**. Quiz questions, rubrics and module
+contents are not written that way; copying from the class the item came from replaces them.
 
 Limits worth knowing:
 
