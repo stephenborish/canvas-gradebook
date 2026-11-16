@@ -498,6 +498,9 @@
   P.run = function (task, onStep) {
     onStep = onStep || function () {};
     if (task.mode === 'keep') return this.runKeep(task, onStep);
+    // The class this item was copied from: updated in place, never copied
+    // back (that would add a second one).
+    if (task.origin) return this.runBack(task, onStep);
     return this.runBatch({ tasks: [task] }, function (i, step) { onStep(step); }).then(function (r) { return r[0]; });
   };
 
@@ -1659,7 +1662,7 @@
               list[0].afterHtml = String(back.html || '');
               list[0].afterTitle = String(back.title || '');
               list[0].titleWritten = titleWritten;
-              if (settingsWritten) list[0].settingsUndo = plan.settingsUndo;
+              if (settingsWritten) { list[0].settingsUndo = plan.settingsUndo; list[0].settingsAfter = plan.settingsBody; }
               var v = {};
               v[self.backupKey(plan.origCourse, plan.type, plan.origId)] = list;
               return self.store.set(v);
@@ -1669,7 +1672,7 @@
             return self.backups(plan.origCourse, plan.type, plan.origId).then(function (list) {
               if (!list[0]) return null;
               list[0].titleWritten = titleWritten;
-              if (settingsWritten) list[0].settingsUndo = plan.settingsUndo;
+              if (settingsWritten) { list[0].settingsUndo = plan.settingsUndo; list[0].settingsAfter = plan.settingsBody; }
               var v = {};
               v[self.backupKey(plan.origCourse, plan.type, plan.origId)] = list;
               return self.store.set(v);
@@ -1748,13 +1751,15 @@
       // Only over what the bring-back wrote: an edit made to the original
       // since then would otherwise be silently thrown away.
       var changedSince = new Error('The original was changed again after that update, so Undo would throw those changes away. Nothing was changed.');
-      var check = !bk.after ? Promise.resolve() : self.api.sectionItem(ref.origCourse, ref.type, ref.origId).then(function (o) {
+      var check = !bk.after && !bk.settingsAfter ? Promise.resolve() : self.api.sectionItem(ref.origCourse, ref.type, ref.origId).then(function (o) {
         var cur = sync.toItem(ref.type === 'announcement' ? 'discussion' : ref.type, o) || {};
         if (bk.afterHtml !== undefined) {
           if (String(cur.html || '') !== bk.afterHtml || String(cur.title || '') !== bk.afterTitle) throw changedSince;
         } else if (sync.fingerprint(cur.html || '') !== bk.after) {
           throw changedSince;
         }
+        // Settings it wrote (points, attempts…) changed again since: same.
+        if (bk.settingsUndo && bk.settingsAfter && !sync.settingsStillAre(o, bk.settingsAfter)) throw changedSince;
       });
       // The title goes back only when the bring-back changed it (older
       // backups do not say, and keep the earlier behaviour).

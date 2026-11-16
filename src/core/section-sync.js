@@ -740,6 +740,21 @@
     return Object.keys(out).length ? { assignment: out } : null;
   }
 
+  /** Does a Canvas object still have the settings an update (settingsBody)
+   * wrote? False when any of them was changed since. */
+  function settingsStillAre(o, body) {
+    var want = body && body.assignment;
+    if (!o || !want) return true;
+    var same = function (a, b) { return String(a === undefined || a === null ? '' : a) === String(b === undefined || b === null ? '' : b); };
+    return Object.keys(want).every(function (k) {
+      if (k === 'submission_types') return (o[k] || []).slice().sort().join(',') === (want[k] || []).slice().sort().join(',');
+      if (k === 'points_possible' || k === 'allowed_attempts') {
+        return same(o[k] === null || o[k] === undefined ? null : Number(o[k]), want[k] === null ? null : Number(want[k]));
+      }
+      return same(o[k], want[k]);
+    });
+  }
+
   var STATUS_RANK = { same: 0, stale: 1, differs: 2, edited: 3 };
 
   /** compareCopy, for the text AND the settings. rec: the record of the
@@ -1276,6 +1291,7 @@
     settingsDiff: settingsDiff,
     settingsBody: settingsBody,
     settingsPairs: settingsPairs,
+    settingsStillAre: settingsStillAre,
     compareFull: compareFull,
     moduleDrift: moduleDrift,
     safeDecode: safeDecode,

@@ -1477,9 +1477,32 @@ suite('keeping classes in step: what changed', (test) => {
     a.eq(api.db.details['22:assignment:705'].due_at, '2026-03-05T13:00:00Z', 'and that class’s dates');
     a.ok(results[0].undo);
     a.eq((await c.compare('22', { type: 'assignment', id: '705' }, '11', '5')).side, 'same');
+    // Points changed by hand after the update: Undo refuses rather than
+    // throw that away.
+    api.db.items['22:assignment:705'].points_possible = 30;
+    let refused = null;
+    try { await c.undoBack(results[0].undo); } catch (e) { refused = e; }
+    a.ok(refused && /changed again/.test(refused.message), 'refused');
+    a.eq(api.db.items['22:assignment:705'].points_possible, 30, 'nothing written');
+    api.db.items['22:assignment:705'].points_possible = 12;
     await c.undoBack(results[0].undo);
     a.ok(api.db.items['22:assignment:705'].description.indexOf('carefully') < 0, 'undone');
     a.eq(api.db.items['22:assignment:705'].points_possible, 10, 'points too');
+  });
+
+  test('saving in the editor updates the class this item came from in place (run, not only runPlan)', async () => {
+    const api = fakeCanvas();
+    api.db.migrations['11'] = [{ id: '2', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '22' } }];
+    const mapFor = api.assetIdMapping;
+    api.assetIdMapping = (dest, id) => dest === '11' ? Promise.resolve({ assignments: { '705': '5' } }) : mapFor(dest, id);
+    api.db.items['22:assignment:705'] = { id: '705', name: 'Lab 4', description: '<p>Do the lab.</p>', published: true };
+    api.db.details['22:assignment:705'] = { due_at: null, unlock_at: null, lock_at: null, only_visible_to_overrides: false };
+    api.db.items['11:assignment:5'] = { id: '5', name: 'Lab 4', description: '<p>Do the lab carefully.</p>', published: true };
+    const item = S().toItem('assignment', api.db.items['11:assignment:5']);
+    const r = await copier(api).run({ srcCourseId: '11', destCourseId: '22', item, mode: 'copy', origin: true, destId: '705', dates: {}, children: [], note: '', publish: 'match', mapping: {} });
+    a.ok(r.ok, r.error);
+    a.not(api.calls.some((x) => x[0] === 'copy'), 'no course copy back');
+    a.ok(api.db.items['22:assignment:705'].description.indexOf('carefully') > 0);
   });
 });
 
