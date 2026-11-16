@@ -766,21 +766,25 @@ put it in your other classes, each with its own dates. Below, each of those clas
 is being copied (*Copy from Block 6 · Lab 4*) and has one card per class:
 
 - Each card says in one or two words what that class has now: **Not there yet**, **Same**,
-  **Different**, **Deleted there** or **Has its own “Lab 4”** (a same-titled item that was not copied
-  from here).
+  **Different: points, instructions** (what differs, when it is known), **Deleted there** or **Has its
+  own “Lab 4”** (a same-titled item that was not copied from here).
 - No class starts ticked. Ticking one shows its **Due** date (that class's own date when it already has
   the item, else this class's). *More dates and a note* folds away *Available from*, *Until* and an
   optional note for that class only.
 - Only a class whose version is **different** asks a question, and it is a picture, not a paragraph:
-  *Which version should Block 6 have?* with **both versions as two cards side by side**. Words that
-  differ are highlighted, settings that differ sit at the top of each card (*Points* **none** |
-  *Points* **6**), and the newer one, when that is known, is tagged *newer* and starts picked. When
-  nobody knows which is newer, neither starts picked and the Copy button reads *Pick a version first*.
-  Click **Use this one** on either card. Picking that class's own version changes only its dates.
-  *Show all of both* opens the cards to full length.
+  *Which version should both classes have?* with **both versions as two cards side by side**, named
+  (*Block 8 · this class* | *Block 6*). Words that differ are highlighted; a difference that changes
+  grades is spelled out in bold above the cards (*Points: none in Block 8, 6 in Block 6*) and on each
+  card. The newer one, when that is known, is tagged *newer* and starts picked; otherwise this class's
+  does. Click **Use this one** on either card. Picking Block 6's version gives it to **both** classes:
+  Block 6 keeps it (only its dates change) and this class is updated to it first, so anything copied out
+  afterwards carries it (button: *Use Block 6's version in both*). *Show the full text* opens the cards
+  in place. *Dates and student work stay as they are* sits right under them.
 - The button says exactly what happens (*Copy to Block 6*, *Update dates in Block 6*, *Copy to 3 classes*)
   and the line beside it says it in words (*Adds it to Block 6.*, *Replaces Block 6's version.*,
-  *1 new · 1 replaced · 1 kept (dates only).*).
+  *1 new · 1 replaced · 1 brought here.*). **Cancel** sits beside it.
+- When it is done: *✓ Done. Block 6 and Block 4 are up to date.*, then each class with the due date it
+  got (*copied, due Nov 13, 11:59 PM*), **Open**, and **Undo** wherever the change was written in place.
 - **Options** (folded): publishing (*Same as this class*, *Leave copies unpublished*, *Publish copies*),
   *Put new copies in the same module*, *Add more items…*, *Change your classes…* and *Compare all items…*.
 
@@ -840,8 +844,9 @@ Tick the classes you want (each class's tick and usual due time are remembered),
 each class's progress.
 
 - **Cancel copies nothing.** The copy is made only when the item really was saved since the editor opened.
-- **Saving an edit of an item that is already in your other classes updates their versions.** A version
-  that was edited in its own class is kept, and only its dates change.
+- **Saving an edit of an item that is already in your other classes updates their versions.** A class
+  whose version was edited there says so on its row before you save (*Edited there: saving keeps its
+  version and changes only its dates.*), with **Pick a version…** beside it.
 - **A New Quiz** is copied with Copy to other classes once its questions are in.
 - **Canvas's Add Module dialog** gets the same checklist.
 

@@ -2677,7 +2677,9 @@ html.cgp-on .cgp-ver__pick {
 html.cgp-on .cgp-ver:hover .cgp-ver__pick { border-color: var(--cgp-brand); }
 html.cgp-on .cgp-ver.is-picked .cgp-ver__pick { background: var(--cgp-brand); border-color: var(--cgp-brand); color: #fff; }
 html.cgp-on .cgp-ver__title { font-weight: 600; font-size: 13px; }
-html.cgp-on .cgp-ver__settings { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12.5px; color: var(--cgp-muted); }
+html.cgp-on .cgp-ver__settings { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 13px; color: var(--cgp-ink); }
+html.cgp-on .cgp-ver__settings strong { font-weight: 700; color: var(--cgp-ink-strong); }
+html.cgp-on .cgp-ver__here { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--cgp-brand-wash); color: var(--cgp-brand-dark); }
 html.cgp-on .cgp-ver mark { background: #fff1b8; color: inherit; border-radius: 2px; padding: 0 1px; }
 html.cgp-on .cgp-ver__text {
   white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.5; color: var(--cgp-ink);
@@ -2689,6 +2691,9 @@ html.cgp-on .cgp-ver--compact .cgp-ver__text {
 }
 html.cgp-on .cgp-sections__pickver { margin: 8px 0 4px; }
 html.cgp-on .cgp-sections__pickver-q { display: block; font-size: 13px; font-weight: 600; }
+html.cgp-on .cgp-sections__pickver-key { display: block; margin-top: 4px; font-size: 13px; font-weight: 700; color: #8a4b00; }
+html.cgp-on .cgp-sections__reassure { margin-left: 14px; font-size: 12.5px; color: var(--cgp-muted); }
+html.cgp-on .cgp-sections__results a, html.cgp-on .cgp-board__table a { color: var(--cgp-brand-dark); }
 @media (max-width: 640px) { html.cgp-on .cgp-vers { grid-template-columns: 1fr; } }
 html.cgp-on .cgp-sections__compare-settings { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 13px; margin-bottom: 6px; }
 html.cgp-on .cgp-sections__chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
@@ -2979,6 +2984,7 @@ html.cgp-on .cgp-inline__more summary { cursor: pointer; color: var(--cgp-brand-
 html.cgp-on .cgp-inline__more[open] { flex: 1 0 100%; display: flex; flex-wrap: wrap; gap: 6px 14px; }
 html.cgp-on .cgp-inline__more[open] summary { flex: 1 0 100%; }
 html.cgp-on .cgp-inline__status { flex: 1 0 100%; font-size: 12px; color: var(--cgp-muted); }
+html.cgp-on .cgp-inline__status.is-warn { color: #8a4b00; font-weight: 600; }
 html.cgp-on .cgp-inline__err { flex: 1 0 100%; font-size: 12px; color: #b42318; }
 html.cgp-on .cgp-inline__err:empty { display: none; }
 html.cgp-on .cgp-inline__hint { font-size: 12px; color: var(--cgp-muted); margin: 6px 0 0; }

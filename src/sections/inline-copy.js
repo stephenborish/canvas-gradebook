@@ -168,9 +168,22 @@
         // than adding a second. For the teacher it is the same as any class
         // that already has it.
         st.origins = {};
-        var there = rel.to.concat(rel.from.map(function (r) { return { courseId: r.courseId, destId: r.srcId }; }));
+        var here = { type: page.type, id: st.itemId };
+        var there = rel.to.map(function (r) {
+          return { courseId: r.courseId, destId: r.destId, ctx: { origCourse: self.courseId, origRef: here, copyCourse: r.courseId, copyId: r.destId }, hereIsOrig: true };
+        }).concat(rel.from.map(function (r) {
+          return { courseId: r.courseId, destId: r.srcId, ctx: { origCourse: r.courseId, origRef: { type: page.type, id: r.srcId }, copyCourse: self.courseId, copyId: st.itemId }, hereIsOrig: false };
+        }));
         return Promise.all(there.map(function (r) {
-          st.existing[r.courseId] = { destId: r.destId };
+          st.existing[r.courseId] = { destId: r.destId, ctx: r.ctx };
+          // Edited in that class (or nobody knows which side changed):
+          // saving keeps its version there and changes only its dates. Said
+          // on the row before Save, not after.
+          self.copier.compare(r.ctx.origCourse, r.ctx.origRef, r.ctx.copyCourse, r.ctx.copyId).then(function (c) {
+            var side = c && c.side;
+            var editedThere = side === 'both' || side === 'unknown' || (r.hereIsOrig ? side === 'copy' : side === 'original');
+            if (editedThere && st.existing[r.courseId]) { st.existing[r.courseId].differs = true; self.renderBody(); }
+          }, function () { /* the row stays as it is */ });
           if (!st.fields.length) return null;
           return self.api.dateDetails(r.courseId, page.type, r.destId).then(function (dd) {
             var row = st.rows[r.courseId];
@@ -218,6 +231,10 @@
       if (!b) return;
       e.preventDefault();
       if (b.getAttribute('data-inline-act') === 'link' && self.controller) self.controller.open({ items: [] });
+      if (b.getAttribute('data-inline-act') === 'pick' && self.controller) {
+        var ex = self.state && self.state.existing[b.getAttribute('data-d')];
+        if (ex && ex.ctx) self.controller.openMatch(ex.ctx, null);
+      }
     });
     this.renderBody();
   };
@@ -240,7 +257,8 @@
     var rows = st.sibs.map(function (d) {
       var row = st.rows[d] || { on: true, entry: {} };
       var ex = st.existing[d];
-      var status = ex ? 'Already there: saving updates it.' : 'Gets a copy when you save.';
+      var status = ex ? (ex.differs ? 'Edited there: saving keeps its version and changes only its dates.' : 'Already there: saving updates it.')
+        : 'Gets a copy when you save.';
       var boxes = function (f) {
         var e = row.entry[f] || {};
         return '<label class="cgp-inline__date"><span>' + esc(S().DATE_LABELS[f]) + '</span>' +
@@ -255,7 +273,8 @@
       return '<div class="cgp-inline__row' + (row.on ? '' : ' is-off') + '">' +
         '<label class="cgp-inline__name"><input type="checkbox" data-on="' + esc(d) + '"' + (row.on ? ' checked' : '') + '> ' + esc(self.name(d)) + '</label>' +
         (fields.length ? boxes(fields[0]) : '') + more +
-        '<span class="cgp-inline__status">' + esc(status) + '</span>' +
+        '<span class="cgp-inline__status' + (ex && ex.differs ? ' is-warn' : '') + '">' + esc(status) +
+        (ex && ex.differs && ex.ctx && self.controller ? ' <button type="button" class="cgp-board__link" data-inline-act="pick" data-d="' + esc(d) + '">Pick a version…</button>' : '') + '</span>' +
         '<span class="cgp-inline__err" data-err="' + esc(d) + '">' + esc(problems.join('; ')) + '</span></div>';
     }).join('');
     var on = st.sibs.filter(function (d) { return st.rows[d] && st.rows[d].on; }).length;

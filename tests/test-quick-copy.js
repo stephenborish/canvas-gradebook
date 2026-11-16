@@ -81,17 +81,55 @@ suite('copy dialog: one row per class', test => {
     c.state.items[0].settings = { points: 10 };
     tick(c, '2');
     let html = c.renderMain();
-    a.ok(html.includes('Which version should Block 2 have?'));
+    a.ok(html.includes('Which version should both classes have?'));
     a.eq((html.match(/class="cgp-ver[ "]/g) || []).length, 2, 'two cards');
     a.ok(html.includes('<mark>loses 10%.</mark>') && html.includes('<mark>is not accepted.</mark>'), 'what differs is marked');
-    a.ok(html.includes('Points <mark>10</mark>') && html.includes('Points <mark>6</mark>'));
-    a.ok(c.buildTasks().errors[0].includes('Pick a version for Block 2'), 'nobody knows which is newer: nothing is picked, and Copy waits for a click');
-    a.ok(html.includes('Pick a version for Block 2.'));
-    c.onChange({ target: { value: '1', hasAttribute: n => n === 'data-replace', getAttribute: n => (n === 'data-replace' ? 'assignment:8>2' : null) } });
-    a.eq(c.buildTasks().tasks[0].mode, 'copy');
-    html = c.renderMain();
+    a.ok(html.includes('Points: 10 in Block 1, 6 in Block 2'), 'a difference that changes grades, in bold words above the cards');
+    a.ok(html.includes('Different: points, instructions'));
+    a.ok(html.includes('this class') && html.includes('Block 1'), 'cards name the classes');
+    a.ok(html.includes('Dates and student work stay as they are.'));
+    a.eq(c.buildTasks().tasks[0].mode, 'copy', 'nobody knows which is newer: this class’s version starts picked');
     a.ok(html.includes('✓ Using this one'));
-    a.eq(c.buildTasks().errors.length, 0);
+    // Picking Block 2's version: both classes get it.
+    c.onChange({ target: { value: '0', hasAttribute: n => n === 'data-replace', getAttribute: n => (n === 'data-replace' ? 'assignment:8>2' : null) } });
+    const t = c.buildTasks().tasks[0];
+    a.eq(t.mode, 'keep', 'Block 2 keeps its version (dates only)…');
+    a.deep(t.pull, { origCourse: '1', origRef: c.state.items[0], copyCourse: '2', copyId: '88' }, '…and it is brought here');
+    html = c.renderMain();
+    a.ok(html.includes('Use Block 2’s version in both'));
+    a.ok(html.includes('Both classes get Block 2’s version.'));
+  });
+
+  test('a version brought here is written before anything is copied out, and its Undo is offered', async () => {
+    const c = controller({ status: 'edited', destId: '88', destTitle: 'Lab', destHtml: '<p>B</p>' });
+    c.state.items[0].html = '<p>A</p>';
+    c.state.survey.dests[1].items['assignment:8'] = { status: 'new' };
+    tick(c, '2');
+    tick(c, '3');
+    a.eq(c.buildTasks().tasks.find(t => t.destCourseId === '2').pull.copyId, '88', 'newer there: its version starts picked, so it comes here');
+    const order = [];
+    c.pullHere = () => { order.push('pull'); return Promise.resolve({ ok: true, warnings: [], undo: { origCourse: '1', type: 'assignment', origId: '8' } }); };
+    c.copier = { runPlan: (tasks, onStep, onResult) => { order.push('copy'); tasks.forEach(t => onResult(t, { ok: true, warnings: [], url: '#' })); return Promise.resolve(); } };
+    CGP.diag = CGP.diag || { bump() {} };
+    CGP.ui = CGP.ui || {};
+    const toast = CGP.ui.toast; CGP.ui.toast = () => {};
+    CGP.util.rafBatch = CGP.util.rafBatch || ((f) => f);
+    c.runAll();
+    await new Promise(r => setTimeout(r, 20));
+    CGP.ui.toast = toast;
+    a.deep(order, ['pull', 'copy']);
+    const html = c.renderResults();
+    a.ok(html.includes('both classes now have its version'));
+    a.ok(html.includes('data-act="undo-one"'));
+    a.ok(html.includes('Done.'));
+  });
+
+  test('two classes’ versions cannot both be brought here', () => {
+    const c = controller({ status: 'edited', destId: '88', destTitle: 'Lab', destHtml: '<p>B</p>' });
+    c.state.items[0].html = '<p>A</p>';
+    tick(c, '2');
+    tick(c, '3');
+    a.ok(c.buildTasks().errors.some(e => e.includes('pick one class’s version')));
   });
 
   test('marking what differs, word by word', () => {
