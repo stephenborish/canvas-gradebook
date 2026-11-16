@@ -75,6 +75,30 @@ suite('copy dialog: one row per class', test => {
     a.ok(html.includes('Replaces Block 2’s version.'));
   });
 
+  test('a different version shows both versions as cards; clicking one is the choice', () => {
+    const c = controller({ status: 'differs', destId: '88', destTitle: 'Lab', destHtml: '<p>Late work is not accepted.</p>', destSettings: { points: 6 } });
+    c.state.items[0].html = '<p>Late work loses 10%.</p>';
+    c.state.items[0].settings = { points: 10 };
+    tick(c, '2');
+    let html = c.renderMain();
+    a.ok(html.includes('Which version should Block 2 have?'));
+    a.eq((html.match(/class="cgp-ver[ "]/g) || []).length, 2, 'two cards');
+    a.ok(html.includes('<mark>loses 10%.</mark>') && html.includes('<mark>is not accepted.</mark>'), 'what differs is marked');
+    a.ok(html.includes('Points <mark>10</mark>') && html.includes('Points <mark>6</mark>'));
+    a.eq(c.buildTasks().tasks[0].mode, 'keep', 'theirs kept until this version is picked');
+    c.onChange({ target: { value: '1', hasAttribute: n => n === 'data-replace', getAttribute: n => (n === 'data-replace' ? 'assignment:8>2' : null) } });
+    a.eq(c.buildTasks().tasks[0].mode, 'copy');
+    html = c.renderMain();
+    a.ok(html.includes('✓ Keeping this version'));
+  });
+
+  test('marking what differs, word by word', () => {
+    const d = CGP.sectionSync.wordDiff('Submit once and earn 11 points.', 'Submit and earn 11 points <b>now</b>.');
+    a.eq(d.a, 'Submit <mark>once</mark> and earn 11 <mark>points.</mark>');
+    a.eq(d.b, 'Submit and earn 11 <mark>points &lt;b&gt;now&lt;/b&gt;.</mark>');
+    a.eq(CGP.sectionSync.wordDiff('same', 'same').changed, 0);
+  });
+
   test('a class whose item this one was copied from is updated in place, never copied back', () => {
     const c = controller({ status: 'stale', destId: '70', origin: { srcId: '70' } });
     tick(c, '2');

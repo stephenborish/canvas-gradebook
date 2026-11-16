@@ -771,9 +771,12 @@ is being copied (*Copy from Block 6 · Lab 4*) and has one card per class:
 - No class starts ticked. Ticking one shows its **Due** date (that class's own date when it already has
   the item, else this class's). *More dates and a note* folds away *Available from*, *Until* and an
   optional note for that class only.
-- Only a class whose version is **different** asks a question: **Replace with this version** or **Keep
-  theirs, change only the dates** (the default when that class edited its own, or nobody knows which side
-  changed). **Compare…** opens both versions side by side.
+- Only a class whose version is **different** asks a question, and it is a picture, not a paragraph:
+  *Which version should Block 6 have?* with **both versions as two cards side by side**. Words that
+  differ are highlighted, and settings that differ sit at the top of each card (*Points* **none** |
+  *Points* **6**). Click the card to keep. That class's own version starts picked (so nothing it changed
+  is lost by accident); picking it changes only that class's dates. *Show all of both* opens the cards
+  to full length.
 - The button says exactly what happens (*Copy to Block 6*, *Update dates in Block 6*, *Copy to 3 classes*)
   and the line beside it says it in words (*Adds it to Block 6.*, *Replaces Block 6's version.*,
   *1 new · 1 replaced · 1 kept (dates only).*).
@@ -813,14 +816,15 @@ short line per class says so, with one button:
 | --- | --- |
 | **Block 6** has an older version. | **Update Block 6…** |
 | **Block 6** has a newer version. | **Use Block 6's version…** |
-| **Block 6** has a different version. | **Compare…** |
+| **Block 6** has a different version. | **Pick a version…** |
 | Not in **Block 6** yet. (a new item, made in the last three hours) | **Copy to Block 6…** |
 | You replaced this with **Block 6**'s version on Nov 12. | **Undo** |
 
-Each button opens the **side-by-side view**: both versions' instructions, title and settings (*Points:
-none* | *Points: 6*), which one is newer when that is known, and two buttons, **Use this version in Block 6**
-and **Use Block 6's version here** (the suggested one highlighted). One click does it; each class keeps
-its own dates, note, publishing and student work. Afterwards: **Undo** (when the class written to was the
+Each button opens **Which version should both classes have?**: the two versions as two big cards, with
+the words that differ highlighted, settings that differ at the top and a *newer* tag when that is known.
+Click the card to keep (the newer one, or the one the button named, starts picked), then the one button
+below it, which says what it will do (**Update Block 6** or **Update this class**). Each class keeps its
+own dates, note, publishing and student work. Afterwards: **Undo** (when the class written to was the
 one the other was copied from), **Open in Block 6**, and **Copy to your other classes too…**.
 
 The notice can be hidden (×) until something changes again, or turned off under *Show a notice on an
@@ -857,12 +861,12 @@ cell says one of:
 | + **Not there** / **Deleted there** | Never copied there, or deleted there. | Tick it. |
 | ↻ **Older version** | Changed here since; that class's was not touched. | Tick it, or **Update…** |
 | ↺ **Newer version** | Changed in that class since. | **Use theirs…** (or tick it to replace it). |
-| ≠ **Different** | Different, and no record says which side changed. | **Compare…** (or tick it). |
+| ≠ **Different** | Different, and no record says which side changed. | **Pick a version…** (or tick it). |
 | ! **Has its own** | That class has a same-titled item not copied from here. | Nothing: copying would add a second one. |
 
 What differs in the settings is spelled out under the cell (*Points: none here, 6 there*), a module's cell
 lists the items missing from that class's copy, and *unpublished there* / *published there* marks
-publishing that differs. **Update…**, **Use theirs…** and **Compare…** open the side-by-side view above.
+publishing that differs. **Update…**, **Use theirs…** and **Pick a version…** open the two-card view above.
 
 - **Show** *Only what's not the same* (the default) or *Everything*; filter by kind and by title.
 - **Select all not there / all older** ticks those cells in one click (never a newer version). **Copy n

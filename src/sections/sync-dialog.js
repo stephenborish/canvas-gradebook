@@ -206,7 +206,7 @@
    * fixes it:
    *  - an older version there:      Update <class>…
    *  - a newer version there:       Use <class>’s version…
-   *  - different, nobody knows why: Compare…
+   *  - different, nobody knows why: Pick a version…
    *  - a new item (last few hours) that is in no other class yet.
    * Which class an item was first copied from never shows: the teacher sees
    * "this class" and "that class", and either can be made to match the
@@ -301,7 +301,7 @@
     }
     if (n.kind === 'newer-here') return line('<strong>' + name + '</strong> has an older version.', btn('match-there', 'Update ' + name + '…', true));
     if (n.kind === 'newer-there') return line('<strong>' + name + '</strong> has a newer version.', btn('match-here', 'Use ' + name + '’s version…', true));
-    return line('<strong>' + name + '</strong> has a different version.', btn('compare-one', 'Compare…', true));
+    return line('<strong>' + name + '</strong> has a different version.', btn('compare-one', 'Pick a version…', true));
   };
 
   /* The notice sits at the top of the page's content until dismissed. A
@@ -355,6 +355,38 @@
     });
   };
 
+  /* ------------------------------------------- two versions, click one */
+
+  /* The two versions of one item as two cards; the teacher clicks the one
+   * to keep. What differs is highlighted in both, so nothing has to be read
+   * end to end, and settings that differ sit at the top of each card.
+   * o: { a, b: {who, sub, title, html, settings, updatedAt, newer},
+   *      picked: 'a' | 'b' | null, name (radio group), attrs(side),
+   *      compact (a preview, cut short) }. */
+  function versionCards(o) {
+    var sync = S();
+    var text = function (h) { return sync.htmlToText(sync.splitNote(h || '').html, true); };
+    var diff = sync.wordDiff(text(o.a.html), text(o.b.html));
+    var pairs = sync.settingsPairs(o.a.settings, o.b.settings);
+    var titles = String(o.a.title || '') !== String(o.b.title || '');
+    var card = function (side, v, body) {
+      var on = o.picked === side;
+      return '<label class="cgp-ver' + (on ? ' is-picked' : '') + (o.compact ? ' cgp-ver--compact' : '') + '">' +
+        '<input type="radio" class="cgp-ver__radio" name="' + esc(o.name) + '" ' + o.attrs(side) + (on ? ' checked' : '') + '>' +
+        '<span class="cgp-ver__head"><span class="cgp-ver__who">' + esc(v.who) + '</span>' +
+        (v.newer ? '<span class="cgp-ver__newer">newer</span>' : '') +
+        (v.updatedAt ? '<span class="cgp-ver__when">edited ' + esc(fmtWhen(v.updatedAt)) + '</span>' : '') +
+'</span>' +
+        (titles ? '<span class="cgp-ver__title">' + esc(v.title || '(untitled)') + '</span>' : '') +
+        (pairs.length ? '<span class="cgp-ver__settings">' + pairs.map(function (p) {
+          return '<span>' + esc(p.label) + ' <mark>' + esc(side === 'a' ? p.a : p.b) + '</mark></span>';
+        }).join('') + '</span>' : '') +
+        '<span class="cgp-ver__text">' + (body || '<em>(no instructions)</em>') + '</span>' +
+        '<span class="cgp-ver__pick" aria-hidden="true">' + (on ? '✓ Keeping this version' : 'Keep this version') + '</span></label>';
+    };
+    return '<div class="cgp-vers" role="radiogroup">' + card('a', o.a, diff.a) + card('b', o.b, diff.b) + '</div>';
+  }
+
   /* --------------------------------------- one item, two classes: match */
 
   /* This item side by side with another class's version of it, and one
@@ -391,6 +423,14 @@
     root.querySelector('.cgp-stats__backdrop').addEventListener('click', function () { self.requestClose(); });
     root.querySelector('.cgp-stats__close').addEventListener('click', function () { self.requestClose(); });
     root.addEventListener('click', function (e) { self.onMatchClick(e); });
+    root.addEventListener('change', function (e) {
+      var side = e.target.getAttribute && e.target.getAttribute('data-match-pick');
+      if (!side || !self.state || self.state.view !== 'match' || self.state.match.running) return;
+      self.state.match.picked = side;
+      self.renderMatch();
+      var again = self.root && self.root.querySelector('[data-match-pick="' + side + '"]');
+      if (again) { try { again.focus({ preventScroll: true }); } catch (er) { again.focus(); } }
+    });
     this._onKey = function (e) { if (e.key === 'Escape') { e.stopPropagation(); self.requestClose(); } };
     document.addEventListener('keydown', this._onKey, true);
     document.body.appendChild(root);
@@ -451,45 +491,33 @@
     var theirs = m.hereIsOrig ? plan.copy : plan.orig;
     // Which side is newer, when the copy records say.
     var newer = { copy: m.hereIsOrig ? 'there' : 'here', original: m.hereIsOrig ? 'here' : 'there' }[plan.side] || null;
-    var pairs = sync.settingsPairs(mine.settings, theirs.settings);
-    var textSame = sync.fingerprint(mine.html || '') === sync.fingerprint(theirs.html || '');
-    var col = function (who, it, isNewer, side) {
-      return '<div class="cgp-sections__side"><div class="cgp-sections__compare-head"><strong>' + esc(who) + '</strong>' +
-        (isNewer ? ' <span class="cgp-sections__tag cgp-sections__tag--hint">newer</span>' : '') +
-        (it.updatedAt ? ' <span class="cgp-sections__when">· edited ' + esc(fmtWhen(it.updatedAt)) + '</span>' : '') + '</div>' +
-        (plan.titleDiffers ? '<div class="cgp-sections__compare-title">' + esc(it.title || '') + '</div>' : '') +
-        (pairs.length ? '<div class="cgp-sections__compare-settings">' + pairs.map(function (p) {
-          return '<span><span class="cgp-sections__when">' + esc(p.label) + ':</span> <strong>' + esc(p[side]) + '</strong></span>';
-        }).join('') + '</div>' : '') +
-        '<div class="cgp-sections__compare-text">' + (esc(sync.htmlToText(sync.splitNote(it.html || '').html, true)) || '<em>(no instructions)</em>') + '</div></div>';
-    };
-    var what = [];
-    if (!textSame) what.push('instructions');
-    if (plan.titleDiffers) what.push('title');
-    pairs.forEach(function (p) { what.push(p.label.toLowerCase()); });
-    var whatText = what.length > 1 ? what.slice(0, -1).join(', ') + ' and ' + what[what.length - 1] : what[0];
-    var running = !!m.running;
-    var button = function (dir) {
-      var label = dir === 'there' ? 'Use this version in ' + other : 'Use ' + other + '’s version here';
-      var on = m.prefer ? m.prefer === dir : false;
-      return '<button type="button" class="cgp-roster__btn' + (on ? ' cgp-roster__btn--primary' : '') + '" data-act="match-' + dir + '"' + (running ? ' disabled' : '') + '>' +
-        (m.running === dir ? esc(m.step || 'Updating…') : esc(label)) + '</button>';
-    };
-    // What a write onto the original leaves alone (a copy brings everything).
-    var limits = [];
-    var backDir = m.hereIsOrig ? 'here' : 'there';
-    if (plan.type === 'quiz') limits.push('Quiz questions are not changed when updating ' + (backDir === 'here' ? 'this class' : other) + '.');
-    if (plan.missingLinks.length && !textSame) {
-      limits.push(plan.missingLinks.length + (plan.missingLinks.length === 1 ? ' link in ' : ' links in ') + esc(m.hereIsOrig ? other : here) +
-        '’s version ' + (plan.missingLinks.length === 1 ? 'points' : 'point') + ' to something the other class doesn’t have.');
+    var same = sync.fingerprint(mine.html || '') === sync.fingerprint(theirs.html || '') && !plan.titleDiffers &&
+      !sync.settingsPairs(mine.settings, theirs.settings).length;
+    if (same) {
+      body.innerHTML = '<section class="cgp-roster__section"><p class="cgp-sections__done"><span aria-hidden="true">✓</span> This is the same in both classes.</p>' +
+        '<div class="cgp-roster__row cgp-roster__actions"><button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-act="close">Done</button></div></section>';
+      return;
     }
+    // The newer one starts picked (or the one the button that opened this
+    // named); the teacher clicks the other to change it.
+    if (m.picked === undefined) m.picked = m.prefer === 'there' ? 'a' : (m.prefer === 'here' ? 'b' : (newer === 'here' ? 'a' : (newer === 'there' ? 'b' : null)));
+    var running = !!m.running;
+    var label = m.picked === 'a' ? 'Update ' + other : (m.picked === 'b' ? 'Update this class' : 'Click the version to keep');
+    var backDir = m.hereIsOrig ? 'b' : 'a';
     body.innerHTML = '<section class="cgp-roster__section">' +
-      '<p class="cgp-sections__lead">' + (what.length ? 'Different ' + esc(whatText) + '.' : 'These are the same.') + '</p>' +
-      '<div class="cgp-sections__compare">' + col('This class', mine, newer === 'here', 'a') + col(other, theirs, newer === 'there', 'b') + '</div>' +
-      '<div class="cgp-roster__row cgp-roster__actions cgp-sections__match-go">' + button('there') + button('here') +
-      '<button type="button" class="cgp-roster__btn" data-act="close"' + (running ? ' disabled' : '') + '>Cancel</button></div>' +
-      '<p class="cgp-stats__note">Only this ' + esc(sync.TYPES[plan.type].label.toLowerCase()) + ' changes. Each class keeps its own dates and student work.' +
-      (limits.length ? ' ' + limits.join(' ') : '') + '</p>' +
+      '<p class="cgp-sections__lead">Which version should both classes have?</p>' +
+      versionCards({
+        a: { who: 'This class', title: mine.title, html: mine.html, settings: mine.settings, updatedAt: mine.updatedAt, newer: newer === 'here' },
+        b: { who: other, title: theirs.title, html: theirs.html, settings: theirs.settings, updatedAt: theirs.updatedAt, newer: newer === 'there' },
+        picked: m.picked, name: 'cgp-match-pick',
+        attrs: function (side) { return 'data-match-pick="' + side + '" value="' + side + '"' + (running ? ' disabled' : ''); }
+      }) +
+      '<div class="cgp-roster__row cgp-roster__actions cgp-sections__match-go">' +
+      '<button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-act="match-go"' + (m.picked && !running ? '' : ' disabled') + '>' +
+      esc(running ? (m.step || 'Updating…') : label) + '</button>' +
+      '<button type="button" class="cgp-roster__btn" data-act="close"' + (running ? ' disabled' : '') + '>Cancel</button>' +
+      '<span class="cgp-stats__note">Dates and student work stay as they are.' +
+      (plan.type === 'quiz' && m.picked === backDir ? ' Quiz questions aren’t changed.' : '') + '</span></div>' +
       '</section>';
   };
 
@@ -503,6 +531,7 @@
     var m = st.match;
     if (a === 'close') return this.close();
     if (a === 'reload') { this.close(); location.reload(); return; }
+    if (a === 'match-go' && m.picked) a = m.picked === 'a' ? 'match-there' : 'match-here';
     if ((a === 'match-there' || a === 'match-here') && m.plan && !m.running) {
       var dir = a === 'match-there' ? 'there' : 'here';
       m.running = dir;
@@ -636,7 +665,7 @@
     this.close();
     this.state = {
       items: [], dests: [], courses: null, tz: null, survey: null, surveying: false, surveyError: null,
-      cells: {}, seed: {}, notes: {}, include: {}, replace: {}, adjust: {},
+      cells: {}, seed: {}, notes: {}, include: {}, replace: {}, adjust: {}, expanded: {},
       publish: 'match', placeInModules: true, view: 'main', picker: { type: 'assignment', q: '', lists: {}, chosen: {} },
       running: false, results: null, wantPick: !!opts.pick,
       // From Compare classes: exactly these (item, class) pairs ticked.
@@ -1135,7 +1164,9 @@
 
     var different = existing && (info.status === 'edited' || info.status === 'differs');
     var rep = !!st.replace[k];
-    if (info.diffs && info.diffs.length) notes.push(esc(info.diffs.join(' · ')) + '.');
+    // Shown inside the two versions instead, for a class that has its own.
+    var cards = different && t.body && it.type !== 'module' && info.destHtml !== undefined;
+    if (info.diffs && info.diffs.length && !cards) notes.push(esc(info.diffs.join(' · ')) + '.');
     if (it.type === 'module' && info.drift && info.drift.missing.length && info.status === 'stale') {
       notes.push('Adds ' + esc(info.drift.missing.slice(0, 4).join(', ')) + (info.drift.missing.length > 4 ? '…' : '') + '.');
     }
@@ -1152,12 +1183,21 @@
       notes.push('<span class="cgp-sections__warn">No “' + esc(info.groupMissing) + '” assignment group there; Canvas uses “Imported Assignments”.</span>');
     }
     var choice = '';
-    if (different && !st.running) {
+    if (cards) {
+      // Both versions, side by side: click the one this class should have.
+      var newerHere = info.status === 'stale', newerThere = info.status === 'edited';
+      choice = '<div class="cgp-sections__pickver"><span class="cgp-sections__pickver-q">Which version should ' + esc(this.courseName(d)) + ' have?</span>' +
+        versionCards({
+          a: { who: 'This class', title: it.title, html: it.html, settings: it.settings, newer: newerHere },
+          b: { who: this.courseName(d), title: info.destTitle, html: info.destHtml, settings: info.destSettings, updatedAt: info.destUpdatedAt, newer: newerThere },
+          picked: rep ? 'a' : 'b', name: 'rep-' + k, compact: !(st.expanded && st.expanded[k]),
+          attrs: function (side) { return 'data-replace="' + esc(k) + '" value="' + (side === 'a' ? '1' : '0') + '"' + (st.running ? ' disabled' : ''); }
+        }) +
+        '<button type="button" class="cgp-board__link" data-act="expand-ver" data-key="' + esc(k) + '">' + (st.expanded && st.expanded[k] ? 'Show less' : 'Show all of both') + '</button></div>';
+    } else if (different && !st.running) {
       choice = '<div class="cgp-sections__choice" role="radiogroup">' +
         '<label><input type="radio" name="rep-' + esc(k) + '" data-replace="' + esc(k) + '" value="1"' + (rep ? ' checked' : '') + '> Replace with this version</label>' +
-        '<label><input type="radio" name="rep-' + esc(k) + '" data-replace="' + esc(k) + '" value="0"' + (rep ? '' : ' checked') + '> Keep theirs, change only the dates</label>' +
-        (t.body && it.type !== 'module' ? '<button type="button" class="cgp-board__link" data-act="compare-one" data-dest="' + esc(d) + '" data-item="' + esc(itemKey(it)) + '">Compare…</button>' : '') +
-        '</div>';
+        '<label><input type="radio" name="rep-' + esc(k) + '" data-replace="' + esc(k) + '" value="0"' + (rep ? '' : ' checked') + '> Keep theirs, change only the dates</label></div>';
     }
     // The first date of the item itself in view; the rest folded.
     var rows = dated(it);
@@ -1243,6 +1283,7 @@
     if (a === 'adjust') return this.applyAdjust(act.getAttribute('data-dest'));
     if (a === 'reset') return this.resetDest(act.getAttribute('data-dest'));
     if (a === 'run') return this.runAll();
+    if (a === 'expand-ver') { st.expanded = st.expanded || {}; st.expanded[act.getAttribute('data-key')] = !st.expanded[act.getAttribute('data-key')]; this.render(); return; }
     if (a === 'compare-one') {
       var ck = act.getAttribute('data-item');
       var cd = act.getAttribute('data-dest');
@@ -1491,7 +1532,7 @@
         'new': 'Adds it to ' + target + '.',
         restore: 'Puts it back in ' + target + '.',
         replace: 'Replaces ' + target + '’s version.',
-        keep: 'Keeps ' + target + '’s version and changes only its dates.'
+        keep: target + ' keeps its version; only its dates change.'
       }[one.kind];
     } else if (b.tasks.length) {
       var parts = [];

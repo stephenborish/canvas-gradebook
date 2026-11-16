@@ -561,7 +561,7 @@
       icon: 'grid',
       eyebrow: 'Part 2 · Compare classes',
       title: 'Keep every class in step',
-      body: '<b>Compare classes</b> checks every item against your other classes: same, not there, older or newer. Tick what to copy, or compare two versions side by side and pick one.',
+      body: '<b>Compare classes</b> checks every item against your other classes: same, not there, older or newer. Tick what to copy, or see two versions side by side and click the one to keep.',
       bullets: [
         '<b>Post as you create:</b> the assignment editor has an <b>Also post to your other classes</b> panel above Save',
         'Fixed something in one class? <b>Use this version in</b> the others, from any class'

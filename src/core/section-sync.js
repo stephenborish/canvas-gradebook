@@ -740,6 +740,45 @@
     return Object.keys(out).length ? { assignment: out } : null;
   }
 
+  /** Two texts with what differs marked, for showing two versions side by
+   * side: {a, b} as HTML (escaped), words only in a (or only in b) wrapped
+   * in <mark>. Word-level longest common subsequence; texts too long to
+   * compare quickly come back unmarked (changed: null). */
+  var DIFF_MAX_WORDS = 1500;
+  function wordDiff(a, b) {
+    var esc = function (t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
+    var split = function (t) { return String(t || '').match(/\s+|[^\s]+/g) || []; };
+    var ta = split(a), tb = split(b);
+    var wa = ta.filter(function (x) { return /\S/.test(x); }).length;
+    var wb = tb.filter(function (x) { return /\S/.test(x); }).length;
+    if (wa > DIFF_MAX_WORDS || wb > DIFF_MAX_WORDS) return { a: esc(a), b: esc(b), changed: null };
+    var n = ta.length, m = tb.length;
+    var key = function (x) { return /\S/.test(x) ? x : ' '; };
+    // lcs[i][j]: common length of ta[i..] and tb[j..], in one flat array.
+    var w = m + 1;
+    var lcs = new Uint16Array((n + 1) * w);
+    for (var i = n - 1; i >= 0; i--) {
+      for (var j = m - 1; j >= 0; j--) {
+        lcs[i * w + j] = key(ta[i]) === key(tb[j]) ? lcs[(i + 1) * w + j + 1] + 1 : Math.max(lcs[(i + 1) * w + j], lcs[i * w + j + 1]);
+      }
+    }
+    var outA = [], outB = [], changed = 0;
+    var push = function (out, tok, marked) {
+      if (marked && /\S/.test(tok)) { out.push('<mark>' + esc(tok) + '</mark>'); changed++; } else out.push(esc(tok));
+    };
+    var x = 0, y = 0;
+    while (x < n && y < m) {
+      if (key(ta[x]) === key(tb[y])) { push(outA, ta[x++], false); push(outB, tb[y++], false); }
+      else if (lcs[(x + 1) * w + y] >= lcs[x * w + y + 1]) push(outA, ta[x++], true);
+      else push(outB, tb[y++], true);
+    }
+    while (x < n) push(outA, ta[x++], true);
+    while (y < m) push(outB, tb[y++], true);
+    // Neighbouring marks read as one change.
+    var join = function (h) { return h.join('').replace(/<\/mark>(\s+)<mark>/g, '$1'); };
+    return { a: join(outA), b: join(outB), changed: changed };
+  }
+
   /** Does a Canvas object still have the settings an update (settingsBody)
    * wrote? False when any of them was changed since. */
   function settingsStillAre(o, body) {
@@ -1292,6 +1331,7 @@
     settingsBody: settingsBody,
     settingsPairs: settingsPairs,
     settingsStillAre: settingsStillAre,
+    wordDiff: wordDiff,
     compareFull: compareFull,
     moduleDrift: moduleDrift,
     safeDecode: safeDecode,

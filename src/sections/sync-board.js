@@ -381,7 +381,7 @@
     if (hasBody && v.ctx) {
       if (v.kind === 'older') acts.push('<button type="button" class="cgp-board__link" data-board-act="match" data-prefer="there" data-key="' + esc(r.key) + '" data-dest="' + esc(d) + '">Update…</button>');
       if (v.kind === 'newer') acts.push('<button type="button" class="cgp-board__link" data-board-act="match" data-prefer="here" data-key="' + esc(r.key) + '" data-dest="' + esc(d) + '">Use theirs…</button>');
-      if (v.kind === 'differs') acts.push('<button type="button" class="cgp-board__link" data-board-act="match" data-prefer="" data-key="' + esc(r.key) + '" data-dest="' + esc(d) + '">Compare…</button>');
+      if (v.kind === 'differs') acts.push('<button type="button" class="cgp-board__link" data-board-act="match" data-prefer="" data-key="' + esc(r.key) + '" data-dest="' + esc(d) + '">Pick a version…</button>');
     }
     return '<div class="cgp-board__cell is-' + spec.tone + '"><label class="cgp-board__chip">' + box +
       '<span aria-hidden="true">' + spec.mark + '</span> ' + esc(spec.label) + '</label>' + pub +

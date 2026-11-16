@@ -228,6 +228,9 @@
       info.destDates = there.dates || {};
       info.destPublished = there.published;
       info.note = sync.splitNote(there.html || '').note;
+      info.destHtml = sync.splitNote(there.html || '').html;
+      info.destSettings = there.settings;
+      info.destUpdatedAt = there.updatedAt || null;
       info.diffs = sync.settingsDiff(item.settings || cmp.copy.settings, there.settings);
       // Seen from here: this item is the copy, so "the copy changed" is
       // newer here, "the original changed" newer there.
@@ -317,6 +320,10 @@
       if (!sync.TYPES[item.type].body) { info.status = 'same'; return pageDates.then(function () { return info; }); }
       var split = sync.splitNote(d.html || '');
       info.note = split.note;
+      // What that class has, to show beside this version.
+      info.destHtml = split.html;
+      info.destSettings = d.settings;
+      info.destUpdatedAt = o.updated_at || null;
       return pageDates.then(function () { return self.record(srcCourseId, item, destCourseId); }).then(function (rec) {
         var cmp = sync.compareFull({ html: item.html || '', settings: item.settings }, { html: d.html || '', settings: d.settings }, rec);
         info.status = cmp.status;
