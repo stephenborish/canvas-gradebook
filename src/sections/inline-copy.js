@@ -163,14 +163,13 @@
     return idRead.then(function () {
       if (!st.itemId) return null;
       return self.copier.relations(self.courseId, { type: page.type, id: st.itemId }, st.sibs).then(function (rel) {
-        // This item is that class's copy: posting it there would give that
-        // class a second one, so that row is left out.
+        // This item is that class's copy: that class has the item it was
+        // copied from, and saving updates that one (copier.runBack) rather
+        // than adding a second. For the teacher it is the same as any class
+        // that already has it.
         st.origins = {};
-        rel.from.forEach(function (r) {
-          st.origins[r.courseId] = true;
-          if (st.rows[r.courseId]) st.rows[r.courseId].on = false;
-        });
-        return Promise.all(rel.to.map(function (r) {
+        var there = rel.to.concat(rel.from.map(function (r) { return { courseId: r.courseId, destId: r.srcId }; }));
+        return Promise.all(there.map(function (r) {
           st.existing[r.courseId] = { destId: r.destId };
           if (!st.fields.length) return null;
           return self.api.dateDetails(r.courseId, page.type, r.destId).then(function (dd) {
@@ -241,9 +240,7 @@
     var rows = st.sibs.map(function (d) {
       var row = st.rows[d] || { on: true, entry: {} };
       var ex = st.existing[d];
-      var origin = st.origins && st.origins[d];
-      var status = origin ? 'This was copied here from that class, so it is not posted back there.'
-        : (ex ? 'Has a copy: saving updates it (and these dates).' : 'Gets a copy when you save.');
+      var status = ex ? 'Already there: saving updates it.' : 'Gets a copy when you save.';
       var boxes = function (f) {
         var e = row.entry[f] || {};
         return '<label class="cgp-inline__date"><span>' + esc(S().DATE_LABELS[f]) + '</span>' +
@@ -256,7 +253,7 @@
         : '';
       var problems = self.rowErrors(d);
       return '<div class="cgp-inline__row' + (row.on ? '' : ' is-off') + '">' +
-        '<label class="cgp-inline__name"><input type="checkbox" data-on="' + esc(d) + '"' + (row.on ? ' checked' : '') + (origin ? ' disabled' : '') + '> ' + esc(self.name(d)) + '</label>' +
+        '<label class="cgp-inline__name"><input type="checkbox" data-on="' + esc(d) + '"' + (row.on ? ' checked' : '') + '> ' + esc(self.name(d)) + '</label>' +
         (fields.length ? boxes(fields[0]) : '') + more +
         '<span class="cgp-inline__status">' + esc(status) + '</span>' +
         '<span class="cgp-inline__err" data-err="' + esc(d) + '">' + esc(problems.join('; ')) + '</span></div>';
@@ -265,10 +262,9 @@
     el.innerHTML = '<div class="cgp-inline__head"><strong>Also post to your other classes</strong>' +
       '<span class="cgp-inline__count">' + (on ? on + ' of ' + st.sibs.length + ' will get it when you save' : 'None ticked') + '</span></div>' +
       rows +
-      (fields.length ? '<p class="cgp-inline__hint">Leave a date blank for the same as this class. A time alone (like “1:45 pm”) means this class’s day at that time' +
-        (this.settings.values.courseScheduleEnabled && this.settings.values.courseCalendarUrl ? ' – click a time box to pick from that class’s schedule' : '') +
-        '. Times are in ' + esc(st.tz || 'your time zone') + '.</p>' : '') +
-      '<p class="cgp-inline__hint">The copies are made when the saved ' + esc(thing) + ' opens, through Canvas’s own course copy.</p>';
+      (fields.length ? '<p class="cgp-inline__hint">Blank date: same as this class. Time only (like “1:45 pm”): this class’s day at that time' +
+        (this.settings.values.courseScheduleEnabled && this.settings.values.courseCalendarUrl ? ', or click the time box to pick that class’s period' : '') +
+        '. Times are in ' + esc(st.tz || 'your time zone') + '.</p>' : '');
   };
 
   /* Problems with a row's boxes, checked against a stand-in for this
@@ -521,12 +517,8 @@
         var dest = survey.dests.filter(function (x) { return String(x.courseId) === d; })[0] || {};
         var info = (dest.items || {})[item.type + ':' + item.id] || {};
         if (dest.error) { banner.set(d, { error: dest.error }); return null; }
-        if (info.status === 'origin') {
-          banner.set(d, { error: 'Not copied: this was copied here from that class, so a copy would give it a second one. Use the notice on this page to update it there.' });
-          return null;
-        }
         if (info.lookalike && !info.destId) {
-          banner.set(d, { error: 'Not copied: it already has “' + info.lookalike.title + '”, which was not copied from here. Copy to other classes can add it anyway.' });
+          banner.set(d, { error: 'Not copied: it has its own “' + info.lookalike.title + '”, so a copy would be a second one. Use Copy to other classes to add it anyway.' });
           return null;
         }
         var res = sync.resolveInline(sync.dateFields(item), item.dates || {}, (intent.sections[d] || {}).entry, tz);
@@ -538,11 +530,11 @@
           srcCourseId: self.courseId, destCourseId: d, destName: self.name(d), item: item,
           mode: keep ? 'keep' : 'copy', dates: res.iso, children: [], note: info.note || '', publish: 'match',
           module: fresh ? info.module : null, assignmentGroupId: fresh ? info.assignmentGroupId : null,
-          destId: info.destId || null, mapping: dest.mapping || {}, childNotes: {}
+          destId: info.destId || null, origin: info.origin ? true : undefined, mapping: dest.mapping || {}, childNotes: {}
         };
         return gate(function () {
           return self.copier.run(task, function (step) { banner.set(d, { step: step }); }).then(function (r) {
-            if (keep && r.ok) r.warnings.unshift('Its copy there had been changed in that class, so only its dates were updated. Use Copy to other classes to replace it.');
+            if (keep && r.ok) r.warnings.unshift('Its version there was edited in that class, so only its dates changed. To replace it, use Copy to other classes.');
             banner.set(d, { result: r });
           });
         });

@@ -703,6 +703,16 @@
     return Object.keys(s).sort().map(function (k) { return k + '=' + (s[k] === null ? '' : String(s[k])); }).join(';');
   }
 
+  /** The settings that differ, each side on its own:
+   * [{label: 'Points', a: '10', b: '20'}]. */
+  function settingsPairs(src, dest) {
+    if (!src || !dest) return [];
+    var show = function (v) { return v === null || v === undefined || v === '' ? 'none' : String(v).replace(/_/g, ' '); };
+    return Object.keys(src).filter(function (k) { return k in dest && String(src[k]) !== String(dest[k]); }).map(function (k) {
+      return { label: SETTING_LABELS[k] || k, a: show(src[k]), b: show(dest[k]) };
+    });
+  }
+
   /** What differs, in words: ["Points: 10 here, 20 there"]. */
   function settingsDiff(src, dest, here, there) {
     if (!src || !dest) return [];
@@ -713,6 +723,21 @@
     return keys.filter(function (k) { return String(src[k]) !== String(dest[k]); }).map(function (k) {
       return (SETTING_LABELS[k] || k) + ': ' + show(src[k]) + ' ' + here + ', ' + show(dest[k]) + ' ' + there;
     });
+  }
+
+  /** The update that gives an item `want`'s settings, writing only the
+   * ones that differ from `have` (null when none differ, or the type's
+   * settings are not written this way: only an assignment's are). */
+  function settingsBody(type, want, have) {
+    if (type !== 'assignment' || !want || !have) return null;
+    var out = {};
+    if (String(want.points) !== String(have.points) && 'points' in want) out.points_possible = want.points === null ? null : Number(want.points);
+    if (want.grading && want.grading !== have.grading) out.grading_type = want.grading;
+    if (want.submit && want.submit !== have.submit) out.submission_types = String(want.submit).split(', ');
+    if (want.attempts !== null && want.attempts !== undefined && String(want.attempts) !== String(have.attempts)) {
+      out.allowed_attempts = want.attempts === 'unlimited' ? -1 : Number(want.attempts);
+    }
+    return Object.keys(out).length ? { assignment: out } : null;
   }
 
   var STATUS_RANK = { same: 0, stale: 1, differs: 2, edited: 3 };
@@ -1249,6 +1274,8 @@
     settingsOf: settingsOf,
     settingsSig: settingsSig,
     settingsDiff: settingsDiff,
+    settingsBody: settingsBody,
+    settingsPairs: settingsPairs,
     compareFull: compareFull,
     moduleDrift: moduleDrift,
     safeDecode: safeDecode,

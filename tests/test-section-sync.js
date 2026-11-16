@@ -1444,17 +1444,75 @@ suite('keeping classes in step: what changed', (test) => {
     a.ok(S().defaultReplace(info.status), 'copied again by default (that adds the missing item)');
   });
 
-  test('an item that is that class’s copy is never copied back (that would make a second one)', async () => {
+  test('an item copied here from another class: that class already has it, and it is updated in place, never copied back', async () => {
     const api = fakeCanvas();
-    // 11's assignment 5 came from 22's 705.
+    // 11's assignment 5 came from 22's 705; 5 was then edited here (text and points).
     api.db.migrations['11'] = [{ id: '2', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '22' } }];
     const mapFor = api.assetIdMapping;
     api.assetIdMapping = (dest, id) => dest === '11' ? Promise.resolve({ assignments: { '705': '5' } }) : mapFor(dest, id);
-    api.db.items['22:assignment:705'] = { id: '705', name: 'Lab 4', description: '<p>Do the lab.</p>', published: true };
-    const out = await copier(api).survey('11', [Object.assign({}, ASSIGNMENT, { htmlLoaded: true })], ['22'], {});
+    const pts = (n) => ({ points_possible: n, grading_type: 'points', submission_types: ['online_upload'], allowed_attempts: -1 });
+    api.db.items['22:assignment:705'] = Object.assign({ id: '705', name: 'Lab 4', description: '<p>Do the lab.</p>', published: true }, pts(10));
+    api.db.details['22:assignment:705'] = { due_at: '2026-03-04T13:00:00Z', unlock_at: null, lock_at: null, only_visible_to_overrides: false };
+    api.db.items['11:assignment:5'] = Object.assign({ id: '5', name: 'Lab 4', description: '<p>Do the lab carefully.</p>', published: true }, pts(12));
+    const item = S().toItem('assignment', api.db.items['11:assignment:5']);
+    item.htmlLoaded = true;
+    const store = memStore();
+    const c = copier(api, store);
+    const out = await c.survey('11', [item], ['22'], {});
     const info = out.dests[0].items['assignment:5'];
-    a.eq(info.status, 'origin');
     a.eq(info.origin.srcId, '705');
+    a.eq(info.destId, '705');
+    a.eq(info.status, 'differs', 'no record says which changed');
+    a.deep(info.diffs, ['Points: 12 here, 10 there']);
+    a.eq(info.destDates.due_at, '2026-03-04T13:00:00Z', 'that class’s own dates');
+    const results = [];
+    await c.runPlan([{
+      srcCourseId: '11', destCourseId: '22', item, mode: 'copy', origin: true, destId: '705',
+      dates: { due_at: '2026-03-05T13:00:00Z', unlock_at: null, lock_at: null }, children: [], note: '', publish: 'match', mapping: {}
+    }], () => {}, (t, r) => results.push(r));
+    a.ok(results[0].ok, results[0].error);
+    a.not(api.calls.some((x) => x[0] === 'copy'), 'no course copy (that would add a second one)');
+    a.ok(api.db.items['22:assignment:705'].description.indexOf('carefully') > 0, 'this version written there');
+    a.eq(api.db.items['22:assignment:705'].points_possible, 12, 'with its points');
+    a.eq(api.db.details['22:assignment:705'].due_at, '2026-03-05T13:00:00Z', 'and that class’s dates');
+    a.ok(results[0].undo);
+    a.eq((await c.compare('22', { type: 'assignment', id: '705' }, '11', '5')).side, 'same');
+    await c.undoBack(results[0].undo);
+    a.ok(api.db.items['22:assignment:705'].description.indexOf('carefully') < 0, 'undone');
+    a.eq(api.db.items['22:assignment:705'].points_possible, 10, 'points too');
+  });
+});
+
+suite('keeping classes in step: one item, two classes', (test) => {
+  test('making the copy match its original copies again, keeping that class’s own dates, note and publishing', async () => {
+    let api;
+    // 11's assignment 5 was copied to 22 as 705; 22 then edited its copy. On
+    // 22's page the teacher picks "Use Block 11's version here".
+    api = fakeCanvas({ onComplete: (dest) => {
+      landCopy(api, dest, '705', '<p>Do the lab.</p>', { details: { due_at: '2026-03-02T13:00:00Z' } });
+      api.db.items['22:assignment:705'].published = true;
+    } });
+    landCopy(api, '22', '705', S().noteHtml('P4 only') + '<p>Do the lab, my way.</p>', { details: { due_at: '2026-03-09T13:00:00Z' } });
+    api.db.items['22:assignment:705'].published = false;
+    api.db.migrations['22'] = [{ id: '1', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '11' } }];
+    api.db.items['11:assignment:5'] = { id: '5', name: 'Lab 4', description: '<p>Do the lab.</p>', published: true };
+    api.db.details['11:assignment:5'] = { due_at: '2026-03-02T13:00:00Z', unlock_at: null, lock_at: null, only_visible_to_overrides: false };
+    if (!globalThis.CGP.SectionCopyController) vm.runInThisContext(fs.readFileSync(path.join(__dirname, '../src/sections/sync-dialog.js'), 'utf8'));
+    const ctl = Object.create(globalThis.CGP.SectionCopyController.prototype);
+    ctl.api = api;
+    ctl.courseId = '22';
+    ctl.settings = { values: {} };
+    ctl.copier = copier(api);
+    ctl.courseName = (id) => 'Block ' + id;
+    const plan = await ctl.copier.planBack('11', { type: 'assignment', id: '5' }, '22', '705');
+    const r = await ctl.matchCopy(plan, () => {});
+    a.ok(r.ok, r.error);
+    a.ok(api.calls.some((x) => x[0] === 'copy' && x[1] === '22'), 'Canvas’s own copy, into 22');
+    const html = api.db.items['22:assignment:705'].description;
+    a.ok(html.indexOf('my way') < 0, 'the original’s version');
+    a.eq(S().splitNote(html).note, 'P4 only', 'the class keeps its note');
+    a.eq(api.db.details['22:assignment:705'].due_at, '2026-03-09T13:00:00Z', 'and its own due date');
+    a.eq(api.db.items['22:assignment:705'].published, false, 'and its publishing');
   });
 });
 
@@ -1531,13 +1589,17 @@ suite('keeping classes in step: Compare classes', (test) => {
     a.deep(b.cellsWith(['stale']), ['assignment:6>22', 'module:3>22']);
     a.deep(b.publishFixes().map((f) => [f.destId, f.want]), [['705', true]]);
     const c = b.boardCounts();
-    a.eq(c['new'], 1);
-    a.eq(c.stale, 2);
-    a.eq(c.origin, 1);
+    a.eq(c.missing, 1);
+    a.eq(c.older, 3, 'two copies there are older, and so is the item 40 came from (40 was edited here)');
+    a.eq(c.own, 1);
+    a.deep(b.cellsOfKind(['missing', 'deleted']), ['assignment:7>22']);
+    a.deep(b.cellsOfKind(['older']), ['assignment:6>22', 'assignment:40>22', 'module:3>22']);
     const html = b.renderBoardTable();
     a.ok(html.includes('data-board-sel="assignment:7&gt;22"') || html.includes('data-board-sel="assignment:7>22"'), 'a missing copy can be ticked');
     a.not(/data-board-sel="page:8/.test(html), 'a class with its own same-titled page cannot be ticked');
-    a.ok(html.includes('Changed here'), 'the copy here, against the class it came from');
+    a.ok(html.includes('Older version'));
+    a.not(html.includes('from Block'), 'which class it came from is not the teacher’s concern');
+    a.ok(/data-board-act="match" data-prefer="there" data-key="assignment:40"/.test(html), 'the class it came from can be updated from here');
     b.state.board.filter = 'all';
     a.eq(b.boardRows().length, 6);
     b.state.board.type = 'module';
@@ -1553,27 +1615,27 @@ suite('keeping classes in step: Compare classes', (test) => {
     b.copyFromBoard();
     a.deep(opened.items.map((i) => i.id).sort(), ['6', '7']);
     a.deep(opened.dests, ['22']);
-    a.ok(opened.full);
     a.deep(Object.keys(opened.only).sort(), ['assignment:6>22', 'assignment:7>22']);
   });
 
-  test('the dialog opened from the board ticks only those pairs, and never an item that came from there', () => {
+  test('the dialog opened from the board ticks only those pairs, replacing what is there', () => {
     const b = board(null);
     b.state = {
       items: [{ type: 'assignment', id: '6', title: 'Lab 5', dates: {} }, { type: 'assignment', id: '40', title: 'Essay', dates: {} }],
       dests: ['22', '33'], courses: [], tz: 'UTC', cells: {}, seed: {}, include: {}, replace: {}, notes: {}, publish: 'match', placeInModules: true,
       only: { 'assignment:6>22': true, 'assignment:40>22': true },
       survey: { dests: [
-        { courseId: '22', items: { 'assignment:6': { status: 'stale', destId: '706' }, 'assignment:40': { status: 'origin', origin: { srcId: '400' } } } },
+        { courseId: '22', items: { 'assignment:6': { status: 'stale', destId: '706' }, 'assignment:40': { status: 'differs', destId: '400', origin: { srcId: '400' } } } },
         { courseId: '33', items: { 'assignment:6': { status: 'new' }, 'assignment:40': { status: 'new' } } }
       ] }
     };
     b.seedCells();
     const tasks = b.buildTasks().tasks;
-    a.deep(tasks.map((t) => t.item.id + '>' + t.destCourseId), ['6>22']);
+    a.deep(tasks.map((t) => t.item.id + '>' + t.destCourseId), ['6>22', '40>22']);
     a.eq(tasks[0].mode, 'copy', 'out of date: updated');
-    b.state.include['assignment:40>22'] = true;
-    a.eq(b.buildTasks().tasks.length, 1, 'even ticked, a copy back to where it came from is not made');
+    a.eq(tasks[1].origin, true, 'the class it came from: updated in place, not copied back');
+    a.eq(tasks[1].destId, '400');
+    a.eq(tasks[1].mode, 'copy');
   });
 });
 
