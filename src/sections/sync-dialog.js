@@ -368,10 +368,24 @@
    * o: { a, b: {who, sub, title, html, settings, updatedAt, newer},
    *      picked: 'a' | 'b' | null, name (radio group), attrs(side),
    *      compact (a preview, cut short) }. */
+  /* wordDiff is quadratic in the words compared, and the cards are drawn
+   * again on every render (each tick, each step of a run): the last few
+   * results are kept. */
+  var WORD_DIFFS = new Map();
+  function cachedWordDiff(a, b) {
+    var k = a + '\u0000' + b;
+    var hit = WORD_DIFFS.get(k);
+    if (hit) return hit;
+    hit = S().wordDiff(a, b);
+    if (WORD_DIFFS.size >= 24) WORD_DIFFS.delete(WORD_DIFFS.keys().next().value);
+    WORD_DIFFS.set(k, hit);
+    return hit;
+  }
+
   function versionCards(o) {
     var sync = S();
     var text = function (h) { return sync.htmlToText(sync.splitNote(h || '').html, true); };
-    var diff = sync.wordDiff(text(o.a.html), text(o.b.html));
+    var diff = cachedWordDiff(text(o.a.html), text(o.b.html));
     var pairs = sync.settingsPairs(o.a.settings, o.b.settings);
     var titles = String(o.a.title || '') !== String(o.b.title || '');
     // The same edit time on both says nothing.
@@ -475,9 +489,6 @@
       self.renderMatch();
     });
   };
-
-  /* Kept for callers that still say "bring back": the same screen. */
-  P.openBack = function (ctx) { return this.openMatch(ctx, String(ctx.origCourse) === this.courseId ? 'here' : 'there'); };
 
   P.renderMatch = function () {
     if (!this.root || !this.state || this.state.view !== 'match') return;
@@ -628,7 +639,9 @@
       if (dest.error) return { ok: false, error: dest.error, warnings: [] };
       var info = (dest.items || {})[key] || {};
       var dates = {};
-      if (info.destDates === null) item.noDates = true;
+      // Its dates unknown (the survey did not find or read that class's
+      // copy): leave them alone rather than clear them.
+      if (info.destDates === null || info.destDates === undefined) item.noDates = true;
       sync.dateFields(item).forEach(function (f) { dates[f] = info.destDates && info.destDates[f] !== undefined ? info.destDates[f] : null; });
       var task = {
         srcCourseId: String(plan.origCourse), destCourseId: String(plan.copyCourse), destName: self.courseName(plan.copyCourse),
@@ -1554,9 +1567,6 @@
         if (!dest || dest.error || !st.include[k]) return;
         var info = surveyInfo(st, it, d) || {};
         var existing = !!(info.destId && info.status !== 'restore');
-        if (existing && st.replace[k] === null) {
-          errors.push('Pick a version for ' + self.courseName(d) + (st.items.length > 1 ? ' (“' + (it.title || '') + '”)' : '') + '.');
-        }
         var mode = existing && !st.replace[k] ? 'keep' : 'copy';
         // The other class's version picked on the cards: it stays there
         // (dates only), and this class gets it too, so both match.
@@ -1640,12 +1650,10 @@
       text = parts.join(' · ') + '.';
     }
     var onlyDates = b.tasks.length && kinds.keep === b.tasks.length;
-    var unpicked = b.errors.some(function (e) { return e.indexOf('Pick a version') === 0; });
     return {
       count: b.tasks.length, errors: b.errors, text: text,
-      label: unpicked ? 'Pick a version first'
-        : (b.tasks.length === 1 && kinds.pull ? 'Use ' + target + '’s version in both'
-          : (nc ? (onlyDates ? 'Update dates in ' : 'Copy to ') + target : 'Choose a class'))
+      label: b.tasks.length === 1 && kinds.pull ? 'Use ' + target + '’s version in both'
+        : (nc ? (onlyDates ? 'Update dates in ' : 'Copy to ') + target : 'Choose a class')
     };
   };
 
@@ -1690,7 +1698,16 @@
     // The runner groups them: one Canvas copy per class for everything that
     // can share one, so twenty items into a class is one job there.
     pulls.then(function () {
-      return self.copier.runPlan(b.tasks, function (task, step) {
+      // A version that could not be brought here: this class still has the
+      // one the teacher did not pick, so it is not copied out either.
+      var failed = {};
+      st.results.forEach(function (r) { if (r.pulled && !r.pulled.ok) failed[itemKey(r.task.item)] = true; });
+      var run = b.tasks.filter(function (t) {
+        if (t.pull || !failed[itemKey(t.item)]) return true;
+        byTask.get(t).result = { ok: false, warnings: [], error: 'Not copied: the version you picked could not be brought to this class first.' };
+        return false;
+      });
+      return self.copier.runPlan(run, function (task, step) {
       var r = byTask.get(task);
       if (r) { r.step = step; repaint(); }
       }, function (task, res) {
@@ -1704,6 +1721,8 @@
         r.result = res;
         repaint();
       });
+    }).then(null, function (err) {
+      CGP.diag.error('sections.runFailed', { message: String(err && err.message) });
     }).then(function () {
       st.running = false;
       st.results.forEach(function (r) {

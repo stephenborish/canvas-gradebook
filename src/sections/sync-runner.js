@@ -285,6 +285,12 @@
     }, function (err) {
       result.error = describe(err, 'Couldn’t read both versions from Canvas');
       return result;
+    }).then(null, function (err) {
+      // A later step failed after the original was written: say so, and
+      // keep Undo; runPlan's chain for this class must go on either way.
+      if (result.ok) result.warnings.push('Updated, but a later step failed: ' + describe(err, 'Canvas refused') + ' Check it there.');
+      else result.error = result.error || describe(err, 'Canvas refused the update');
+      return result;
     });
   };
 
@@ -1557,10 +1563,8 @@
         titleDiffers: String(cmp.orig.title || '') !== String(cmp.copy.title || ''),
         pointsDiffer: cmp.orig.pointsPossible !== undefined && cmp.copy.pointsPossible !== undefined &&
           Number(cmp.orig.pointsPossible) !== Number(cmp.copy.pointsPossible),
-        // What differs in the settings, from the original's side
-        // ("Points: 6 here, none there" = original 6, copy none), and the
-        // update that would make the original's match (assignments only).
-        settingsDiffs: sync.settingsDiff(cmp.orig.settings, cmp.copy.settings),
+        // The update that would make the original's settings match the
+        // copy's, and the one that undoes it (assignments only).
         settingsBody: sync.settingsBody(origRef.type, cmp.copy.settings, cmp.orig.settings),
         settingsUndo: sync.settingsBody(origRef.type, cmp.orig.settings, cmp.copy.settings)
       };

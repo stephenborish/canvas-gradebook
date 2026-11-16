@@ -718,10 +718,8 @@
     if (!src || !dest) return [];
     here = here || 'here';
     there = there || 'there';
-    var keys = Object.keys(src).filter(function (k) { return k in dest; });
-    var show = function (v) { return v === null || v === undefined || v === '' ? 'none' : String(v).replace(/_/g, ' '); };
-    return keys.filter(function (k) { return String(src[k]) !== String(dest[k]); }).map(function (k) {
-      return (SETTING_LABELS[k] || k) + ': ' + show(src[k]) + ' ' + here + ', ' + show(dest[k]) + ' ' + there;
+    return settingsPairs(src, dest).map(function (p) {
+      return p.label + ': ' + p.a + ' ' + here + ', ' + p.b + ' ' + there;
     });
   }
 

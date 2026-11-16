@@ -140,11 +140,21 @@
    * the class this item was copied from, with how the two compare. */
   P.boardRows = function () {
     var b = this.state.board;
-    var scan = b.scan;
-    if (!scan) return [];
     var q = String(b.q || '').trim().toLowerCase();
     var self = this;
-    var rows = scan.items.map(function (it) {
+    return this.allBoardRows().filter(function (r) {
+      if (b.type !== 'all' && r.item.type !== b.type) return false;
+      if (q && String(r.item.title || '').toLowerCase().indexOf(q) < 0) return false;
+      if (b.filter === 'attention') return self.rowNeedsAttention(r);
+      return true;
+    });
+  };
+
+  /* Every row, before the filters. */
+  P.allBoardRows = function () {
+    var scan = this.state.board.scan;
+    if (!scan) return [];
+    return scan.items.map(function (it) {
       var k = itemKey(it);
       var origin = null;
       var cells = {};
@@ -153,12 +163,6 @@
         cells[d.courseId] = d.error ? null : (d.cells[k] || null);
       });
       return { item: it, key: k, origin: origin, cells: cells };
-    });
-    return rows.filter(function (r) {
-      if (b.type !== 'all' && r.item.type !== b.type) return false;
-      if (q && String(r.item.title || '').toLowerCase().indexOf(q) < 0) return false;
-      if (b.filter === 'attention') return self.rowNeedsAttention(r);
-      return true;
     });
   };
 
@@ -201,11 +205,7 @@
     var b = this.state.board;
     var out = { same: 0, missing: 0, deleted: 0, older: 0, newer: 0, differs: 0, own: 0, unknown: 0, publish: 0 };
     if (!b.scan) return out;
-    var saved = { filter: b.filter, type: b.type, q: b.q };
-    b.filter = 'all'; b.type = 'all'; b.q = '';
-    var rows = this.boardRows();
-    b.filter = saved.filter; b.type = saved.type; b.q = saved.q;
-    rows.forEach(function (r) {
+    this.allBoardRows().forEach(function (r) {
       b.dests.forEach(function (d) {
         var v = self.cellView(r, String(d));
         if (!v) return;
