@@ -538,7 +538,7 @@
       icon: 'swap',
       eyebrow: 'Part 2 · Copy to other classes',
       title: 'Build it once, post it everywhere',
-      body: 'Tick a class, check its due date, press <b>Copy</b>. Each class shows what it has now (<i>Not there yet</i>, <i>Already there · same</i>…) before anything changes.',
+      body: 'Tick a class, check its due date, press <b>Copy</b>. Each class shows what it has now: <i>Not there yet</i>, <i>Same</i> or <i>Different</i>.',
       bullets: [
         'On an item’s page, the copy icon next to <b>Edit</b> copies just that item',
         'Copies land in the same module and assignment group',
@@ -561,7 +561,7 @@
       icon: 'grid',
       eyebrow: 'Part 2 · Compare classes',
       title: 'Keep every class in step',
-      body: '<b>Compare classes</b> checks every item against your other classes: same, not there, older or newer. Tick what to copy, or see two versions side by side and click the one to keep.',
+      body: '<b>Compare classes</b> checks every item against your other classes: same, not there or different. Tick what to copy, or see two versions side by side and click the one to keep.',
       bullets: [
         '<b>Post as you create:</b> the assignment editor has an <b>Also post to your other classes</b> panel above Save',
         'Fixed something in one class? <b>Use this version in</b> the others, from any class'
@@ -573,7 +573,7 @@
           ['Essay 2 rubric', ['old', 'ok']],
           ['Week 6 module', ['chg', 'old']]
         ];
-        var lab = { ok: '✓ Same', miss: '+ Not there', old: '↻ Older version', chg: '≠ Different' };
+        var lab = { ok: '✓ Same', miss: '+ Not there', old: '≠ Different', chg: '≠ Different' };
         var html = '<div class="board-demo" aria-hidden="true"><div class="bd-row bd-head"><span>Item</span><span>Period 4</span><span>Period 6</span></div>';
         rows.forEach(function (r, i) {
           html += '<div class="bd-row" style="--i:' + i + '"><span>' + r[0] + '</span>' +

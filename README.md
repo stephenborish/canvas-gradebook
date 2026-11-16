@@ -765,18 +765,19 @@ put it in your other classes, each with its own dates. Below, each of those clas
 **The whole workflow: tick a class, check its due date, press Copy.** The window is titled with what
 is being copied (*Copy from Block 6 · Lab 4*) and has one card per class:
 
-- Each card says in a few words what that class has now: **Not there yet**, **Already there · same**,
-  **Already there · older version**, **Already there · edited there**, **Already there · different**,
-  **Deleted there** or **Has its own “Lab 4”** (a same-titled item that was not copied from here).
+- Each card says in one or two words what that class has now: **Not there yet**, **Same**,
+  **Different**, **Deleted there** or **Has its own “Lab 4”** (a same-titled item that was not copied
+  from here).
 - No class starts ticked. Ticking one shows its **Due** date (that class's own date when it already has
   the item, else this class's). *More dates and a note* folds away *Available from*, *Until* and an
   optional note for that class only.
 - Only a class whose version is **different** asks a question, and it is a picture, not a paragraph:
   *Which version should Block 6 have?* with **both versions as two cards side by side**. Words that
-  differ are highlighted, and settings that differ sit at the top of each card (*Points* **none** |
-  *Points* **6**). Click the card to keep. That class's own version starts picked (so nothing it changed
-  is lost by accident); picking it changes only that class's dates. *Show all of both* opens the cards
-  to full length.
+  differ are highlighted, settings that differ sit at the top of each card (*Points* **none** |
+  *Points* **6**), and the newer one, when that is known, is tagged *newer* and starts picked. When
+  nobody knows which is newer, neither starts picked and the Copy button reads *Pick a version first*.
+  Click **Use this one** on either card. Picking that class's own version changes only its dates.
+  *Show all of both* opens the cards to full length.
 - The button says exactly what happens (*Copy to Block 6*, *Update dates in Block 6*, *Copy to 3 classes*)
   and the line beside it says it in words (*Adds it to Block 6.*, *Replaces Block 6's version.*,
   *1 new · 1 replaced · 1 kept (dates only).*).
@@ -814,15 +815,13 @@ short line per class says so, with one button:
 
 | Line | Button |
 | --- | --- |
-| **Block 6** has an older version. | **Update Block 6…** |
-| **Block 6** has a newer version. | **Use Block 6's version…** |
 | **Block 6** has a different version. | **Pick a version…** |
 | Not in **Block 6** yet. (a new item, made in the last three hours) | **Copy to Block 6…** |
 | You replaced this with **Block 6**'s version on Nov 12. | **Undo** |
 
 Each button opens **Which version should both classes have?**: the two versions as two big cards, with
 the words that differ highlighted, settings that differ at the top and a *newer* tag when that is known.
-Click the card to keep (the newer one, or the one the button named, starts picked), then the one button
+Click **Use this one** on a card (the newer one, when known, starts picked), then the one button
 below it, which says what it will do (**Update Block 6** or **Update this class**). Each class keeps its
 own dates, note, publishing and student work. Afterwards: **Undo** (when the class written to was the
 one the other was copied from), **Open in Block 6**, and **Copy to your other classes too…**.
@@ -852,24 +851,21 @@ One screen for *what in this class isn't the same in my other classes?* Open it 
 on the course home or the Modules page, from the copy window's *Options*, or from the notice.
 
 Every assignment, quiz, discussion, page and module in this class gets a row, and each linked class a
-column. Counts across the top (*3 not there · 2 older · 1 newer there · 1 different · 40 same*), and each
-cell says one of:
+column. Counts across the top (*3 not there · 4 different · 40 same*), and each cell says one of:
 
 | Cell | Meaning | What you can do |
 | --- | --- | --- |
 | ✓ **Same** | Same instructions and settings. | Nothing to do. |
 | + **Not there** / **Deleted there** | Never copied there, or deleted there. | Tick it. |
-| ↻ **Older version** | Changed here since; that class's was not touched. | Tick it, or **Update…** |
-| ↺ **Newer version** | Changed in that class since. | **Use theirs…** (or tick it to replace it). |
-| ≠ **Different** | Different, and no record says which side changed. | **Pick a version…** (or tick it). |
+| ≠ **Different** | Not the same; *newer here* or *newer there* beside it when that is known. | **Pick a version…**, or tick it to send this class's version. |
 | ! **Has its own** | That class has a same-titled item not copied from here. | Nothing: copying would add a second one. |
 
 What differs in the settings is spelled out under the cell (*Points: none here, 6 there*), a module's cell
 lists the items missing from that class's copy, and *unpublished there* / *published there* marks
-publishing that differs. **Update…**, **Use theirs…** and **Pick a version…** open the two-card view above.
+publishing that differs. **Pick a version…** opens the two-card view above.
 
 - **Show** *Only what's not the same* (the default) or *Everything*; filter by kind and by title.
-- **Select all not there / all older** ticks those cells in one click (never a newer version). **Copy n
+- **Select all not there / all newer here** ticks those cells in one click (never one newer there). **Copy n
   ticked…** opens the ordinary copy window with exactly those (item, class) pairs ticked, set to replace,
   so you see each class's dates before anything is written. Nothing is copied from the board itself.
 - **Match publishing (n)** publishes or unpublishes the copies so each matches this class, after a

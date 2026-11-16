@@ -299,9 +299,10 @@
       return line('Not in ' + (k === 1 ? '<strong>' + esc(this.courseName(n.courses[0])) + '</strong>' : k + ' of your other classes') + ' yet.',
         btn('copy-new', k === 1 ? 'Copy to ' + esc(this.courseName(n.courses[0])) + '…' : 'Copy to other classes…', true));
     }
-    if (n.kind === 'newer-here') return line('<strong>' + name + '</strong> has an older version.', btn('match-there', 'Update ' + name + '…', true));
-    if (n.kind === 'newer-there') return line('<strong>' + name + '</strong> has a newer version.', btn('match-here', 'Use ' + name + '’s version…', true));
-    return line('<strong>' + name + '</strong> has a different version.', btn('compare-one', 'Pick a version…', true));
+    // Older, newer or unknown: the same line and the same button; the
+    // newer version starts picked in the two cards it opens.
+    var act = n.kind === 'newer-here' ? 'match-there' : (n.kind === 'newer-there' ? 'match-here' : 'compare-one');
+    return line('<strong>' + name + '</strong> has a different version.', btn(act, 'Pick a version…', true));
   };
 
   /* The notice sits at the top of the page's content until dismissed. A
@@ -382,7 +383,7 @@
           return '<span>' + esc(p.label) + ' <mark>' + esc(side === 'a' ? p.a : p.b) + '</mark></span>';
         }).join('') + '</span>' : '') +
         '<span class="cgp-ver__text">' + (body || '<em>(no instructions)</em>') + '</span>' +
-        '<span class="cgp-ver__pick" aria-hidden="true">' + (on ? '✓ Keeping this version' : 'Keep this version') + '</span></label>';
+        '<span class="cgp-ver__pick" aria-hidden="true">' + (on ? '✓ Using this one' : 'Use this one') + '</span></label>';
     };
     return '<div class="cgp-vers" role="radiogroup">' + card('a', o.a, diff.a) + card('b', o.b, diff.b) + '</div>';
   }
@@ -502,7 +503,7 @@
     // named); the teacher clicks the other to change it.
     if (m.picked === undefined) m.picked = m.prefer === 'there' ? 'a' : (m.prefer === 'here' ? 'b' : (newer === 'here' ? 'a' : (newer === 'there' ? 'b' : null)));
     var running = !!m.running;
-    var label = m.picked === 'a' ? 'Update ' + other : (m.picked === 'b' ? 'Update this class' : 'Click the version to keep');
+    var label = m.picked === 'a' ? 'Update ' + other : (m.picked === 'b' ? 'Update this class' : 'Click the version to use');
     var backDir = m.hereIsOrig ? 'b' : 'a';
     body.innerHTML = '<section class="cgp-roster__section">' +
       '<p class="cgp-sections__lead">Which version should both classes have?</p>' +
@@ -829,7 +830,12 @@
         if (!(k in st.include)) {
           st.include[k] = st.only ? !!st.only[k] && !no : (st.tickDests ? st.tickDests.indexOf(String(d)) >= 0 && !no : false);
         }
-        if (!(k in st.replace)) st.replace[k] = st.only && st.only[k] ? true : (info ? sync.defaultReplace(info.status) : true);
+        if (!(k in st.replace)) {
+          // The newer version starts picked; when nobody knows which is
+          // newer, neither does, and the teacher clicks one (versionCards).
+          st.replace[k] = st.only && st.only[k] ? true
+            : (info && info.status === 'differs' && hasCards(it, info) ? null : (info ? sync.defaultReplace(info.status) : true));
+        }
         if (!(k in st.notes)) st.notes[k] = info && info.note ? info.note : '';
         dated(it).forEach(function (row) {
           var rk = k + '|' + itemKey(row);
@@ -1088,13 +1094,19 @@
     if (info.lookalike && !info.destId) return { text: 'Has its own “' + info.lookalike.title + '”', tone: 'muted' };
     if (s === 'new') return { text: 'Not there yet', tone: 'miss' };
     if (s === 'restore') return { text: 'Deleted there', tone: 'miss' };
-    if (s === 'same') return { text: 'Already there · same', tone: 'ok' };
+    if (s === 'same') return { text: 'Same', tone: 'ok' };
     if (it.type === 'module' && info.drift && info.drift.missing.length && s === 'stale') {
-      return { text: 'Already there · missing ' + info.drift.missing.length + (info.drift.missing.length === 1 ? ' item' : ' items'), tone: 'warn' };
+      return { text: 'Missing ' + info.drift.missing.length + (info.drift.missing.length === 1 ? ' item' : ' items'), tone: 'edit' };
     }
-    if (s === 'stale') return { text: 'Already there · older version', tone: 'warn' };
-    if (s === 'edited') return { text: 'Already there · edited there', tone: 'edit' };
-    return { text: 'Already there · different', tone: 'edit' };
+    // Older, newer or unknown: one word. Which is newer shows on the cards.
+    return { text: 'Different', tone: 'edit' };
+  }
+
+  /* Does this (item, class) choose by the two version cards? */
+  function hasCards(it, info) {
+    var t = S().TYPES[it.type];
+    return !!(info && info.destId && info.status !== 'restore' && t && t.body && it.type !== 'module' && info.destHtml !== undefined &&
+      (info.status === 'stale' || info.status === 'edited' || info.status === 'differs'));
   }
 
   /* Can this (item, class) be copied at all, and does it start ticked? */
@@ -1163,9 +1175,9 @@
     if (!on) return '<div class="cgp-sections__line is-off">' + head + (notes.length ? '<div class="cgp-sections__detail">' + notes.join(' ') + '</div>' : '') + '</div>';
 
     var different = existing && (info.status === 'edited' || info.status === 'differs');
-    var rep = !!st.replace[k];
+    var rep = st.replace[k];
     // Shown inside the two versions instead, for a class that has its own.
-    var cards = different && t.body && it.type !== 'module' && info.destHtml !== undefined;
+    var cards = hasCards(it, info);
     if (info.diffs && info.diffs.length && !cards) notes.push(esc(info.diffs.join(' · ')) + '.');
     if (it.type === 'module' && info.drift && info.drift.missing.length && info.status === 'stale') {
       notes.push('Adds ' + esc(info.drift.missing.slice(0, 4).join(', ')) + (info.drift.missing.length > 4 ? '…' : '') + '.');
@@ -1190,7 +1202,7 @@
         versionCards({
           a: { who: 'This class', title: it.title, html: it.html, settings: it.settings, newer: newerHere },
           b: { who: this.courseName(d), title: info.destTitle, html: info.destHtml, settings: info.destSettings, updatedAt: info.destUpdatedAt, newer: newerThere },
-          picked: rep ? 'a' : 'b', name: 'rep-' + k, compact: !(st.expanded && st.expanded[k]),
+          picked: rep === null || rep === undefined ? null : (rep ? 'a' : 'b'), name: 'rep-' + k, compact: !(st.expanded && st.expanded[k]),
           attrs: function (side) { return 'data-replace="' + esc(k) + '" value="' + (side === 'a' ? '1' : '0') + '"' + (st.running ? ' disabled' : ''); }
         }) +
         '<button type="button" class="cgp-board__link" data-act="expand-ver" data-key="' + esc(k) + '">' + (st.expanded && st.expanded[k] ? 'Show less' : 'Show all of both') + '</button></div>';
@@ -1241,13 +1253,23 @@
       var res = r.result;
       var icon = !res ? '…' : (res.ok ? (res.warnings.length ? '!' : '✓') : (res.pending ? '…' : '×'));
       var cls = !res ? 'is-run' : (res.ok ? (res.warnings.length ? 'is-warn' : 'is-ok') : (res.pending ? 'is-run' : 'is-err'));
-      var detail = !res ? esc(r.step || 'Waiting') : (res.error ? esc(res.error) : (res.ok ? (r.task.mode === 'keep' ? 'dates updated' : 'done') : ''));
+      var detail = !res ? esc(r.step || 'Waiting') : (res.error ? esc(res.error) : (res.ok ? (r.task.mode === 'keep' ? 'dates updated' : 'copied') : ''));
       var link = res && res.url ? ' <a href="' + esc(res.url) + '" target="_blank" rel="noopener">Open</a>' : '';
       var warns = res && res.warnings.length ? '<ul>' + res.warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' : '';
       return '<li class="cgp-sections__result ' + cls + '"><span class="cgp-sections__icon">' + icon + '</span><div><strong>' +
         esc(self.courseName(r.task.destCourseId)) + '</strong>' + (st.items.length > 1 ? ' · ' + esc(r.task.item.title || '') : '') + ' — ' + detail + link + warns + '</div></li>';
     }).join('');
-    return '<section class="cgp-roster__section">' +
+    var head = '';
+    if (!st.running) {
+      var bad = st.results.filter(function (r) { return !r.result || !r.result.ok; });
+      var names = [];
+      st.results.forEach(function (r) { var n = self.courseName(r.task.destCourseId); if (names.indexOf(n) < 0) names.push(n); });
+      var list = names.length > 2 ? names.length + ' classes' : names.join(' and ');
+      head = bad.length
+        ? '<p class="cgp-sections__err cgp-sections__headline" role="status">' + (st.results.length - bad.length) + ' of ' + st.results.length + ' done. See below for what didn’t work.</p>'
+        : '<p class="cgp-sections__done" role="status"><span aria-hidden="true">✓</span> Done. ' + esc(list) + (names.length === 1 ? ' is' : ' are') + ' up to date.</p>';
+    }
+    return '<section class="cgp-roster__section">' + head +
       (st.running ? '<p class="cgp-stats__note" role="status">Copying… Canvas takes a minute or so. You can close this; it keeps going while this page is open.</p>' : '') +
       '<ul class="cgp-sections__results">' + lines + '</ul>' +
       (st.running ? '' : '<div class="cgp-roster__row cgp-roster__actions"><button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-act="close">Done</button></div>') +
@@ -1472,6 +1494,9 @@
         if (!dest || dest.error || !st.include[k]) return;
         var info = surveyInfo(st, it, d) || {};
         var existing = !!(info.destId && info.status !== 'restore');
+        if (existing && st.replace[k] === null) {
+          errors.push('Pick a version for ' + self.courseName(d) + (st.items.length > 1 ? ' (“' + (it.title || '') + '”)' : '') + '.');
+        }
         var mode = existing && !st.replace[k] ? 'keep' : 'copy';
         var dates = {};
         var children = [];
@@ -1543,9 +1568,10 @@
       text = parts.join(' · ') + '.';
     }
     var onlyDates = b.tasks.length && kinds.keep === b.tasks.length;
+    var unpicked = b.errors.some(function (e) { return e.indexOf('Pick a version') === 0; });
     return {
       count: b.tasks.length, errors: b.errors, text: text,
-      label: nc ? (onlyDates ? 'Update dates in ' : 'Copy to ') + target : 'Choose a class'
+      label: unpicked ? 'Pick a version first' : (nc ? (onlyDates ? 'Update dates in ' : 'Copy to ') + target : 'Choose a class')
     };
   };
 

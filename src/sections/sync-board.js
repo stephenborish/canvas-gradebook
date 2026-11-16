@@ -42,8 +42,10 @@
     same: { label: 'Same', mark: '✓', tone: 'ok' },
     missing: { label: 'Not there', mark: '+', tone: 'miss', pick: true, bulk: 'missing' },
     deleted: { label: 'Deleted there', mark: '+', tone: 'miss', pick: true },
-    older: { label: 'Older version', mark: '↻', tone: 'warn', pick: true, bulk: 'older' },
-    newer: { label: 'Newer version', mark: '↺', tone: 'edit', pick: true },
+    // Older, newer or unknown are all "Different" to the teacher; which
+    // side is newer is a small note under it.
+    older: { label: 'Different', note: 'newer here', mark: '≠', tone: 'edit', pick: true, bulk: 'older' },
+    newer: { label: 'Different', note: 'newer there', mark: '≠', tone: 'edit', pick: true },
     differs: { label: 'Different', mark: '≠', tone: 'edit', pick: true },
     own: { label: 'Has its own', mark: '!', tone: 'muted' },
     unknown: { label: 'Couldn’t check', mark: '?', tone: 'muted' }
@@ -306,9 +308,7 @@
     var bits = [];
     var add = function (n, text, tone) { if (n) bits.push('<span class="cgp-board__count is-' + tone + '">' + n + ' ' + esc(text) + '</span>'); };
     add(c.missing + c.deleted, 'not there', 'miss');
-    add(c.older, 'older', 'warn');
-    add(c.newer, 'newer there', 'edit');
-    add(c.differs, 'different', 'edit');
+    add(c.older + c.newer + c.differs, 'different', 'edit');
     add(c.publish, 'published differently', 'warn');
     var errs = b.scan.dests.filter(function (d) { return d.error; });
     var allGood = !bits.length && !errs.length;
@@ -378,13 +378,13 @@
       : '';
     var acts = [];
     if (v.url) acts.push('<a class="cgp-board__link" href="' + esc(v.url) + '" target="_blank" rel="noopener">Open</a>');
-    if (hasBody && v.ctx) {
-      if (v.kind === 'older') acts.push('<button type="button" class="cgp-board__link" data-board-act="match" data-prefer="there" data-key="' + esc(r.key) + '" data-dest="' + esc(d) + '">Update…</button>');
-      if (v.kind === 'newer') acts.push('<button type="button" class="cgp-board__link" data-board-act="match" data-prefer="here" data-key="' + esc(r.key) + '" data-dest="' + esc(d) + '">Use theirs…</button>');
-      if (v.kind === 'differs') acts.push('<button type="button" class="cgp-board__link" data-board-act="match" data-prefer="" data-key="' + esc(r.key) + '" data-dest="' + esc(d) + '">Pick a version…</button>');
+    if (hasBody && v.ctx && (v.kind === 'older' || v.kind === 'newer' || v.kind === 'differs')) {
+      var prefer = v.kind === 'older' ? 'there' : (v.kind === 'newer' ? 'here' : '');
+      acts.push('<button type="button" class="cgp-board__link" data-board-act="match" data-prefer="' + prefer + '" data-key="' + esc(r.key) + '" data-dest="' + esc(d) + '">Pick a version…</button>');
     }
     return '<div class="cgp-board__cell is-' + spec.tone + '"><label class="cgp-board__chip">' + box +
-      '<span aria-hidden="true">' + spec.mark + '</span> ' + esc(spec.label) + '</label>' + pub +
+      '<span aria-hidden="true">' + spec.mark + '</span> ' + esc(spec.label) + '</label>' +
+      (spec.note ? '<span class="cgp-board__note">' + esc(spec.note) + '</span>' : '') + pub +
       (v.details.length ? '<div class="cgp-board__detail">' + esc(v.details.join(' · ')) + '</div>' : '') +
       (acts.length ? '<div class="cgp-board__acts">' + acts.join('') + '</div>' : '') + '</div>';
   };
@@ -412,7 +412,7 @@
     var fixes = this.publishFixes().length;
     var quick = [];
     if (missing) quick.push('<button type="button" class="cgp-board__link" data-board-act="sel-missing">all not there (' + missing + ')</button>');
-    if (older) quick.push('<button type="button" class="cgp-board__link" data-board-act="sel-stale">all older (' + older + ')</button>');
+    if (older) quick.push('<button type="button" class="cgp-board__link" data-board-act="sel-stale">all newer here (' + older + ')</button>');
     if (n) quick.push('<button type="button" class="cgp-board__link" data-board-act="sel-none">none</button>');
     return '<div class="cgp-roster__row cgp-roster__actions cgp-board__go">' +
       '<button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-board-act="copy"' + (n && !b.busy ? '' : ' disabled') + '>' +

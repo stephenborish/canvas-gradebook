@@ -65,7 +65,7 @@ suite('copy dialog: one row per class', test => {
     a.eq(c.buildTasks().tasks[0].mode, 'keep');
     a.eq(c.buildTasks().tasks[0].note, 'Keep this note');
     let html = c.renderMain();
-    a.ok(html.includes('Already there · edited there'));
+    a.ok(html.includes('>Different<'));
     a.ok(html.includes('Keep theirs, change only the dates'));
     a.ok(html.includes('Points: 6 here, none there'));
     a.ok(html.includes('Update dates in Block 2'));
@@ -85,11 +85,13 @@ suite('copy dialog: one row per class', test => {
     a.eq((html.match(/class="cgp-ver[ "]/g) || []).length, 2, 'two cards');
     a.ok(html.includes('<mark>loses 10%.</mark>') && html.includes('<mark>is not accepted.</mark>'), 'what differs is marked');
     a.ok(html.includes('Points <mark>10</mark>') && html.includes('Points <mark>6</mark>'));
-    a.eq(c.buildTasks().tasks[0].mode, 'keep', 'theirs kept until this version is picked');
+    a.ok(c.buildTasks().errors[0].includes('Pick a version for Block 2'), 'nobody knows which is newer: nothing is picked, and Copy waits for a click');
+    a.ok(html.includes('Pick a version for Block 2.'));
     c.onChange({ target: { value: '1', hasAttribute: n => n === 'data-replace', getAttribute: n => (n === 'data-replace' ? 'assignment:8>2' : null) } });
     a.eq(c.buildTasks().tasks[0].mode, 'copy');
     html = c.renderMain();
-    a.ok(html.includes('✓ Keeping this version'));
+    a.ok(html.includes('✓ Using this one'));
+    a.eq(c.buildTasks().errors.length, 0);
   });
 
   test('marking what differs, word by word', () => {
@@ -107,7 +109,7 @@ suite('copy dialog: one row per class', test => {
     a.eq(t.mode, 'copy');
     a.eq(t.destId, '70');
     const html = c.renderMain();
-    a.ok(html.includes('Already there · older version'));
+    a.ok(html.includes('>Different<'));
     a.ok(html.includes('Updates its title, instructions and settings.'));
   });
 

@@ -1620,7 +1620,7 @@ suite('keeping classes in step: Compare classes', (test) => {
     const html = b.renderBoardTable();
     a.ok(html.includes('data-board-sel="assignment:7&gt;22"') || html.includes('data-board-sel="assignment:7>22"'), 'a missing copy can be ticked');
     a.not(/data-board-sel="page:8/.test(html), 'a class with its own same-titled page cannot be ticked');
-    a.ok(html.includes('Older version'));
+    a.ok(html.includes('Different') && html.includes('newer here'));
     a.not(html.includes('from Block'), 'which class it came from is not the teacher’s concern');
     a.ok(/data-board-act="match" data-prefer="there" data-key="assignment:40"/.test(html), 'the class it came from can be updated from here');
     b.state.board.filter = 'all';
