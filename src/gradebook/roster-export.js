@@ -195,16 +195,16 @@
     item.addEventListener('click', choose, true);
     item.addEventListener('mousedown', function (e) { e.stopPropagation(); }, true);
     if (!item.hasAttribute('tabindex')) item.setAttribute('tabindex', '-1');
-    var settle = function () {
+    // Taking focus (by hover or keyboard) closes any submenu (Sort by,
+    // Display as...) still standing open beside this item.
+    var closeOpen = function () { if (CGP.ui && CGP.ui.closeFlyouts) CGP.ui.closeFlyouts(menu, item); };
+    item.addEventListener('focus', closeOpen);
+    item.addEventListener('mouseenter', function () {
       if (document.activeElement !== item) {
         try { item.focus({ preventScroll: true }); } catch (e) { item.focus(); }
+      } else {
+        closeOpen();
       }
-      // Close any submenu (Sort by, Display as...) still standing open.
-      if (CGP.ui && CGP.ui.closeFlyouts) CGP.ui.closeFlyouts(menu, item);
-    };
-    item.addEventListener('mouseenter', settle);
-    item.addEventListener('focus', function () {
-      if (CGP.ui && CGP.ui.closeFlyouts) CGP.ui.closeFlyouts(menu, item);
     });
     item.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' || e.key === ' ') choose(e);
@@ -356,6 +356,14 @@
     return CGP.rosterFormat.guardians(this._guardians, this._rows || []);
   };
 
+  /* The addresses "Copy emails" copies right now, each once. */
+  P.chosenEmails = function (g) {
+    return CGP.rosterFormat.emailAddresses(this._rows || [], {
+      students: this.prefs.emailStudents,
+      guardians: this.prefs.emailGuardians && g ? g.emails : []
+    });
+  };
+
   P.setStatus = function (text) {
     var el = this._dialog && this._dialog.querySelector('.cgp-roster__status');
     if (el) el.textContent = text;
@@ -443,19 +451,12 @@
     }
     set('.cgp-roster__guardian-note', note);
 
-    var count = 0;
-    if (this._rows) {
-      count = CGP.rosterFormat.emailList(this._rows, 'newline', {
-        students: p.emailStudents,
-        guardians: p.emailGuardians && g ? g.emails : []
-      }).split('\n').filter(Boolean).length;
-    }
+    var count = this._rows ? this.chosenEmails(g).length : 0;
     var btn = root.querySelector('[data-act="emails"]');
-    if (btn) {
-      var waiting = p.emailGuardians && this._guardianState === 'loading';
-      btn.textContent = count ? 'Copy ' + plural(count, 'email', 'emails') : 'Copy emails';
-      if (waiting) count = 0; // the list isn't whole yet
-    }
+    if (btn) btn.textContent = count ? 'Copy ' + plural(count, 'email', 'emails') : 'Copy emails';
+    // With Parents & guardians checked, nothing is copied until their list
+    // is in: a students-only list would look like the whole thing.
+    if (p.emailGuardians && this._guardianState !== 'ready') count = 0;
     return count;
   };
 
@@ -463,17 +464,14 @@
     var fmt = CGP.rosterFormat;
     var rows = this._rows || [];
     if (what === 'emails') {
-      var g = this.guardianInfo();
-      var list = fmt.emailList(rows, this.prefs.separator, {
-        students: this.prefs.emailStudents,
-        guardians: this.prefs.emailGuardians && g ? g.emails : []
-      });
-      if (!list) { CGP.ui.error('There are no email addresses to copy for the people chosen.'); return; }
-      var count = fmt.emailList(rows, 'newline', {
-        students: this.prefs.emailStudents,
-        guardians: this.prefs.emailGuardians && g ? g.emails : []
-      }).split('\n').length;
-      copy(list, null).then(function () {
+      if (this.prefs.emailGuardians && this._guardianState !== 'ready') {
+        CGP.ui.error('Parents and guardians aren’t loaded. Uncheck them to copy students only, or check them again to retry.');
+        return;
+      }
+      var addresses = this.chosenEmails(this.guardianInfo());
+      if (!addresses.length) { CGP.ui.error('There are no email addresses to copy for the people chosen.'); return; }
+      var count = addresses.length;
+      copy(fmt.joinEmails(addresses, this.prefs.separator), null).then(function () {
         CGP.ui.toast(count + (count === 1 ? ' email' : ' emails') + ' copied');
       }, function () { CGP.ui.error('Couldn’t copy to the clipboard.'); });
     } else if (what === 'table') {

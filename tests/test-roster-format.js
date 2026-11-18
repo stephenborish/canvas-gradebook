@@ -56,6 +56,8 @@ suite('roster export: formatting', (test) => {
     a.deep(t.body[0], ['Jake, Bonko'], 'email left off when unchecked');
     t = fmt().table(fmt().normalize([{ id: 9, name: 'Cher', sortable_name: 'Cher' }], 'last'), { nameFormat: 'comma-line', email: true });
     a.deep(t.body[0], ['Cher, , '], 'a missing part keeps its place');
+    t = fmt().table(fmt().normalize([{ id: 8, name: 'John Smith Jr.', sortable_name: 'Smith, John, Jr.', email: 'js@x.org' }], 'last'), { nameFormat: 'comma-line', email: true });
+    a.deep(t.body[0], ['John Jr., Smith, js@x.org'], 'a comma inside a name never adds a field');
   });
 
   test('TSV, CSV and HTML outputs', () => {
@@ -201,6 +203,7 @@ suite('roster export: Student Name menu', (test) => {
       ctrl.decorateMenu(menu);
       const item = menu.querySelector('.cgp-roster-item');
       item.dispatchEvent({ type: 'mouseenter' });
+      item.dispatchEvent({ type: 'focus' }); // what the browser fires for the focus() above
       a.eq(hovered, 1, 'Canvas\'s own plain item was told about the hover');
       a.eq(doc.activeElement, item, 'focus came back to Copy Roster');
       item.dispatchEvent({ type: 'mouseenter' });

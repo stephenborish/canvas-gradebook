@@ -86,6 +86,9 @@
         var it = items[i];
         if (it === keep || it.hasAttribute('aria-haspopup')) continue;
         if (it.closest && it.closest('.cgp-analyze-item')) continue;
+        // Never an item of the open submenu itself, if Canvas mounted it
+        // inside this menu: hovering that would keep it open.
+        if (it.closest && it.closest('[role="menu"]') !== menu) continue;
         plain = it;
       }
       if (plain) {

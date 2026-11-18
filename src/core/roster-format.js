@@ -79,7 +79,10 @@
       return {
         header: [['First Name', 'Last Name'].concat(opts.email ? ['Email'] : []).join(', ')],
         body: (rows || []).map(function (r) {
-          return [[r.first, r.last].concat(opts.email ? [r.email] : []).join(', ')];
+          // A comma inside a part ("John, Jr.") would read as another
+          // field, so it becomes a space there.
+          var parts = [r.first, r.last].concat(opts.email ? [r.email] : []);
+          return [parts.map(function (x) { return clean(String(x || '').replace(/,/g, ' ')); }).join(', ')];
         }),
         oneLine: true
       };
@@ -137,9 +140,9 @@
   }
 
   /* Parents and guardians: the course's observers (Canvas's word, read by
-   * CanvasApi.courseObservers) who are linked to one of these students. An observer with no student link is
-   * left out - that is a colleague or administrator watching the course,
-   * not a family member. Returns
+   * CanvasApi.courseObservers) who are linked to one of these students. An
+   * observer with no student link is left out - that is a colleague or
+   * administrator watching the course, not a family member. Returns
    *   emails       each address once, in the students' order
    *   count        how many addresses that is
    *   uncovered    students with no linked parent/guardian address */
@@ -183,9 +186,8 @@
    * field: the students' (unless opts.students is false), then any
    * parent/guardian addresses in opts.guardians. Students with no address
    * are skipped, and an address on the list twice is copied once. */
-  function emailList(rows, separator, opts) {
+  function emailAddresses(rows, opts) {
     opts = opts || {};
-    var sep = SEPARATORS[separator] || SEPARATORS.comma;
     var list = opts.students === false ? [] : (rows || []).map(function (r) { return r.email; });
     list = list.concat(opts.guardians || []);
     var seen = {};
@@ -195,7 +197,15 @@
       if (seen[k]) return false;
       seen[k] = true;
       return true;
-    }).join(sep);
+    });
+  }
+
+  function joinEmails(addresses, separator) {
+    return (addresses || []).join(SEPARATORS[separator] || SEPARATORS.comma);
+  }
+
+  function emailList(rows, separator, opts) {
+    return joinEmails(emailAddresses(rows, opts), separator);
   }
 
   CGP.rosterFormat = {
@@ -208,6 +218,8 @@
     toCsv: toCsv,
     toHtml: toHtml,
     guardians: guardians,
+    emailAddresses: emailAddresses,
+    joinEmails: joinEmails,
     emailList: emailList
   };
 })();
