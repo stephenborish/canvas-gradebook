@@ -68,6 +68,11 @@
     }
   };
 
+  /* In a destination's dates: "leave this one as that class has it". Used
+   * for a date the editor could not read, so it was never shown, and is
+   * therefore never overwritten unless the teacher types a new one. */
+  var KEEP_DATE = 'keep';
+
   var DATE_LABELS = {
     due_at: 'Due', unlock_at: 'Available from', lock_at: 'Until', delayed_post_at: 'Post at'
   };
@@ -515,8 +520,11 @@
     var changed = false;
     fields.forEach(function (f) {
       var want = isoDates[f] === undefined ? null : isoDates[f];
-      body[f] = want;
       var have = destDetails ? destDetails[f] : undefined;
+      // A date that could not be read before Save, and was not changed:
+      // whatever the copy has now is written back as it is.
+      if (want === KEEP_DATE) { if (have !== undefined) body[f] = have; return; }
+      body[f] = want;
       if (have === undefined || !sameInstant(have, want)) changed = true;
     });
     if (!changed) return { unchanged: true };
@@ -1279,6 +1287,7 @@
     entry = entry || {};
     var iso = {};
     var errors = [];
+    var keep = [];
     fields.forEach(function (f) {
       var e = entry[f] || {};
       var d = String(e.date || '').trim();
@@ -1288,6 +1297,8 @@
       var label = DATE_LABELS[f] || f;
       // A copy that has no such date keeps having none, unless one is
       // typed in (e.none: what the box showed for it).
+      // A date that could not be read there stays exactly as it is.
+      if (!d && !t && e.unreadable) { iso[f] = KEEP_DATE; keep.push(f); return; }
       if (!d && !t) { iso[f] = e.none ? null : base; return; }
       var clock = t ? parseClock(t) : null;
       if (t && !clock) { errors.push(label + ': “' + t + '” is not a time'); return; }
@@ -1302,15 +1313,128 @@
       iso[f] = out;
     });
     var from = iso.unlock_at || iso.delayed_post_at;
-    function after(a, b) { return a && b && Date.parse(a) > Date.parse(b); }
+    function after(a, b) { return a && b && a !== KEEP_DATE && b !== KEEP_DATE && Date.parse(a) > Date.parse(b); }
     if (after(from, iso.due_at)) errors.push('Available from is after Due');
     if (after(iso.due_at, iso.lock_at)) errors.push('Due is after Until');
-    return { iso: iso, errors: errors };
+    return { iso: iso, errors: errors, keep: keep };
+  }
+
+  /* ------------------------------------------ the editor panel's rows */
+
+  var WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  /** "2026-11-20" -> "Fri, Nov 20" ('' when not a date). */
+  function dayLabel(ymd) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || '').trim());
+    if (!m) return '';
+    var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    return WEEKDAYS[d.getUTCDay()] + ', ' + MONTHS[d.getUTCMonth()] + ' ' + d.getUTCDate();
+  }
+
+  function sameBox(a, b) {
+    a = a || {}; b = b || {};
+    return String(a.date || '').trim() === String(b.date || '').trim() &&
+      String(a.time || '').trim().toLowerCase() === String(b.time || '').trim().toLowerCase();
+  }
+
+  /** What one destination's date will be once Save is pressed.
+   * entry: the boxes ({date, time, none, unreadable}); read: what the
+   * destination's copy had when the editor opened ({date, time} | {none}
+   * | {unreadable}), or null when it has no copy yet.
+   * -> {kind, text}: kind is
+   *   'inherit'    blank boxes: the same as this class's date
+   *   'keep'       the destination's own date, unchanged
+   *   'none'       the destination has none and keeps having none
+   *   'set'        a date or time typed here
+   *   'unreadable' the destination's date could not be read: left as it is */
+  function inlineDatePlan(entry, read) {
+    var e = entry || {};
+    var d = String(e.date || '').trim();
+    var t = String(e.time || '').trim();
+    var typed = !!(d || t);
+    if (!typed && (e.unreadable || (read && read.unreadable))) {
+      return { kind: 'unreadable', text: 'couldn’t read its date there, so it stays as it is unless you type one' };
+    }
+    if (!typed && e.none) return { kind: 'none', text: 'stays without one' };
+    if (!typed) return { kind: 'inherit', text: 'same as this class' };
+    if (read && !read.unreadable && !read.none && sameBox(e, read)) {
+      return { kind: 'keep', text: 'keeps ' + dayLabel(d) + (t ? ' at ' + t : '') };
+    }
+    var what = d && t ? dayLabel(d) + ' at ' + t
+      : (d ? dayLabel(d) + ', at this class’s time' : 'this class’s day at ' + t);
+    return { kind: 'set', text: 'set to ' + what };
+  }
+
+  /** One destination row before Save: what happens to its item, and its
+   * due date. row: {on, entry, read}; existing: {differs} | null when it
+   * has no copy; unknown: whether that class could not be checked.
+   * -> {action, actionKind, due: inlineDatePlan(...) | null} */
+  function inlineRowSummary(row, existing, field, unknown) {
+    row = row || {};
+    if (!row.on) return { action: 'Not copied', actionKind: 'off', due: null };
+    var action, kind;
+    if (existing && existing.differs) { kind = 'dates'; action = 'Edited there: keeps its own version, only its dates change'; }
+    else if (existing) { kind = 'update'; action = 'Has it already: updated to this version'; }
+    else if (unknown) { kind = 'unknown'; action = 'Couldn’t check that course: gets a copy, or its copy is updated'; }
+    else { kind = 'new'; action = 'Gets a new copy'; }
+    var due = field ? inlineDatePlan((row.entry || {})[field], (row.read || {})[field] || null) : null;
+    return { action: action, actionKind: kind, due: due };
+  }
+
+  /** One destination after Save, from what the banner knows about it:
+   * line: {error, step, result, mode, skipped}. -> {state, label, detail}
+   *   state: 'working' | 'copying' | 'copied' | 'updated' | 'dates' |
+   *          'date-failed' | 'failed' | 'unknown'
+   * The copy existing is what "copied" means: never "published", which
+   * only Canvas's own record of what students can see may say. */
+  function inlineOutcome(line) {
+    line = line || {};
+    var r = line.result;
+    if (line.unknown) return { state: 'unknown', label: 'Check that course', detail: line.unknown };
+    if (line.error) return { state: 'failed', label: 'Not copied', detail: line.error };
+    if (!r) return { state: 'working', label: line.step || 'Waiting', detail: '' };
+    if (r.pending) return { state: 'copying', label: 'Still copying', detail: r.error || '' };
+    var exists = !!(r.destId || r.ok);
+    if (!exists) return { state: 'failed', label: 'Not copied', detail: r.error || 'Canvas did not make the copy.' };
+    var base = line.mode === 'keep' ? 'Dates updated' : (line.mode === 'update' ? 'Updated' : 'Copied');
+    if (r.dates === 'failed') return { state: 'date-failed', label: base + ' · due date not set', detail: r.error || '' };
+    return { state: line.mode === 'keep' ? 'dates' : (line.mode === 'update' ? 'updated' : 'copied'), label: base, detail: r.error || '' };
+  }
+
+  /** The banner's headline, from the same outcomes its rows show.
+   * outcomes: [inlineOutcome]; final: whether every row is settled. */
+  function inlineHeadline(outcomes, title) {
+    var n = outcomes.length;
+    var count = function (states) { return outcomes.filter(function (o) { return states.indexOf(o.state) >= 0; }).length; };
+    var there = count(['copied', 'updated', 'dates', 'date-failed']);
+    var working = count(['working']);
+    var copying = count(['copying']);
+    var failed = count(['failed']);
+    var unknown = count(['unknown']);
+    var dateBad = count(['date-failed']);
+    var cls = function (k) { return k + ' ' + (k === 1 ? 'class' : 'classes'); };
+    var what = title ? '“' + title + '”' : 'it';
+    if (working) return { text: 'Copying ' + what + ' to ' + cls(n) + '…', final: false, ok: false };
+    var parts = [];
+    if (copying) parts.push(copying + ' still copying');
+    if (dateBad) parts.push(dateBad + ' due date' + (dateBad === 1 ? '' : 's') + ' not set');
+    if (unknown) parts.push(unknown + ' to check');
+    if (failed) parts.push(failed + ' not copied');
+    var text = (there === n ? 'Copied ' + what + ' to ' + cls(n) : 'Copied to ' + there + ' of ' + cls(n)) +
+      (parts.length ? ' · ' + parts.join(' · ') : '');
+    return { text: text, final: true, ok: there === n && !dateBad };
   }
 
   CGP.sectionSync = {
     editPageFromPath: editPageFromPath,
     resolveInline: resolveInline,
+    KEEP_DATE: KEEP_DATE,
+    dayLabel: dayLabel,
+    inlineDatePlan: inlineDatePlan,
+    inlineRowSummary: inlineRowSummary,
+    inlineOutcome: inlineOutcome,
+    inlineHeadline: inlineHeadline,
     TYPES: TYPES,
     DATE_LABELS: DATE_LABELS,
     dateFields: dateFields,

@@ -1116,31 +1116,30 @@ suite('copy to sections: the editor’s Save', (test) => {
   const here = { courseId: '11', type: 'assignment', id: '9' };
   const t = Date.parse('2026-11-01T12:00:00Z');
 
-  test('an edit counts only if the item is newer than the version the editor opened on: Cancel copies nothing', async () => {
+  test('an edit counts only if its Save was seen and the item is newer than the version the editor opened on', async () => {
     const base = t - 5000;   // updated five seconds before the editor opened
-    const saved = await inline({ id: 9, updated_at: new Date(t + 60000).toISOString() }).matchSaved({ id: '9', armedAt: t, baseUpdated: base }, here);
+    const saved = await inline({ id: 9, updated_at: new Date(t + 60000).toISOString() }).matchSaved({ id: '9', armedAt: t, baseUpdated: base, savedAt: t + 55000 }, here);
     a.ok(saved);
-    const cancelled = await inline({ id: 9, updated_at: new Date(base).toISOString() }).matchSaved({ id: '9', armedAt: t, baseUpdated: base }, here);
+    const cancelled = await inline({ id: 9, updated_at: new Date(base).toISOString() }).matchSaved({ id: '9', armedAt: t, baseUpdated: base, savedAt: t + 55000 }, here);
     a.eq(cancelled, null, 'an update just before the editor opened is not a save from it');
-    a.eq(await inline({ id: 8, updated_at: new Date(t + 60000).toISOString() }).matchSaved({ id: '9', armedAt: t, baseUpdated: base }, { courseId: '11', type: 'assignment', id: '8' }), null, 'another item');
-    a.eq(await inline({ id: 9, updated_at: new Date(t + 60000).toISOString() }).matchSaved({ id: '9', armedAt: t, baseUpdated: null }, here), null,
-      'the opening version unknown: the Save must have been seen');
+    a.eq(await inline({ id: 8, updated_at: new Date(t + 60000).toISOString() }).matchSaved({ id: '9', armedAt: t, baseUpdated: base, savedAt: t + 55000 }, { courseId: '11', type: 'assignment', id: '8' }), null, 'another item');
     a.ok(await inline({ id: 9, updated_at: new Date(t + 60000).toISOString() }).matchSaved({ id: '9', armedAt: t, baseUpdated: null, savedAt: t + 50000 }, here));
   });
 
-  test('a new item with no readable title matches only when its editor’s Save was seen and no other editor is waiting', async () => {
-    const it = { id: 12, name: 'Lab 5', created_at: new Date(t + 30000).toISOString() };
-    const h = { courseId: '11', type: 'assignment', id: '12' };
-    a.ok(await inline(it).matchSaved({ isNew: true, armedAt: t, title: '', savedAt: t + 20000, alone: true }, h));
-    a.eq(await inline(it).matchSaved({ isNew: true, armedAt: t, title: '', savedAt: t + 20000, alone: false }, h), null);
-    a.eq(await inline(it).matchSaved({ isNew: true, armedAt: t, title: '', alone: true }, h), null);
+  test('REGRESSION: an editor with no observed Save is never matched, however far the item’s timestamp moved (another tab edited it)', async () => {
+    const base = t - 5000;
+    const otherTab = { id: 9, updated_at: new Date(t + 60000).toISOString() };
+    a.eq(await inline(otherTab).matchSaved({ id: '9', armedAt: t, baseUpdated: base }, here), null, 'newer timestamp alone');
+    a.eq(await inline(otherTab).matchSaved({ id: '9', armedAt: t, baseUpdated: base, savedAt: 0 }, here), null);
+    a.eq(await inline({ id: 12, name: 'Lab 5', created_at: new Date(t + 30000).toISOString() })
+      .matchSaved({ isNew: true, armedAt: t, title: 'Lab 5' }, { courseId: '11', type: 'assignment', id: '12' }), null, 'matching title alone');
   });
 
-  test('a new item counts only if created since, with the same title', async () => {
-    const ok = await inline({ id: 12, name: 'Lab 5', created_at: new Date(t + 30000).toISOString() }).matchSaved({ isNew: true, armedAt: t, title: 'Lab 5' }, { courseId: '11', type: 'assignment', id: '12' });
-    a.ok(ok);
-    a.eq(await inline({ id: 12, name: 'Other', created_at: new Date(t + 30000).toISOString() }).matchSaved({ isNew: true, armedAt: t, title: 'Lab 5' }, { courseId: '11', type: 'assignment', id: '12' }), null);
-    a.eq(await inline({ id: 3, name: 'Lab 5', created_at: new Date(t - 86400000).toISOString() }).matchSaved({ isNew: true, armedAt: t, title: 'Lab 5' }, { courseId: '11', type: 'assignment', id: '3' }), null, 'an older item with that title');
+  test('a new item counts only if its Save was seen, created since, with the same title', async () => {
+    const h = { courseId: '11', type: 'assignment', id: '12' };
+    a.ok(await inline({ id: 12, name: 'Lab 5', created_at: new Date(t + 30000).toISOString() }).matchSaved({ isNew: true, armedAt: t, title: 'Lab 5', savedAt: t + 25000 }, h));
+    a.eq(await inline({ id: 12, name: 'Other', created_at: new Date(t + 30000).toISOString() }).matchSaved({ isNew: true, armedAt: t, title: 'Lab 5', savedAt: t + 25000 }, h), null);
+    a.eq(await inline({ id: 3, name: 'Lab 5', created_at: new Date(t - 86400000).toISOString() }).matchSaved({ isNew: true, armedAt: t, title: 'Lab 5', savedAt: t + 25000 }, { courseId: '11', type: 'assignment', id: '3' }), null, 'an older item with that title');
   });
 
   test('without an updated time (discussions), the Save must have been seen', async () => {
@@ -1852,5 +1851,247 @@ suite('copy to sections: external links in modules', (test) => {
     html = d.renderLinkMain();
     a.ok(html.includes('No module chosen'));
     a.ok(/data-lk-act="run" disabled/.test(html));
+  });
+});
+
+/* ---------------------------------- the editor's Save, end to end */
+
+suite('copy from the editor: one edit, one copy, one honest result', (test) => {
+  const domshim = require('./domshim');
+  let loaded = false;
+  function load() {
+    if (loaded) return;
+    loaded = true;
+    loadRunner();
+    vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'sections', 'inline-copy.js'), 'utf8'), { filename: 'inline-copy.js' });
+  }
+  const T0 = Date.now();
+  // The item Canvas shows after Save: assignment 5 in course 11.
+  const SRC = Object.assign({}, ASSIGNMENT, { htmlLoaded: true, dates: { due_at: '2026-03-02T13:00:00Z', unlock_at: null, lock_at: null } });
+  const NAMES = { 22: 'Block 6', 33: 'Block 8' };
+
+  function chromeLocal() {
+    const data = {};
+    return {
+      data,
+      get: async (k) => {
+        if (k === null) return JSON.parse(JSON.stringify(data));
+        const out = {};
+        [].concat(k).forEach((x) => { if (x in data) out[x] = JSON.parse(JSON.stringify(data[x])); });
+        return out;
+      },
+      set: async (o) => { Object.keys(o).forEach((k) => { data[k] = JSON.parse(JSON.stringify(o[k])); }); },
+      remove: async (ks) => { [].concat(ks).forEach((k) => delete data[k]); }
+    };
+  }
+  function tabSession() {
+    const m = new Map();
+    return { m, getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) };
+  }
+  function world(opts) {
+    load();
+    domshim.install();
+    const said = [];
+    globalThis.CGP.ui = { toast: (x) => said.push(['ok', x]), error: (x) => said.push(['err', x]) };
+    let api;
+    const o = Object.assign({ onComplete: (dest) => landCopy(api, dest, dest === '22' ? '705' : '805', '<p>Do the lab.</p>') }, opts || {});
+    api = fakeCanvas(o);
+    api.opts = o;
+    api.profileTimeZone = async () => TZ;
+    api.db.items['11:assignment:5'] = { id: '5', name: 'Lab 4', updated_at: new Date(T0 + 60000).toISOString(), created_at: new Date(T0 + 60000).toISOString() };
+    const local = chromeLocal();
+    const jobs = memStore();
+    globalThis.chrome = { storage: { local } };
+    return { api, local, jobs, said };
+  }
+  function tab(w, session, opts) {
+    opts = opts || {};
+    const c = new globalThis.CGP.SectionCopier({ api: w.api, store: w.jobs, origin: 'https://school.instructure.com',
+      sleep: () => Promise.resolve(), pollMs: 1, maxWaitMs: opts.maxWaitMs || 20 * 60 * 1000, now: opts.now });
+    const ctl = { copier: c, currentItem: async () => JSON.parse(JSON.stringify(SRC)), courseName: (d) => NAMES[d] || d };
+    const ic = new globalThis.CGP.InlineSectionCopy({ api: w.api, courseId: '11', settings: { values: { sectionCopy: true } }, controller: ctl,
+      session: session || tabSession(), claimDelayMs: 5, path: opts.path || '/courses/11/assignments/5' });
+    ic.siblings = () => ['22', '33'];
+    return ic;
+  }
+  /* An editor in some tab: its choices as saveIntent keeps them. */
+  async function editor(w, session, sections, extra) {
+    const ic = tab(w, session, { path: '/courses/11/assignments/5/edit' });
+    const rows = {};
+    ['22', '33'].forEach((d) => { rows[d] = { on: !!sections[d], entry: sections[d] || {}, read: {} }; });
+    ic.state = Object.assign({ page: { courseId: '11', type: 'assignment', id: '5' }, sibs: ['22', '33'], rows, existing: {}, itemId: '5',
+      openedAt: T0, savedAt: 0, baseUpdated: T0 - 5000, fields: ['due_at', 'unlock_at', 'lock_at'] }, extra || {});
+    ic.titleOnPage = () => 'Lab 4';
+    ic.savePrefs = () => {};
+    await ic.saveIntent();
+    return ic;
+  }
+  const copies = (w) => w.api.calls.filter((x) => x[0] === 'copy').map((x) => x[1]).sort();
+  after(() => { delete globalThis.chrome; });
+  function after(fn) { process.on('exit', fn); }
+
+  test('REGRESSION: another tab’s save moves the timestamp, but an editor whose Save was never seen copies nothing', async () => {
+    const w = world();
+    const tabA = tabSession();
+    await editor(w, tabA, { 22: {} });                       // open, never saved
+    // Tab B edits and saves the same assignment (no panel there), and both
+    // tabs end up on its page: Canvas's updated_at is now newer than A's base.
+    await tab(w, tabSession()).runSaved();
+    await tab(w, tabA).runSaved();
+    a.deep(copies(w), [], 'no copy from a timestamp alone');
+    a.eq(Object.keys(w.local.data).filter((k) => k.indexOf('cgp.inline.intent.') === 0).length, 1, 'A’s choices still wait for A’s own Save');
+  });
+
+  test('a Save then reaches only the next page of that tab, once', async () => {
+    const w = world();
+    const s = tabSession();
+    const ed = await editor(w, s, { 22: {} });
+    await ed.markSaved();
+    await tab(w, s).runSaved();
+    a.deep(copies(w), ['22']);
+    await tab(w, s).runSaved();                               // a reload
+    a.deep(copies(w), ['22'], 'used once');
+    a.ok(w.said.some((x) => x[0] === 'ok' && /Copied “Lab 4” to 1 class/.test(x[1])), JSON.stringify(w.said));
+  });
+
+  test('Cancel after a Save that did not go through: nothing is copied', async () => {
+    const w = world();
+    const s = tabSession();
+    const ed = await editor(w, s, { 22: {} });
+    await ed.markSaved();          // Canvas refused the form, say
+    await ed.cancel();
+    await tab(w, s).runSaved();
+    a.deep(copies(w), []);
+    a.eq(s.getItem(globalThis.CGP.inlineCopy.SESSION_SAVED), null);
+  });
+
+  test('a Save whose next page is something else forgets that editor’s choices', async () => {
+    const w = world();
+    const s = tabSession();
+    const ed = await editor(w, s, { 22: {} });
+    await ed.markSaved();
+    await tab(w, s, { path: '/courses/11/assignments/77' }).runSaved();   // not its item
+    await tab(w, s).runSaved();
+    a.deep(copies(w), []);
+  });
+
+  test('two new items with the same title in two tabs: each tab copies only its own choices', async () => {
+    const w = world();
+    const sA = tabSession(), sB = tabSession();
+    const edA = await editor(w, sA, { 22: {} }, { page: { courseId: '11', type: 'assignment', id: null }, itemId: null, baseUpdated: null });
+    const edB = await editor(w, sB, { 33: {} }, { page: { courseId: '11', type: 'assignment', id: null }, itemId: null, baseUpdated: null });
+    await edA.markSaved();
+    await edB.markSaved();
+    // B's Save made assignment 5; B's tab opens it. A's tab is elsewhere.
+    await tab(w, sB).runSaved();
+    a.deep(copies(w), ['33'], 'B’s classes only, though A’s title matches too');
+    a.ok(w.local.data[edA.intentKey()], 'A’s choices untouched');
+  });
+
+  test('two tabs on the result page at once (a duplicated tab): one copy per class', async () => {
+    const w = world();
+    const s = tabSession();
+    const ed = await editor(w, s, { 22: {}, 33: {} });
+    await ed.markSaved();
+    const twin = tabSession();
+    s.m.forEach((v, k) => twin.setItem(k, v));
+    await Promise.all([tab(w, s).runSaved(), tab(w, twin).runSaved()]);
+    a.deep(copies(w), ['22', '33']);
+  });
+
+  test('a reload while Canvas copies picks the job back up: no second copy, dates set', async () => {
+    const w = world({ pollsUntilDone: 1000 });
+    const s = tabSession();
+    const ed = await editor(w, s, { 22: { due_at: { date: '2026-03-04', time: '1:45 PM' } } });
+    await ed.markSaved();
+    let now = 0;
+    await tab(w, s, { maxWaitMs: 5, now: () => (now += 10) }).runSaved();
+    a.deep(copies(w), ['22']);
+    a.ok(w.said.some((x) => /Copied to 0 of 1 class · 1 still copying/.test(x[1])), JSON.stringify(w.said));
+    // The page reloads; Canvas finishes meanwhile.
+    w.api.db.pollsUntilDone = 0;
+    const again = tab(w, s);
+    await again.runSaved();
+    a.deep(copies(w), ['22'], 'the same copy, not another');
+    const put = w.api.calls.filter((x) => x[0] === 'putDates' && x[1] === '22');
+    a.ok(put.length && put[put.length - 1][4].due_at === '2026-03-04T18:45:00.000Z', JSON.stringify(put));
+    a.ok(w.said.some((x) => x[0] === 'ok' && /Copied “Lab 4” to 1 class/.test(x[1])), JSON.stringify(w.said));
+  });
+
+  test('mixed outcomes: the headline counts the same rows the banner shows', () => {
+    const O = S().inlineOutcome;
+    const outs = [O({ result: { ok: true, destId: '705', warnings: [], dates: 'ok' }, mode: 'copy' }), O({ result: { pending: true, warnings: [] } })];
+    a.deep(outs.map((o) => o.label), ['Copied', 'Still copying']);
+    a.eq(S().inlineHeadline(outs, 'Lab 4').text, 'Copied to 1 of 2 classes · 1 still copying');
+    const three = [outs[0], O({ error: 'Canvas refused' }), O({ result: { ok: true, destId: '9', warnings: [], dates: 'failed' }, mode: 'update' })];
+    a.deep(three.map((o) => o.label), ['Copied', 'Not copied', 'Updated · due date not set']);
+    a.eq(S().inlineHeadline(three, 'Lab 4').text, 'Copied to 2 of 3 classes · 1 due date not set · 1 not copied');
+    a.eq(S().inlineHeadline([O({ step: 'Canvas is copying' })], 'Lab 4').final, false);
+    three.concat(outs).forEach((o) => a.not(/publish/i.test(o.label), 'never “published”: ' + o.label));
+  });
+
+  test('a copy whose due date failed: the banner offers the date again, and retrying copies nothing', async () => {
+    const w = world({ datesStatus: 500 });
+    const s = tabSession();
+    const ed = await editor(w, s, { 22: { due_at: { date: '2026-03-04', time: '1:45 PM' } }, 33: {} });
+    await ed.markSaved();
+    const ic = tab(w, s);
+    let banner;
+    const make = ic.banner.bind(ic);
+    ic.banner = function () { banner = make.apply(null, arguments); return banner; };
+    await ic.runSaved();
+    a.ok(/^Copied “Lab 4” to 2 classes · 1 due date not set$/.test(banner.el.innerHTML.match(/data-headline>([^<]*)/)[1]), banner.el.innerHTML);
+    a.ok(/data-retry-date="22"/.test(banner.el.innerHTML));
+    delete w.api.opts.datesStatus;
+    await ic.retryDate(banner, SRC, '22');
+    a.eq(S().inlineOutcome(banner.lines['22']).label, 'Copied');
+    a.eq(w.api.db.details['22:assignment:705'].due_at, '2026-03-04T18:45:00.000Z');
+    a.deep(copies(w), ['22', '33'], 'no second copy');
+    a.eq(banner.el.innerHTML.match(/data-headline>([^<]*)/)[1], 'Copied “Lab 4” to 2 classes');
+  });
+
+  test('a destination date that could not be read is kept, and only a typed date changes it', () => {
+    const r = S().resolveInline(['due_at'], { due_at: '2026-03-02T13:00:00Z' }, { due_at: { date: '', time: '', unreadable: true } }, TZ);
+    a.eq(r.iso.due_at, S().KEEP_DATE);
+    a.deep(r.keep, ['due_at']);
+    const typed = S().resolveInline(['due_at'], { due_at: '2026-03-02T13:00:00Z' }, { due_at: { date: '2026-03-05', time: '9:00 AM', unreadable: true } }, TZ);
+    a.eq(typed.iso.due_at, '2026-03-05T14:00:00.000Z');
+    const w = S().datesWrite({ type: 'assignment' }, { due_at: S().KEEP_DATE, unlock_at: null, lock_at: null }, { due_at: '2026-03-09T13:00:00Z', unlock_at: null, lock_at: null });
+    a.ok(w.unchanged, 'its own date is written back as it is: ' + JSON.stringify(w));
+  });
+
+  test('a replacing copy over an unreadable date is not made; a kept copy leaves that date alone', async () => {
+    const w = world();
+    ['22', '33'].forEach((d) => { w.api.db.migrations[d] = [{ id: '1', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '11' } }]; });
+    landCopy(w.api, '22', '705', '<p>Do the lab.</p>');
+    w.api.db.details['22:assignment:705'].due_at = '2026-03-09T13:00:00Z';
+    w.api.dateDetails = () => Promise.reject(Object.assign(new Error('x'), { status: 500 }));
+    const s = tabSession();
+    const ed = await editor(w, s, { 22: { due_at: { date: '', time: '', unreadable: true } } });
+    await ed.markSaved();
+    const ic = tab(w, s);
+    let banner;
+    const make = ic.banner.bind(ic);
+    ic.banner = function () { banner = make.apply(null, arguments); return banner; };
+    await ic.runSaved();
+    a.deep(copies(w), [], 'no copy that would replace an unknown date');
+    a.eq(S().inlineOutcome(banner.lines['22']).state, 'failed');
+    a.ok(/data-retry-copy="22"/.test(banner.el.innerHTML));
+    a.eq(w.api.db.details['22:assignment:705'].due_at, '2026-03-09T13:00:00Z');
+  });
+
+  test('each row says what happens and which due date it gets', () => {
+    const P = S().inlineDatePlan;
+    a.eq(P({ date: '', time: '' }, null).kind, 'inherit');
+    a.eq(P({ date: '2026-03-09', time: '8:00 AM' }, { date: '2026-03-09', time: '8:00 AM' }).kind, 'keep');
+    a.eq(P({ date: '2026-03-10', time: '8:00 AM' }, { date: '2026-03-09', time: '8:00 AM' }).kind, 'set');
+    a.eq(P({ date: '2026-03-10', time: '' }, null).text, 'set to Tue, Mar 10, at this class’s time');
+    a.eq(P({ date: '', time: '', unreadable: true }, { unreadable: true }).kind, 'unreadable');
+    a.eq(P({ date: '', time: '', none: true }, { none: true }).kind, 'none');
+    const R = S().inlineRowSummary;
+    a.eq(R({ on: true, entry: {} }, null, 'due_at').action, 'Gets a new copy');
+    a.eq(R({ on: true, entry: {} }, { destId: '1' }, 'due_at').actionKind, 'update');
+    a.eq(R({ on: true, entry: {} }, { destId: '1', differs: true }, 'due_at').actionKind, 'dates');
+    a.eq(R({ on: false, entry: {} }, null, 'due_at').action, 'Not copied');
   });
 });

@@ -834,19 +834,36 @@ The notice can be hidden (×) until something changes again, or turned off under
 item's page…*. A new item is not counted as missing in a class that already has an item of that kind with
 the same title, nor in a class whose section is cross-listed into this course.
 
-**Post it while you make it.** On Canvas's own page for creating or editing an assignment, quiz,
-discussion or page in a course you have linked, a panel sits just above **Save**: *Also post to your
-other classes*. Each of your other classes has a row with its own **Due** date and time (and, under
-*More dates*, *Available from* and *Until*). Blank date: same as this class. Time only (`1:45 pm`): this
-class's day at that time (or click the time box and pick that class's period from your class schedule).
-Tick the classes you want (each class's tick and usual due time are remembered), then press Canvas's own
-**Save**. When the saved item opens, it is copied to every ticked class, and a banner at the top shows
-each class's progress.
+**Copy it while you make it.** On Canvas's own page for creating or editing an assignment, quiz,
+discussion or page in a course you have linked, a panel sits just above **Save**: *Also copy to your
+linked courses*. (A *linked course* is a separate Canvas course for another class period; *sections* are
+only the sections inside one course.) Each linked course has a row that answers three questions before
+you save: which class, what happens to it there (*Gets a new copy*, *Has it already: updated to this
+version*, or *Edited there: keeps its own version, only its dates change*), and its due date:
 
-- **Cancel copies nothing.** The copy is made only when the item really was saved since the editor opened.
-- **Saving an edit of an item that is already in your other classes updates their versions.** A class
-  whose version was edited there says so on its row before you save (*Edited there: saving keeps its
-  version and changes only its dates.*), with **Pick a version…** beside it.
+- *same as this class* - the boxes are blank;
+- *keeps Mon, Mar 9 at 8:00 AM* - the date that class already has, unchanged;
+- *set to …* - a date or time you typed (time only, like `1:45 pm`: this class's day at that time, or
+  click the time box and pick that class's period);
+- *couldn't read its date there* - Canvas did not say what that class's date is, so it is left exactly
+  as it is unless you type one. A copy that would replace it is not made; the banner offers **Try again**.
+
+Tick the classes you want (each one's tick and usual due time are remembered), then press Canvas's own
+**Save**. When the saved item opens, it is copied to every ticked class. The banner's headline is counted
+from the same rows it shows, for example *Copied to 1 of 2 classes · 1 still copying* above *Block 6 ·
+Copied* and *Block 8 · Still copying*. "Published" is never said for a copy: only Canvas's own record of
+what students can see says that.
+
+- **Only that editor's Save copies.** Pressing Save hands that editor's choices to the next page this tab
+  opens, once. An editor that was never saved, a Cancel, another tab saving the same item, or another
+  editor with the same title copies nothing.
+- **A copy whose due date failed** shows *Copied · due date not set* with **Retry due date**, which sets
+  only the date on the copy that exists: nothing is copied again.
+- **A reload while Canvas is copying** brings the banner back and finishes that copy job (its dates
+  included) instead of starting a second copy. A class whose copy had not started yet offers **Try
+  again**; one whose request may have reached Canvas says to check that class first.
+- **Saving an edit of an item that is already in your linked courses updates their versions.** A class
+  whose version was edited there says so on its row, with **Pick a version…** beside it.
 - **A New Quiz** is copied with Copy to other classes once its questions are in.
 - **Canvas's Add Module dialog** gets the same checklist.
 

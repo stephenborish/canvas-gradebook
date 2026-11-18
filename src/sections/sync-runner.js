@@ -68,6 +68,8 @@
     this.pollMs = opts.pollMs || 1500;
     this.maxWaitMs = opts.maxWaitMs || 20 * 60 * 1000;
     this.tabId = Math.random().toString(36).slice(2);
+    // Jobs this tab is finishing right now: resumePending leaves them alone.
+    this.active = {};
   }
 
   var P = SectionCopier.prototype;
@@ -272,7 +274,8 @@
         result.undo = { origCourse: plan.origCourse, type: plan.type, origId: plan.origId };
         if (!r.ok) return result;
         onStep('Setting dates');
-        return self.applyDates(task.destCourseId, task.item, task.destId, task.dates || {}, result).then(function () {
+        return self.applyDates(task.destCourseId, task.item, task.destId, task.dates || {}, result).then(function (dates) {
+          result.dates = dates;
           var p = task.publish || 'match';
           if (p === 'keep' || task.item.type === 'announcement' || plan.orig.published === undefined) return null;
           var want = p === 'published' ? true : (p === 'unpublished' ? false : !!task.item.published);
@@ -689,6 +692,9 @@
     var all = function (fn) { results.forEach(fn); return results; };
     if (!tasks.length) return this.dropJob(job).then(function () { return results; });
     var dest = tasks[0].destCourseId;
+    var jobId = job.id;
+    self.active[jobId] = true;
+    var release = function (x) { delete self.active[jobId]; return x; };
     each('Canvas is copying');
     return this.waitFor(dest, job.migrationId, opts.maxWaitMs || this.maxWaitMs, job).then(function (mig) {
       var state = S().migrationState(mig);
@@ -775,7 +781,7 @@
         r.pending = true;
         r.error = msg;
       });
-    });
+    }).then(release);
   };
 
   /* Canvas's warnings for one copy of several items, each given to the
@@ -864,7 +870,9 @@
     result.url = sync.itemHtmlPath(task.destCourseId, item.type, destId);
 
     onStep('Setting dates');
-    return this.applyDates(task.destCourseId, item, destId, task.dates || {}, result).then(function () {
+    return this.applyDates(task.destCourseId, item, destId, task.dates || {}, result).then(function (dates) {
+      // How the item's own dates went (a retry sets only those).
+      result.dates = dates;
       // A module's items: their dates, found through the same mapping.
       return (task.children || []).reduce(function (p, child) {
         return p.then(function () {
@@ -881,7 +889,7 @@
     }).then(function () {
       if (item.type === 'module') return self.publishModule(task, destId, result);
       if (!sync.TYPES[item.type].body) return null;
-      onStep('Section note');
+      onStep('Class note');
       return self.applyNoteAndPublish(task, destId, result);
     }).then(function () {
       result.ok = !result.error;
@@ -894,7 +902,7 @@
     var type = sync.TYPES[item.type];
     var label = '“' + (item.title || type.label) + '”';
     var self = this;
-    if (!sync.dateFields(item).length) return Promise.resolve();
+    if (!sync.dateFields(item).length) return Promise.resolve('none');
     var read = type.datesVia === 'details'
       ? this.api.dateDetails(courseId, item.type, destId)
       : this.api.sectionItem(courseId, item.type, destId).then(function (o) {
@@ -909,10 +917,10 @@
         describe(err, 'Canvas refused') + ' Set them in that class.');
       return false;
     }).then(function (details) {
-      if (details === false) return null;
+      if (details === false) return 'failed';
       var w = sync.datesWrite(item, isoDates, details);
-      if (w.skip) { result.warnings.push(label + ': dates left as copied, because ' + w.skip + '.'); return null; }
-      if (w.unchanged) return null;
+      if (w.skip) { result.warnings.push(label + ': dates left as copied, because ' + w.skip + '.'); return 'skipped'; }
+      if (w.unchanged) return 'unchanged';
       var write = w.via === 'details'
         ? self.api.putDateDetails(courseId, item.type, destId, w.body)
         : self.api.updateSectionItem(courseId, item.type, destId, w.body);
@@ -922,24 +930,39 @@
         return back.then(function (stored) {
           var wrong = sync.dateFields(item).filter(function (f) {
             var want = isoDates[f] === undefined ? null : isoDates[f];
+            if (want === sync.KEEP_DATE) return false;
             return stored && stored[f] !== undefined && !sync.sameInstant(stored[f], want);
           });
           if (wrong.length) {
             result.warnings.push(label + ': Canvas did not keep the ' + wrong.map(function (f) { return (sync.DATE_LABELS[f] || f).toLowerCase(); }).join(', ') +
               ' date asked for. Check it in this class.');
+            return 'failed';
           }
+          return 'ok';
         }, function () {
           result.warnings.push(label + ': dates saved, but Canvas could not be asked to confirm them.');
+          return 'failed';
         });
       }, function (err) {
         if (err && err.status === 403) {
           result.warnings.push(label + ': Canvas would not change its dates (' +
             'a closed grading period, or dates locked by a Blueprint). They are as copied.');
-          return null;
+          return 'failed';
         }
         result.warnings.push(label + ': dates not set. ' + describe(err, 'Canvas refused the dates'));
-        return null;
+        return 'failed';
       });
+    });
+  };
+
+  /* Only the item's dates, onto a copy that already exists: nothing is
+   * copied again. Resolves {dates, warnings}; never rejects. */
+  P.retryDates = function (courseId, item, destId, isoDates) {
+    var result = freshResult();
+    return this.applyDates(courseId, item, destId, isoDates || {}, result).then(function (dates) {
+      return { dates: dates, warnings: result.warnings };
+    }, function (err) {
+      return { dates: 'failed', warnings: [describe(err, 'Canvas refused the dates')] };
     });
   };
 
@@ -1801,7 +1824,8 @@
       var jobs = Object.keys(all || {}).filter(function (k) { return k.indexOf(JOB_PREFIX) === 0; }).map(function (k) { return all[k]; });
       var now = self.now();
       var mine = jobs.filter(function (j) {
-        return j && (j.task || (j.tasks && j.tasks.length)) && String(j.origin) === String(self.origin) && !(j.claimedAt && now - j.claimedAt < CLAIM_MS && j.claimedBy !== self.tabId);
+        return j && (j.task || (j.tasks && j.tasks.length)) && String(j.origin) === String(self.origin) && !self.active[j.id] &&
+          !(j.claimedAt && now - j.claimedAt < CLAIM_MS && j.claimedBy !== self.tabId);
       });
       var stale = jobs.filter(function (j) { return j && now - (j.startedAt || 0) > JOB_MAX_AGE_MS; });
       // Cached migration lists and mappings past their time are never read
