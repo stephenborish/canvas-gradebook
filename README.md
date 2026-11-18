@@ -597,8 +597,8 @@ its dialog: *which of your classes are the same course as this one?*), copying w
 with its own dates, **Compare classes** and *Also post to your other classes*, and the **class
 schedule**: what it does in Canvas's Assign To boxes and the two steps to connect a calendar.
 **Connect my calendar** opens the options page's Class Schedule tab with a guided setup on top
-(switch on, find the link with *Where do I find my link?*, paste it and click **Connect calendar**,
-check the next class it shows) that lets the teacher type and click as they go. **Later** skips it.
+(switch on, click **Find my calendar link** — or paste a link and click **Connect calendar** —
+then check the next class it shows) that lets the teacher type and click as they go. **Later** skips it.
 
 - `←` / `→` move between stops, `Esc` ends the tour. **Skip tour** is on the first card, and every
   card has a close button.
@@ -708,15 +708,28 @@ The same Assign To card on quizzes, discussions and modules is covered, and so a
 **Also post to your other classes**, where each class is matched against its own course name.
 
 To set it up, open the **Class Schedule** tab of the options page (the welcome tour links there, and so
-does the class-time panel in Canvas while no calendar is connected). Paste the link under **Calendar
-link** and click **Connect calendar**. That one click checks the link, asks Chrome once to let the
+does the class-time panel in Canvas while no calendar is connected) and click **Find my calendar
+link**. Chrome asks once to let the extension read `calendar.google.com` and `api.veracross.com`
+(where the school's class calendars come from); Gradebook+ then opens Google Calendar's settings in a
+new tab, clicks your **All Classes** calendar under *Settings for other calendars*, scrolls to its
+link and highlights it, reads it, and connects it. It comes back to the options page, closes the
+Google tab and shows your next class. The school's own subscription link (`webcal://…`, in the
+calendar's **URL** box) is used first; if that can't be read, the calendar's public iCal address is
+tried. If your school account isn't the first Google account in Chrome, the next ones are searched
+too. When nothing is found it says why (not signed in; no calendar called *All Classes*, with the
+calendars it did see) and leaves the paste box as it was. The calendar's name is set in
+`CALENDAR_NAMES` at the top of `src/options/calendar-finder.js`.
+
+Or paste a link under **Or paste a calendar link yourself** and click **Connect calendar**. That one click checks the link, asks Chrome once to let the
 extension read that calendar's site (only to fetch this calendar), reads the calendar and saves the
 link; anything else you were editing on the page stays unsaved. It says *Connected* only when all of
 that worked, with the calendar's name, your next class meeting (day, time and time zone), and where to
 use it in Canvas. A calendar with no upcoming timed meetings is connected and says so.
 
-**Where do I find my link?** opens the short version for Google Calendar: **Settings** → select the
-calendar containing your classes → **Integrate calendar**, then copy its **Secret address in iCal
+**Where do I find my link?** has **Show me my link in Google Calendar**, which opens your *All
+Classes* settings with the link highlighted and selected, ready to copy, and the steps by hand:
+**Settings** → *Settings for other calendars* → **All Classes** → copy the **URL** box. For a
+calendar of your own, select it → **Integrate calendar**, then copy its **Secret address in iCal
 format** (private: it works without the calendar being public; keep it to yourself), or the *Public
 address in iCal format* / *Public URL* of a calendar that is already public. A subscription link your
 school gives you (`webcal://` or `.ics`), a share link, a bare calendar ID, or any other `.ics` feed

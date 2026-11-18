@@ -442,9 +442,18 @@
           </div>
 
           <div class="schedule-connect">
-            <label class="setting__label" for="courseCalendarUrl"><strong>Calendar link</strong>
-              <span class="hint">The link to the calendar that holds your class periods. <strong>Connect calendar</strong> checks it,
-                asks Chrome once to let Gradebook+ read that calendar, and saves it &ndash; nothing else on this page is saved with it.</span>
+            <div class="schedule-find" id="calendarFind">
+              <div class="schedule-find__text">
+                <strong>Connect it for me</strong>
+                <span class="hint">Gradebook+ opens your Google Calendar, finds your <strong>All Classes</strong> calendar, reads its
+                  link and connects it. Chrome asks once &ndash; choose <strong>Allow</strong>. Sign in to your school Google account first.</span>
+              </div>
+              <button type="button" id="findCalendar" class="btn btn--primary">Find my calendar link</button>
+            </div>
+
+            <label class="setting__label schedule-connect__paste" for="courseCalendarUrl"><strong>Or paste a calendar link yourself</strong>
+              <span class="hint"><strong>Connect calendar</strong> checks the link, asks Chrome once to let Gradebook+ read that
+                calendar, and saves it &ndash; nothing else on this page is saved with it.</span>
             </label>
             <div class="schedule-connect__row">
               <input id="courseCalendarUrl" type="text" inputmode="url" class="schedule-connect__url" spellcheck="false" autocomplete="off"
@@ -458,24 +467,22 @@
             <details class="schedule-guide" id="calendarGuide">
               <summary>Where do I find my link?</summary>
               <div class="schedule-guide__body">
-                <p class="schedule-guide__lead"><strong>Google Calendar</strong>
-                  <a class="btn btn--secondary btn--sm" href="https://calendar.google.com/calendar/r/settings" target="_blank" rel="noopener noreferrer">Open Google Calendar settings &#8599;</a></p>
+                <p class="schedule-guide__lead"><strong>Google Calendar &ndash; your &ldquo;All Classes&rdquo; calendar</strong>
+                  <button type="button" id="showCalendarLink" class="btn btn--secondary btn--sm">Show me my link in Google Calendar &#8599;</button></p>
+                <p class="schedule-guide__note">That button opens Google Calendar on your <strong>All Classes</strong> settings, scrolls
+                  to its link and highlights it. To do it by hand:</p>
                 <ol class="schedule-steps__list">
-                  <li>Open <strong>Settings</strong> (the gear at the top right, then Settings).</li>
-                  <li>On the left, select the <strong>calendar containing your classes</strong> (under <em>Settings for my calendars</em>
-                    or <em>Settings for other calendars</em>).</li>
-                  <li>Choose <strong>Integrate calendar</strong>, and copy one of its links:</li>
+                  <li>In Google Calendar, open <strong>Settings</strong> (the gear at the top right, then Settings), or
+                    <a href="https://calendar.google.com/calendar/r/settings" target="_blank" rel="noopener noreferrer">open Google Calendar settings</a>.</li>
+                  <li>On the left, under <em>Settings for other calendars</em>, click <strong>All Classes</strong>.</li>
+                  <li>Under <strong>Calendar settings</strong>, copy the whole link in the <strong>URL</strong> box (it starts with
+                    <code>webcal://</code>) and paste it above as it is.</li>
                 </ol>
-                <ul class="schedule-guide__links">
-                  <li><strong>Secret address in iCal format</strong> &ndash; private: it works without the calendar being public.
-                    Treat it like a password and don&rsquo;t share it. Shown only for a calendar you can change.</li>
-                  <li><strong>Public address in iCal format</strong> or <strong>Public URL to this calendar</strong> &ndash; only for a
-                    calendar that is <em>already</em> public.</li>
-                  <li><strong>A subscription link from your school</strong> (it may start with <code>webcal://</code> or end in
-                    <code>.ics</code>) &ndash; paste it as it is. Outlook and Apple calendar links work too.</li>
-                </ul>
-                <p class="schedule-guide__note">A calendar your school shares with you may offer no private link. Don&rsquo;t change its
-                  sharing settings: ask your school for its subscription (iCal) link, or put your class periods in a calendar of your own.</p>
+                <p class="schedule-guide__note"><strong>Classes in a different calendar?</strong> Select that calendar instead, choose
+                  <strong>Integrate calendar</strong>, and copy its <strong>Secret address in iCal format</strong> (private &ndash; treat it
+                  like a password), or its <strong>Public address in iCal format</strong> if the calendar is already public. A
+                  subscription link from your school (<code>webcal://</code> or <code>.ics</code>), Outlook and Apple calendar links work too.
+                  Don&rsquo;t change a school calendar&rsquo;s sharing settings.</p>
               </div>
             </details>
 
@@ -699,6 +706,7 @@
   <script src="../core/snippets.js"></script>
   <script src="../core/course-calendar.js"></script>
   <script src="calendar-connect.js"></script>
+  <script src="calendar-finder.js"></script>
   <script src="save-state.js"></script>
   <script src="../tour/tour-state.js"></script>
   <script src="../tour/tour-content.js"></script>

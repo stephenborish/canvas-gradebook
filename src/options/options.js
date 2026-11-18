@@ -387,12 +387,19 @@
   var calendarResult = null;    // the last Connect's outcome, until the box changes
   var connectedRec = null;      // what Connect read, until storage has it
   var calendarConnector = null;
+  var calendarCheckOnly = false; // connecting a found link: never ask Chrome
+  var calendarFinderInst = null;
 
   function connector() {
     if (calendarConnector) return calendarConnector;
     calendarConnector = CGP.calendarConnect.create({
       locale: navigator.language,
-      request: function (origins) { return chrome.permissions.request({ origins: origins }); },
+      request: function (origins) {
+        // A link found by Find my calendar link is connected after the click
+        // has passed: Chrome can't be asked then, only checked.
+        if (calendarCheckOnly) return chrome.permissions.contains({ origins: origins });
+        return chrome.permissions.request({ origins: origins });
+      },
       probe: function (url) {
         return new Promise(function (resolve) {
           chrome.runtime.sendMessage({ type: CAL_REFRESH, url: url, force: true, probe: true }, function (res) {
@@ -461,7 +468,7 @@
   }
 
   function setCalendarBusy(on) {
-    ['connectCalendar', 'authorizeCalendar', 'disconnectCalendar'].forEach(function (id) {
+    ['connectCalendar', 'authorizeCalendar', 'disconnectCalendar', 'findCalendar', 'showCalendarLink'].forEach(function (id) {
       var b = $(id);
       if (b) b.disabled = !!on;
     });
@@ -524,6 +531,148 @@
     }, function (err) {
       setCalendarBusy(false);
       calendarResult = { kind: 'save-failed', message: 'Couldn’t remove the calendar (' + String((err && err.message) || 'Chrome storage refused it') + '). It is still connected.', actions: [] };
+      renderCalendarStatus();
+    });
+  }
+
+  /* ------------------------------------------- Find my calendar link */
+
+  /* Resolves with the tab once it has finished loading (start() opens or
+   * navigates it). checkNow: it may have finished before we listened. */
+  function untilLoaded(start, checkNow, ms) {
+    return new Promise(function (resolve, reject) {
+      var tabId = null;
+      var done = false;
+      var timer = null;
+      function finish() {
+        if (done || tabId === null) return;
+        done = true;
+        clearTimeout(timer);
+        chrome.tabs.onUpdated.removeListener(onUpd);
+        chrome.tabs.get(tabId).then(resolve, reject);
+      }
+      function onUpd(id, info) { if (id === tabId && info && info.status === 'complete') finish(); }
+      chrome.tabs.onUpdated.addListener(onUpd);
+      Promise.resolve(start()).then(function (tab) {
+        tabId = tab.id;
+        timer = setTimeout(finish, ms || 30000);
+        if (checkNow) chrome.tabs.get(tabId).then(function (t) { if (t && t.status === 'complete') finish(); }, function () { return null; });
+      }, function (e) {
+        done = true;
+        chrome.tabs.onUpdated.removeListener(onUpd);
+        reject(e);
+      });
+    });
+  }
+
+  function calendarFinder() {
+    if (calendarFinderInst) return calendarFinderInst;
+    calendarFinderInst = CGP.calendarFinder.create({
+      request: function (origins) { return chrome.permissions.request({ origins: origins }); },
+      // In front: Google Calendar draws its settings only in a visible tab.
+      openTab: function (url) {
+        return untilLoaded(function () { return chrome.tabs.create({ url: url, active: true }); }, true);
+      },
+      navigate: function (tabId, url) {
+        return untilLoaded(function () { return chrome.tabs.update(tabId, { url: url }); }, false);
+      },
+      waitLoaded: function (tabId) { return chrome.tabs.get(tabId); },
+      run: function (tabId, opts) {
+        function once() {
+          return chrome.scripting.executeScript({ target: { tabId: tabId }, func: CGP.calendarFinder.findInPage, args: [opts] })
+            .then(function (r) { return r && r[0] ? r[0].result : null; });
+        }
+        // Google sometimes moves the page on just after it loads, which
+        // ends the first try: once more, a moment later.
+        return once().catch(function () {
+          return new Promise(function (r) { setTimeout(r, 1500); }).then(once);
+        });
+      },
+      onProgress: function (text) { setCalendarStatus(text, 'busy'); }
+    });
+    return calendarFinderInst;
+  }
+
+  function backToOptions(optionsTab, closeTabId) {
+    var p = Promise.resolve();
+    if (optionsTab) {
+      p = chrome.tabs.update(optionsTab.id, { active: true }).catch(function () { return null; });
+      if (chrome.windows && chrome.windows.update) chrome.windows.update(optionsTab.windowId, { focused: true }).catch(function () { return null; });
+    }
+    if (closeTabId != null) chrome.tabs.remove(closeTabId).catch(function () { return null; });
+    return p;
+  }
+
+  /* Connects the found links in turn, best first, until one reads. Chrome
+   * is only checked here, never asked (the click is long gone). */
+  function connectFound(links, name) {
+    var c = connector();
+    var first = null;
+    function attempt(i) {
+      if (i >= links.length) return Promise.resolve(null);
+      calendarCheckOnly = true;
+      var p = c.connect(links[i], { savedUrl: savedCalUrl });
+      calendarCheckOnly = false;
+      return p.then(function (res) {
+        if (res && res.ok) return res;
+        if (!first) first = res;
+        return attempt(i + 1);
+      });
+    }
+    setCalendarStatus('Found your ' + name + ' calendar. Connecting it…', 'busy');
+    return attempt(0).then(function (res) {
+      if (res) return res;
+      // None read on its own: the best link goes in the box, one click away.
+      $('courseCalendarUrl').value = links[0];
+      var msg = first && first.kind === 'denied'
+        ? 'Found your ' + name + ' calendar link and put it in the box. Click Connect calendar to finish: Chrome asks once more to read that calendar – choose Allow.'
+        : 'Found your ' + name + ' calendar link and put it in the box, but it couldn’t be read yet: ' + ((first && first.message) || '') +
+          ' Click Connect calendar to try again.';
+      return { ok: false, kind: 'found-unconnected', message: msg, actions: [{ id: 'connect', label: 'Connect calendar' }] };
+    });
+  }
+
+  /* mode 'find': find it, connect it, come back here. mode 'show': leave
+   * Google Calendar open on the link, highlighted, to copy by hand. */
+  function findCalendarLink(mode) {
+    var f = calendarFinder();
+    if (f.inflight || connector().inflight) return f.inflight || connector().inflight;
+    // Chrome's question first, while the click still counts.
+    var p = f.find({ mode: mode });
+    var here = chrome.tabs.getCurrent ? chrome.tabs.getCurrent().catch(function () { return null; }) : Promise.resolve(null);
+    calendarResult = null;
+    setCalendarBusy(true);
+    setCalendarStatus('Waiting for Chrome – choose Allow…', 'busy');
+    return Promise.all([p, here]).then(function (r) {
+      var res = r[0] || { status: 'error' };
+      var optionsTab = r[1];
+      var name = '“' + (res.name || CGP.calendarFinder.CALENDAR_NAMES[0]) + '”';
+      var links = res.status === 'found' ? CGP.calendarFinder.rank(res) : [];
+      if (mode === 'show' && links.length) {
+        setCalendarBusy(false);
+        setCalendarStatus('Your ' + name + ' link is highlighted in the Google Calendar tab. Copy it, come back, and paste it in the box above – ' +
+          'or click Find my calendar link to have it connected for you.', 'ok');
+        return res;
+      }
+      if (!links.length) {
+        // Left open when there is something to do there (signing in).
+        var close = mode === 'find' && res.status !== 'signin' ? res.tabId : null;
+        return backToOptions(optionsTab, close).then(function () {
+          setCalendarBusy(false);
+          var msg = res.status === 'found' ? CGP.calendarFinder.explain({ status: 'nolink' }) : CGP.calendarFinder.explain(res);
+          calendarResult = { kind: 'find-failed', message: msg, actions: res.status === 'denied' ? [] : [{ id: 'guide', label: 'Show me where to find my link' }] };
+          renderCalendarStatus();
+          return res;
+        });
+      }
+      return backToOptions(optionsTab, res.tabId).then(function () { return connectFound(links, name); }).then(function (out) {
+        setCalendarBusy(false);
+        showResult(out);
+        return out;
+      });
+    }, function (e) {
+      setCalendarBusy(false);
+      calendarResult = { kind: 'find-failed', message: CGP.calendarFinder.explain({ status: 'error', error: e && e.message }), actions: [] };
       renderCalendarStatus();
     });
   }
@@ -651,6 +800,8 @@
 
   function initScheduleUI() {
     $('connectCalendar').addEventListener('click', function () { connectCalendar(); });
+    $('findCalendar').addEventListener('click', function () { findCalendarLink('find'); });
+    $('showCalendarLink').addEventListener('click', function () { findCalendarLink('show'); });
     $('authorizeCalendar').addEventListener('click', function () { authorizeCalendar(); });
     $('disconnectCalendar').addEventListener('click', function () { disconnectCalendar(); });
     $('skipCalendar').addEventListener('click', function () { skipCalendar(); });
