@@ -126,7 +126,8 @@ suite('Welcome tour: once per install', (test) => {
 
   test('a fresh install, and only a fresh install, marks the tour due', async () => {
     const bg = fs.readFileSync(path.join(ROOT, 'src/background.js'), 'utf8');
-    a.ok(/details\.reason === 'install'[\s\S]{0,200}markInstalled\(\)/.test(bg));
+    a.ok(/onInstalled[\s\S]{0,400}handleInstalled\(details\.reason\)/.test(bg));
+    a.ok(/reason === 'install'\) return this\.markInstalled\(\)/.test(fs.readFileSync(path.join(ROOT, 'src/tour/tour-state.js'), 'utf8')));
     // The whole record, not a merge: nothing from an earlier install survives.
     const store = memoryStorage({ [TourState.KEY]: { pending: false, stop: 'gear', outcome: 'skipped' } });
     await new TourState(store).markInstalled();
@@ -195,3 +196,152 @@ suite('Welcome tour: once per install', (test) => {
   });
 
 });
+
+suite('Welcome tour: the first five minutes', (test) => {
+  const C = () => globalThis.CGP;
+  const stop = (id) => C().tourStops.filter((x) => x.id === id)[0];
+
+  /* A stand-in for the Tour, recording what a choice asks of it. */
+  function fakeTour() {
+    const calls = [];
+    return {
+      calls,
+      choose: (p) => calls.push(['choose', p]),
+      goChapter: (c, p) => calls.push(['goChapter', c, p]),
+      openOptions: (h) => calls.push(['openOptions', h]),
+      end: (how, o) => calls.push(['end', how, o && o.path]),
+      next: () => calls.push(['next'])
+    };
+  }
+
+  test('a fresh install opens with the short introduction, nothing else', async () => {
+    const store = memoryStorage({ [TourState.KEY]: TourState.installed(1) });
+    const v = await new TourState(store).read();
+    a.eq(TourState.pathFor(v, 'gradebook'), 'intro');
+    a.deep(C().tourPaths.intro, ['intro']);
+  });
+
+  test('the introduction shows one feature on a real cell, with its illustration as the fallback', () => {
+    const s = stop('intro');
+    a.eq(s.kind, 'intro');
+    a.ok(/feedback/i.test(s.title));
+    a.eq(typeof s.target, 'function');
+    a.ok(s.fallbackArt && typeof s.art === 'function' && /mk-cmt/.test(s.art()), 'the existing bubble legend');
+    a.eq(s.art, stop('comments').art, 'the same illustration the comments stop uses');
+    a.not(s.tryIt, 'a click on the cell does not fold it away');
+  });
+
+  test('then: start grading, or Grade faster, Copy to another class, Set up my schedule', () => {
+    const s = stop('intro');
+    a.deep(s.choices.map((c) => c.label), ['Grade faster', 'Copy to another class', 'Set up my schedule']);
+    s.choices.forEach((c) => a.ok(c.label.length <= 22 && c.help && c.help.length <= 45, 'short label, help beside it: ' + c.label));
+    const t = fakeTour();
+    s.choices[0].run(t);
+    s.choices[1].run(t);
+    s.choices[2].run(t);
+    a.deep(t.calls, [
+      ['choose', 'grade'],
+      ['goChapter', 'classes', 'copy'],
+      ['openOptions', 'schedule-tour'],
+      ['end', 'completed', 'schedule']
+    ]);
+  });
+
+  test('"Set up my schedule" opens the existing calendar setup screen', () => {
+    // #schedule-tour: the Class Schedule tab with its guided setup on top.
+    const opts = fs.readFileSync(path.join(ROOT, 'src/options/options.js'), 'utf8');
+    a.ok(/guided && wanted === 'schedule'\) startScheduleTour\(\)/.test(opts));
+    a.ok(C().tourScheduleStops.some((x) => x.id === 'opt-paste'));
+  });
+
+  test('each path is short and every stop in it exists', () => {
+    const ids = C().tourStops.map((x) => x.id);
+    Object.keys(C().tourPaths).forEach((p) => {
+      a.ok(TourState.PATHS.includes(p), p + ' is a known path');
+      C().tourPaths[p].forEach((id) => a.ok(ids.includes(id), p + ': ' + id));
+    });
+    a.ok(C().tourPaths.grade.length <= 5, 'Grade faster is a minute, not four');
+    a.eq(stop(C().tourPaths.grade.slice(-1)[0]).kind, 'finale');
+    a.eq(stop('grade-done').secondary.label, 'More tips');
+    a.deep(C().tourPaths.copy.slice(-1), ['done']);
+    a.not(C().tourPaths.copy.includes('schedule'), 'Copy to another class is only about copying');
+  });
+
+  test('the chosen path is remembered, so a reload carries on with it', async () => {
+    const store = memoryStorage({ [TourState.KEY]: TourState.installed() });
+    const s = new TourState(store);
+    await s.setPath('grade');
+    await s.saveStop('statuses');
+    const v = await s.read();
+    a.eq(TourState.pathFor(v, 'gradebook'), 'grade');
+    a.eq(v.stop, 'statuses');
+    await s.setChapter('classes', 'copy');
+    a.eq(TourState.pathFor(await s.read(), 'classes'), 'copy');
+  });
+
+  test('dismissal: closing the introduction is recorded as skipped, for good', async () => {
+    const store = memoryStorage({ [TourState.KEY]: TourState.installed() });
+    const s = new TourState(store);
+    await s.markDone('skipped', 'intro', 'intro');
+    a.eq(await s.isPending(), false);
+    a.eq(store.bag[TourState.KEY].outcome, 'skipped');
+    a.eq(store.bag[TourState.KEY].path, 'intro');
+    a.not(TourState.wantedHere({ pathname: '/courses/5/gradebook', hash: '' }, store.bag[TourState.KEY]));
+  });
+
+  test('replay: the introduction again, whatever path was taken before', async () => {
+    const store = memoryStorage({ [TourState.KEY]: { pending: false, flow: 2, path: 'grade', chapter: 'classes', stop: 'post', outcome: 'completed' } });
+    await new TourState(store).request();
+    const v = store.bag[TourState.KEY];
+    a.eq(v.pending, true);
+    a.eq(v.path, null);
+    a.eq(v.stop, null);
+    a.eq(TourState.pathFor(v, 'gradebook'), 'intro');
+  });
+
+  test('upgrade after the tour was completed: not shown again', async () => {
+    const before = { pending: false, chapter: 'classes', stop: 'done', outcome: 'completed', lastStep: 'done', doneAt: 5, installedAt: 1 };
+    const store = memoryStorage({ [TourState.KEY]: before });
+    const s = new TourState(store);
+    await s.handleInstalled('update');
+    a.deep(store.bag[TourState.KEY], before, 'the record is untouched');
+    a.eq(await s.isPending(), false);
+    a.not(TourState.wantedHere({ pathname: '/courses/5/gradebook', hash: '' }, store.bag[TourState.KEY]));
+  });
+
+  test('upgrade after the tour was skipped, or with a replay already asked for', async () => {
+    const skipped = memoryStorage({ [TourState.KEY]: { pending: false, outcome: 'skipped', lastStep: 'statuses' } });
+    await new TourState(skipped).handleInstalled('update');
+    a.eq(skipped.bag[TourState.KEY].pending, false);
+    const replay = memoryStorage({ [TourState.KEY]: { pending: true, chapter: 'gradebook', stop: null, requestedAt: 3 } });
+    await new TourState(replay).handleInstalled('update');
+    a.eq(replay.bag[TourState.KEY].pending, true);
+    a.eq(TourState.pathFor(replay.bag[TourState.KEY], 'gradebook'), 'intro', 'a replay asked for before the update opens with the introduction');
+  });
+
+  test('upgrade part-way through the old tour: it carries on from the same stop', async () => {
+    const store = memoryStorage({ [TourState.KEY]: { pending: true, chapter: 'gradebook', stop: 'statuses', installedAt: 1 } });
+    await new TourState(store).handleInstalled('update');
+    const v = store.bag[TourState.KEY];
+    a.eq(TourState.pathFor(v, 'gradebook'), 'full');
+    a.ok(C().tourPaths.full.includes('statuses'));
+    const part2 = { pending: true, chapter: 'classes', stop: 'classes-copy' };
+    a.eq(TourState.pathFor(part2, 'classes'), 'classes');
+    a.ok(C().tourPaths.classes.includes('classes-copy'));
+  });
+
+  test('a reinstall starts fresh, with the introduction', async () => {
+    const store = memoryStorage({ [TourState.KEY]: { pending: false, path: 'grade', outcome: 'completed' } });
+    await new TourState(store).handleInstalled('install');
+    const v = store.bag[TourState.KEY];
+    a.eq(v.pending, true); a.eq(v.flow, TourState.FLOW); a.eq(v.path, null); a.eq(v.outcome, undefined);
+  });
+
+  test('the introduction is never saved as a place to resume, and arrows never pick a choice', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src/tour/tour.js'), 'utf8');
+    a.ok(/s\.kind !== 'intro' && s\.kind !== 'finale'\) this\.remember/.test(src));
+    a.ok(/picking = this\.stop\(\) && this\.stop\(\)\.kind === 'intro'/.test(src));
+    a.ok(/markDone\(how, s && s\.id, opts\.path \|\| this\.path\)/.test(src), 'how it ended is recorded');
+  });
+});
+

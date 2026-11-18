@@ -1,11 +1,14 @@
 /* Canvas Gradebook+ - the welcome tour.
  *
- * Shown once per install (tour-state.js), on the teacher's own gradebook: a
- * spotlight moves from one real element to the next - a comment bubble, a
- * submission badge, a student's name, the Total - with a card beside it
- * saying what Gradebook+ does there. Stops marked "try it" let the click
- * through to the page; the tour then folds into a small pill until the
- * teacher asks for the next stop.
+ * Shown once per install (tour-state.js), on the teacher's own gradebook. It
+ * opens with a short introduction: a spotlight on a real cell with feedback
+ * in it, what the bubble means, and a choice - Start grading, or one short
+ * path (Grade faster, Copy to another class, Set up my schedule). A path is a
+ * spotlight moving from one real element to the next - a submission badge,
+ * a grade cell, a column header - with a card beside it saying what
+ * Gradebook+ does there. Stops marked "try it" let the click through to the
+ * page; the tour then folds into a small pill until the teacher asks for the
+ * next stop.
  *
  * Everything is drawn inside one shadow root, so Canvas's stylesheet and ours
  * (gradebook.css) never reach in, and the tour's own styles never leak out.
@@ -55,7 +58,6 @@
     /* the card */
     '.card{position:fixed;left:0;top:0;width:380px;max-width:calc(100vw - 24px);pointer-events:auto;background:rgba(255,255,255,.98);border-radius:18px;box-shadow:0 24px 64px -12px rgba(9,16,29,.45),0 4px 14px rgba(9,16,29,.12),inset 0 0 0 1px rgba(255,255,255,.6);transition:transform .55s var(--ease),opacity .35s ease;opacity:0;outline:none;overflow:visible}',
     '.card.is-on{opacity:1}',
-    '.card--hero{width:520px}',
     '.card--center{width:540px}',
     '.card--finale{width:440px;text-align:center}',
     '.card__in{position:relative;border-radius:18px;overflow:hidden;padding:22px 24px 18px}',
@@ -83,7 +85,6 @@
     '.x:focus-visible{box-shadow:0 0 0 3px rgba(3,116,181,.3)}',
     '.x svg{width:14px;height:14px;stroke:currentColor;stroke-width:2;stroke-linecap:round}',
     'h2{margin:0 0 8px;font-size:19px;line-height:1.28;font-weight:700;letter-spacing:-.01em;color:var(--ink)}',
-    '.card--hero h2{font-size:26px;letter-spacing:-.02em;margin-bottom:10px}',
     '.card--finale h2{font-size:28px}',
     'p{margin:0;font-size:14px;line-height:1.58;color:var(--soft)}',
     'p strong,p b{color:var(--ink)}',
@@ -122,25 +123,24 @@
     '.btn--soft{color:#3a3f9e;background:#eef0ff}',
     '.btn--soft:hover{background:#e3e6ff}',
 
-    /* hero */
-    '.hero-art{position:relative;margin:-22px -24px 18px;padding:26px 24px 22px;background:radial-gradient(120% 140% at 0% 0%,#e3f2fc 0%,rgba(227,242,252,0) 55%),radial-gradient(120% 140% at 100% 0%,#efe8ff 0%,rgba(239,232,255,0) 60%),linear-gradient(#f8fbfd,#fff);border-bottom:1px solid var(--line);overflow:hidden}',
-    '.hero-art::after{content:"";position:absolute;width:320px;height:320px;right:-120px;top:-180px;background:radial-gradient(closest-side,rgba(122,92,255,.18),rgba(122,92,255,0));animation:drift 9s ease-in-out infinite alternate}',
-    '@keyframes drift{to{transform:translate(-60px,40px)}}',
-    '.brand{position:relative;z-index:1;display:flex;align-items:center;gap:10px;margin-bottom:16px}',
+    /* the introduction */
+    '.card--intro{width:400px}',
+    '.foot--intro{margin-top:16px}',
+    '.foot--intro .btn--primary{flex:1 1 auto}',
+    '.choices{display:grid;gap:6px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}',
+    '.choices__q{margin:0 0 2px;font-size:12.5px;font-weight:650;color:var(--muted)}',
+    '.choice{all:unset;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:12px;border:1px solid var(--line);background:#fff;transition:background .2s ease,border-color .2s ease}',
+    '.choice:hover{background:#f6f8ff;border-color:#d9dcfb}',
+    '.choice:focus-visible{box-shadow:0 0 0 3px rgba(3,116,181,.3)}',
+    '.choice .ico{width:30px;height:30px;border-radius:9px}',
+    '.choice .ico svg{width:16px;height:16px}',
+    '.choice__t{flex:1 1 auto;display:flex;flex-direction:column;min-width:0}',
+    '.choice__t b{font-size:14px;color:var(--ink)}',
+    '.choice__t small{font-size:12px;line-height:1.4;color:var(--muted)}',
+    '.choice>svg{flex:0 0 auto;width:15px;height:15px;fill:none;stroke:var(--muted);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}',
     '.brand__mark{width:36px;height:36px;border-radius:11px;background:linear-gradient(135deg,#0374b5,#5b3fd0);display:grid;place-items:center;box-shadow:0 8px 18px -8px rgba(63,70,216,.7)}',
     '.brand__mark svg{width:20px;height:20px;fill:none;stroke:#fff;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}',
-    '.brand__name{font-size:14px;font-weight:700;color:var(--ink)}.brand__name span{color:#5b3fd0}',
-    '.hero-grid{position:relative;z-index:1;background:#fff;border:1px solid #e1e6eb;border-radius:12px;box-shadow:0 10px 30px -18px rgba(9,16,29,.35);overflow:hidden;font-size:12px}',
-    '.hg-row{display:grid;grid-template-columns:1.25fr repeat(4,1fr);border-top:1px solid #eef1f4}',
-    '.hg-head{border-top:0;background:linear-gradient(#fdfefe,#eef2f5);font-weight:650;color:#4a5864;font-size:11px}',
-    '.hg-row>span{padding:9px 8px;text-align:center;border-left:1px solid #eef1f4;position:relative}',
-    '.hg-row>span:first-child{border-left:0}',
-    '.hg-name{text-align:left!important;color:#2d3b45;font-weight:600}',
-    '.hg-cell{font-variant-numeric:tabular-nums;color:#2d3b45;font-weight:500}',
-    '.hg-cell>.mk-cmt,.hg-cell>.mk-m,.hg-cell>.mk-l,.hg-cell>.mk-sub,.hg-cell>.mk-cnt{animation:pop .5s var(--ease) both;animation-delay:calc(.35s + var(--i) * 90ms)}',
     '@keyframes pop{from{opacity:0;transform:scale(.3)}to{opacity:1;transform:none}}',
-    '.meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}',
-    '.meta span{font-size:12px;font-weight:600;color:#4a5864;background:#f1f4f7;border-radius:999px;padding:5px 10px}',
 
     /* cell marks, drawn like the real ones */
     '.mk-cmt{position:absolute;right:3px;bottom:2px;width:13px;height:13px;color:#0a72a8}',
@@ -336,7 +336,7 @@
     '.invite p{font-size:13.5px}',
     '.invite .foot{margin-top:14px;justify-content:flex-end}',
 
-    '@media (max-width:600px){.card,.card--hero,.card--center,.card--finale{width:calc(100vw - 24px)}.tiles{grid-template-columns:1fr}}',
+    '@media (max-width:600px){.card,.card--intro,.card--center,.card--finale{width:calc(100vw - 24px)}.tiles{grid-template-columns:1fr}}',
     '@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001s!important;animation-iteration-count:1!important;animation-delay:0s!important;transition-duration:.001s!important}.confetti{display:none}.fd-typed::before{content:"new tom"}}'
   ].join('\n');
 
@@ -354,10 +354,10 @@
     // On the options page the teacher types into the page, so keys are not held back.
     this.holdKeys = opts.holdKeys !== false;
     this.finishLabel = opts.finishLabel || 'Start grading';
-    var chapter = this.chapter;
-    this.allStops = (opts.stops || CGP.tourStops || []).filter(function (s) {
-      return opts.stops ? true : (s.chapter || 'gradebook') === chapter;
-    });
+    // Which stops, in which order: a path's ids (CGP.tourPaths), or every
+    // stop given (the options page's calendar setup).
+    this.path = opts.stops ? null : (opts.path || (this.chapter === 'classes' ? 'classes' : 'intro'));
+    this.allStops = opts.stops || CGP.tourStops || [];
     this.stops = [];
     this.index = 0;
     this.active = false;
@@ -415,11 +415,34 @@
   /* Which stops this gradebook can show: a stop for a feature that is
    * switched off (no course switcher, no gear) is left out. */
   Tour.prototype.plan = function () {
-    this.stops = this.allStops.filter(function (s) {
+    var all = this.allStops;
+    var ids = this.path && CGP.tourPaths && CGP.tourPaths[this.path];
+    var list = ids
+      ? ids.map(function (id) { return all.filter(function (s) { return s.id === id; })[0]; }).filter(Boolean)
+      : all;
+    this.stops = list.filter(function (s) {
       if (!s.optional || !s.target) return true;
       try { return !!s.target(); } catch (e) { return false; }
     });
   };
+
+  /* A path picked from the introduction (or "More tips"): recorded, so a
+   * reload carries on with it, and started from its first stop. */
+  Tour.prototype.choose = function (path) {
+    if (!CGP.tourPaths || !CGP.tourPaths[path]) return;
+    var prev = this.shown;
+    if (prev && prev.leave) { try { prev.leave(this); } catch (e) { /* ignore */ } }
+    this.shown = null;
+    this.path = path;
+    this.chosen = true;   // under way: never dismissed as untouched
+    if (this.state && this.state.setPath) this.state.setPath(path);
+    this.plan();
+    this.show(0, 1);
+  };
+
+  function countedStops(stops) {
+    return stops.filter(function (x) { return x.kind !== 'intro' && x.kind !== 'finale'; });
+  }
 
   Tour.prototype.start = function (opts) {
     if (this.active) return;
@@ -484,12 +507,13 @@
 
   Tour.prototype.paint = function (s, dir) {
     this.shown = s;
-    if (s.kind !== 'hero' && s.kind !== 'finale') this.remember(s.id);
+    // The introduction is not a place to come back to: a reload shows it again.
+    if (s.kind !== 'intro' && s.kind !== 'finale') this.remember(s.id);
     // Resolve the element(s) to point at.
     var target = null, usedFallback = false;
     if (s.target) { try { target = s.target(); } catch (e) { target = null; } }
     if (!target && s.fallback) { try { target = s.fallback(); usedFallback = !!target; } catch (e) { target = null; } }
-    if (s.kind === 'hero' || s.kind === 'center' || s.kind === 'finale') target = null;
+    if (s.kind === 'center' || s.kind === 'finale') target = null;
     var first = Array.isArray(target) ? target[0] : target;
     if (first && first.scrollIntoView) {
       var r = first.getBoundingClientRect();
@@ -502,13 +526,13 @@
     if (s.onShow && target) { try { s.onShow(this, first); } catch (e) { /* ignore */ } }
 
     var wide = s.kind === 'center' || (!target && s.fallbackArt);
-    this.card.className = 'card' + (s.kind === 'hero' ? ' card--hero' : '') +
+    this.card.className = 'card' + (s.kind === 'intro' ? ' card--intro' : '') +
       (wide ? ' card--center' : '') + (s.kind === 'finale' ? ' card--finale' : '');
     this.cardIn.innerHTML = this.render(s, usedFallback, dir);
     this._lastRect = null;
     this.reflow(true);
     this.card.classList.add('is-on');
-    var focusEl = this.cardIn.querySelector('[data-act="primary"], [data-act="next"]') || this.card;
+    var focusEl = this.cardIn.querySelector('[data-act="primary"], [data-act="next"], [data-act="finish"]') || this.card;
     try { focusEl.focus({ preventScroll: true }); } catch (e) { /* ignore */ }
     this.loop();
     if (s.kind === 'finale') this.celebrate();
@@ -527,20 +551,29 @@
   Tour.prototype.render = function (s, usedFallback, dir) {
     var ICON = CGP.tourIcons || {};
     var i = this.index;
-    var counted = this.stops.filter(function (x) { return x.kind !== 'hero' && x.kind !== 'finale'; });
+    var counted = countedStops(this.stops);
     var pos = counted.indexOf(s) + 1;
     var html = '<div class="body' + (dir < 0 ? ' is-back' : '') + '">';
+    var live = this.targets().length > 0;
 
-    if (s.kind === 'hero') {
-      html += '<div class="hero-art"><div class="brand"><span class="brand__mark">' + MARK + '</span>' +
-        '<span class="brand__name">Canvas Gradebook<span>+</span></span></div>' + (s.art ? s.art() : '') + '</div>';
-      html += '<div class="head"><span class="eyebrow">' + s.eyebrow + '</span>' +
-        '<button class="x" type="button" data-act="skip" aria-label="Skip the tour">' + X_ICON + '</button></div>';
+    if (s.kind === 'intro') {
+      html += '<div class="head">' + (s.icon && ICON[s.icon] ? '<span class="ico">' + ICON[s.icon] + '</span>' : '') +
+        '<span class="eyebrow">' + s.eyebrow + '</span>' +
+        '<button class="x" type="button" data-act="skip" aria-label="Close the introduction">' + X_ICON + '</button></div>';
+      // On a real cell the page speaks for itself; otherwise the legend shows it.
+      if (s.art && !live) html += '<div class="art">' + s.art() + '</div>';
       html += '<h2 id="cgp-tour-title">' + s.title + '</h2><p>' + s.body + '</p>';
-      if (s.meta) html += '<div class="meta">' + s.meta.map(function (m) { return '<span>' + m + '</span>'; }).join('') + '</div>';
-      html += '<div class="foot"><span class="dots"></span>' +
-        '<button class="btn btn--ghost" type="button" data-act="skip">Skip tour</button>' +
-        '<button class="btn btn--primary btn--lg" type="button" data-act="next">Show me around ' + NEXT_ICON + '</button></div>';
+      if (!live && s.fallbackNote) html += '<div class="note">' + s.fallbackNote + '</div>';
+      html += '<div class="foot foot--intro"><button class="btn btn--primary btn--lg" type="button" data-act="finish">' +
+        this.finishLabel + '</button></div>';
+      if (s.choices) {
+        html += '<div class="choices" role="group" aria-labelledby="cgp-tour-q"><p class="choices__q" id="cgp-tour-q">' + s.question + '</p>' +
+          s.choices.map(function (c, k) {
+            return '<button class="choice" type="button" data-act="choice" data-i="' + k + '">' +
+              '<span class="ico">' + (ICON[c.icon] || '') + '</span>' +
+              '<span class="choice__t"><b>' + c.label + '</b><small>' + c.help + '</small></span>' + NEXT_ICON + '</button>';
+          }).join('') + '</div>';
+      }
       return html + '</div>';
     }
 
@@ -549,6 +582,7 @@
       html += '<span class="eyebrow">' + s.eyebrow + '</span>';
       html += '<h2 id="cgp-tour-title" style="margin-top:6px">' + s.title + '</h2><p>' + s.body + '</p>';
       html += '<div class="foot"><button class="btn btn--ghost" type="button" data-act="back">Back</button>' +
+        (s.secondary ? '<button class="btn btn--soft" type="button" data-act="secondary">' + s.secondary.label + '</button>' : '') +
         '<button class="btn btn--primary btn--lg" type="button" data-act="finish">' + this.finishLabel + '</button></div>';
       return html + '</div>';
     }
@@ -559,7 +593,6 @@
       '<button class="x" type="button" data-act="skip" aria-label="End the tour">' + X_ICON + '</button></div>';
     // A stop shown live (the real overview on screen) lets the page speak for
     // itself; its illustration is for when there is nothing live to show.
-    var live = this.targets().length > 0;
     if (s.art && !(s.fallbackArt && live)) html += '<div class="art">' + s.art() + '</div>';
     html += '<h2 id="cgp-tour-title">' + s.title + '</h2>';
     if (s.body) html += '<p>' + s.body + '</p>';
@@ -760,6 +793,10 @@
     else if (act === 'skip') this.end('skipped');
     else if (act === 'finish') this.end('completed');
     else if (act === 'resume') this.next();
+    else if (act === 'choice') {
+      var c = (this.stop().choices || [])[Number(b.getAttribute('data-i'))];
+      if (c && c.run) c.run(this);
+    }
     else if (act === 'primary' || act === 'secondary') {
       var s = this.stop();
       var h = s && s[act];
@@ -773,8 +810,9 @@
   };
 
   /* On to the next chapter, on its own page: recorded first, so it is picked
-   * up there even if this navigation is interrupted. */
-  Tour.prototype.goChapter = function (chapter) {
+   * up there even if this navigation is interrupted. `path`: which of its
+   * paths ('copy' for just copying, 'classes' for all of part 2). */
+  Tour.prototype.goChapter = function (chapter, path) {
     var self = this;
     var courseId = this.courseId || ((/\/courses\/(\d+)/.exec(location.pathname) || [])[1]);
     var prev = this.shown;
@@ -783,7 +821,7 @@
     this.detach();
     this.card.classList.remove('is-on');
     this.spot.classList.remove('is-on');
-    Promise.resolve(this.state.setChapter ? this.state.setChapter(chapter) : null).then(function () {
+    Promise.resolve(this.state.setChapter ? this.state.setChapter(chapter, path) : null).then(function () {
       if (courseId) location.href = '/courses/' + courseId + '#cgp-tour=' + chapter;
       else self.unmount();
     });
@@ -813,8 +851,10 @@
     var inside = e.composedPath && e.composedPath().indexOf(this.host) >= 0;
     var typing = !inside && e.target && e.target.closest && e.target.closest('input, textarea, select, [contenteditable="true"]');
     if (e.type === 'keydown' && !typing) {
-      if (e.key === 'ArrowRight') { this.next(); swallow(e); return; }
-      if (e.key === 'ArrowLeft') { this.back(); swallow(e); return; }
+      // The introduction is a choice, not a step: arrows never pick for the teacher.
+      var picking = this.stop() && this.stop().kind === 'intro';
+      if (e.key === 'ArrowRight') { if (!picking) this.next(); swallow(e); return; }
+      if (e.key === 'ArrowLeft') { if (!picking) this.back(); swallow(e); return; }
       if (e.key === 'Escape') { this.end(this.stop().kind === 'finale' ? 'completed' : 'skipped'); swallow(e); return; }
     }
     if (!this.holdKeys && !inside) return;
@@ -850,7 +890,7 @@
     this.card.classList.remove('is-on');
     this.spot.classList.remove('is-on');
     this.blocks.forEach(function (b) { place(b, 0, 0, 0, 0); });
-    var counted = this.stops.filter(function (x) { return x.kind !== 'hero' && x.kind !== 'finale'; });
+    var counted = countedStops(this.stops);
     var pos = counted.indexOf(this.stop()) + 1;
     this.pill.innerHTML = '<span class="pill__spark">' + ((CGP.tourIcons || {}).sparkle || '') + '</span>' +
       '<span class="pill__txt">Take a look around<small>Stop ' + pos + ' of ' + counted.length + '</small></span>' +
@@ -888,22 +928,28 @@
     window.removeEventListener('resize', this._onResize);
   };
 
-  Tour.prototype.end = function (how) {
+  /* opts.path: how it ended, when that is not the path shown (a choice that
+   * leaves the page). opts.note: what the closing pill says. */
+  Tour.prototype.end = function (how, opts) {
     if (!this.active) return;
+    opts = opts || {};
     var s = this.stop();
     var shown = this.shown;
     this.active = false;
     this.endedHere = true;
     this.detach();
     if (shown && shown.leave) { try { shown.leave(this); } catch (e) { /* ignore */ } }
-    this.state.markDone(how, s && s.id);
+    this.state.markDone(how, s && s.id, opts.path || this.path);
     var self = this;
     this.card.classList.remove('is-on');
     this.spot.classList.remove('is-on');
     this.blocks.forEach(function (b) { place(b, 0, 0, 0, 0); });
-    if (how === 'skipped') {
+    // Closed, or left from the introduction: one line on where to find it again.
+    var fromIntro = s && s.kind === 'intro';
+    if (how === 'skipped' || fromIntro || opts.note) {
+      var head = opts.note || (how === 'skipped' ? 'Tour closed' : 'Happy grading');
       this.pill.innerHTML = '<span class="pill__spark">' + ((CGP.tourIcons || {}).sparkle || '') + '</span>' +
-        '<span class="pill__txt">Tour closed<small>Replay it anytime in Gradebook+ settings</small></span>';
+        '<span class="pill__txt">' + head + '<small>Replay tour in Gradebook+ settings</small></span>';
       this.pill.classList.add('is-on');
       setTimeout(function () { self.pill.classList.remove('is-on'); }, 3800);
       setTimeout(function () { self.unmount(); }, 4400);
@@ -931,9 +977,9 @@
 
   var INVITES = {
     gradebook: {
-      eyebrow: 'Gradebook+ is ready',
-      title: 'Want a quick tour?',
-      body: 'See what\u2019s new on your own gradebook: feedback bubbles, one-key statuses, student overviews and more.',
+      eyebrow: 'Gradebook+ is on',
+      title: 'See it on your gradebook?',
+      body: 'One quick tip on your own grades, then you choose what\u2019s next. Under a minute.',
       go: function (id) { return '/courses/' + id + '/gradebook#cgp-tour'; }
     },
     resume: {
@@ -947,11 +993,18 @@
       title: 'Ready for part 2?',
       body: 'Link your classes, copy work to all of them, and connect your class schedule. About a minute.',
       go: function (id) { return '/courses/' + id + '#cgp-tour=classes'; }
+    },
+    copy: {
+      eyebrow: 'Copy to another class',
+      title: 'Link your classes?',
+      body: 'On your course page: pick the classes that share this course, then copy work to all of them.',
+      go: function (id) { return '/courses/' + id + '#cgp-tour=classes'; }
     }
   };
 
-  function showInvite(state, courseId, chapter, resuming) {
-    var copy = resuming && chapter === 'gradebook' ? INVITES.resume : (INVITES[chapter] || INVITES.gradebook);
+  function showInvite(state, courseId, chapter, resuming, path) {
+    var copy = resuming && chapter === 'gradebook' ? INVITES.resume
+      : (chapter === 'classes' && path === 'copy' ? INVITES.copy : (INVITES[chapter] || INVITES.gradebook));
     var host = el('div', 'cgp-tour-host');
     var root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
     var style = el('style');
@@ -1025,6 +1078,7 @@
     state.read().then(function (v) {
       if (v.pending !== true && !forced) return;
       var chapter = forced || (CGP.TourState.CHAPTERS.indexOf(v.chapter) >= 0 ? v.chapter : 'gradebook');
+      var path = CGP.TourState.pathFor(v, chapter);
       var here = chapter === 'gradebook' ? isGradebook : isHome;
       if (!here) {
         // A little later than the page itself, so it never competes with it.
@@ -1032,7 +1086,7 @@
           whenVisible().then(function () {
             state.isPending().then(function (still) {
               if (!still) return;
-              showInvite(state, courseId, chapter, !!v.stop);
+              showInvite(state, courseId, chapter, !!v.stop, path);
             });
           });
         }, 1800);
@@ -1055,9 +1109,9 @@
           .then(function () { return forced ? true : state.isPending(); })
           .then(function (go) {
             if (!go || CGP.tourInstance) return;
-            var tour = new Tour({ state: state, chapter: chapter, courseId: courseId });
+            var tour = new Tour({ state: state, chapter: chapter, path: path, courseId: courseId });
             tour.start({ startAt: v.stop });
-            tour._unlisten = listenForDone(function () { if (!tour.endedHere && tour.index === 0) tour.dismissQuietly(); });
+            tour._unlisten = listenForDone(function () { if (!tour.endedHere && !tour.chosen && tour.index === 0) tour.dismissQuietly(); });
           });
       });
     });

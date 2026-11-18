@@ -50,6 +50,7 @@ require('./test-section-sync');
 require('./test-quick-copy');
 require('./test-settings-mirror');
 require('./test-tour-state');
+require('./test-options-save');
 require('./test-dossier-loading');
 require('./test-group-builder');
 
