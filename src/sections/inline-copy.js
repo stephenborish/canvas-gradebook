@@ -821,8 +821,24 @@
     var ss = this.session();
     var local = store();
     var announced = false;
-    var record = function () {
+    /* What a reload needs to pick a course back up: where it got to, its
+     * result, and what can be retried. Step text ("Finding the copy",
+     * "Class note") is not part of it, so a step that changes only that
+     * does not rewrite the record; every phase change (above all
+     * "starting": a copy request may be on its way) still does, at once. */
+    var lastSig = null;
+    var signature = function () {
+      return JSON.stringify(dests.map(function (d) {
+        var l = lines[d];
+        return [l.phase, l.result || null, l.error || null, l.unknown || null, l.retry || null, l.iso || null, l.prev || null, l.mode || null];
+      }));
+    };
+    var record = function (always) {
       if (!editId || !local) return;
+      var sig = signature();
+      if (!always && sig === lastSig) return;
+      lastSig = sig;
+      api.writes = (api.writes || 0) + 1;
       var o = {};
       o[self.runKey(editId)] = {
         editId: editId, path: self.pathname(), courseId: self.courseId, at: Date.now(),

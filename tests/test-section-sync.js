@@ -2018,6 +2018,37 @@ suite('copy from the editor: one edit, one copy, one honest result', (test) => {
     a.ok(w.said.some((x) => x[0] === 'ok' && /Copied “Lab 4” to 1 class/.test(x[1])), JSON.stringify(w.said));
   });
 
+  test('the run record is rewritten only when a reload would need it, not on every progress step', async () => {
+    const w = world();
+    const s = tabSession();
+    const ed = await editor(w, s, { 22: {}, 33: {} });
+    await ed.markSaved();
+    const runWrites = [];
+    const realSet = w.local.set;
+    w.local.set = async (o) => {
+      Object.keys(o).filter((k) => k.indexOf('cgp.inline.run.') === 0).forEach((k) => runWrites.push(JSON.parse(JSON.stringify(o[k].lines))));
+      return realSet(o);
+    };
+    const ic = tab(w, s);
+    let banner, steps = 0;
+    const make = ic.banner.bind(ic);
+    ic.banner = function () {
+      banner = make.apply(null, arguments);
+      const set = banner.set;
+      banner.set = (d, patch) => { if (patch.step) steps++; return set(d, patch); };
+      return banner;
+    };
+    await ic.runSaved();
+    a.deep(copies(w), ['22', '33']);
+    a.ok(runWrites.length < steps, runWrites.length + ' writes for ' + steps + ' progress steps');
+    // Every phase a reload depends on was written when it happened.
+    ['22', '33'].forEach((d) => {
+      const phases = runWrites.map((l) => l[d].phase).filter((p, i, all) => p !== all[i - 1]);
+      a.ok(phases.indexOf('starting') >= 0 && phases.indexOf('copying') >= 0 && phases[phases.length - 1] === 'done', d + ': ' + phases.join(' > '));
+    });
+    console.log('       run-record writes: ' + runWrites.length + ' for ' + steps + ' progress steps (2 classes)');
+  });
+
   test('mixed outcomes: the headline counts the same rows the banner shows', () => {
     const O = S().inlineOutcome;
     const outs = [O({ result: { ok: true, destId: '705', warnings: [], dates: 'ok' }, mode: 'copy' }), O({ result: { pending: true, warnings: [] } })];
