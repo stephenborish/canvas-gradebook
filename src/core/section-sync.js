@@ -1395,8 +1395,12 @@
     if (line.error) return { state: 'failed', label: 'Not copied', detail: line.error };
     if (!r) return { state: 'working', label: line.step || 'Waiting', detail: '' };
     if (r.pending) return { state: 'copying', label: 'Still copying', detail: r.error || '' };
-    var exists = !!(r.destId || r.ok);
-    if (!exists) return { state: 'failed', label: 'Not copied', detail: r.error || 'Canvas did not make the copy.' };
+    // A refused update still names the item it was meant for (destId):
+    // only Canvas's success says it changed.
+    if (!r.ok) {
+      var not = line.mode === 'keep' ? 'Dates not updated' : (line.mode === 'update' ? 'Not updated' : 'Not copied');
+      return { state: 'failed', label: not, detail: r.error || 'Canvas did not make the copy.' };
+    }
     var base = line.mode === 'keep' ? 'Dates updated' : (line.mode === 'update' ? 'Updated' : 'Copied');
     if (r.dates === 'failed') return { state: 'date-failed', label: base + ' · due date not set', detail: r.error || '' };
     return { state: line.mode === 'keep' ? 'dates' : (line.mode === 'update' ? 'updated' : 'copied'), label: base, detail: r.error || '' };

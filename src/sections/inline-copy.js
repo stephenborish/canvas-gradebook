@@ -732,8 +732,11 @@
             return null;
           }
           var job = l.phase === 'copying' && jobs.filter(function (j) {
+            // This Canvas's job, from this course: ids repeat across schools.
+            if (!j || String(j.origin) !== String(self.copier.origin)) return false;
             return (j.tasks || (j.task ? [j.task] : [])).some(function (t) {
-              return String(t.destCourseId) === d && String(t.item.id) === String(item0.id) && t.item.type === item0.type;
+              return String(t.srcCourseId) === self.courseId && String(t.destCourseId) === d &&
+                String(t.item.id) === String(item0.id) && t.item.type === item0.type;
             });
           })[0];
           if (job) {

@@ -2030,6 +2030,32 @@ suite('copy from the editor: one edit, one copy, one honest result', (test) => {
     three.concat(outs).forEach((o) => a.not(/publish/i.test(o.label), 'never “published”: ' + o.label));
   });
 
+  test('REVIEW: a refused update is not counted as updated, though it names its item', () => {
+    const O = S().inlineOutcome;
+    const refused = O({ result: { ok: false, destId: '88', error: 'Canvas refused the update', warnings: [] }, mode: 'update' });
+    a.eq(refused.state, 'failed');
+    a.eq(refused.label, 'Not updated');
+    a.eq(S().inlineHeadline([refused, O({ result: { ok: true, destId: '9', warnings: [] }, mode: 'copy' })], 'Lab 4').text, 'Copied to 1 of 2 classes · 1 not copied');
+  });
+
+  test('REVIEW: a reload resumes only this Canvas’s job from this course, never another school’s with the same ids', async () => {
+    const w = world({ pollsUntilDone: 1000 });
+    const s = tabSession();
+    const ed = await editor(w, s, { 22: {} });
+    await ed.markSaved();
+    let now = 0;
+    await tab(w, s, { maxWaitMs: 5, now: () => (now += 10) }).runSaved();
+    // The job now belongs to another Canvas (same course and item ids).
+    const k = Object.keys(w.jobs.mem).find((x) => x.indexOf('cgp.sections.job.') === 0);
+    w.jobs.mem[k].origin = 'https://other.instructure.com';
+    w.api.db.pollsUntilDone = 0;
+    const polls = w.api.calls.filter((x) => x[0] === 'poll').length;
+    await tab(w, s).runSaved();
+    a.eq(w.api.calls.filter((x) => x[0] === 'poll').length, polls, 'the other school’s migration is never polled');
+    a.ok(w.jobs.mem[k], 'its job is left alone');
+    a.deep(copies(w), ['22'], 'and no second copy');
+  });
+
   test('a copy whose due date failed: the banner offers the date again, and retrying copies nothing', async () => {
     const w = world({ datesStatus: 500 });
     const s = tabSession();
