@@ -38,14 +38,27 @@ domain, open the extension's options page (click the toolbar icon), type the dom
 **Self-hosted Canvas domain**, and click **Enable here**.
 
 For development, **Load unpacked** on `chrome://extensions` (Developer mode on) still works on
-a checkout of this repo. To make a ZIP for a Web Store upload after raising `"version"` in
-`manifest.json`:
+a checkout of this repo.
 
-```bash
-cd .. && zip -r canvas-gradebook-plus.zip canvas-gradebook-plus \
-  -x "*/.DS_Store" "*/.git/*" "*/.agents/*" "*/.claude/*" "*/tests/*" \
-     "*/README.md" "*/CHROMEWEBSTORE.md" "*/skills-lock.json"
-```
+### Making the Web Store upload (one button)
+
+1. Raise the version, the same in all three places: `"version"` in `manifest.json`,
+   `CGP.VERSION` in `src/core/util.js`, and `extensionVersion` in `src/options/options.html`.
+   Merge it to `main`.
+2. On GitHub: **Actions** → **Package for Chrome Web Store** → **Run workflow** → **Run workflow**.
+   Tick *Also save as a GitHub Release* to keep the zip permanently under **Releases**.
+3. When the run is green (about two minutes), open it and download
+   **canvas-gradebook-plus-&lt;version&gt;** under **Artifacts**.
+4. Upload that zip as it is (don't unzip it): Developer Dashboard → Canvas Gradebook+ → **Package** →
+   **Upload new package**.
+
+The run first runs the tests and checks that every file the extension loads is in the package and
+the version matches in all three places. If anything is wrong, it stops and says what to fix
+(open the red run, then the step that failed). The zip holds only `manifest.json`, `icons/` and
+`src/`, with `manifest.json` at the top, as the Web Store requires.
+
+To make the same zip on your own computer: `node scripts/package-extension.js`. It writes
+`dist/canvas-gradebook-plus-<version>.zip` (the `dist/` folder is not committed).
 
 The store listing's text, permission justifications and privacy answers are kept in
 `CHROMEWEBSTORE.md`.

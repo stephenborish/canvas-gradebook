@@ -1,0 +1,81 @@
+# Canvas Gradebook+ - "Package for Chrome Web Store" button.
+#
+# GitHub → Actions → Package for Chrome Web Store → Run workflow.
+# Runs the tests, checks every file the extension loads is there and the
+# version matches everywhere, then builds the zip to upload. Download it from
+# the run's page (Artifacts) or, with "Also save as a GitHub Release" ticked,
+# from the repository's Releases.
+name: Package for Chrome Web Store
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Also save as a GitHub Release (keeps the zip permanently, tagged v<version>)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # only used to create the Release when ticked
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run the tests
+        run: node tests/run.js
+
+      - name: Check and build the zip
+        id: pkg
+        run: node scripts/package-extension.js
+
+      # The artifact is the package's files: GitHub zips them on download,
+      # so the downloaded file is the zip to upload, manifest.json at its top.
+      - name: Save the zip (Artifacts, kept 90 days)
+        uses: actions/upload-artifact@v4
+        with:
+          name: canvas-gradebook-plus-${{ steps.pkg.outputs.version }}
+          path: dist/package/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Save as a GitHub Release
+        if: ${{ inputs.release }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.pkg.outputs.version }}
+          ZIP: ${{ steps.pkg.outputs.zip }}
+        run: |
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release upload "v$VERSION" "$ZIP" --clobber
+          else
+            gh release create "v$VERSION" "$ZIP" --target "$GITHUB_SHA" \
+              --title "Canvas Gradebook+ $VERSION" \
+              --notes "Zip for the Chrome Web Store, built from ${GITHUB_SHA::7}. Upload it as is: Developer Dashboard → Canvas Gradebook+ → Package → Upload new package."
+          fi
+
+      - name: Where to find it
+        env:
+          VERSION: ${{ steps.pkg.outputs.version }}
+          FILES: ${{ steps.pkg.outputs.files }}
+          KB: ${{ steps.pkg.outputs.kb }}
+          RELEASE: ${{ inputs.release }}
+        run: |
+          {
+            echo "## Canvas Gradebook+ $VERSION is packaged"
+            echo
+            echo "$FILES files, $KB KB. Tests passed and every file the extension loads is included."
+            echo
+            echo "1. Scroll down to **Artifacts** on this page and click **canvas-gradebook-plus-$VERSION** to download the zip."
+            if [ "$RELEASE" = "true" ]; then
+              echo "   (It is also saved under **Releases** as v$VERSION.)"
+            fi
+            echo "2. Upload that zip as it is (don't unzip it): [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole) → Canvas Gradebook+ → **Package** → **Upload new package**."
+            echo "3. The Web Store only accepts a version higher than the one it has. If it refuses, raise the version in manifest.json, src/core/util.js and src/options/options.html (all three the same) and run this again."
+          } >> "$GITHUB_STEP_SUMMARY"
