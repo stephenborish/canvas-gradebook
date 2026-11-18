@@ -4548,16 +4548,22 @@ html.cgp-on .cgp-sched__today-tag { font-weight: 500; font-size: 11px; color: va
 html.cgp-on .cgp-sched__nav,
 html.cgp-on .cgp-sched__x {
   flex: 0 0 auto;
-  width: 28px; height: 28px;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px;
+  border: 1px solid var(--cgp-hairline);
+  border-radius: 8px;
   background: transparent;
   color: var(--cgp-ink);
-  font-size: 18px; line-height: 1;
+  line-height: 1;
   padding: 0;
 }
+html.cgp-on .cgp-sched__nav svg,
+html.cgp-on .cgp-sched__x svg { width: 20px; height: 20px; display: block; pointer-events: none; }
+html.cgp-on .cgp-sched__x { border-color: transparent; }
 html.cgp-on .cgp-sched__nav:hover,
 html.cgp-on .cgp-sched__x:hover { background: var(--cgp-row-hover); border-color: var(--cgp-hairline); }
+html.cgp-on .cgp-sched__nav:focus-visible,
+html.cgp-on .cgp-sched__x:focus-visible { outline: 2px solid var(--cgp-brand-dark); outline-offset: 1px; }
 html.cgp-on .cgp-sched__x { color: var(--cgp-muted); }
 html.cgp-on .cgp-sched__link {
   border: 0; background: transparent; padding: 2px 4px;

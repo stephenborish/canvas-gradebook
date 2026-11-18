@@ -28,6 +28,7 @@
  *   saveUrl(url)     -> Promise          the one setting, on top of what is stored
  *   now()            -> ms
  *   locale           -> for dates and times
+ *   zone()           -> the teacher's Canvas time zone, or '' (optional)
  * } */
 (function () {
   'use strict';
@@ -71,11 +72,13 @@
   }
 
   /* What a connected calendar shows: its name, the next class meeting with
-   * its day, time and time zone, and where to use it in Canvas. */
-  function describe(rec, nowMs, locale) {
+   * its day, time and time zone, and where to use it in Canvas. The time is
+   * on the teacher's clock (prefZone: their Canvas zone, when known), not
+   * the UTC a feed may store its times in. */
+  function describe(rec, nowMs, locale, prefZone) {
     var cal = C();
     var name = rec && rec.name ? '“' + rec.name + '”' : 'your calendar';
-    var zone = rec && rec.zone && cal.validZone(rec.zone) ? rec.zone : cal.localZone();
+    var zone = cal.displayZone(rec, prefZone);
     var next = rec ? cal.nextMeeting(rec.occ, nowMs, zone) : null;
     if (!next) {
       return {
@@ -95,13 +98,14 @@
 
   function create(deps) {
     var now = deps.now || function () { return Date.now(); };
+    var zone = function () { try { return deps.zone ? deps.zone() || '' : ''; } catch (e) { return ''; } };
     var self = {
       inflight: null,
       pending: null,       // {url, rec}: read, not yet saved (a failed save)
       connect: connect,
       authorize: authorize,
       retrySave: retrySave,
-      describe: function (rec) { return describe(rec, now(), deps.locale); }
+      describe: function (rec) { return describe(rec, now(), deps.locale, zone()); }
     };
 
     function done(kind, extra) { return Object.assign({ ok: kind === 'connected' || kind === 'connected-empty', kind: kind }, extra || {}); }
@@ -128,7 +132,7 @@
       return step.then(function () {
         self.pending = null;
         return Promise.resolve(deps.adopt(rec)).catch(function () { return null; }).then(function () {
-          var view = describe(rec, now(), deps.locale);
+          var view = describe(rec, now(), deps.locale, zone());
           var r = done(view.empty ? 'connected-empty' : 'connected', { url: url, rec: rec, view: view, message: view.text, actions: [] });
           diag(r.kind);
           return r;

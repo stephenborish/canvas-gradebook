@@ -504,12 +504,13 @@
             <div class="schedule-preview__bar">
               <h2 class="panel__group" style="margin: 0; border: none; padding: 0;">Preview</h2>
               <div class="schedule-preview__nav">
-                <button type="button" class="btn btn--quiet btn--sm" id="schedulePrev" aria-label="Previous day">&lsaquo;</button>
+                <button type="button" class="schedule-preview__arrow" id="schedulePrev" aria-label="Previous day" title="Previous day"><svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.5 4.5 7 10l5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
                 <span id="scheduleDay" class="schedule-preview__day"></span>
-                <button type="button" class="btn btn--quiet btn--sm" id="scheduleNext" aria-label="Next day">&rsaquo;</button>
+                <button type="button" class="schedule-preview__arrow" id="scheduleNext" aria-label="Next day" title="Next day"><svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M7.5 4.5 13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
               </div>
             </div>
             <div id="scheduleDayList" class="schedule-preview__list"></div>
+            <p id="scheduleZone" class="schedule-preview__zone"></p>
           </div>
 
           <div class="snippets-instructions">

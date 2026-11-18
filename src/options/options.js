@@ -365,6 +365,10 @@
   var CAL_ADOPT = 'cgp.calendar.adopt';
   var scheduleDay = null;
   var lastCalendar = null;
+  // The teacher's Canvas time zone, remembered by the schedule picker on a
+  // Canvas page ('' until then): the preview shows classes on that clock.
+  var ZONE_KEY = 'cgp.canvasZone';
+  var canvasZone = '';
 
   function Cal() { return CGP.courseCalendar; }
 
@@ -395,6 +399,7 @@
     if (calendarConnector) return calendarConnector;
     calendarConnector = CGP.calendarConnect.create({
       locale: navigator.language,
+      zone: function () { return canvasZone; },
       request: function (origins) {
         // A link found by Find my calendar link is connected after the click
         // has passed: Chrome can't be asked then, only checked.
@@ -777,9 +782,10 @@
     var rec = lastCalendar;
     if (!rec || !Array.isArray(rec.occ) || !rec.occ.length) { box.hidden = true; return; }
     box.hidden = false;
-    // The calendar's own zone - the one the teacher thinks in - else this
-    // computer's (Canvas's own zone is only known on a Canvas page).
-    var tz = (rec.zone && Cal().validZone(rec.zone)) ? rec.zone : Cal().localZone();
+    // The times the teacher's own calendar (and Canvas) shows: their Canvas
+    // zone once a Canvas page has told us, else the zone the classes were
+    // written in - never the UTC a feed like Veracross stores times in.
+    var tz = Cal().displayZone(rec, canvasZone);
     var today = Cal().today(tz);
     if (!scheduleDay) {
       scheduleDay = Cal().dayView(rec.occ, today, tz).classes.length ? today : (Cal().nextClassDay(rec.occ, today, tz, 1, 60) || today);
@@ -799,6 +805,11 @@
         (c.loc ? ' \u00b7 ' + escapeHtml(c.loc) : '') + '</span></div>';
     }).join('') : '<p class="schedule-preview__empty">No classes on this day.</p>';
     $('scheduleDayList').innerHTML = html;
+    var zoneEl = $('scheduleZone');
+    if (zoneEl) {
+      zoneEl.textContent = tz ? 'Times shown in ' + Cal().zoneName(tz) + ' (' + tz.replace(/_/g, ' ') + ')' +
+        (canvasZone ? ', your Canvas time zone.' : '. Once you open an assignment in Canvas, this uses your Canvas time zone.') : '';
+    }
   }
 
   function initScheduleUI() {
@@ -821,9 +832,16 @@
     $('scheduleNext').addEventListener('click', function () { scheduleDay = Cal().addDays(scheduleDay, 1); renderSchedulePreview(); });
     if (chrome.storage && chrome.storage.onChanged) {
       chrome.storage.onChanged.addListener(function (changes, area) {
-        if (area === 'local' && changes[CAL_KEY]) renderCalendarStatus();
+        if (area === 'local' && changes[ZONE_KEY]) canvasZone = String(changes[ZONE_KEY].newValue || '');
+        if (area === 'local' && (changes[CAL_KEY] || changes[ZONE_KEY])) renderCalendarStatus();
       });
     }
+    try {
+      chrome.storage.local.get(ZONE_KEY).then(function (got) {
+        var z = got && got[ZONE_KEY];
+        if (z && Cal().validZone(z) && z !== canvasZone) { canvasZone = z; renderCalendarStatus(); }
+      }, function () { /* this computer's zone */ });
+    } catch (e) { /* this computer's zone */ }
   }
 
   /* --------------------------------------------------------------- form io */
