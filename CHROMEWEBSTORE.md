@@ -21,7 +21,7 @@ which the store shows as the summary)
 Grade faster in Canvas: see your feedback at a glance, grade like a spreadsheet, post grades in one click, pick due times by class.
 ```
 
-**Detailed Description** (10,380/16,000 characters)
+**Detailed Description** (11,021/16,000 characters)
 
 ```
 Canvas Gradebook+ makes the Canvas gradebook and course pages faster and clearer for teachers, right where you already work: no second gradebook, no dashboard, no extra sign-in.
@@ -58,7 +58,7 @@ UNDERSTAND EACH STUDENT
 • Copy the roster: student emails ready for Gmail or Outlook, or a table of names in the layout you choose.
 
 PLAN AND ASSIGN ACROSS YOUR CLASSES
-• Class schedule: paste your Google Calendar link (or any calendar link ending in .ics) and click Connect calendar. A short guide shows where to find the link, and a private link works without making your calendar public. Every Due, Available from and Until box in Canvas then shows that day's classes beside it. Click a class to use its start time, or its end time with one more click. Step to another day and the date goes in too. Classes that match the course you are editing are marked "This course".
+• Class schedule: click Find my calendar link and Gradebook+ opens your Google Calendar settings, finds your school's "All Classes" calendar, reads its link and connects it for you, then brings you back. Have a different calendar? "Show me my link in Google Calendar" scrolls to the link and highlights it ready to copy, or paste any calendar link (Google, Outlook, Apple, or a school subscription link starting with webcal:// or ending in .ics) and click Connect calendar. A private link works without making your calendar public. Every Due, Available from and Until box in Canvas then shows that day's classes beside it. Click a class to use its start time, or its end time with one more click. Step to another day and the date goes in too. Classes that match the course you are editing are marked "This course".
 • Copy to other classes: teach the same course to several sections set up as separate Canvas courses? Build an assignment, quiz, discussion, announcement, page or module once and post it to all of them, each with its own due date. Each class shows plainly whether the item is Not there yet, the Same, or Different, and the finish screen lists the due date each class got, with Undo. A module's external links can be copied on their own too.
 • Works both ways: when two classes have different versions of an item, see them side by side with the changed words highlighted, click the one both classes should have, and the other is updated in place, never duplicated. Dates and student work stay as they are.
 • Compare classes: one grid shows every item in this class against your other classes, so you can see what is missing or different, and fix it in bulk.
@@ -77,7 +77,7 @@ Your settings, comment snippets and class choices sync to every computer where C
 HOW TO USE
 1. Open a course gradebook in Canvas. The improvements are already on.
 2. Click the extension's toolbar icon to open its settings and turn features on or off.
-3. Optional: on the Class Schedule tab, paste your calendar link (in Google Calendar: Settings, the calendar with your classes, Integrate calendar, then "Secret address in iCal format") and click Connect calendar.
+3. Optional: on the Class Schedule tab, click Find my calendar link and choose Allow when Chrome asks. Gradebook+ finds your "All Classes" calendar in Google Calendar and connects it. Or paste a calendar link yourself and click Connect calendar.
 4. Optional: open an assignment and choose "Copy to other classes" to link the sections you teach.
 5. Optional: on a course's People page, click Make groups to build a group set.
 
@@ -92,11 +92,11 @@ PERMISSIONS
 • instructuremedia.com (Canvas Studio): needed to show which Studio videos each student watched.
 • Storage: saves your settings and lets them sync to your other computers.
 • Alarms: checks regularly for a new version of the extension, so a gradebook tab kept open all day still gets updates.
-• Optional, only if you ask for it: access to your school's own Canvas address (for self-hosted Canvas), and to your calendar's site (such as calendar.google.com) when you connect a class schedule. Chrome asks you first each time.
+• Optional, only if you ask for it: access to your school's own Canvas address (for self-hosted Canvas), and to your calendar's site (such as calendar.google.com) when you connect a class schedule. Find my calendar link asks once for calendar.google.com, to read your class calendar's link from your own Google Calendar settings, and api.veracross.com, where many schools' class calendars come from. Chrome asks you first each time.
 
 Canvas Gradebook+ is an independent tool for teachers. It is not affiliated with or endorsed by Instructure, the maker of Canvas.
 
-Version 1.32.0: Make groups, to build a whole group set from the People page in one step and copy it to your other classes; Copy to other classes rebuilt to be simpler and work both ways, with the two versions side by side and the differences highlighted; one-click Connect calendar with a guide to finding your link; grade saves and posts confirmed from Canvas's own record; and a shorter welcome tour that lets you pick what to see first. Version 1.31.0: faster loading (the gradebook reads your course while Canvas is still drawing it), a student overview that opens quicker and keeps working on a slow connection, copying a module's external links to your other classes on their own, fewer false "not in your other classes yet" notices, and new versions picked up as soon as Chrome allows, with a Reload notice on tabs already open. Version 1.30.0: a guided welcome tour, shown once after you install, that walks you through every feature live on your own gradebook and student overviews, then shows you how to link your class periods and connect your class schedule (skip it any time, replay it from settings). Version 1.29.0: a redesigned SpeedGrader sidebar, with Submission, Assessment and Comments as clear cards, and a comment box with distinct attach, video and microphone tools. Free Draw and comment annotations now start in red reliably. Also new in 1.28: Class Schedule, to pick due times from your Google Calendar's class periods right in Canvas's Assign To boxes.
+Version 1.32.0: Make groups, to build a whole group set from the People page in one step and copy it to your other classes; Copy to other classes rebuilt to be simpler and work both ways, with the two versions side by side and the differences highlighted; Find my calendar link, which finds your "All Classes" calendar in Google Calendar and connects it in one click, plus a guide that highlights the link for you; grade saves and posts confirmed from Canvas's own record; and a shorter welcome tour that lets you pick what to see first. Version 1.31.0: faster loading (the gradebook reads your course while Canvas is still drawing it), a student overview that opens quicker and keeps working on a slow connection, copying a module's external links to your other classes on their own, fewer false "not in your other classes yet" notices, and new versions picked up as soon as Chrome allows, with a Reload notice on tabs already open. Version 1.30.0: a guided welcome tour, shown once after you install, that walks you through every feature live on your own gradebook and student overviews, then shows you how to link your class periods and connect your class schedule (skip it any time, replay it from settings). Version 1.29.0: a redesigned SpeedGrader sidebar, with Submission, Assessment and Comments as clear cards, and a comment box with distinct attach, video and microphone tools. Free Draw and comment annotations now start in red reliably. Also new in 1.28: Class Schedule, to pick due times from your Google Calendar's class periods right in Canvas's Assign To boxes.
 ```
 
 **Category:** Education (in the Dashboard: Productivity → Education)
