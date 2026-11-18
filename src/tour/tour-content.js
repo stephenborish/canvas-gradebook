@@ -610,13 +610,13 @@
       eyebrow: 'Part 2 · Connect your calendar',
       title: 'Connect it in two steps',
       steps: [
-        { n: '1', t: 'Copy your calendar link', d: 'In Google Calendar, open <b>Settings</b>, click your class calendar, choose <b>Integrate calendar</b> and copy <b>Public URL to this calendar</b>.' },
-        { n: '2', t: 'Paste it into Gradebook+', d: 'In <b>Class Schedule</b> settings, paste it, click <b>Connect</b>, check the preview, then click <b>Save changes</b>.' }
+        { n: '1', t: 'Copy your calendar link', d: 'In Google Calendar: <b>Settings</b> → select the calendar containing your classes → <b>Integrate calendar</b>, and copy its <b>Secret address in iCal format</b> (or the subscription link your school gives you).' },
+        { n: '2', t: 'Paste it and click Connect calendar', d: 'In <b>Class Schedule</b> settings, paste it once and click <b>Connect calendar</b>. It checks the link, saves it, and shows your next class.' }
       ],
-      body: 'Outlook, Apple and other <code>.ics</code> links work too. We’ll guide you on the settings page.',
+      body: 'Outlook, Apple and other <code>.ics</code> links work too. Not now? Skip it and keep typing dates in Canvas as usual.',
       art: function () {
-        return '<div class="gcal" aria-hidden="true"><span class="gcal-lab">Public URL to this calendar</span>' +
-          '<span class="gcal-url">https://calendar.google.com/calendar/embed?src=c_8f2…</span><span class="gcal-copy">Copied!</span></div>';
+        return '<div class="gcal" aria-hidden="true"><span class="gcal-lab">Secret address in iCal format</span>' +
+          '<span class="gcal-url">https://calendar.google.com/calendar/ical/…/private-…/basic.ics</span><span class="gcal-copy">Copied!</span></div>';
       },
       primary: { label: 'Connect my calendar', run: function (tour) { tour.openOptions('schedule-tour'); tour.next(); } },
       secondary: { label: 'Later', run: function (tour) { tour.next(); } }
@@ -648,28 +648,28 @@
       id: 'opt-copy',
       icon: 'link',
       eyebrow: 'Connect your calendar',
-      title: 'Copy your link from Google Calendar',
-      body: 'Click <b>Open Google Calendar settings</b>, choose your class calendar, open <b>Integrate calendar</b> and copy <b>Public URL to this calendar</b>. Then come back to this tab.',
-      target: function () { return document.querySelector('.schedule-steps'); },
+      title: 'Find your calendar link',
+      body: 'In Google Calendar: <b>Settings</b> → select the calendar containing your classes → <b>Integrate calendar</b>. Copy its <b>Secret address in iCal format</b>, or paste a subscription link from your school. Then come back to this tab.',
+      bullets: ['A school calendar with no private link? Don’t change its sharing: ask your school for its subscription link'],
+      target: function () { var g = document.getElementById('calendarGuide'); if (g) g.open = true; return g; },
       tryIt: true, padding: 8
     },
     {
       id: 'opt-paste',
       icon: 'check',
       eyebrow: 'Connect your calendar',
-      title: 'Paste the link and click Connect',
-      body: 'Chrome asks once for permission to read calendar.google.com, only for this calendar. A preview then shows your classes.',
-      bullets: ['Not a public calendar? Paste its <b>Secret address in iCal format</b> instead'],
-      target: function () { return document.querySelector('.schedule-connect'); },
+      title: 'Paste it and click Connect calendar',
+      body: 'Paste the link under <b>Calendar link</b> and click <b>Connect calendar</b>. Chrome asks once to let Gradebook+ read that calendar; choose <b>Allow</b>. The link is checked and saved in the same click.',
+      target: function () { return document.querySelector('.schedule-connect__row'); },
       tryIt: true, padding: 8
     },
     {
-      id: 'opt-save',
+      id: 'opt-check',
       icon: 'sparkle',
       eyebrow: 'Connect your calendar',
-      title: 'Save your changes',
-      body: 'When the preview shows your classes, click <b>Save changes</b>. Then click any Due box in Canvas to see them.',
-      target: function () { return document.getElementById('save'); },
+      title: 'Check your next class',
+      body: 'When it says <b>Connected</b>, it names your calendar and your next class meeting, with its day, time and time zone. Nothing else needs saving.',
+      target: function () { var st = document.getElementById('calendarStatus'); return st && st.textContent ? st : document.querySelector('.schedule-connect'); },
       tryIt: true, padding: 6
     },
     {
@@ -677,7 +677,7 @@
       kind: 'finale',
       eyebrow: 'Connect your calendar',
       title: 'That’s it',
-      body: 'Once it’s saved, click any Due, Available from or Until box in Canvas, then click a class. Your calendar refreshes every six hours, or click <b>Refresh</b> in the panel.'
+      body: 'In Canvas, click any Due, Available from or Until date under <b>Assign To</b>, then click a class to put in its time. Your calendar refreshes every six hours, or click <b>Refresh</b> in the panel.'
     }
   ];
 

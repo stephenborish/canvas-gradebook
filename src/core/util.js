@@ -196,6 +196,10 @@
     courseCalendarUrl: '',
     // Which of a class's times a click on it puts in: 'start' or 'end'.
     courseScheduleTime: 'start',
+    // "Not now" on the calendar setup (options page, or the Assign To
+    // picker's first-time card): Canvas's date boxes are left as they are
+    // until a calendar is connected.
+    courseScheduleSetupDismissed: false,
     snippets: [
       { trigger: 'evidence', text: 'Good claim - now tie it back to the evidence in your data so the reasoning is complete.' },
       { trigger: 'units', text: 'Check your units and significant figures; the value is right but the label is missing.' },

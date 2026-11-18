@@ -617,6 +617,43 @@
     return null;
   }
 
+  /** The first timed meeting that starts after nowMs, shown on tz's wall
+   * clock (the calendar's own zone, else this computer's), or null:
+   * {title, date, start, end, zone, loc, at}. All-day events ("A Day") are
+   * not class meetings. */
+  function nextMeeting(occ, nowMs, tz) {
+    var list = Array.isArray(occ) ? occ : [];
+    var zone = validZone(tz) ? tz : localZone();
+    var best = null, bestAt = Infinity;
+    for (var i = 0; i < list.length; i++) {
+      var o = list[i];
+      if (!o || o.a || !o.s) continue;
+      var at = wallToMs(o.d, o.s, validZone(o.z) ? o.z : zone);
+      if (!(at > nowMs) || at >= bestAt) continue;
+      best = o; bestAt = at;
+    }
+    if (!best) return null;
+    var l = localize(best, zone);
+    return { title: best.t || '(untitled)', date: l.date, start: l.start, end: l.end, zone: zone, loc: best.l || '', at: bestAt };
+  }
+
+  /** A zone's short name at an instant ("EST", "GMT+1"), else the zone id. */
+  function zoneName(tz, ms) {
+    try {
+      var parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' }).formatToParts(new Date(ms || Date.now()));
+      var p = parts.filter(function (x) { return x.type === 'timeZoneName'; })[0];
+      return p ? p.value : tz;
+    } catch (e) { return tz || ''; }
+  }
+
+  /** Text with the feed address (and any Google secret token) taken out,
+   * for anything shown or logged: a private feed address is a password. */
+  function scrub(text, url) {
+    var t = String(text == null ? '' : text);
+    if (url) t = t.split(String(url)).join('your calendar link');
+    return t.replace(/https?:\/\/\S*private-[^\s/]+\S*/gi, 'your calendar link').replace(/\/private-[^/\s]+\//g, '/private-…/');
+  }
+
   /* --------------------------------------------------- matching courses */
 
   var STOP = { the: 1, and: 1, of: 1, a: 1, an: 1, to: 1, in: 1, for: 1, with: 1, period: 1, per: 1, section: 1, sec: 1, class: 1, block: 1, course: 1 };
@@ -734,6 +771,9 @@
     localize: localize,
     dayView: dayView,
     nextClassDay: nextClassDay,
+    nextMeeting: nextMeeting,
+    zoneName: zoneName,
+    scrub: scrub,
     matchScore: matchScore,
     matches: matches,
     formatClock: formatClock,

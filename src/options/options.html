@@ -435,48 +435,51 @@
           <div class="setting">
             <label class="setting__label" for="courseScheduleEnabled">Show my class schedule beside Canvas&rsquo;s date and time boxes
               <span class="hint">On the Due, Available from and Until boxes when you create or edit an assignment (and the
-                same Assign To card on quizzes, discussions and modules), and in &ldquo;Also post to your other classes&rdquo;.</span>
+                same Assign To card on quizzes, discussions and modules), and in &ldquo;Also copy to your linked courses&rdquo;.</span>
             </label>
             <input id="courseScheduleEnabled" type="checkbox" class="switch">
           </div>
 
-          <div class="schedule-steps">
-            <div class="schedule-steps__head">
-              <h2 class="schedule-steps__title">Step 1 &middot; Copy your class calendar&rsquo;s link from Google Calendar</h2>
-              <a class="btn btn--secondary btn--sm" href="https://calendar.google.com/calendar/r/settings" target="_blank" rel="noopener noreferrer">Open Google Calendar settings &#8599;</a>
-            </div>
-            <ol class="schedule-steps__list">
-              <li>In Google Calendar, click the <strong>gear</strong> at the top right, then <strong>Settings</strong>
-                (or use the button above).</li>
-              <li>In the list on the left, click the <strong>name of the calendar that holds your classes</strong>.
-                A calendar your school shares with you (for example <em>All Classes</em>) is under
-                <strong>Settings for other calendars</strong>; one you made yourself is under <strong>Settings for my calendars</strong>.</li>
-              <li>Under that calendar&rsquo;s name, click <strong>Integrate calendar</strong>.</li>
-              <li>Find the box labelled <strong>Public URL to this calendar</strong>. Click in it, select everything in it
-                (<kbd>Ctrl</kbd>+<kbd>A</kbd>, or <kbd>&#8984;</kbd>+<kbd>A</kbd> on a Mac) and copy it
-                (<kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>&#8984;</kbd>+<kbd>C</kbd>).</li>
-            </ol>
-            <div class="gcal-example" aria-hidden="true">
-              <span class="gcal-example__caption">It looks like this in Google Calendar:</span>
-              <div class="gcal-example__field">
-                <span class="gcal-example__label">Public URL to this calendar</span>
-                <span class="gcal-example__value">https://calendar.google.com/calendar/embed?src=&hellip;</span>
-              </div>
-            </div>
-          </div>
-
           <div class="schedule-connect">
-            <label class="setting__label" for="courseCalendarUrl"><strong>Step 2 &middot; Paste it here and click Connect</strong>
-              <span class="hint">Chrome then asks once to let Gradebook+ read calendar.google.com &ndash; only to fetch this calendar.
-                Check the preview below shows your classes, then click <strong>Save changes</strong>.</span>
+            <label class="setting__label" for="courseCalendarUrl"><strong>Calendar link</strong>
+              <span class="hint">The link to the calendar that holds your class periods. <strong>Connect calendar</strong> checks it,
+                asks Chrome once to let Gradebook+ read that calendar, and saves it &ndash; nothing else on this page is saved with it.</span>
             </label>
             <div class="schedule-connect__row">
               <input id="courseCalendarUrl" type="text" inputmode="url" class="schedule-connect__url" spellcheck="false" autocomplete="off"
-                placeholder="https://calendar.google.com/calendar/embed?src=&hellip;" aria-describedby="calendarStatus">
-              <button type="button" id="connectCalendar" class="btn btn--secondary">Connect</button>
-              <button type="button" id="disconnectCalendar" class="btn btn--quiet">Remove</button>
+                placeholder="Paste your calendar link" aria-describedby="calendarStatus">
+              <button type="button" id="connectCalendar" class="btn btn--primary">Connect calendar</button>
+              <button type="button" id="authorizeCalendar" class="btn btn--primary" hidden>Allow calendar access on this computer</button>
+              <button type="button" id="disconnectCalendar" class="btn btn--quiet" hidden>Remove</button>
             </div>
-            <p id="calendarStatus" class="schedule-status" role="status"></p>
+            <div id="calendarStatus" class="schedule-status" role="status" aria-live="polite"></div>
+
+            <details class="schedule-guide" id="calendarGuide">
+              <summary>Where do I find my link?</summary>
+              <div class="schedule-guide__body">
+                <p class="schedule-guide__lead"><strong>Google Calendar</strong>
+                  <a class="btn btn--secondary btn--sm" href="https://calendar.google.com/calendar/r/settings" target="_blank" rel="noopener noreferrer">Open Google Calendar settings &#8599;</a></p>
+                <ol class="schedule-steps__list">
+                  <li>Open <strong>Settings</strong> (the gear at the top right, then Settings).</li>
+                  <li>On the left, select the <strong>calendar containing your classes</strong> (under <em>Settings for my calendars</em>
+                    or <em>Settings for other calendars</em>).</li>
+                  <li>Choose <strong>Integrate calendar</strong>, and copy one of its links:</li>
+                </ol>
+                <ul class="schedule-guide__links">
+                  <li><strong>Secret address in iCal format</strong> &ndash; private: it works without the calendar being public.
+                    Treat it like a password and don&rsquo;t share it. Shown only for a calendar you can change.</li>
+                  <li><strong>Public address in iCal format</strong> or <strong>Public URL to this calendar</strong> &ndash; only for a
+                    calendar that is <em>already</em> public.</li>
+                  <li><strong>A subscription link from your school</strong> (it may start with <code>webcal://</code> or end in
+                    <code>.ics</code>) &ndash; paste it as it is. Outlook and Apple calendar links work too.</li>
+                </ul>
+                <p class="schedule-guide__note">A calendar your school shares with you may offer no private link. Don&rsquo;t change its
+                  sharing settings: ask your school for its subscription (iCal) link, or put your class periods in a calendar of your own.</p>
+              </div>
+            </details>
+
+            <p class="schedule-skip"><button type="button" id="skipCalendar" class="btn btn--quiet btn--sm">Not now &ndash; I&rsquo;ll type dates myself</button>
+              <span class="hint" id="skipCalendarNote" hidden>Canvas&rsquo;s date boxes stay as they are. Connect a calendar here any time.</span></p>
           </div>
 
           <div class="setting">
@@ -511,19 +514,10 @@
             </ol>
             <div class="snippets-tip">
               <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M10 2a6 6 0 0 0-6 6c0 2.2 1.2 4.1 3 5.2V15a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1.8c1.8-1.1 3-3 3-5.2a6 6 0 0 0-6-6zm-1 15h2v1H9v-1z"/></svg>
-              <span><strong>If Connect says the calendar is not public:</strong> Google only shares a calendar&rsquo;s classes through
-                that link when the calendar is public. For a calendar you made, open <strong>Access permissions for events</strong> in
-                the same settings page, tick <strong>Make available to public</strong> and choose <strong>See all event details</strong>
-                &ndash; or, instead, paste its <strong>Secret address in iCal format</strong> (in <em>Integrate calendar</em>), which works
-                without making it public. For a calendar your school shares with you, ask whoever runs it to make it public.
-                The <strong>Public address in iCal format</strong> works too.</span>
-            </div>
-            <div class="snippets-tip">
-              <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M10 2a6 6 0 0 0-6 6c0 2.2 1.2 4.1 3 5.2V15a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1.8c1.8-1.1 3-3 3-5.2a6 6 0 0 0-6-6zm-1 15h2v1H9v-1z"/></svg>
               <span><strong>Good to know:</strong> the calendar is read again every few hours (or with <strong>Refresh</strong> in the
                 schedule panel). Classes named like the Canvas course you are editing are marked <em>This course</em>. The calendar&rsquo;s
                 link travels with your settings through Chrome sync (never into your Canvas account); on another computer, click
-                <strong>Connect</strong> once there to allow it.</span>
+                <strong>Allow calendar access on this computer</strong> here once.</span>
             </div>
           </div>
         </section>
@@ -703,6 +697,7 @@
   <script src="../core/totals.js"></script>
   <script src="../core/snippets.js"></script>
   <script src="../core/course-calendar.js"></script>
+  <script src="calendar-connect.js"></script>
   <script src="../tour/tour-state.js"></script>
   <script src="../tour/tour-content.js"></script>
   <script src="../tour/tour.js"></script>

@@ -171,9 +171,11 @@
 
   var P = CanvasCourseSchedule.prototype;
 
+  /* On with a calendar connected; and, before one is, until the teacher
+   * says "Not now" to the setup card (then Canvas's boxes are left alone). */
   P.enabled = function () {
     var v = this.settings.values;
-    return !!(v.courseScheduleEnabled && v.courseCalendarUrl);
+    return !!(v.courseScheduleEnabled && (v.courseCalendarUrl || !v.courseScheduleSetupDismissed));
   };
 
   P.start = function () {
@@ -439,8 +441,16 @@
     else if (act === 'jump') this.view = b.getAttribute('data-day');
     else if (act === 'close') { this.close(); return; }
     else if (act === 'refresh') { this.loadData(true); return; }
-    else if (act === 'settings') {
-      try { chrome.runtime.sendMessage({ type: 'cgp.openOptions' }); } catch (e) { /* reload needed */ }
+    else if (act === 'settings' || act === 'setup') {
+      try { chrome.runtime.sendMessage({ type: 'cgp.openOptions', hash: 'schedule' }); } catch (e) { /* reload needed */ }
+      return;
+    } else if (act === 'dismiss') {
+      // Typing dates by hand, as before: the card does not come back.
+      this.close();
+      try {
+        if (this.settings.save) this.settings.save({ courseScheduleSetupDismissed: true }).catch(function () { return null; });
+        else this.settings.values.courseScheduleSetupDismissed = true;
+      } catch (e) { /* settings unavailable */ }
       return;
     } else if (act === 'pick') { this.pick(Number(b.getAttribute('data-i')), b.getAttribute('data-which')); return; }
     this.render();
@@ -468,6 +478,15 @@
       '<button type="button" class="cgp-sched__x" data-act="close" aria-label="Close" title="Close (Esc)">&times;</button>' +
       '</div>';
     this.lastView = null;
+    if (!this.calendarUrl()) {
+      // No calendar yet: where to connect one, or carry on typing dates.
+      html += '<p class="cgp-sched__msg"><strong>Pick class times here.</strong> Connect the calendar that holds your class periods once, ' +
+        'and this shows each day&rsquo;s classes &ndash; click one to use its time.</p>' +
+        '<div class="cgp-sched__foot"><button type="button" class="cgp-sched__cta" data-act="setup">Set up class schedule</button>' +
+        '<button type="button" class="cgp-sched__link" data-act="dismiss">Not now</button></div>';
+      this.panel.innerHTML = html;
+      return;
+    }
     if (!data) {
       var failed = (this.cache && this.cache.url === this.calendarUrl() && !this.cache.ok && this.cache) ||
         (this.lastResult && !this.lastResult.ok && this.lastResult) || null;
@@ -476,9 +495,9 @@
       // calendar site's permission on each computer: one click on the
       // options page, which then fills this panel in.
       if (failed && failed.code === 'permission') {
-        html += '<p class="cgp-sched__msg">Your class schedule came with your settings, but this computer has not been ' +
-          'allowed to read your calendar yet. Click below, then <strong>Connect</strong> &ndash; once per computer.</p>' +
-          '<div class="cgp-sched__foot"><button type="button" class="cgp-sched__cta" data-act="settings">Allow on this computer</button></div>';
+        html += '<p class="cgp-sched__msg">Your class schedule came with your settings, but Chrome asks once on each computer ' +
+          'before Gradebook+ may read your calendar. Click below, then <strong>Allow calendar access on this computer</strong>.</p>' +
+          '<div class="cgp-sched__foot"><button type="button" class="cgp-sched__cta" data-act="settings">Allow calendar access on this computer</button></div>';
         this.panel.innerHTML = html;
         return;
       }
