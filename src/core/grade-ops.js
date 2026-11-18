@@ -387,9 +387,16 @@
    * (a comment, an unknown field) answers false, and a false only ever
    * means "couldn't confirm", never "not saved". */
   function sameGrade(a, b) {
-    var x = String(a === null || a === undefined ? '' : a).trim().toLowerCase().replace(/%$/, '');
-    var y = String(b === null || b === undefined ? '' : b).trim().toLowerCase().replace(/%$/, '');
+    var x = String(a === null || a === undefined ? '' : a).trim().toLowerCase();
+    var y = String(b === null || b === undefined ? '' : b).trim().toLowerCase();
     if (x === y) return true;
+    // A percentage and a points (or letter) grade are different units: 90%
+    // of a 10-point assignment is 9, not 90. Without the points possible to
+    // convert, they are never called the same - "couldn't confirm" is the
+    // safe answer, a false "saved" is not.
+    if (/%$/.test(x) !== /%$/.test(y)) return false;
+    x = x.replace(/%$/, '');
+    y = y.replace(/%$/, '');
     if (x === '' || y === '') return false;
     var nx = Number(x), ny = Number(y);
     return isFinite(nx) && isFinite(ny) && Math.abs(nx - ny) < 1e-9;

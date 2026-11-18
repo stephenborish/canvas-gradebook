@@ -457,6 +457,10 @@ suite('grade-ops: does a record hold what a write asked for', (test) => {
     a.eq(settled({ 'submission[posted_grade]': '9' }, { grade: '7.2', entered_grade: '9' }), true, 'a late deduction keeps entered_grade');
     a.eq(settled({ 'submission[posted_grade]': '9' }, { grade: '8' }), false);
     a.eq(settled({ 'submission[posted_grade]': '9' }, { grade: '9', excused: true }), false);
+    // Review finding: 90% on a points column is not the points grade 90.
+    a.eq(settled({ 'submission[posted_grade]': '90%' }, { grade: '90', entered_grade: '90' }), false, 'units differ: never confirmed');
+    a.eq(settled({ 'submission[posted_grade]': '90%' }, { grade: '9', entered_grade: '9' }), false, 'no points possible to convert with');
+    a.eq(settled({ 'submission[posted_grade]': '90%' }, { grade: '90.0%', entered_grade: '90.0%' }), true);
   });
   test('statuses, clears and excuses', () => {
     a.eq(settled({ 'submission[late_policy_status]': 'missing' }, { late_policy_status: 'missing' }), true);
