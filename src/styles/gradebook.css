@@ -1998,6 +1998,22 @@ html.cgp-on .cgp-toast--on,
 html.cgp-speedgrader .cgp-toast--on { opacity: 1; visibility: visible; }
 html.cgp-on .cgp-toast--error,
 html.cgp-speedgrader .cgp-toast--error { background: #9b2c1c; }
+html.cgp-on .cgp-toast__action,
+html.cgp-speedgrader .cgp-toast__action {
+  margin-left: 6px;
+  padding: 2px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 5px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+html.cgp-on .cgp-toast__action:hover,
+html.cgp-speedgrader .cgp-toast__action:hover { background: rgba(255, 255, 255, 0.15); }
+html.cgp-on .cgp-toast__action:focus-visible,
+html.cgp-speedgrader .cgp-toast__action:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 
 @media (prefers-reduced-motion: no-preference) {
   html.cgp-on .cgp-toast { transition: opacity 120ms linear; }

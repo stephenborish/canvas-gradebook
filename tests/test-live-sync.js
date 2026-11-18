@@ -244,7 +244,7 @@ suite('re-reads that report what actually changed', (test) => {
     const urls = [];
     const api = new CGP.CanvasApi({ origin: 'https://canvas.example.edu', fetch: (url) => {
       urls.push(url);
-      return Promise.resolve({ ok: true, status: 200, headers: { get: () => null }, text: () => Promise.resolve('{}') });
+      return Promise.resolve({ ok: true, status: 200, headers: { get: () => null }, text: () => Promise.resolve('{"assignment_id":"50","user_id":"10"}') });
     } });
     await api.submission('7', '50', '10');
     await api.updateSubmission('7', '50', '10', { 'submission[posted_grade]': '4' });

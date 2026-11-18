@@ -379,6 +379,12 @@
    * folded into the specific messages below where it reads naturally. */
   util.describeApiError = function (err, opts) {
     opts = opts || {};
+    // Canvas answered, but not with anything that says what happened (see
+    // canvas-api.js unusableAnswer): not a refusal, so never worded as one.
+    if (err && err.unconfirmed === true && err.malformed === true) {
+      return String(err.message || 'Canvas\u2019s answer couldn\u2019t be read, so this couldn\u2019t be confirmed.') +
+        (err.signIn ? ' Canvas answered with its sign-in page: your session may have expired.' : '');
+    }
     if (util.isPermissionDeniedError(err)) {
       return 'Canvas says you don\u2019t have permission to change this' +
         ' (the grading period may be closed, the course concluded, or your role may not allow it).';

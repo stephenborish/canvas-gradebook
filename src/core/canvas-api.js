@@ -27,6 +27,32 @@
     try { return JSON.parse(body); } catch (e) { return null; }
   }
 
+  /* A 2xx answer to a write is only evidence of what Canvas did when its
+   * body is the record that write was about. Canvas (or something in front
+   * of it) can answer 200 with something else entirely: its sign-in page
+   * after the session lapsed, a maintenance page, an empty body. Reading
+   * any of those as success is how a grade that never saved got reported
+   * as saved. */
+  function looksLikeSignIn(r) {
+    var url = String((r && r.url) || '');
+    return /\/login(?:[\/?#]|$)/i.test(url) || !!(r && r.html && /log\s?in|sign\s?in/i.test(String(r.snippet || '')));
+  }
+
+  /* The error every write operation raises when Canvas answered, but not
+   * with something that says what happened. `unconfirmed` is the flag the
+   * callers act on: the write may or may not have reached Canvas, so the
+   * record has to be re-read before anything is said about it. Deliberately
+   * no `status`: a 200 here is not a refusal, and messages built from the
+   * status would call it one. */
+  function unusableAnswer(r, what) {
+    var signIn = looksLikeSignIn(r);
+    return new CanvasApiError('Canvas\u2019s answer to ' + what + ' couldn\u2019t be read, so it couldn\u2019t be confirmed.', {
+      unconfirmed: true, malformed: true, signIn: signIn,
+      httpStatus: r && r.status, path: r && r.path, method: r && r.method,
+      contentType: (r && r.contentType) || null
+    });
+  }
+
   function nextLink(linkHeader) {
     if (!linkHeader) return null;
     var parts = String(linkHeader).split(',');
@@ -190,8 +216,17 @@
               });
             }
             CGP.diag.bump('api.requests');
+            var contentType = res.headers.get('Content-Type') || res.headers.get('content-type') || '';
+            var trimmed = String(text || '').replace(/^\s+/, '');
             return { data: parseBody(text), link: res.headers.get('Link') || res.headers.get('link'),
-              date: res.headers.get('Date') || res.headers.get('date') || null, sentAt: sentAt };
+              date: res.headers.get('Date') || res.headers.get('date') || null, sentAt: sentAt,
+              // What a write operation needs to tell "Canvas answered with
+              // the record" from "Canvas answered with a page" (see
+              // unusableAnswer). Only the first few characters are kept.
+              status: res.status, method: method, path: u.pathname,
+              url: res.url || '', redirected: !!res.redirected, contentType: contentType,
+              html: /text\/html/i.test(contentType) || /^</.test(trimmed),
+              snippet: trimmed.slice(0, 400) };
           });
         }).then(function (r) { clear(); return r; }, function (e) {
           clear();
@@ -413,9 +448,22 @@
    * assigned. Canvas's own gradebook asks for it on its writes for the same
    * reason. */
   CanvasApi.prototype.submission = function (courseId, assignmentId, userId) {
-    return this.get('/api/v1/courses/' + courseId + '/assignments/' + assignmentId + '/submissions/' + userId,
-      { 'include[]': ['submission_comments', 'visibility'] });
+    return this.request('/api/v1/courses/' + courseId + '/assignments/' + assignmentId + '/submissions/' + userId,
+      { params: { 'include[]': ['submission_comments', 'visibility'] } }).then(function (r) {
+      // A read is what settles an unconfirmed write (see writer.js), so a
+      // sign-in page here must fail rather than read as "no submission".
+      if (!isSubmissionFor(r.data, assignmentId, userId)) throw unusableAnswer(r, 'this read');
+      return r.data;
+    });
   };
+
+  /* Is this body the submission record for this one cell? */
+  function isSubmissionFor(data, assignmentId, userId) {
+    return !!(data && typeof data === 'object' && !Array.isArray(data) &&
+      data.assignment_id !== undefined && data.assignment_id !== null &&
+      data.user_id !== undefined && data.user_id !== null &&
+      String(data.assignment_id) === String(assignmentId) && String(data.user_id) === String(userId));
+  }
 
   /* "submission[late_policy_status]" -> { submission: { late_policy_status } }.
    * A form body cannot say null - it drops the key, or sends "" which Canvas
@@ -437,25 +485,38 @@
     return Object.keys(form || {}).some(function (k) { return form[k] === null; });
   }
 
-  /* A grade/status write is idempotent - sending the same posted_grade or
-   * late_policy_status twice leaves the same record - so a lost response is
-   * worth one retry. opts.idempotent:false (a comment) only retries a request
-   * Canvas throttled before acting on it. */
-  CanvasApi.prototype.updateSubmission = function (courseId, assignmentId, userId, form, opts) {
-    opts = opts || {};
+  /* One grade, status or comment write.
+   *
+   * Sent once. Only a request Canvas throttled - refused before acting on
+   * it - is sent again. A lost response or a 5xx is NOT resent: the write
+   * may already have been applied, and the writer re-reads the submission
+   * to find out instead (see writer.js settleUnconfirmed), which answers
+   * the same question without a second write.
+   *
+   * Resolves only with the submission record for this exact cell. Any other
+   * 2xx answer - Canvas's sign-in page, an empty body, someone else's
+   * submission - rejects with err.unconfirmed (see unusableAnswer). */
+  CanvasApi.prototype.updateSubmission = function (courseId, assignmentId, userId, form) {
     var req = {
       method: 'PUT',
       params: { 'include[]': ['submission_comments', 'visibility'] },
       retries: 1,
-      idempotent: opts.idempotent !== false
+      idempotent: false
     };
     if (holdsNull(form)) req.json = formToJson(form); else req.form = form;
     return this.request('/api/v1/courses/' + courseId + '/assignments/' + assignmentId + '/submissions/' + userId, req)
-      .then(function (r) { return r.data; });
+      .then(function (r) {
+        if (!isSubmissionFor(r.data, assignmentId, userId)) {
+          var err = unusableAnswer(r, 'this change');
+          CGP.diag.error('api.writeAnswerUnusable', { path: r.path, status: r.status, html: !!r.html, signIn: err.signIn });
+          throw err;
+        }
+        return r.data;
+      });
   };
 
   CanvasApi.prototype.addComment = function (courseId, assignmentId, userId, text) {
-    return this.updateSubmission(courseId, assignmentId, userId, { 'comment[text_comment]': text }, { idempotent: false });
+    return this.updateSubmission(courseId, assignmentId, userId, { 'comment[text_comment]': text });
   };
 
   /* Delete one submission comment. Canvas only lets a comment's own author
@@ -478,13 +539,21 @@
    * for: posting (unhiding) an assignment's grades. GraphQL answers 200 with
    * an "errors" array rather than an HTTP error, so that is checked here
    * instead of being left to look like success. */
-  CanvasApi.prototype.graphql = function (query, variables) {
+  CanvasApi.prototype.graphql = function (query, variables, opts) {
+    opts = opts || {};
     return this.request('/api/graphql', {
       method: 'POST',
       json: { query: query, variables: variables || {} },
-      retries: 1
+      retries: 1,
+      idempotent: opts.idempotent
     }).then(function (r) {
-      var data = r.data || {};
+      // Not JSON at all (a sign-in page, an empty body): a mutation's caller
+      // must not read that as "no data, so it worked".
+      if (!r.data || typeof r.data !== 'object' || Array.isArray(r.data)) {
+        if (opts.mutation) throw unusableAnswer(r, 'this request');
+        return null;
+      }
+      var data = r.data;
       if (data.errors && data.errors.length) {
         var first = data.errors[0] || {};
         throw new CanvasApiError('Canvas GraphQL: ' + (first.message || 'request rejected'), {
@@ -514,18 +583,37 @@
    * post the grades that exist, and leave ungraded submissions hidden rather
    * than showing students an empty grade they were not waiting for.
    */
+  /*
+   * Resolves with the Progress ({_id, state}) Canvas started, or with null
+   * when Canvas answered with the mutation's payload but no job (posting
+   * done synchronously). Rejects:
+   *   - with Canvas's own reason when it refused (top-level GraphQL errors,
+   *     or the payload's errors list): nothing was posted;
+   *   - with err.unconfirmed when the answer is not the mutation's payload
+   *     at all (a sign-in page, data:null, a progress with no id): the
+   *     mutation may have run, so the caller re-reads the column.
+   * Sent once: a lost response is not resent (the column is re-read
+   * instead); only a throttled request, refused before Canvas acted, is. */
   CanvasApi.prototype.postAssignmentGrades = function (assignmentId, opts) {
     opts = opts || {};
     return this.graphql(POST_GRADES_MUTATION, {
       assignmentId: String(assignmentId),
       gradedOnly: opts.gradedOnly === undefined ? true : !!opts.gradedOnly
-    }).then(function (data) {
-      var payload = (data && data.postAssignmentGrades) || {};
+    }, { mutation: true, idempotent: false }).then(function (data) {
+      var payload = data && typeof data === 'object' ? data.postAssignmentGrades : undefined;
+      if (!payload || typeof payload !== 'object') {
+        throw unusableAnswer({ path: '/api/graphql', method: 'POST', status: 200 }, 'posting');
+      }
       if (payload.errors && payload.errors.length) {
         throw new CanvasApiError('Canvas refused to post these grades: ' +
-          (payload.errors[0].message || 'unknown reason'), { message: payload.errors[0].message || null });
+          (payload.errors[0].message || 'unknown reason'), { message: payload.errors[0].message || null, refused: true });
       }
-      return payload.progress || null;
+      var progress = payload.progress;
+      if (progress === null || progress === undefined) return null;
+      if (typeof progress !== 'object' || progress._id === undefined || progress._id === null || progress._id === '') {
+        throw unusableAnswer({ path: '/api/graphql', method: 'POST', status: 200 }, 'posting');
+      }
+      return progress;
     });
   };
 
@@ -545,7 +633,13 @@
     var maxTries = opts.maxTries || 20;
     function attempt(n) {
       return self.progress(progressId).then(function (p) {
-        var state = (p && p.workflow_state) || '';
+        // Answered, but not with a Progress record (a sign-in page, an
+        // empty body): polling on would only read the same page again.
+        // Nothing is known about the job, and the caller says so.
+        if (!p || typeof p !== 'object' || typeof p.workflow_state !== 'string') {
+          return { done: false, progress: null, unreadable: true };
+        }
+        var state = p.workflow_state;
         if (state === 'completed' || state === 'complete' || (p && p.completion === 100)) return { done: true, progress: p };
         if (state === 'failed') {
           throw new CanvasApiError('Canvas could not finish posting these grades', {

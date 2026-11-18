@@ -33,6 +33,7 @@ require('./test-tray-layout');
 require('./test-speedgrader-layout');
 require('./test-speedgrader-sidebar');
 require('./test-write-safety');
+require('./test-write-confirmation');
 require('./test-comments-ui');
 require('./test-grid-reliability');
 require('./test-test-student');

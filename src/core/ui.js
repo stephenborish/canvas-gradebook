@@ -20,19 +20,46 @@
   }
 
   CGP.ui = {
+    /* opts.action: { label, run } adds one button after the message (the
+     * "Check again" on a grade or post that couldn't be confirmed). The
+     * message then stays up longer, and while the pointer or focus is on it,
+     * so the teacher has time to reach the button. */
     toast: function (message, opts) {
       opts = opts || {};
       try {
         var el = ensureHost();
         el.textContent = String(message || '');
         el.classList.toggle('cgp-toast--error', opts.level === 'error');
+        el.classList.toggle('cgp-toast--action', !!opts.action);
+        var hold = opts.level === 'error' ? 7000 : 3200;
+        if (opts.action && typeof opts.action.run === 'function') {
+          hold = 20000;
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'cgp-toast__action';
+          btn.textContent = String(opts.action.label || 'Check again');
+          btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            el.classList.remove('cgp-toast--on');
+            try { opts.action.run(); } catch (err) { /* reported by the action itself */ }
+          });
+          el.appendChild(document.createTextNode(' '));
+          el.appendChild(btn);
+        }
         el.classList.add('cgp-toast--on');
         if (hideTimer) clearTimeout(hideTimer);
-        hideTimer = setTimeout(function () { el.classList.remove('cgp-toast--on'); },
-          opts.level === 'error' ? 7000 : 3200);
+        var hide = function () {
+          if (el.matches && (el.matches(':hover') || el.matches(':focus-within'))) {
+            hideTimer = setTimeout(hide, 1500);
+            return;
+          }
+          el.classList.remove('cgp-toast--on');
+        };
+        hideTimer = setTimeout(hide, hold);
       } catch (e) { /* never let a message break grading */ }
     },
-    error: function (message) { this.toast(message, { level: 'error' }); },
+    error: function (message, opts) { this.toast(message, Object.assign({}, opts || {}, { level: 'error' })); },
     copy: copy
   };
 

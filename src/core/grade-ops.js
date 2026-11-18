@@ -380,8 +380,49 @@
     return { ops: Array.from(map.values()), duplicates: duplicates };
   }
 
+  /* Does this submission record (as Canvas sends it) already hold what this
+   * write form asked for? Used to settle a write whose answer was lost or
+   * unreadable from a fresh read of the record, so the write itself never
+   * has to be sent twice. Deliberately strict: anything it cannot compare
+   * (a comment, an unknown field) answers false, and a false only ever
+   * means "couldn't confirm", never "not saved". */
+  function sameGrade(a, b) {
+    var x = String(a === null || a === undefined ? '' : a).trim().toLowerCase().replace(/%$/, '');
+    var y = String(b === null || b === undefined ? '' : b).trim().toLowerCase().replace(/%$/, '');
+    if (x === y) return true;
+    if (x === '' || y === '') return false;
+    var nx = Number(x), ny = Number(y);
+    return isFinite(nx) && isFinite(ny) && Math.abs(nx - ny) < 1e-9;
+  }
+
+  function formSettledIn(form, sub) {
+    if (!form || !sub || typeof sub !== 'object') return false;
+    var keys = Object.keys(form);
+    if (!keys.length) return false;
+    return keys.every(function (k) {
+      var want = form[k];
+      if (k === 'submission[posted_grade]') {
+        var entered = sub.entered_grade !== undefined ? sub.entered_grade : sub.grade;
+        if (want === '') return (entered === null || entered === undefined || entered === '') && !sub.excused;
+        return !sub.excused && sameGrade(entered, want);
+      }
+      if (k === 'submission[excuse]') return String(want) === 'true' ? !!sub.excused : !sub.excused;
+      if (k === 'submission[late_policy_status]') {
+        var have = sub.late_policy_status === undefined ? null : sub.late_policy_status;
+        if (want === null) return have === null;
+        if (want === 'none') return have === 'none' || have === null;
+        return have === want;
+      }
+      // Canvas may round or recompute lateness; the status above is what
+      // the write was for.
+      if (k === 'submission[seconds_late_override]') return true;
+      return false;
+    });
+  }
+
   CGP.gradeOps = {
     KIND: KIND,
+    formSettledIn: formSettledIn,
     parseToken: parseToken,
     operationFor: operationFor,
     earnedCredit: earnedCredit,
