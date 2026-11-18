@@ -1,6 +1,6 @@
 # Chrome Web Store Listing — Canvas Gradebook+
 
-> Last Updated: 2026-11-09 · Version 1.31.0
+> Last Updated: 2026-11-18 · Version 1.32.0
 
 Everything the Chrome Developer Dashboard asks for, in one place. Copy each field as it is.
 The Web Store shows plain text only (no Markdown), so the detailed description below is
@@ -21,12 +21,12 @@ which the store shows as the summary)
 Grade faster in Canvas: see your feedback at a glance, grade like a spreadsheet, post grades in one click, pick due times by class.
 ```
 
-**Detailed Description** (8,258/16,000 characters)
+**Detailed Description** (10,380/16,000 characters)
 
 ```
 Canvas Gradebook+ makes the Canvas gradebook and course pages faster and clearer for teachers, right where you already work: no second gradebook, no dashboard, no extra sign-in.
 
-Open Canvas the way you always do. Your gradebook now shows at a glance where you left feedback and who turned work in, takes grades like a spreadsheet, posts hidden grades in one click, and lets you set due dates straight from your class schedule. Everything runs in your browser using the Canvas account you are already signed in to.
+Open Canvas the way you always do. Your gradebook now shows at a glance where you left feedback and who turned work in, takes grades like a spreadsheet, posts hidden grades in one click, and lets you set due dates straight from your class schedule. You can also keep the same assignment in step across all your sections and make student groups in one step. Everything runs in your browser using the Canvas account you are already signed in to.
 
 SEE WHERE YOU STAND AT A GLANCE
 • Your feedback, marked: a small speech bubble appears in every grade cell where you left a comment, and only yours, not students' or other teachers'. It turns purple when the student has replied since, so unanswered replies stand out. Click it to read and reply without leaving the gradebook.
@@ -39,7 +39,8 @@ SEE WHERE YOU STAND AT A GLANCE
 GRADE FASTER
 • One-key statuses: press M for Missing, E for Excused or L for Late, and press the key again to take Missing or Late off. Typing a grade never adds a status by accident.
 • Spreadsheet movement: Enter, Tab and the arrow keys move between grade cells.
-• Paste from Excel or Google Sheets: paste a whole block of grades at once. Every value is checked before anything is saved, and blank cells are skipped rather than erasing grades.
+• Paste from Excel or Google Sheets: paste a whole block of grades at once. Every value is checked before anything is saved, blank cells are skipped rather than erasing grades, and you are asked first before any existing grade is replaced.
+• Saves you can trust: a grade or a post counts as done only when Canvas's own record shows it. If Canvas's answer is lost (for example, your sign-in ran out), the cell says "Couldn't confirm" and offers Check again, instead of claiming it saved.
 • Many cells at once: Ctrl/Cmd-click or Shift-click to select cells, then apply one grade or status to all of them, or leave the same comment on each.
 • Post grades from the column header: a "Post 12" button posts that column's hidden grades in one click.
 • Double-click any grade cell to open Canvas's grade detail panel, laid out with the status options in one row.
@@ -51,15 +52,17 @@ GRADE FASTER
 UNDERSTAND EACH STUDENT
 • Student overview: click a student's name for their current grade, missing and late work, on-time rate, average against the class median, and a short list of what stands out, such as a downward trend, no activity for a week, or a reply to your feedback still waiting.
 • Missing work list: one click copies a tidy list of a student's missing and late assignments, with due dates and links, ready to paste into an email to a parent, a counselor or the student.
-• Activity: page views, participation and time in the course (when Canvas provides course analytics), and which Canvas Studio videos the student watched.
+• Activity: page views, participation and time in the course (when Canvas provides course analytics), and which Canvas Studio videos the student watched. Studio viewing is matched to students by email first, so it is never credited to the wrong student; an unclear match is labelled as such.
 • Analyze Scores: for any assignment or the course Total, see the mean, median, spread, highest and lowest scores, and a chart of grades by letter.
 • Find a student across every course you teach and jump straight to their row.
 • Copy the roster: student emails ready for Gmail or Outlook, or a table of names in the layout you choose.
 
 PLAN AND ASSIGN ACROSS YOUR CLASSES
-• Class schedule: connect your Google Calendar (or any calendar link ending in .ics), and every Due, Available from and Until box in Canvas shows that day's classes beside it. Click a class to use its start time, or its end time with one more click. Step to another day and the date goes in too. Classes that match the course you are editing are marked "This course".
-• Copy to other classes: teach the same course to several sections set up as separate Canvas courses? Build an assignment, quiz, discussion, announcement, page or module once and post it to all of them, each with its own due date. A module's external links can be copied on their own too.
-• Compare classes: one grid shows every item in this class against your other classes, so you can see what is missing, out of date or changed elsewhere, and fix it in bulk.
+• Class schedule: paste your Google Calendar link (or any calendar link ending in .ics) and click Connect calendar. A short guide shows where to find the link, and a private link works without making your calendar public. Every Due, Available from and Until box in Canvas then shows that day's classes beside it. Click a class to use its start time, or its end time with one more click. Step to another day and the date goes in too. Classes that match the course you are editing are marked "This course".
+• Copy to other classes: teach the same course to several sections set up as separate Canvas courses? Build an assignment, quiz, discussion, announcement, page or module once and post it to all of them, each with its own due date. Each class shows plainly whether the item is Not there yet, the Same, or Different, and the finish screen lists the due date each class got, with Undo. A module's external links can be copied on their own too.
+• Works both ways: when two classes have different versions of an item, see them side by side with the changed words highlighted, click the one both classes should have, and the other is updated in place, never duplicated. Dates and student work stay as they are.
+• Compare classes: one grid shows every item in this class against your other classes, so you can see what is missing or different, and fix it in bulk.
+• Make groups: a Make groups button on the People page builds a whole group set in one step. Choose the number of groups or students per group, a naming style (Group 1, Team A, or your own list of names), and random, hand-placed or self sign-up membership. Arrange students on a drag-and-drop board, then copy the set to your other classes or another section.
 • Switch courses quickly from any course page.
 
 A CLEANER GRADEBOOK
@@ -74,8 +77,9 @@ Your settings, comment snippets and class choices sync to every computer where C
 HOW TO USE
 1. Open a course gradebook in Canvas. The improvements are already on.
 2. Click the extension's toolbar icon to open its settings and turn features on or off.
-3. Optional: on the Class Schedule tab, paste your class calendar's "Public URL to this calendar" (from Google Calendar's settings, under Integrate calendar) and click Connect.
+3. Optional: on the Class Schedule tab, paste your calendar link (in Google Calendar: Settings, the calendar with your classes, Integrate calendar, then "Secret address in iCal format") and click Connect calendar.
 4. Optional: open an assignment and choose "Copy to other classes" to link the sections you teach.
+5. Optional: on a course's People page, click Make groups to build a group set.
 
 PRIVACY
 • Gradebook+ talks only to your school's Canvas and Canvas Studio, using the sign-in you already have, plus your calendar if you connect one. No API key, no account, no outside servers.
@@ -87,11 +91,12 @@ PERMISSIONS
 • "Read and change your data on instructure.com sites": needed to add these improvements to your Canvas pages. The extension runs only on Canvas.
 • instructuremedia.com (Canvas Studio): needed to show which Studio videos each student watched.
 • Storage: saves your settings and lets them sync to your other computers.
+• Alarms: checks regularly for a new version of the extension, so a gradebook tab kept open all day still gets updates.
 • Optional, only if you ask for it: access to your school's own Canvas address (for self-hosted Canvas), and to your calendar's site (such as calendar.google.com) when you connect a class schedule. Chrome asks you first each time.
 
 Canvas Gradebook+ is an independent tool for teachers. It is not affiliated with or endorsed by Instructure, the maker of Canvas.
 
-Version 1.31.0: faster loading (the gradebook reads your course while Canvas is still drawing it), a student overview that opens quicker and keeps working on a slow connection, copying a module's external links to your other classes on their own, fewer false "not in your other classes yet" notices, and new versions picked up as soon as Chrome allows, with a Reload notice on tabs already open. Version 1.30.0: a guided welcome tour, shown once after you install, that walks you through every feature live on your own gradebook and student overviews, then shows you how to link your class periods and connect your class schedule (skip it any time, replay it from settings). Version 1.29.0: a redesigned SpeedGrader sidebar, with Submission, Assessment and Comments as clear cards, and a comment box with distinct attach, video and microphone tools. Free Draw and comment annotations now start in red reliably. Also new in 1.28: Class Schedule, to pick due times from your Google Calendar's class periods right in Canvas's Assign To boxes.
+Version 1.32.0: Make groups, to build a whole group set from the People page in one step and copy it to your other classes; Copy to other classes rebuilt to be simpler and work both ways, with the two versions side by side and the differences highlighted; one-click Connect calendar with a guide to finding your link; grade saves and posts confirmed from Canvas's own record; and a shorter welcome tour that lets you pick what to see first. Version 1.31.0: faster loading (the gradebook reads your course while Canvas is still drawing it), a student overview that opens quicker and keeps working on a slow connection, copying a module's external links to your other classes on their own, fewer false "not in your other classes yet" notices, and new versions picked up as soon as Chrome allows, with a Reload notice on tabs already open. Version 1.30.0: a guided welcome tour, shown once after you install, that walks you through every feature live on your own gradebook and student overviews, then shows you how to link your class periods and connect your class schedule (skip it any time, replay it from settings). Version 1.29.0: a redesigned SpeedGrader sidebar, with Submission, Assessment and Comments as clear cards, and a comment box with distinct attach, video and microphone tools. Free Draw and comment annotations now start in red reliably. Also new in 1.28: Class Schedule, to pick due times from your Google Calendar's class periods right in Canvas's Assign To boxes.
 ```
 
 **Category:** Education (in the Dashboard: Productivity → Education)
@@ -137,8 +142,8 @@ current form wording before submitting.
 
 | Data Type | Handled? | Leaves the device? | Purpose | Shared with third parties? |
 |-----------|----------|--------------------|---------|----------------------------|
-| Personally identifiable info | Yes: student names and emails shown by Canvas | No (read from and saved to the school's own Canvas only) | Gradebook, student overview, roster copy | No |
-| Website content | Yes: grades, comments and assignments in Canvas | No (as above) | All gradebook features | No |
+| Personally identifiable info | Yes: student names and emails shown by Canvas | No (read from and saved to the school's own Canvas only) | Gradebook, student overview, roster copy, making groups | No |
+| Website content | Yes: grades, comments, assignments and group sets in Canvas | No (as above) | All gradebook features | No |
 | Personal communications | Yes: the teacher's own comments to students | Only to Canvas, when the teacher posts them | Commenting from the gradebook | No |
 | User activity | Yes: students' Canvas activity from Canvas analytics | No | Student overview | No |
 | Health, financial, authentication, location, web history | No | — | — | — |
@@ -148,6 +153,9 @@ What is stored, and where:
   off, the teacher's own Canvas account (user custom data).
 - Copy to other classes: fingerprints of copied item text and course/item ids, on this computer
   and in the teacher's Canvas account. No student data.
+- Make groups: the teacher's group-naming preferences (name formats, group count or size), in
+  settings. The groups themselves are saved in Canvas; student names are not stored by the
+  extension.
 - SpeedGrader drafts, the class-schedule calendar's class times, diagnostics (off by default):
   this computer only.
 - Student names and grades: never stored.
@@ -178,6 +186,7 @@ section can be published as-is (for example as a GitHub Pages page or a public G
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
+| 1.32.0 | 2026-11-18 | Make groups: a button beside "+ Group Set" on the People and Groups pages builds a group set (count or size, name styles incl. the teacher's own saved formats, random / hand-placed / self sign-up), a drag-and-drop board, and copying the set to linked classes, other courses or another section. Copy to other classes: three states (Not there yet / Same / Different), two-way in-place updates with Undo, side-by-side version cards with word-level highlighting, per-class due-date outcomes, resumable after a reload. Grade saves and posts confirmed from Canvas's record (an HTML sign-in page answered with 200 is no longer a save); "Couldn't confirm" + Check again; paste asks before overwriting from verified ids and current grades. Calendar: one Connect action with a "Where do I find my link?" guide (secret iCal address; never asks to make a school calendar public); "Allow calendar access on this computer" for a synced link. Studio viewing matched by email / user id before name. Welcome tour: short intro on a real cell, then one chosen path. Options: honest Save state (Saved / Saving… / Unsaved changes). No permission changes. | Draft |
 | 1.31.0 | 2026-11-09 | Faster load: the course is read while Canvas draws its grid, numbered list pages read in parallel, background warming at low priority, frames get a small gate script instead of the full content-script set. Student overview: hover prefetch, high-priority reads, 20 s stall timeout with retry, per-section failures with Try again, earlier data kept on a failed refresh. Copy a module's external links to the other classes (Links tab, copy icon on the Modules page). "Not in N of your other classes" notice counts same-titled items and cross-listed sections. Class-schedule picks for another class fill its date. Update checks every 20 minutes (Chrome allows one real check per ~5 h), Reload notice on open tabs, Options → Diagnostics → Updates. New permission: `alarms` (no install warning). | Draft |
 | 1.30.0 | 2026-11-09 | Welcome tour, shown once per install (never on updates), in two parts: the gradebook with a live walkthrough of a student overview (Overview, What stands out, Assignments, Activity), then the course page (linking class periods, Copy to other classes, Compare classes, class schedule) with a guided calendar setup on the options page. Invitation on other course pages; Replay the welcome tour in settings. | Draft |
 | 1.29.0 | 2026-11-09 | SpeedGrader sidebar redesigned as Submission / Assessment / Comments cards (found by content, so it works across Canvas versions and on self-hosted Canvas); comment tools each get their own icon (paperclip, camera, microphone); Edit / Delete on posted comments shown as clear buttons; red annotation default now recognises DocViewer's colour buttons. | Draft |
