@@ -53,7 +53,8 @@
   var NAME_CHOICES = [
     ['first-last', 'First Last'],
     ['last-first', 'Last, First'],
-    ['split', 'First and Last in separate columns']
+    ['split', 'First and Last in separate columns'],
+    ['comma-line', 'First, Last, Email on one line']
   ];
   var SEPARATOR_CHOICES = [
     ['comma', 'Commas (Gmail)'],
@@ -292,7 +293,7 @@
           '<button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-act="table" disabled>Copy table</button>' +
           '<button type="button" class="cgp-roster__btn" data-act="csv" disabled>Download CSV</button>' +
         '</div>' +
-        '<p class="cgp-stats__note">Copy table pastes as a formatted table in Google Docs, Word and Gmail, and as columns in Sheets or Excel.</p>' +
+        '<p class="cgp-stats__note cgp-roster__table-note"></p>' +
       '</section>' +
       '</div>';
 
@@ -394,6 +395,12 @@
         }).join('') + '</tbody></table>' +
         (t.body.length > shown.length ? '<p class="cgp-stats__note">…and ' + (t.body.length - shown.length) + ' more</p>' : '');
     }
+    var tableNote = this._dialog.querySelector('.cgp-roster__table-note');
+    if (tableNote) {
+      tableNote.textContent = t.oneLine
+        ? 'Copy table pastes one line per student, each part separated by a comma. Download CSV gives the same thing as First Name, Last Name and Email columns.'
+        : 'Copy table pastes as a formatted table in Google Docs, Word and Gmail, and as columns in Sheets or Excel.';
+    }
     var hasTable = !!t.header.length && !!n;
     var emailCount = this.renderEmailChoices(n - noEmail);
     var dialog = this._dialog;
@@ -471,11 +478,19 @@
       }, function () { CGP.ui.error('Couldn’t copy to the clipboard.'); });
     } else if (what === 'table') {
       var t = this.currentTable();
-      copy(fmt.toTsv(t, this.prefs.header), fmt.toHtml(t, this.prefs.header)).then(function () {
+      // "First, Last, Email on one line" is copied as plain lines of text,
+      // not a one-column table, so it pastes exactly as shown.
+      copy(fmt.toTsv(t, this.prefs.header), t.oneLine ? null : fmt.toHtml(t, this.prefs.header)).then(function () {
         CGP.ui.toast('Roster copied (' + t.body.length + (t.body.length === 1 ? ' student)' : ' students)'));
       }, function () { CGP.ui.error('Couldn’t copy to the clipboard.'); });
     } else if (what === 'csv') {
-      download(fmt.toCsv(this.currentTable(), this.prefs.header), fileName(this.courseName()));
+      // A CSV is already comma separated: the one-line layout downloads as
+      // its First Name, Last Name, Email columns rather than one quoted cell.
+      var csvTable = this.currentTable();
+      if (csvTable.oneLine) {
+        csvTable = fmt.table(this._rows || [], { nameFormat: 'split', email: this.prefs.email });
+      }
+      download(fmt.toCsv(csvTable, this.prefs.header), fileName(this.courseName()));
     }
   };
 

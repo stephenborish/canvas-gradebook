@@ -47,7 +47,15 @@ suite('roster export: formatting', (test) => {
     t = fmt().table(rows, { nameFormat: 'none', email: false });
     a.deep(t.header, ['Name'], 'a retired layout (No names, First name only) falls back to First Last');
     a.deep(t.body[0], ['Jake Bonko']);
-    a.deep(fmt().NAME_FORMATS, ['first-last', 'last-first', 'split']);
+    a.deep(fmt().NAME_FORMATS, ['first-last', 'last-first', 'split', 'comma-line']);
+    t = fmt().table(rows, { nameFormat: 'comma-line', email: true });
+    a.deep(t.header, ['First Name, Last Name, Email']);
+    a.deep(t.body, [['Jake, Bonko, jbonko@school.org'], ['John (Jack), Burke, jburke@school.org']], 'one cell per student');
+    a.eq(fmt().toTsv(t, false), 'Jake, Bonko, jbonko@school.org\nJohn (Jack), Burke, jburke@school.org');
+    t = fmt().table(rows, { nameFormat: 'comma-line', email: false });
+    a.deep(t.body[0], ['Jake, Bonko'], 'email left off when unchecked');
+    t = fmt().table(fmt().normalize([{ id: 9, name: 'Cher', sortable_name: 'Cher' }], 'last'), { nameFormat: 'comma-line', email: true });
+    a.deep(t.body[0], ['Cher, , '], 'a missing part keeps its place');
   });
 
   test('TSV, CSV and HTML outputs', () => {

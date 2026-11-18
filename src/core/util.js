@@ -544,7 +544,7 @@
       if (k === 'rosterPrefs') {
         var rp = {};
         var given = v && typeof v === 'object' ? v : {};
-        var choices = { nameFormat: ['first-last', 'last-first', 'split'], sortBy: ['last', 'first'], separator: ['comma', 'semicolon', 'newline'] };
+        var choices = { nameFormat: ['first-last', 'last-first', 'split', 'comma-line'], sortBy: ['last', 'first'], separator: ['comma', 'semicolon', 'newline'] };
         Object.keys(d[k]).forEach(function (f) {
           var dv = d[k][f];
           var gv = given[f];

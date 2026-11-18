@@ -13,7 +13,10 @@
   if (CGP.rosterFormat) return;
 
   // nameFormat values, in the order the export panel offers them.
-  var NAME_FORMATS = ['first-last', 'last-first', 'split'];
+  // 'comma-line': one line per student, "First, Last, email" - commas
+  // between the parts, the whole line in a single cell. A missing part keeps
+  // its place ("Cher, , cher@x.org"), so every line has the same positions.
+  var NAME_FORMATS = ['first-last', 'last-first', 'split', 'comma-line'];
   var SEPARATORS = { comma: ', ', semicolon: '; ', newline: '\n' };
 
   function clean(s) { return String(s === undefined || s === null ? '' : s).replace(/\s+/g, ' ').trim(); }
@@ -72,6 +75,15 @@
     var fmt = NAME_FORMATS.indexOf(opts.nameFormat) >= 0 ? opts.nameFormat : 'first-last';
     var header = [];
     if (fmt === 'first-last' || fmt === 'last-first') header.push('Name');
+    if (fmt === 'comma-line') {
+      return {
+        header: [['First Name', 'Last Name'].concat(opts.email ? ['Email'] : []).join(', ')],
+        body: (rows || []).map(function (r) {
+          return [[r.first, r.last].concat(opts.email ? [r.email] : []).join(', ')];
+        }),
+        oneLine: true
+      };
+    }
     if (fmt === 'split') header.push('First Name', 'Last Name');
     if (opts.email) header.push('Email');
     var body = (rows || []).map(function (r) {
