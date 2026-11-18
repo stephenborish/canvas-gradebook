@@ -807,7 +807,7 @@
     $('scheduleDayList').innerHTML = html;
     var zoneEl = $('scheduleZone');
     if (zoneEl) {
-      zoneEl.textContent = tz ? 'Times shown in ' + Cal().zoneName(tz) + ' (' + tz.replace(/_/g, ' ') + ')' +
+      zoneEl.textContent = tz ? 'Times shown in ' + Cal().zoneName(tz, Cal().wallToMs(scheduleDay, '12:00', tz)) + ' (' + tz.replace(/_/g, ' ') + ')' +
         (canvasZone ? ', your Canvas time zone.' : '. Once you open an assignment in Canvas, this uses your Canvas time zone.') : '';
     }
   }
@@ -832,7 +832,10 @@
     $('scheduleNext').addEventListener('click', function () { scheduleDay = Cal().addDays(scheduleDay, 1); renderSchedulePreview(); });
     if (chrome.storage && chrome.storage.onChanged) {
       chrome.storage.onChanged.addListener(function (changes, area) {
-        if (area === 'local' && changes[ZONE_KEY]) canvasZone = String(changes[ZONE_KEY].newValue || '');
+        if (area === 'local' && changes[ZONE_KEY]) {
+          var nz = String(changes[ZONE_KEY].newValue || '');
+          canvasZone = Cal().validZone(nz) ? nz : '';
+        }
         if (area === 'local' && (changes[CAL_KEY] || changes[ZONE_KEY])) renderCalendarStatus();
       });
     }

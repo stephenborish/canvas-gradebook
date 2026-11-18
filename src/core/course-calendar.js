@@ -650,16 +650,25 @@
    * else the zone most of the timed classes were written in, else the
    * calendar's own zone, else this computer's - never UTC because a feed
    * stores its times that way. */
-  function displayZone(rec, preferred) {
-    if (preferred && validZone(preferred)) return preferred;
+  /* The zone most timed occurrences were written in (not UTC), once per
+   * stored list: a new list arrives only when the calendar is read again. */
+  var writtenCache = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function writtenZone(occ) {
+    if (writtenCache && writtenCache.has(occ)) return writtenCache.get(occ);
     var count = Object.create(null), best = '', bestN = 0;
-    var occ = rec && Array.isArray(rec.occ) ? rec.occ : [];
     for (var i = 0; i < occ.length; i++) {
       var z = occ[i] && !occ[i].a && occ[i].z;
       if (!z || isUtcZone(z)) continue;
       count[z] = (count[z] || 0) + 1;
       if (count[z] > bestN) { best = z; bestN = count[z]; }
     }
+    if (writtenCache) writtenCache.set(occ, best);
+    return best;
+  }
+
+  function displayZone(rec, preferred) {
+    if (preferred && validZone(preferred)) return preferred;
+    var best = rec && Array.isArray(rec.occ) ? writtenZone(rec.occ) : '';
     if (best && validZone(best)) return best;
     if (rec && rec.zone && !isUtcZone(rec.zone) && validZone(rec.zone)) return rec.zone;
     return localZone() || (rec && validZone(rec.zone) ? rec.zone : '');
