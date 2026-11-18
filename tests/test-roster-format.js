@@ -44,10 +44,10 @@ suite('roster export: formatting', (test) => {
     t = fmt().table(rows, { nameFormat: 'split', email: true });
     a.deep(t.header, ['First Name', 'Last Name', 'Email']);
     a.deep(t.body[0], ['Jake', 'Bonko', 'jbonko@school.org']);
-    t = fmt().table(rows, { nameFormat: 'none', email: true });
-    a.deep(t.header, ['Email']);
     t = fmt().table(rows, { nameFormat: 'none', email: false });
-    a.eq(t.header.length, 0, 'nothing chosen, nothing to copy');
+    a.deep(t.header, ['Name'], 'a retired layout (No names, First name only) falls back to First Last');
+    a.deep(t.body[0], ['Jake Bonko']);
+    a.deep(fmt().NAME_FORMATS, ['first-last', 'last-first', 'split']);
   });
 
   test('TSV, CSV and HTML outputs', () => {
@@ -71,6 +71,41 @@ suite('roster export: formatting', (test) => {
     a.eq(fmt().emailList(rows, 'comma'), 'jbonko@school.org, jburke@school.org, osutton@school.org');
     a.eq(fmt().emailList(rows, 'semicolon'), 'jbonko@school.org; jburke@school.org; osutton@school.org');
     a.eq(fmt().emailList(rows, 'newline').split('\n').length, 3);
+  });
+});
+
+suite('roster export: parents and guardians', (test) => {
+  const OBSERVERS = [
+    { id: 90, name: 'Pat Bonko', email: 'pat@home.org', enrollments: [{ type: 'ObserverEnrollment', associated_user_id: 1 }] },
+    // One parent of two siblings: listed once.
+    { id: 91, name: 'Lee Burke', email: 'LEE@home.org', enrollments: [{ associated_user_id: 2 }, { associated_user_id: 1 }] },
+    { id: 92, name: 'Sam Burke', email: 'lee@home.org', enrollments: [{ associated_user_id: 2 }] },
+    // A course-wide observer (a colleague), linked to no student: left out.
+    { id: 93, name: 'Dean', email: 'dean@school.org', enrollments: [{ associated_user_id: null }] },
+    // Linked to someone not on this roster: left out.
+    { id: 94, name: 'Other', email: 'other@home.org', enrollments: [{ associated_user_id: 77 }] },
+    { id: 95, name: 'No Email', enrollments: [{ associated_user_id: 3 }] }
+  ];
+
+  test('only observers linked to a student on the roster, each address once', () => {
+    const rows = fmt().normalize(USERS, 'last');
+    const g = fmt().guardians(OBSERVERS, rows);
+    a.deep(g.emails, ['pat@home.org', 'LEE@home.org']);
+    a.eq(g.count, 2);
+    a.eq(g.uncovered, 2, 'Cher and Omari have no linked address');
+  });
+
+  test('the email list takes students, guardians or both, without repeats', () => {
+    const rows = fmt().normalize(USERS.slice(0, 2), 'last');
+    const g = fmt().guardians(OBSERVERS, rows).emails;
+    a.eq(fmt().emailList(rows, 'comma'), 'jbonko@school.org, jburke@school.org', 'students by default');
+    a.eq(fmt().emailList(rows, 'semicolon', { guardians: g }),
+      'jbonko@school.org; jburke@school.org; pat@home.org; LEE@home.org');
+    a.eq(fmt().emailList(rows, 'newline', { students: false, guardians: g }), 'pat@home.org\nLEE@home.org');
+    a.eq(fmt().emailList(rows, 'comma', { students: false, guardians: ['JBONKO@school.org'] }), 'JBONKO@school.org');
+    a.eq(fmt().emailList(rows, 'comma', { guardians: ['JBONKO@school.org'] }), 'jbonko@school.org, jburke@school.org',
+      'an address already on the list is not copied twice');
+    a.eq(fmt().emailList(rows, 'comma', { students: false }), '', 'nobody chosen');
   });
 });
 
