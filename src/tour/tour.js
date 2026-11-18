@@ -223,10 +223,10 @@
     '.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}',
     '.tile{padding:13px 14px;border-radius:14px;background:linear-gradient(160deg,#f7fafc,#f4f1ff);border:1px solid #e9e6fb;animation:pop .5s var(--ease) both}',
     '.tile:nth-child(2){animation-delay:.07s}.tile:nth-child(3){animation-delay:.14s}.tile:nth-child(4){animation-delay:.21s}',
-    '.tile .ico{width:30px;height:30px;border-radius:9px;margin-bottom:8px;background:#fff;box-shadow:0 2px 6px rgba(9,16,29,.06)}',
+    '.tile .ico{display:grid;place-items:center;line-height:0;width:30px;height:30px;border-radius:9px;margin-bottom:8px;background:#fff;box-shadow:0 2px 6px rgba(9,16,29,.06)}',
     '.tile .ico svg{width:16px;height:16px}',
     '.tile b{display:block;font-size:13.5px;color:var(--ink);margin-bottom:3px}',
-    '.tile span{display:block;font-size:12.5px;line-height:1.45;color:var(--soft)}',
+    '.tile span:not(.ico){display:block;font-size:12.5px;line-height:1.45;color:var(--soft)}',
 
     /* waiting for something the stop opens */
     '.card.is-busy .btn--primary{opacity:.85;cursor:progress}',
