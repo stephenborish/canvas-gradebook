@@ -473,6 +473,50 @@
     el.classList.toggle('is-busy', kind === 'busy');
   }
 
+  /* Connected: a card that can't be mistaken for anything else - a check,
+   * "Your calendar is connected", what was read, and that nothing else is
+   * needed here. */
+  function setCalendarSuccess(view, extra) {
+    var el = $('calendarStatus');
+    if (!el) return;
+    el.innerHTML = '';
+    el.classList.remove('is-error', 'is-busy');
+    el.classList.add('is-ok');
+    var card = document.createElement('div');
+    card.className = 'schedule-success';
+    card.innerHTML = '<span class="schedule-success__icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22">' +
+      '<path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
+    var body = document.createElement('div');
+    body.className = 'schedule-success__body';
+    var title = document.createElement('p');
+    title.className = 'schedule-success__title';
+    title.textContent = 'Your calendar is connected';
+    body.appendChild(title);
+    var what = document.createElement('p');
+    what.className = 'schedule-success__text';
+    what.appendChild(document.createTextNode('Gradebook+ is reading ' + view.name + '. Next class: '));
+    var b = document.createElement('strong');
+    b.textContent = view.next.title;
+    what.appendChild(b);
+    what.appendChild(document.createTextNode(', ' + view.when + '.'));
+    body.appendChild(what);
+    var next = document.createElement('p');
+    next.className = 'schedule-success__next';
+    var done = document.createElement('strong');
+    done.textContent = 'You\u2019re all set \u2013 nothing else to do here. ';
+    next.appendChild(done);
+    next.appendChild(document.createTextNode(CGP.calendarConnect.USE_IN_CANVAS));
+    body.appendChild(next);
+    if (extra) {
+      var warn = document.createElement('p');
+      warn.className = 'schedule-success__warn';
+      warn.textContent = extra;
+      body.appendChild(warn);
+    }
+    card.appendChild(body);
+    el.appendChild(card);
+  }
+
   function setCalendarBusy(on) {
     ['connectCalendar', 'authorizeCalendar', 'disconnectCalendar', 'findCalendar', 'showCalendarLink'].forEach(function (id) {
       var b = $(id);
@@ -696,6 +740,7 @@
 
   function onCalendarAction(id) {
     if (id === 'guide') {
+      $('calendarManual').open = true;
       var g = $('calendarGuide');
       g.open = true;
       var sum = g.querySelector('summary');
@@ -750,7 +795,8 @@
       } else if (needsAllow) {
         // The link came through Chrome sync: Chrome asks once per computer.
         setCalendarStatus('Your calendar link came with your settings from another computer. Chrome asks once on each computer: click ' +
-          'Allow calendar access on this computer, and choose Allow. You don\u2019t need to paste the link again.', 'error');
+          'Allow calendar access on this computer, and choose Allow. You don\u2019t need to paste the link again.', 'error',
+          [{ id: 'authorize', label: 'Allow calendar access on this computer' }]);
       } else if (!lastCalendar) {
         setCalendarStatus('Saved. Your calendar hasn’t been read on this computer yet.', null, [{ id: 'refresh', label: 'Read it now' }]);
       } else if (!lastCalendar.ok) {
@@ -758,10 +804,18 @@
           (lastCalendar.occ ? ' (Showing the schedule read ' + fmtWhen(lastCalendar.lastOk) + '.)' : ''), 'error', [{ id: 'refresh', label: 'Try again' }]);
       } else {
         var view = connector().describe(lastCalendar);
-        var off = !$('courseScheduleEnabled').checked ? ' The class schedule is turned off above: turn it on and click Save changes to see it in Canvas.' : '';
-        setCalendarStatus(view.text + off, 'ok');
+        var off = !$('courseScheduleEnabled').checked ? 'The class schedule is turned off above: turn it on and click Save changes to see it in Canvas.' : '';
+        if (view.empty) setCalendarStatus(view.text + (off ? ' ' + off : ''), 'ok');
+        else setCalendarSuccess(view, off);
       }
-      var btn = $('authorizeCalendar');
+      // The paste box and its buttons are folded away until asked for (or
+      // needed: a found link that still needs a click to connect).
+      // Once connected, the green card is what matters: Find steps back.
+      $('findCalendar').classList.toggle('btn--primary', !saved);
+      $('findCalendar').classList.toggle('btn--secondary', !!saved);
+      $('calendarManualSummary').textContent = saved ? 'Use a different calendar, or remove this one' : 'I already have a calendar link';
+      if ((calendarResult && calendarResult.kind === 'found-unconnected') || switching) $('calendarManual').open = true;
+      var btn = $('calendarStatus').querySelector('[data-cal-act="authorize"]') || $('authorizeCalendar');
       btn.classList.toggle('btn--attention', needsAllow);
       // Sent here from the schedule panel in Canvas ("Allow on this computer").
       if (needsAllow && location.hash === '#schedule' && !renderCalendarStatus.focused) {
