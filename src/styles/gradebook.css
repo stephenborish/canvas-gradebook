@@ -1304,9 +1304,32 @@ html.cgp-on .cgp-total-tip span { color: #d5dde3; }
  * student's grades page - only the underline is gone, because two dozen
  * underlined names stacked down the frozen column is the single noisiest
  * thing on the screen. Hover keeps the affordance with colour instead. */
-html.cgp-on .slick-cell[data-cgp-col="student"],
-html.cgp-on .slick-header-column[data-cgp-col="student"] .slick-column-name {
+html.cgp-on .slick-cell[data-cgp-col="student"] {
   text-align: left !important;
+}
+/* The column's own title is centered, the way Total's is, in the space left
+ * of its "..." menu button. */
+html.cgp-on .slick-header-column[data-cgp-col="student"] .slick-column-name,
+html.cgp-on .slick-header-column[data-cgp-col="student"] .Gradebook__ColumnHeaderDetail,
+html.cgp-on .slick-header-column[data-cgp-col="student"] .Gradebook__ColumnHeaderDetailLine {
+  text-align: center !important;
+  justify-content: center !important;
+}
+html.cgp-on .slick-header-column[data-cgp-col="student"] .Gradebook__ColumnHeaderDetail {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+}
+/* Canvas reveals a column's "..." button only on hover, so the Student Name
+ * menu (Copy Roster, Sort by, Display as...) read as if it didn't exist.
+ * This one column keeps it showing; the click handling is still Canvas's. */
+html.cgp-on .slick-header-column[data-cgp-col="student"] .Gradebook__ColumnHeaderAction,
+html.cgp-on .slick-header-column[data-cgp-col="student"] .Gradebook__ColumnHeaderAction *,
+html.cgp-on .slick-header-column[data-cgp-col="student"] button,
+html.cgp-on .slick-header-column[data-cgp-col="student"] button *,
+html.cgp-on .slick-header-column[data-cgp-col="student"] [aria-haspopup],
+html.cgp-on .slick-header-column[data-cgp-col="student"] [aria-haspopup] * {
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 html.cgp-on .slick-cell[data-cgp-col="student"] {
   font-size: 14px !important;
@@ -2467,6 +2490,37 @@ html.cgp-on .cgp-roster__preview td {
 }
 html.cgp-on .cgp-roster__preview th { font-weight: 600; color: var(--cgp-muted); }
 html.cgp-on .cgp-roster__actions { margin-top: 12px; }
+/* "All email addresses": whose addresses to copy, as two selectable tiles
+ * (Students, Parents & guardians), each with its live count. */
+html.cgp-on .cgp-roster__who {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+html.cgp-on .cgp-roster__tile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--cgp-line);
+  border-radius: 8px;
+  background: var(--cgp-surface);
+  cursor: pointer;
+  margin: 0;
+  transition: border-color 90ms ease, background 90ms ease;
+}
+html.cgp-on .cgp-roster__tile:hover { border-color: var(--cgp-brand); }
+html.cgp-on .cgp-roster__tile:has(input:checked) {
+  border-color: var(--cgp-brand);
+  background: var(--cgp-brand-wash);
+}
+html.cgp-on .cgp-roster__tile:has(input:focus-visible) { box-shadow: var(--cgp-focus-ring); }
+html.cgp-on .cgp-roster__tile input { margin: 0; accent-color: var(--cgp-brand); flex: none; }
+html.cgp-on .cgp-roster__tile-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+html.cgp-on .cgp-roster__tile-title { font-size: 13px; font-weight: 600; color: var(--cgp-ink-strong); }
+html.cgp-on .cgp-roster__tile-count { font-size: 12px; color: var(--cgp-muted); }
+html.cgp-on .cgp-roster__guardian-note { margin: 4px 0 0; }
 
 /* ===================================== View Options sync (layout.js) ===== */
 

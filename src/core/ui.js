@@ -60,8 +60,52 @@
       } catch (e) { /* never let a message break grading */ }
     },
     error: function (message, opts) { this.toast(message, Object.assign({}, opts || {}, { level: 'error' })); },
-    copy: copy
+    copy: copy,
+    closeFlyouts: closeFlyouts
   };
+
+  /* An item this extension adds to one of Canvas's column menus (Copy
+   * Roster, Analyze Scores) is a plain clone with none of Canvas's React
+   * handlers. Canvas's menu closes an open submenu (Sort by, Display as,
+   * Secondary info) only when the pointer moves onto one of its OWN items, so
+   * resting on ours left the flyout the pointer just came from standing open
+   * beside it. This tells the menu what its own items would: an open flyout
+   * is closed by a hover on one of Canvas's plain (non-flyout) items, and
+   * focus then comes straight back to ours. */
+  var closingFlyouts = false;
+  function closeFlyouts(menu, keep) {
+    // Restoring focus below fires our own focus handler again; once is enough.
+    if (closingFlyouts) return false;
+    closingFlyouts = true;
+    try {
+      var open = menu.querySelectorAll('[aria-haspopup][aria-expanded="true"]');
+      if (!open.length) return false;
+      var items = menu.querySelectorAll('[role^="menuitem"]');
+      var plain = null;
+      for (var i = 0; i < items.length && !plain; i++) {
+        var it = items[i];
+        if (it === keep || it.hasAttribute('aria-haspopup')) continue;
+        if (it.closest && it.closest('.cgp-analyze-item')) continue;
+        // Never an item of the open submenu itself, if Canvas mounted it
+        // inside this menu: hovering that would keep it open.
+        if (it.closest && it.closest('[role="menu"]') !== menu) continue;
+        plain = it;
+      }
+      if (plain) {
+        ['mouseover', 'mouseenter'].forEach(function (type) {
+          plain.dispatchEvent(new MouseEvent(type, { bubbles: type === 'mouseover', cancelable: true, view: window, relatedTarget: keep }));
+        });
+      } else {
+        // No plain item to borrow: a second click on a flyout's trigger
+        // toggles it shut.
+        for (var j = 0; j < open.length; j++) open[j].click();
+      }
+      if (keep && document.activeElement !== keep) {
+        try { keep.focus({ preventScroll: true }); } catch (e) { keep.focus(); }
+      }
+      return true;
+    } catch (e) { return false; } finally { closingFlyouts = false; }
+  }
 
   /* Plain text, plus an HTML version when given, so the paste target picks
    * whichever it understands (a formatted table in Gmail, Docs or Word, plain

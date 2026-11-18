@@ -5,7 +5,9 @@
  * column's own menu (Sort by, Display as, Secondary info, Show). Choosing it opens a small
  * panel that reads the course's students - names and email addresses - from
  * Canvas, and lets the teacher:
- *   - copy every email address at once, ready for a To: or Bcc: field
+ *   - copy every email address at once, ready for a To: or Bcc: field -
+ *     the students', their parents' and guardians' (Canvas's "observers",
+ *     a word no teacher uses), or both
  *   - copy a table of names and emails, laid out the way they choose
  *     (First Last, Last, First, separate first/last columns, with or without
  *     email), which pastes as a real table into Docs, Word, Gmail or Sheets
@@ -29,7 +31,10 @@
   var ITEM_HINT = 'Names and emails';
   var PREFS_KEY = 'cgp.rosterPrefs';
   var PREVIEW_ROWS = 6;
-  var DEFAULT_PREFS = { nameFormat: 'first-last', email: true, header: true, sortBy: 'last', separator: 'comma' };
+  var DEFAULT_PREFS = {
+    nameFormat: 'first-last', email: true, header: true, sortBy: 'last', separator: 'comma',
+    emailStudents: true, emailGuardians: false
+  };
 
   var ICON_SVG =
     '<svg class="cgp-analyze-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
@@ -49,8 +54,7 @@
     ['first-last', 'First Last'],
     ['last-first', 'Last, First'],
     ['split', 'First and Last in separate columns'],
-    ['first', 'First name only'],
-    ['none', 'No names']
+    ['comma-line', 'First, Last, Email on one line']
   ];
   var SEPARATOR_CHOICES = [
     ['comma', 'Commas (Gmail)'],
@@ -86,6 +90,9 @@
         });
       }
     } catch (e) { /* private mode or blocked storage: defaults */ }
+    // "First name only" and "No names" were dropped; a choice saved before
+    // that falls back to First Last.
+    if (NAME_CHOICES.every(function (c) { return c[0] !== prefs.nameFormat; })) prefs.nameFormat = DEFAULT_PREFS.nameFormat;
     return prefs;
   }
 
@@ -188,9 +195,15 @@
     item.addEventListener('click', choose, true);
     item.addEventListener('mousedown', function (e) { e.stopPropagation(); }, true);
     if (!item.hasAttribute('tabindex')) item.setAttribute('tabindex', '-1');
+    // Taking focus (by hover or keyboard) closes any submenu (Sort by,
+    // Display as...) still standing open beside this item.
+    var closeOpen = function () { if (CGP.ui && CGP.ui.closeFlyouts) CGP.ui.closeFlyouts(menu, item); };
+    item.addEventListener('focus', closeOpen);
     item.addEventListener('mouseenter', function () {
       if (document.activeElement !== item) {
         try { item.focus({ preventScroll: true }); } catch (e) { item.focus(); }
+      } else {
+        closeOpen();
       }
     });
     item.addEventListener('keydown', function (e) {
@@ -251,7 +264,16 @@
       '<button type="button" class="cgp-stats__close" aria-label="Close">×</button></header>' +
       '<p class="cgp-stats__note cgp-roster__status">Loading students…</p>' +
       '<section class="cgp-roster__section">' +
-        '<h3>All email addresses</h3>' +
+        '<h3 id="cgp-roster-emails">All email addresses</h3>' +
+        '<div class="cgp-roster__who" role="group" aria-labelledby="cgp-roster-emails">' +
+          '<label class="cgp-roster__tile"><input type="checkbox" data-pref="emailStudents"' + (p.emailStudents ? ' checked' : '') + '>' +
+            '<span class="cgp-roster__tile-text"><span class="cgp-roster__tile-title">Students</span>' +
+            '<span class="cgp-roster__tile-count" data-count="students">…</span></span></label>' +
+          '<label class="cgp-roster__tile"><input type="checkbox" data-pref="emailGuardians"' + (p.emailGuardians ? ' checked' : '') + '>' +
+            '<span class="cgp-roster__tile-text"><span class="cgp-roster__tile-title">Parents &amp; guardians</span>' +
+            '<span class="cgp-roster__tile-count" data-count="guardians">Linked in Canvas</span></span></label>' +
+        '</div>' +
+        '<p class="cgp-stats__note cgp-roster__guardian-note">Parents and guardians are the family members linked to each student in Canvas (Canvas calls them observers).</p>' +
         '<div class="cgp-roster__row">' +
           '<label class="cgp-roster__field">Separate with <select data-pref="separator">' + options(SEPARATOR_CHOICES, p.separator) + '</select></label>' +
           '<button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-act="emails" disabled>Copy emails</button>' +
@@ -271,7 +293,7 @@
           '<button type="button" class="cgp-roster__btn cgp-roster__btn--primary" data-act="table" disabled>Copy table</button>' +
           '<button type="button" class="cgp-roster__btn" data-act="csv" disabled>Download CSV</button>' +
         '</div>' +
-        '<p class="cgp-stats__note">Copy table pastes as a formatted table in Google Docs, Word and Gmail, and as columns in Sheets or Excel.</p>' +
+        '<p class="cgp-stats__note cgp-roster__table-note"></p>' +
       '</section>' +
       '</div>';
 
@@ -292,6 +314,9 @@
 
     this._rows = null;
     this._users = null;
+    this._guardians = null;
+    this._guardianState = 'idle';
+    if (p.emailGuardians) this.loadGuardians();
     return this.api.courseRoster(this.courseId).then(function (users) {
       if (self._dialog !== root) return;
       self._users = users || [];
@@ -300,6 +325,42 @@
       if (self._dialog !== root) return;
       self.setStatus('Couldn’t load the roster from Canvas. ' +
         CGP.util.describeApiError(err, { fallback: 'Try again in a moment.' }));
+    });
+  };
+
+  /* Parents and guardians are read only once the teacher asks for them:
+   * most never will, and it is a second roster of real people's addresses. */
+  P.loadGuardians = function () {
+    var self = this;
+    var root = this._dialog;
+    if (!root || this._guardianState === 'loading' || this._guardianState === 'ready') return;
+    if (!this.api.courseObservers) { this._guardianState = 'error'; return; }
+    this._guardianState = 'loading';
+    this.api.courseObservers(this.courseId).then(function (users) {
+      if (self._dialog !== root) return;
+      self._guardians = users || [];
+      self._guardianState = 'ready';
+      if (self._users) self.refresh();
+    }, function (err) {
+      if (self._dialog !== root) return;
+      self._guardianState = 'error';
+      self._guardianError = CGP.util.describeApiError(err, { fallback: 'Try again in a moment.' });
+      if (self._users) self.refresh();
+    });
+  };
+
+  /* The parent/guardian addresses for the current students, or null while
+   * they are not loaded. */
+  P.guardianInfo = function () {
+    if (this._guardianState !== 'ready') return null;
+    return CGP.rosterFormat.guardians(this._guardians, this._rows || []);
+  };
+
+  /* The addresses "Copy emails" copies right now, each once. */
+  P.chosenEmails = function (g) {
+    return CGP.rosterFormat.emailAddresses(this._rows || [], {
+      students: this.prefs.emailStudents,
+      guardians: this.prefs.emailGuardians && g ? g.emails : []
     });
   };
 
@@ -313,6 +374,7 @@
     if (el.name === 'cgp-roster-name') this.prefs.nameFormat = el.value;
     var key = el.getAttribute && el.getAttribute('data-pref');
     if (key) this.prefs[key] = el.type === 'checkbox' ? !!el.checked : el.value;
+    if (key === 'emailGuardians' && el.checked) this.loadGuardians();
     this.savePrefs();
     if (this._users) this.refresh();
   };
@@ -341,32 +403,92 @@
         }).join('') + '</tbody></table>' +
         (t.body.length > shown.length ? '<p class="cgp-stats__note">…and ' + (t.body.length - shown.length) + ' more</p>' : '');
     }
+    var tableNote = this._dialog.querySelector('.cgp-roster__table-note');
+    if (tableNote) {
+      tableNote.textContent = t.oneLine
+        ? 'Copy table pastes one line per student, each part separated by a comma. Download CSV gives the same thing as First Name, Last Name and Email columns.'
+        : 'Copy table pastes as a formatted table in Google Docs, Word and Gmail, and as columns in Sheets or Excel.';
+    }
     var hasTable = !!t.header.length && !!n;
-    var hasEmail = this._rows.some(function (r) { return r.email; });
+    var emailCount = this.renderEmailChoices(n - noEmail);
     var dialog = this._dialog;
-    [['emails', hasEmail], ['table', hasTable], ['csv', hasTable]].forEach(function (b) {
+    [['emails', emailCount > 0], ['table', hasTable], ['csv', hasTable]].forEach(function (b) {
       var btn = dialog.querySelector('[data-act="' + b[0] + '"]');
       if (btn) btn.disabled = !b[1];
     });
+  };
+
+  /* The two "whose addresses" tiles, the note under them and the Copy
+   * button's label. Returns how many addresses Copy would copy. */
+  P.renderEmailChoices = function (studentEmails) {
+    var root = this._dialog;
+    var p = this.prefs;
+    var g = this.guardianInfo();
+    var set = function (sel, text) { var el = root.querySelector(sel); if (el) el.textContent = text; };
+    var plural = function (n, one, many) { return n + ' ' + (n === 1 ? one : many); };
+
+    set('[data-count="students"]', plural(studentEmails, 'email', 'emails'));
+    var note;
+    if (this._guardianState === 'loading') {
+      set('[data-count="guardians"]', 'Loading…');
+      note = 'Looking up the parents and guardians linked to these students in Canvas…';
+    } else if (this._guardianState === 'error') {
+      set('[data-count="guardians"]', 'Unavailable');
+      note = 'Couldn’t load parents and guardians from Canvas. ' + (this._guardianError || 'Try again in a moment.');
+    } else if (g && !g.count) {
+      set('[data-count="guardians"]', 'None linked');
+      note = 'No parents or guardians are linked to these students in Canvas (Canvas calls them observers).';
+    } else if (g) {
+      set('[data-count="guardians"]', plural(g.count, 'email', 'emails'));
+      var total = (this._rows || []).length;
+      note = g.uncovered
+        ? plural(g.uncovered, 'student has', 'students have') + ' no parent or guardian linked in Canvas, so ' +
+          (g.uncovered === 1 ? 'that family isn’t' : 'those families aren’t') + ' on the list.'
+        : 'Every student has at least one parent or guardian linked in Canvas (' + total + ' of ' + total + ').';
+    } else {
+      set('[data-count="guardians"]', 'Linked in Canvas');
+      note = 'Parents and guardians are the family members linked to each student in Canvas (Canvas calls them observers).';
+    }
+    set('.cgp-roster__guardian-note', note);
+
+    var count = this._rows ? this.chosenEmails(g).length : 0;
+    var btn = root.querySelector('[data-act="emails"]');
+    if (btn) btn.textContent = count ? 'Copy ' + plural(count, 'email', 'emails') : 'Copy emails';
+    // With Parents & guardians checked, nothing is copied until their list
+    // is in: a students-only list would look like the whole thing.
+    if (p.emailGuardians && this._guardianState !== 'ready') count = 0;
+    return count;
   };
 
   P.act = function (what) {
     var fmt = CGP.rosterFormat;
     var rows = this._rows || [];
     if (what === 'emails') {
-      var list = fmt.emailList(rows, this.prefs.separator);
-      if (!list) { CGP.ui.error('Canvas didn’t share any student email addresses for this course.'); return; }
-      var count = rows.filter(function (r) { return r.email; }).length;
-      copy(list, null).then(function () {
+      if (this.prefs.emailGuardians && this._guardianState !== 'ready') {
+        CGP.ui.error('Parents and guardians aren’t loaded. Uncheck them to copy students only, or check them again to retry.');
+        return;
+      }
+      var addresses = this.chosenEmails(this.guardianInfo());
+      if (!addresses.length) { CGP.ui.error('There are no email addresses to copy for the people chosen.'); return; }
+      var count = addresses.length;
+      copy(fmt.joinEmails(addresses, this.prefs.separator), null).then(function () {
         CGP.ui.toast(count + (count === 1 ? ' email' : ' emails') + ' copied');
       }, function () { CGP.ui.error('Couldn’t copy to the clipboard.'); });
     } else if (what === 'table') {
       var t = this.currentTable();
-      copy(fmt.toTsv(t, this.prefs.header), fmt.toHtml(t, this.prefs.header)).then(function () {
+      // "First, Last, Email on one line" is copied as plain lines of text,
+      // not a one-column table, so it pastes exactly as shown.
+      copy(fmt.toTsv(t, this.prefs.header), t.oneLine ? null : fmt.toHtml(t, this.prefs.header)).then(function () {
         CGP.ui.toast('Roster copied (' + t.body.length + (t.body.length === 1 ? ' student)' : ' students)'));
       }, function () { CGP.ui.error('Couldn’t copy to the clipboard.'); });
     } else if (what === 'csv') {
-      download(fmt.toCsv(this.currentTable(), this.prefs.header), fileName(this.courseName()));
+      // A CSV is already comma separated: the one-line layout downloads as
+      // its First Name, Last Name, Email columns rather than one quoted cell.
+      var csvTable = this.currentTable();
+      if (csvTable.oneLine) {
+        csvTable = fmt.table(this._rows || [], { nameFormat: 'split', email: this.prefs.email });
+      }
+      download(fmt.toCsv(csvTable, this.prefs.header), fileName(this.courseName()));
     }
   };
 
@@ -398,6 +520,8 @@
     this._dialog = null;
     this._rows = null;
     this._users = null;
+    this._guardians = null;
+    this._guardianState = 'idle';
   };
 
   CGP.RosterExportController = RosterExportController;

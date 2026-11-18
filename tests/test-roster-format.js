@@ -44,10 +44,20 @@ suite('roster export: formatting', (test) => {
     t = fmt().table(rows, { nameFormat: 'split', email: true });
     a.deep(t.header, ['First Name', 'Last Name', 'Email']);
     a.deep(t.body[0], ['Jake', 'Bonko', 'jbonko@school.org']);
-    t = fmt().table(rows, { nameFormat: 'none', email: true });
-    a.deep(t.header, ['Email']);
     t = fmt().table(rows, { nameFormat: 'none', email: false });
-    a.eq(t.header.length, 0, 'nothing chosen, nothing to copy');
+    a.deep(t.header, ['Name'], 'a retired layout (No names, First name only) falls back to First Last');
+    a.deep(t.body[0], ['Jake Bonko']);
+    a.deep(fmt().NAME_FORMATS, ['first-last', 'last-first', 'split', 'comma-line']);
+    t = fmt().table(rows, { nameFormat: 'comma-line', email: true });
+    a.deep(t.header, ['First Name, Last Name, Email']);
+    a.deep(t.body, [['Jake, Bonko, jbonko@school.org'], ['John (Jack), Burke, jburke@school.org']], 'one cell per student');
+    a.eq(fmt().toTsv(t, false), 'Jake, Bonko, jbonko@school.org\nJohn (Jack), Burke, jburke@school.org');
+    t = fmt().table(rows, { nameFormat: 'comma-line', email: false });
+    a.deep(t.body[0], ['Jake, Bonko'], 'email left off when unchecked');
+    t = fmt().table(fmt().normalize([{ id: 9, name: 'Cher', sortable_name: 'Cher' }], 'last'), { nameFormat: 'comma-line', email: true });
+    a.deep(t.body[0], ['Cher, , '], 'a missing part keeps its place');
+    t = fmt().table(fmt().normalize([{ id: 8, name: 'John Smith Jr.', sortable_name: 'Smith, John, Jr.', email: 'js@x.org' }], 'last'), { nameFormat: 'comma-line', email: true });
+    a.deep(t.body[0], ['John Jr., Smith, js@x.org'], 'a comma inside a name never adds a field');
   });
 
   test('TSV, CSV and HTML outputs', () => {
@@ -71,6 +81,43 @@ suite('roster export: formatting', (test) => {
     a.eq(fmt().emailList(rows, 'comma'), 'jbonko@school.org, jburke@school.org, osutton@school.org');
     a.eq(fmt().emailList(rows, 'semicolon'), 'jbonko@school.org; jburke@school.org; osutton@school.org');
     a.eq(fmt().emailList(rows, 'newline').split('\n').length, 3);
+  });
+});
+
+suite('roster export: parents and guardians', (test) => {
+  const OBSERVERS = [
+    { id: 90, name: 'Pat Bonko', email: 'pat@home.org', enrollments: [{ type: 'ObserverEnrollment', associated_user_id: 1 }] },
+    // One parent of two siblings: listed once.
+    { id: 91, name: 'Lee Burke', email: 'LEE@home.org', enrollments: [{ associated_user_id: 2 }, { associated_user_id: 1 }] },
+    { id: 92, name: 'Sam Burke', email: 'lee@home.org', enrollments: [{ associated_user_id: 2 }] },
+    // A course-wide observer (a colleague), linked to no student: left out.
+    { id: 93, name: 'Dean', email: 'dean@school.org', enrollments: [{ associated_user_id: null }] },
+    // Linked to someone not on this roster: left out.
+    { id: 94, name: 'Other', email: 'other@home.org', enrollments: [{ associated_user_id: 77 }] },
+    { id: 95, name: 'No Email', enrollments: [{ associated_user_id: 3 }] },
+    // Linked only through observed_users, as the student overview also reads.
+    { id: 96, name: 'Kim Sutton', email: 'kim@home.org', observed_users: [{ id: 3 }] }
+  ];
+
+  test('only observers linked to a student on the roster, each address once', () => {
+    const rows = fmt().normalize(USERS, 'last');
+    const g = fmt().guardians(OBSERVERS, rows);
+    a.deep(g.emails, ['pat@home.org', 'LEE@home.org', 'kim@home.org']);
+    a.eq(g.count, 3);
+    a.eq(g.uncovered, 1, 'only Cher has no linked address; Omari\'s comes through observed_users');
+  });
+
+  test('the email list takes students, guardians or both, without repeats', () => {
+    const rows = fmt().normalize(USERS.slice(0, 2), 'last');
+    const g = fmt().guardians(OBSERVERS, rows).emails;
+    a.eq(fmt().emailList(rows, 'comma'), 'jbonko@school.org, jburke@school.org', 'students by default');
+    a.eq(fmt().emailList(rows, 'semicolon', { guardians: g }),
+      'jbonko@school.org; jburke@school.org; pat@home.org; LEE@home.org');
+    a.eq(fmt().emailList(rows, 'newline', { students: false, guardians: g }), 'pat@home.org\nLEE@home.org');
+    a.eq(fmt().emailList(rows, 'comma', { students: false, guardians: ['JBONKO@school.org'] }), 'JBONKO@school.org');
+    a.eq(fmt().emailList(rows, 'comma', { guardians: ['JBONKO@school.org'] }), 'jbonko@school.org, jburke@school.org',
+      'an address already on the list is not copied twice');
+    a.eq(fmt().emailList(rows, 'comma', { students: false }), '', 'nobody chosen');
   });
 });
 
@@ -124,6 +171,47 @@ suite('roster export: Student Name menu', (test) => {
     a.eq(menu.children.indexOf(added[0]), 0, 'first, above Sort by');
     a.eq(added[0].getAttribute('aria-haspopup'), null, 'opens no submenu');
     a.eq(added[0].getAttribute('aria-label'), 'Copy Roster');
+  });
+
+  test('resting on Copy Roster closes a submenu left open, and keeps focus', () => {
+    const C = loadRoster();
+    const doc = domshim.install();
+    const FakeElement = domshim.FakeElement;
+    const menu = studentMenu(doc, FakeElement);
+    menu.children[0].setAttribute('aria-expanded', 'true'); // Sort by's flyout is open
+    const plain = new FakeElement('div');
+    plain.setAttribute('role', 'menuitemcheckbox');
+    plain.textContent = 'Inactive enrollments';
+    let hovered = 0;
+    plain.addEventListener('mouseover', () => {
+      hovered++;
+      plain.focus(); // what Canvas's own item does on hover
+      menu.children.forEach((c) => c.getAttribute('aria-expanded') && c.setAttribute('aria-expanded', 'false'));
+    });
+    menu.appendChild(plain);
+    const hadMouseEvent = 'MouseEvent' in globalThis;
+    const saved = globalThis.MouseEvent;
+    globalThis.MouseEvent = function (type, init) { return Object.assign({ type }, init); };
+    if (!globalThis.window) globalThis.window = globalThis;
+    let prevUi;
+    try {
+      prevUi = globalThis.CGP.ui;
+      delete globalThis.CGP.ui;
+      vm.runInThisContext(fs.readFileSync(path.resolve(__dirname, '../src/core/ui.js'), 'utf8'));
+      const ctrl = new C({ api: {}, courseId: '379', adapter: {} });
+      ctrl._lastTrigger = Date.now();
+      ctrl.decorateMenu(menu);
+      const item = menu.querySelector('.cgp-roster-item');
+      item.dispatchEvent({ type: 'mouseenter' });
+      item.dispatchEvent({ type: 'focus' }); // what the browser fires for the focus() above
+      a.eq(hovered, 1, 'Canvas\'s own plain item was told about the hover');
+      a.eq(doc.activeElement, item, 'focus came back to Copy Roster');
+      item.dispatchEvent({ type: 'mouseenter' });
+      a.eq(hovered, 1, 'nothing open, nothing to close');
+    } finally {
+      if (hadMouseEvent) globalThis.MouseEvent = saved; else delete globalThis.MouseEvent;
+      if (prevUi) globalThis.CGP.ui = prevUi;
+    }
   });
 
   test('a menu opened from anywhere else is left alone', () => {

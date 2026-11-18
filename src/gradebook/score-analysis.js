@@ -171,9 +171,15 @@
     // item the pointer just left (Set Default Grade from above, Hide grades
     // from below) stayed highlighted alongside this one.
     if (!item.hasAttribute('tabindex')) item.setAttribute('tabindex', '-1');
+    // Taking focus (by hover or keyboard) closes any submenu (Sort by...)
+    // still standing open beside this item.
+    var closeOpen = function () { if (CGP.ui && CGP.ui.closeFlyouts) CGP.ui.closeFlyouts(menu, item); };
+    item.addEventListener('focus', closeOpen);
     item.addEventListener('mouseenter', function () {
       if (document.activeElement !== item) {
         try { item.focus({ preventScroll: true }); } catch (e) { item.focus(); }
+      } else {
+        closeOpen();
       }
     });
     item.addEventListener('keydown', function (e) {

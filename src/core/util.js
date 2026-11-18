@@ -222,7 +222,8 @@
     // (formats: up to 12, each a template like "Lab {A}" or a list of names).
     groupPrefs: { format: 'Group {n}', formats: [], by: 'count', count: 6, size: 4, mode: 'random' },
     // Copy Roster's layout choices (Student Name column menu).
-    rosterPrefs: { nameFormat: 'first-last', email: true, header: true, sortBy: 'last', separator: 'comma' },
+    // emailStudents / emailGuardians: whose addresses "Copy emails" copies.
+    rosterPrefs: { nameFormat: 'first-last', email: true, header: true, sortBy: 'last', separator: 'comma', emailStudents: true, emailGuardians: false },
     // Also keep these settings in the teacher's own Canvas account, so they
     // reach every computer where the teacher opens Canvas even when Chrome
     // sync is off (core/settings-mirror.js).
@@ -543,7 +544,7 @@
       if (k === 'rosterPrefs') {
         var rp = {};
         var given = v && typeof v === 'object' ? v : {};
-        var choices = { nameFormat: ['first-last', 'last-first', 'split', 'first', 'none'], sortBy: ['last', 'first'], separator: ['comma', 'semicolon', 'newline'] };
+        var choices = { nameFormat: ['first-last', 'last-first', 'split', 'comma-line'], sortBy: ['last', 'first'], separator: ['comma', 'semicolon', 'newline'] };
         Object.keys(d[k]).forEach(function (f) {
           var dv = d[k][f];
           var gv = given[f];

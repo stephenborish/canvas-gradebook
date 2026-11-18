@@ -13,7 +13,10 @@
   if (CGP.rosterFormat) return;
 
   // nameFormat values, in the order the export panel offers them.
-  var NAME_FORMATS = ['first-last', 'last-first', 'split', 'first', 'none'];
+  // 'comma-line': one line per student, "First, Last, email" - commas
+  // between the parts, the whole line in a single cell. A missing part keeps
+  // its place ("Cher, , cher@x.org"), so every line has the same positions.
+  var NAME_FORMATS = ['first-last', 'last-first', 'split', 'comma-line'];
   var SEPARATORS = { comma: ', ', semicolon: '; ', newline: '\n' };
 
   function clean(s) { return String(s === undefined || s === null ? '' : s).replace(/\s+/g, ' ').trim(); }
@@ -71,14 +74,25 @@
     opts = opts || {};
     var fmt = NAME_FORMATS.indexOf(opts.nameFormat) >= 0 ? opts.nameFormat : 'first-last';
     var header = [];
-    if (fmt === 'first-last' || fmt === 'last-first' || fmt === 'first') header.push('Name');
+    if (fmt === 'first-last' || fmt === 'last-first') header.push('Name');
+    if (fmt === 'comma-line') {
+      return {
+        header: [['First Name', 'Last Name'].concat(opts.email ? ['Email'] : []).join(', ')],
+        body: (rows || []).map(function (r) {
+          // A comma inside a part ("John, Jr.") would read as another
+          // field, so it becomes a space there.
+          var parts = [r.first, r.last].concat(opts.email ? [r.email] : []);
+          return [parts.map(function (x) { return clean(String(x || '').replace(/,/g, ' ')); }).join(', ')];
+        }),
+        oneLine: true
+      };
+    }
     if (fmt === 'split') header.push('First Name', 'Last Name');
     if (opts.email) header.push('Email');
     var body = (rows || []).map(function (r) {
       var cells = [];
       if (fmt === 'first-last') cells.push(clean(r.first + ' ' + r.last));
       if (fmt === 'last-first') cells.push(r.last && r.first ? r.last + ', ' + r.first : (r.last || r.first));
-      if (fmt === 'first') cells.push(r.first);
       if (fmt === 'split') cells.push(r.first, r.last);
       if (opts.email) cells.push(r.email);
       return cells;
@@ -125,11 +139,73 @@
     return html;
   }
 
+  /* Parents and guardians: the course's observers (Canvas's word, read by
+   * CanvasApi.courseObservers) who are linked to one of these students. An
+   * observer with no student link is left out - that is a colleague or
+   * administrator watching the course, not a family member. Returns
+   *   emails       each address once, in the students' order
+   *   count        how many addresses that is
+   *   uncovered    students with no linked parent/guardian address */
+  function guardians(observers, rows) {
+    var byStudent = {};
+    (observers || []).forEach(function (u) {
+      var email = emailOf(u);
+      if (!email) return;
+      // Canvas gives the link either way (the student overview's
+      // guardiansFor reads both): each observer enrollment's
+      // associated_user_id, or the observed_users list.
+      var linked = {};
+      (u && u.enrollments || []).forEach(function (en) {
+        var sid = en && en.associated_user_id;
+        if (sid !== undefined && sid !== null) linked[String(sid)] = true;
+      });
+      (u && u.observed_users || []).forEach(function (o) {
+        if (o && o.id !== undefined && o.id !== null) linked[String(o.id)] = true;
+      });
+      Object.keys(linked).forEach(function (sid) {
+        (byStudent[sid] = byStudent[sid] || []).push(email);
+      });
+    });
+    var seen = {};
+    var emails = [];
+    var uncovered = 0;
+    (rows || []).forEach(function (r) {
+      var list = byStudent[r.id] || [];
+      if (!list.length) uncovered++;
+      list.forEach(function (e) {
+        var k = e.toLowerCase();
+        if (seen[k]) return;
+        seen[k] = true;
+        emails.push(e);
+      });
+    });
+    return { emails: emails, count: emails.length, uncovered: uncovered };
+  }
+
   /* Every address on one line (or one per line), ready for a To: or Bcc:
-   * field. Students with no address are skipped. */
-  function emailList(rows, separator) {
-    var sep = SEPARATORS[separator] || SEPARATORS.comma;
-    return (rows || []).map(function (r) { return r.email; }).filter(Boolean).join(sep);
+   * field: the students' (unless opts.students is false), then any
+   * parent/guardian addresses in opts.guardians. Students with no address
+   * are skipped, and an address on the list twice is copied once. */
+  function emailAddresses(rows, opts) {
+    opts = opts || {};
+    var list = opts.students === false ? [] : (rows || []).map(function (r) { return r.email; });
+    list = list.concat(opts.guardians || []);
+    var seen = {};
+    return list.filter(function (e) {
+      if (!e) return false;
+      var k = e.toLowerCase();
+      if (seen[k]) return false;
+      seen[k] = true;
+      return true;
+    });
+  }
+
+  function joinEmails(addresses, separator) {
+    return (addresses || []).join(SEPARATORS[separator] || SEPARATORS.comma);
+  }
+
+  function emailList(rows, separator, opts) {
+    return joinEmails(emailAddresses(rows, opts), separator);
   }
 
   CGP.rosterFormat = {
@@ -141,6 +217,9 @@
     toTsv: toTsv,
     toCsv: toCsv,
     toHtml: toHtml,
+    guardians: guardians,
+    emailAddresses: emailAddresses,
+    joinEmails: joinEmails,
     emailList: emailList
   };
 })();

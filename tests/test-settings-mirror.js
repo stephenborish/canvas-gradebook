@@ -328,7 +328,10 @@ suite('settings everywhere: Chrome sync check-ins', (test) => {
 
   test('the Copy Roster layout is a setting, sanitized; the Canvas copy is on by default', () => {
     const v = C().sanitizeSettings({ rosterPrefs: { nameFormat: 'split', email: false, sortBy: 'bogus', extra: 1 } });
-    a.deep(v.rosterPrefs, { nameFormat: 'split', email: false, header: true, sortBy: 'last', separator: 'comma' });
+    a.deep(v.rosterPrefs, { nameFormat: 'split', email: false, header: true, sortBy: 'last', separator: 'comma', emailStudents: true, emailGuardians: false });
+    a.eq(C().sanitizeSettings({ rosterPrefs: { nameFormat: 'none' } }).rosterPrefs.nameFormat, 'first-last',
+      'a retired name layout falls back to First Last');
+    a.deep(C().sanitizeSettings({ rosterPrefs: { emailGuardians: true } }).rosterPrefs.emailGuardians, true);
     a.eq(C().sanitizeSettings({}).settingsInCanvas, true);
   });
 });
