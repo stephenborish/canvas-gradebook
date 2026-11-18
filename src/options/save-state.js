@@ -8,7 +8,9 @@
  *    read-then-write cycles never interleave.
  *  - Edits made while a save is running are kept. When the save finishes,
  *    any field the teacher changed after clicking Save stays as typed and
- *    still counts as unsaved. Every other field takes the stored value.
+ *    still counts as unsaved. With no such edit, the form is refilled from
+ *    storage; with one, every other field keeps what it showed (see settle:
+ *    a value another computer saved meanwhile is reported, not shown).
  *  - The reload notice appears only when a changed setting needs one. Most
  *    settings reach an open Canvas tab right away (CGP.settings.onChange, or
  *    read each time they are used). The settings below are read once, when a
@@ -97,10 +99,14 @@
 
   /* One save at a time, and every write in order.
    *   read():            the form's values now
-   *   write(base, next): resolves with what is stored afterwards */
+   *   write(base, next): resolves with what is stored afterwards
+   *   asForm(stored):    optional - stored values as the form would read
+   *                      them back (a link the form shows normalized), so a
+   *                      difference in spelling alone never counts as stale */
   function Saver(o) {
     this.read = o.read;
     this.write = o.write;
+    this.asForm = o.asForm || function (v) { return v; };
     this.baseline = null;
     this.inflight = null;   // the Save click being processed
     this._tail = Promise.resolve();
@@ -120,12 +126,13 @@
   /* Any write from this page still running or waiting. */
   Saver.prototype.busy = function () { return this._pending > 0; };
 
-  Saver.prototype.dirty = function () {
-    return !!this.baseline && !same(this.read(), this.baseline);
+  /* current: the form's values, when the caller has already read them. */
+  Saver.prototype.dirty = function (current) {
+    return !!this.baseline && !same(current || this.read(), this.baseline);
   };
 
-  Saver.prototype.changed = function () {
-    return this.baseline ? changedKeys(this.baseline, this.read()) : [];
+  Saver.prototype.changed = function (current) {
+    return this.baseline ? changedKeys(this.baseline, current || this.read()) : [];
   };
 
   /* Save: the form as it is now, against the baseline. While one is running,
@@ -139,7 +146,7 @@
     var submitted = this.read();
     var done = this.enqueue(function () { return self.write(base, submitted); }).then(function (stored) {
       self.inflight = null;
-      var s = settle(submitted, self.read(), stored);
+      var s = settle(submitted, self.read(), self.asForm(stored));
       self.baseline = s.baseline;
       return {
         stored: stored, submitted: submitted, edited: s.edited, stale: s.stale,

@@ -434,6 +434,7 @@
     if (prev && prev.leave) { try { prev.leave(this); } catch (e) { /* ignore */ } }
     this.shown = null;
     this.path = path;
+    this.chosen = true;   // under way: never dismissed as untouched
     if (this.state && this.state.setPath) this.state.setPath(path);
     this.plan();
     this.show(0, 1);
@@ -1110,7 +1111,7 @@
             if (!go || CGP.tourInstance) return;
             var tour = new Tour({ state: state, chapter: chapter, path: path, courseId: courseId });
             tour.start({ startAt: v.stop });
-            tour._unlisten = listenForDone(function () { if (!tour.endedHere && tour.index === 0) tour.dismissQuietly(); });
+            tour._unlisten = listenForDone(function () { if (!tour.endedHere && !tour.chosen && tour.index === 0) tour.dismissQuietly(); });
           });
       });
     });

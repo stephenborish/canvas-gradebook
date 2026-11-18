@@ -972,7 +972,12 @@
   var shown = null;   // the stored settings, as JSON, that this page last saw
   var saver = new CGP.optionsSave.Saver({
     read: function () { return read(); },
-    write: function (base, values) { return CGP.settingsStorage.write(base, values); }
+    write: function (base, values) { return CGP.settingsStorage.write(base, values); },
+    // read() shows the calendar link normalized (savedCalUrl); a stored link
+    // spelled otherwise (an import, an older version) is not a change.
+    asForm: function (stored) {
+      return Object.assign({}, stored, { courseCalendarUrl: Cal().normalizeUrl(stored.courseCalendarUrl || '') || '' });
+    }
   });
 
   function show(values) {
@@ -1041,7 +1046,11 @@
     var line = $('saveState');
     if (!btn || !line) return;
     var busy = !!saver.inflight;
-    var dirty = !busy && isDirty();
+    // The form, read once: read() sanitizes everything, and this runs on
+    // every edit.
+    var current = saver.baseline ? read() : null;
+    var half = incompleteSnippet();
+    var dirty = !busy && (saver.dirty(current) || !!half);
     btn.textContent = busy ? 'Saving…' : (dirty ? 'Save changes' : 'Saved');
     btn.setAttribute('aria-disabled', busy ? 'true' : 'false');
     btn.setAttribute('aria-busy', busy ? 'true' : 'false');
@@ -1049,8 +1058,8 @@
     line.textContent = busy ? 'Saving…' : (dirty ? 'Unsaved changes' : '');
     line.classList.toggle('save-state--dirty', dirty);
 
-    var changed = saver.baseline ? saver.changed() : [];
-    if (incompleteSnippet()) changed.push('snippets');
+    var changed = saver.changed(current);
+    if (half) changed.push('snippets');
     var tabs = {};
     changed.forEach(function (k) { var t = tabOfKey(k); if (t) tabs[t] = true; });
     Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (tab) {
@@ -1064,7 +1073,7 @@
       } else if (!on && dot) dot.remove();
     });
 
-    var reload = saver.baseline ? CGP.optionsSave.reloadKeys(saver.baseline, read()) : [];
+    var reload = current ? CGP.optionsSave.reloadKeys(saver.baseline, current) : [];
     Array.prototype.forEach.call(document.querySelectorAll('.reload-note'), function (n) {
       if (reload.indexOf(n.getAttribute('data-key')) < 0) n.remove();
     });
@@ -1213,7 +1222,9 @@
     var done = saver.save();
     renderSaveState();
     return done.then(function (r) {
-      if (!r.edited.length) {
+      // A half-filled snippet card is not in read(), so it is not among the
+      // edits: refilling the form would throw it away.
+      if (!r.edited.length && !incompleteSnippet()) {
         show(r.stored);   // nothing typed meanwhile: show exactly what is stored
       } else {
         // Typed after clicking Save: those fields stay as typed, unsaved.
@@ -1481,7 +1492,9 @@
     groupsBox.addEventListener('click', function (e) {
       var btn = e.target.closest && e.target.closest('[data-unlink]');
       if (!btn) return;
-      if (saver.busy() || saver.dirty()) {
+      // isDirty: a half-filled snippet card would be lost when the form is
+      // refilled after the unlink.
+      if (saver.busy() || isDirty()) {
         status('Save (or reload to discard) your other changes first, then unlink.', { error: true });
         return;
       }
