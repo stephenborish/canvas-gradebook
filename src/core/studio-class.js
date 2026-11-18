@@ -53,8 +53,12 @@
       var roles = Array.isArray(v.role_names) ? v.role_names : v.role ? [v.role] : Array.isArray(v.roles) ? v.roles : [];
       var c = num(v.completion_rate !== undefined ? v.completion_rate : v.completion);
       if (c !== null && c > 1.0001) c = c / 100;      // a percent, should Studio ever send one
+      var cu = v.canvas_user_id !== undefined && v.canvas_user_id !== null ? v.canvas_user_id
+        : (v.canvas_id !== undefined && v.canvas_id !== null ? v.canvas_id : null);
       return {
         id: v.id === undefined || v.id === null ? null : String(v.id),
+        // The Canvas user id, when Studio gives one: as strong as an email.
+        canvasUserId: cu === null ? null : String(cu),
         name: String(v.display_name || v.full_name || v.name || ''),
         email: String(v.email || '').trim().toLowerCase(),
         roles: roles.map(String),
@@ -64,69 +68,188 @@
     });
   }
 
+  /* A share of the video -> 'watched' | 'partial' | 'none'; a share
+   * Studio didn't give -> 'unknown' (never "not watched"). */
   function statusOf(completion) {
-    if (completion === null || completion === undefined || completion <= 0) return 'none';
+    if (completion === null || completion === undefined || !isFinite(completion)) return 'unknown';
+    if (completion <= 0) return 'none';
     return completion >= WATCHED_AT ? 'watched' : 'partial';
+  }
+
+  /* What a row's status says, word for word, wherever it is shown. */
+  var LABELS = {
+    watched: 'Watched', partial: 'Partly watched', none: 'Not watched',
+    completion: 'Completion unavailable', ambiguous: 'Match unclear', error: 'Unavailable'
+  };
+  function labelOf(row) {
+    if (!row) return '';
+    if (row.status === 'unknown') return LABELS[row.unknownReason] || LABELS.error;
+    return LABELS[row.status] || '';
+  }
+
+  function rosterEmails(s) {
+    var out = [];
+    [s.email, s.login_id, s.loginId].forEach(function (e) {
+      e = String(e || '').trim().toLowerCase();
+      if (e && e.indexOf('@') > 0 && out.indexOf(e) < 0) out.push(e);
+    });
+    return out;
+  }
+
+  function nameKeys(names) {
+    var out = [];
+    names.forEach(function (n) {
+      [normName(n), plainName(n)].forEach(function (k) { if (k && out.indexOf(k) < 0) out.push(k); });
+    });
+    return out;
+  }
+
+  /* Who on the roster is which Studio viewer.
+   *   1. An exact email (or the Canvas user id) settles it, across the
+   *      whole roster first - before any name is looked at.
+   *   2. Only then a name, and only when it names exactly one remaining
+   *      student and exactly one remaining viewer, and their emails don't
+   *      disagree (a viewer with another email is someone else).
+   * A name shared by two remaining students or two remaining viewers is
+   * "Match unclear": nobody gets that viewing, and nobody is called "not
+   * watched" because of it.
+   * -> {match: Map(rosterIndex -> {viewer, how}), unclear: Set(rosterIndex),
+   *     unclearViewers: [viewer], used: Set(viewer)} */
+  function matchViewers(roster, students) {
+    var match = new Map(), used = new Set(), unclear = new Set(), unclearViewers = [];
+    var info = roster.map(function (s) {
+      return {
+        id: s.id === undefined || s.id === null ? null : String(s.id),
+        emails: rosterEmails(s),
+        keys: nameKeys([s.name, s.short_name, s.sortable_name || s.sortableName])
+      };
+    });
+    // 1. Strong identifiers.
+    students.forEach(function (v) {
+      var hits = [];
+      info.forEach(function (r, i) {
+        if ((v.email && r.emails.indexOf(v.email) >= 0) || (v.canvasUserId && r.id === v.canvasUserId)) hits.push(i);
+      });
+      if (hits.length !== 1) {
+        if (hits.length > 1) { hits.forEach(function (i) { unclear.add(i); }); used.add(v); unclearViewers.push(v); }
+        return;
+      }
+      var i = hits[0];
+      var have = match.get(i);
+      used.add(v);
+      // Studio listing one person twice: the most of it they watched.
+      if (have) {
+        if (v.completion !== null && (have.viewer.completion === null || v.completion > have.viewer.completion)) have.viewer = v;
+        return;
+      }
+      match.set(i, { viewer: v, how: v.email && info[i].emails.indexOf(v.email) >= 0 ? 'email' : 'id' });
+    });
+    // 2. Names, between whoever is left on both sides.
+    var restV = students.filter(function (v) { return !used.has(v); });
+    var vKeys = restV.map(function (v) { return nameKeys([v.name]); });
+    var openRows = info.map(function (r, i) { return i; }).filter(function (i) { return !match.has(i) && !unclear.has(i); });
+    var shared = function (a, b) { return a.some(function (k) { return b.indexOf(k) >= 0; }); };
+    var conflicts = function (r, v) { return !!(v.email && r.emails.length && r.emails.indexOf(v.email) < 0); };
+    var plan = [];
+    openRows.forEach(function (i) {
+      var r = info[i];
+      var cands = restV.filter(function (v, j) { return shared(r.keys, vKeys[j]) && !conflicts(r, v); });
+      if (!cands.length) return;
+      var v = cands[0];
+      var vk = vKeys[restV.indexOf(v)];
+      var rivals = openRows.filter(function (k) { return shared(info[k].keys, vk) && !conflicts(info[k], v); });
+      if (cands.length === 1 && rivals.length === 1) plan.push([i, v]);
+      else { unclear.add(i); cands.forEach(function (c) { if (unclearViewers.indexOf(c) < 0) unclearViewers.push(c); }); }
+    });
+    plan.forEach(function (p) {
+      if (unclear.has(p[0]) || used.has(p[1])) return;
+      match.set(p[0], { viewer: p[1], how: 'name' });
+      used.add(p[1]);
+    });
+    unclearViewers.forEach(function (v) { used.add(v); });
+    return { match: match, unclear: unclear, unclearViewers: unclearViewers, used: used };
+  }
+
+  function rowFor(s, m, isUnclear) {
+    var v = m ? m.viewer : null;
+    var row = {
+      id: s.id === undefined || s.id === null ? null : String(s.id),
+      name: String(s.name || s.short_name || ''),
+      sortableName: String(s.sortable_name || s.sortableName || s.name || ''),
+      email: String(s.email || s.login_id || '').trim().toLowerCase(),
+      viewer: v,
+      matchedBy: m ? m.how : null,
+      completion: null,
+      status: 'none',
+      unknownReason: null
+    };
+    if (isUnclear) { row.status = 'unknown'; row.unknownReason = 'ambiguous'; }
+    else if (v) {
+      row.completion = v.completion;
+      row.status = statusOf(v.completion);
+      if (row.status === 'unknown') row.unknownReason = 'completion';
+    }
+    // Not among Studio's viewers at all: Studio lists everyone who pressed
+    // play, so that is "not watched" (no share, rather than a measured 0%).
+    row.label = labelOf(row);
+    return row;
+  }
+
+  /* counts by status, and the class average over the students whose share
+   * is known (a student who never pressed play counts as 0; an unknown
+   * share counts as nothing at all). */
+  function tally(rows) {
+    var counts = { total: rows.length, watched: 0, partial: 0, none: 0, unknown: 0 };
+    var sum = 0, n = 0;
+    rows.forEach(function (r) {
+      counts[r.status]++;
+      if (r.status === 'unknown') return;
+      sum += r.completion || 0;
+      n++;
+    });
+    return { counts: counts, averageCompletion: n ? sum / n : null, averageOf: n };
   }
 
   /* Every roster student, alphabetically by last name, with what Studio
    * says they watched. Viewers Studio lists as students but the roster
-   * doesn't have (dropped, another section's embed) come back apart. */
+   * doesn't have (dropped, another section's embed) come back apart; ones
+   * whose name fits two students come back as `unclear`. */
   function classList(roster, viewers) {
-    var students = (viewers || []).filter(function (v) { return !v.teacher; });
-    var byEmail = Object.create(null), byName = Object.create(null), byPlain = Object.create(null);
-    students.forEach(function (v) {
-      if (v.email) byEmail[v.email] = byEmail[v.email] || v;
-      var n = normName(v.name), p = plainName(v.name);
-      if (n) byName[n] = byName[n] === undefined ? v : false;
-      if (p) byPlain[p] = byPlain[p] === undefined ? v : false;
-    });
-    var used = new Set();
-    var rows = (roster || []).filter(Boolean).map(function (s) {
-      var email = String(s.email || s.login_id || '').trim().toLowerCase();
-      var v = (email && byEmail[email]) || byName[normName(s.name)] || byPlain[plainName(s.name)] ||
-        byPlain[plainName(s.sortable_name || s.sortableName)] || null;
-      if (v && used.has(v)) v = null;
-      if (v) used.add(v);
-      var completion = v ? v.completion : null;
-      return {
-        id: s.id === undefined ? null : String(s.id),
-        name: String(s.name || s.short_name || ''),
-        sortableName: String(s.sortable_name || s.sortableName || s.name || ''),
-        email: email,
-        viewer: v,
-        completion: v ? (completion === null ? 0 : completion) : null,
-        status: statusOf(completion)
-      };
-    });
+    var students = (viewers || []).filter(function (v) { return v && !v.teacher; });
+    var list = (roster || []).filter(Boolean);
+    var m = matchViewers(list, students);
+    var rows = list.map(function (s, i) { return rowFor(s, m.match.get(i), m.unclear.has(i)); });
     rows.sort(function (a, b) {
       return a.sortableName.localeCompare(b.sortableName, undefined, { sensitivity: 'base' }) || a.name.localeCompare(b.name);
     });
-    var extra = students.filter(function (v) { return !used.has(v); })
+    var extra = students.filter(function (v) { return !m.used.has(v); })
       .sort(function (a, b) { return plainName(a.name).localeCompare(plainName(b.name)); });
-    var counts = { total: rows.length, watched: 0, partial: 0, none: 0 };
-    var sum = 0;
-    rows.forEach(function (r) { counts[r.status]++; sum += r.completion || 0; });
+    var t = tally(rows);
     return {
       rows: rows,
       extra: extra,
-      counts: counts,
-      averageCompletion: rows.length ? sum / rows.length : null
+      unclear: m.unclearViewers.slice(),
+      counts: t.counts,
+      averageCompletion: t.averageCompletion,
+      averageOf: t.averageOf
     };
   }
 
   /* Studio viewers alone, alphabetically - for when the roster can't be read. */
   function viewersOnly(viewers) {
-    var rows = (viewers || []).filter(function (v) { return !v.teacher; }).map(function (v) {
+    var rows = (viewers || []).filter(function (v) { return v && !v.teacher; }).map(function (v) {
       var parts = plainName(v.name).split(' ');
-      return {
+      var status = statusOf(v.completion);
+      var row = {
         id: v.id, name: v.name, sortableName: parts.length > 1 ? parts[parts.length - 1] + ', ' + parts.slice(0, -1).join(' ') : v.name,
-        email: v.email, viewer: v, completion: v.completion === null ? 0 : v.completion, status: statusOf(v.completion)
+        email: v.email, viewer: v, matchedBy: null, completion: v.completion, status: status,
+        unknownReason: status === 'unknown' ? 'completion' : null
       };
+      row.label = labelOf(row);
+      return row;
     }).sort(function (a, b) { return a.sortableName.localeCompare(b.sortableName); });
-    var counts = { total: rows.length, watched: 0, partial: 0, none: 0 };
-    rows.forEach(function (r) { counts[r.status]++; });
-    return { rows: rows, extra: [], counts: counts, averageCompletion: null, viewersOnly: true };
+    var t = tally(rows);
+    return { rows: rows, extra: [], unclear: [], counts: t.counts, averageCompletion: null, averageOf: 0, viewersOnly: true };
   }
 
   /* The embeds (perspectives) of one video: [{uuid, name}], in whatever
@@ -229,24 +352,39 @@
    * from viewersFrom), student {name, sortable_name, email}.
    * opts.classEmails: the class's emails; when given, "in class" counts
    * only those viewers (an embed copied from another class is watched by
-   * that class too). */
+   * that class too). opts.roster: the whole class ({id, name, sortable_name,
+   * email}); the student is matched against all of it, so a name another
+   * student shares is "Match unclear" rather than taken. */
   function studentVideos(videos, student, opts) {
     var classEmails = opts && opts.classEmails;
+    var roster = opts && opts.roster && opts.roster.length ? opts.roster.slice() : [];
+    var sid = student && student.id !== undefined && student.id !== null ? String(student.id) : null;
+    var at = roster.map(function (s) { return s && s.id !== undefined && s.id !== null ? String(s.id) : null; }).indexOf(sid);
+    if (sid === null || at < 0) roster.push(student);
+    else roster[at] = Object.assign({}, roster[at], student, { email: student.email || roster[at].email });
     var inClass = classEmails && Object.keys(classEmails).length ? function (x) { return !!(x.email && classEmails[x.email]); } : function () { return true; };
     var rows = (videos || []).filter(function (v) { return v && !v.archived; }).map(function (v) {
       var base = { uuid: v.uuid, title: v.title, duration: v.duration, thumbnail: v.thumbnail, createdAt: v.createdAt,
         places: v.places || [], embeddedOnly: !!v.embeddedOnly };
       // Studio didn't give this video's viewers: unknown, not "not watched".
       if (v.error) {
-        return Object.assign(base, { completion: null, status: 'unknown', watchedSeconds: null, classWatched: null,
-          errorStatus: v.errorStatus || null });
+        return Object.assign(base, { completion: null, status: 'unknown', unknownReason: 'error', label: LABELS.error,
+          watchedSeconds: null, classWatched: null, errorStatus: v.errorStatus || null });
       }
-      var r = classList([student], v.viewers || []).rows[0];
+      var L = classList(roster, v.viewers || []);
+      var r = L.rows.filter(function (x) { return sid !== null && x.id === sid; })[0] ||
+        L.rows.filter(function (x) { return x.name === String(student.name || ''); })[0] || null;
       return Object.assign(base, {
         completion: r ? r.completion : null,
-        status: r ? r.status : 'none',
-        watchedSeconds: r && r.completion !== null && v.duration ? r.completion * v.duration : null,
-        classWatched: (v.viewers || []).filter(function (x) { return !x.teacher && inClass(x) && statusOf(x.completion) !== 'none'; }).length
+        status: r ? r.status : 'unknown',
+        unknownReason: r ? r.unknownReason : 'ambiguous',
+        label: r ? r.label : LABELS.ambiguous,
+        matchedBy: r ? r.matchedBy : null,
+        watchedSeconds: r && r.completion !== null && r.completion !== undefined && v.duration ? r.completion * v.duration : null,
+        classWatched: (v.viewers || []).filter(function (x) {
+          var st = statusOf(x.completion);
+          return !x.teacher && inClass(x) && (st === 'watched' || st === 'partial');
+        }).length
       });
     });
     rows.sort(function (a, b) { return String(b.createdAt || '').localeCompare(String(a.createdAt || '')); });
@@ -446,15 +584,19 @@
       if (g.length < 2) return;
       var lengths = [];   // [[videos of one length]]
       var unknown = [];
+      // Two known, different media ids are two videos, whatever the title
+      // and however close the lengths: a title is only a guess.
+      var fits = function (c, v) { return !v.mediaId || c.every(function (x) { return !x.mediaId || String(x.mediaId) === String(v.mediaId); }); };
       g.forEach(function (v) {
         if (!known(v.duration)) { unknown.push(v); return; }
-        var c = lengths.filter(function (l) { return Math.abs(l[0].duration - v.duration) <= 2; })[0];
+        var c = lengths.filter(function (l) { return Math.abs(l[0].duration - v.duration) <= 2 && fits(l, v); })[0];
         if (c) c.push(v); else lengths.push([v]);
       });
-      if (lengths.length === 1) lengths[0] = lengths[0].concat(unknown);
+      var media = function (c) { var m = []; c.forEach(function (x) { if (x.mediaId && m.indexOf(String(x.mediaId)) < 0) m.push(String(x.mediaId)); }); return m; };
+      if (lengths.length === 1) lengths[0] = lengths[0].concat(unknown.filter(function (v) { return fits(lengths[0], v); }));
       // No length known at all: embeds join the title's one course video;
       // two course videos with no length to tell them apart stay apart.
-      else if (!lengths.length && unknown.filter(function (v) { return !v.embeddedOnly; }).length <= 1) lengths.push(unknown);
+      else if (!lengths.length && unknown.filter(function (v) { return !v.embeddedOnly; }).length <= 1 && media(unknown).length <= 1) lengths.push(unknown);
       lengths.forEach(function (c) {
         if (c.length < 2) return;
         var p = primary(c);
@@ -477,6 +619,9 @@
     classList: classList,
     viewersOnly: viewersOnly,
     statusOf: statusOf,
+    LABELS: LABELS,
+    labelOf: labelOf,
+    matchViewers: matchViewers,
     namesText: namesText,
     videosFromTiles: videosFromTiles,
     findCollection: findCollection,

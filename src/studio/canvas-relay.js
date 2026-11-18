@@ -57,7 +57,7 @@
     if (!rosters[courseId]) {
       rosters[courseId] = api.courseRoster(courseId).then(function (users) {
         return (users || []).map(function (u) {
-          return { id: String(u.id), name: u.name || u.short_name || '', sortable_name: u.sortable_name || '', email: u.email || u.login_id || '' };
+          return { id: String(u.id), name: u.name || u.short_name || '', sortable_name: u.sortable_name || '', email: u.email || '', login_id: u.login_id || '' };
         });
       });
       rosters[courseId].catch(function () { delete rosters[courseId]; });

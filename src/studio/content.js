@@ -320,7 +320,7 @@
     '.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px}',
     '.tile{border:1px solid #e3e7ea;border-radius:10px;padding:9px 11px}',
     '.tile .k{font-size:11.5px;color:#6b7780}.tile .v{font-size:22px;font-weight:700;margin-top:2px}',
-    '.tile--none .v{color:#c23c2f}.tile--partial .v{color:#b07b00}.tile--watched .v{color:#0b7a3e}',
+    '.tile--none .v{color:#c23c2f}.tile--partial .v{color:#b07b00}.tile--watched .v{color:#0b7a3e}.tile--unknown .v{color:#4a5560}',
     '.card{border:1px solid #e3e7ea;border-radius:10px;padding:10px 12px;margin-bottom:12px}',
     '.card h3{margin:0 0 6px;font-size:13px;font-weight:700}',
     '.note{font-size:12px;color:#6b7780;margin:6px 0 0}',
@@ -337,7 +337,7 @@
     'tr[hidden]{display:none}',
     '.scroll{max-height:min(60vh,520px);overflow:auto;border:1px solid #e3e7ea;border-radius:10px}',
     '.pill{display:inline-block;border-radius:999px;padding:2px 8px;font-size:11.5px;font-weight:700;white-space:nowrap}',
-    '.pill--none{background:#fbe7e5;color:#a8322a}.pill--partial{background:#fdf1d6;color:#8a6100}.pill--watched{background:#e1f3e8;color:#0b6b37}',
+    '.pill--none{background:#fbe7e5;color:#a8322a}.pill--partial{background:#fdf1d6;color:#8a6100}.pill--watched{background:#e1f3e8;color:#0b6b37}.pill--unknown{background:#eef0f2;color:#4a5560}',
     '.meter{display:flex;align-items:center;gap:8px}',
     '.track{flex:1;min-width:80px;height:8px;border-radius:4px;background:#eef1f2;overflow:hidden}',
     '.fill{height:100%;border-radius:4px;background:#0374B5}',
@@ -416,32 +416,40 @@
       (L.viewersOnly ? '' : tileHtml('Not watched', n.none, 'none')) +
       tileHtml('Partly watched', n.partial, 'partial') +
       tileHtml('Watched', n.watched, 'watched') +
-      (L.averageCompletion !== null ? tileHtml('Class average', pctText(L.averageCompletion), '') : '') +
+      (n.unknown ? tileHtml('Unavailable', n.unknown, 'unknown') : '') +
+      (L.averageCompletion !== null ? tileHtml(n.unknown ? 'Class average (' + L.averageOf + ' known)' : 'Class average', pctText(L.averageCompletion), '') : '') +
       '</div>';
     var chart = timelineCard(c.overview);
     var filter = state.filter;
-    var chips = [['all', 'All', n.total], ['none', 'Not watched', n.none], ['partial', 'Partly', n.partial], ['watched', 'Watched', n.watched]]
-      .filter(function (ch) { return !(L.viewersOnly && ch[0] === 'none'); })
+    var chips = [['all', 'All', n.total], ['none', 'Not watched', n.none], ['partial', 'Partly', n.partial], ['watched', 'Watched', n.watched], ['unknown', 'Unavailable', n.unknown]]
+      .filter(function (ch) { return !(L.viewersOnly && ch[0] === 'none') && !(ch[0] === 'unknown' && !n.unknown); })
       .map(function (ch) {
         return '<button type="button" class="chip" data-filter="' + ch[0] + '" aria-pressed="' + (filter === ch[0]) + '">' + ch[1] + ' <b>' + ch[2] + '</b></button>';
       }).join('');
     var copy = L.viewersOnly ? '' : '<button type="button" class="copy" data-act="copy" title="Names of students who haven’t watched, or haven’t finished, one per line">Copy who hasn’t finished</button>';
     var rows = L.rows.map(function (r) {
-      var label = r.status === 'none' ? 'Not watched' : r.status === 'partial' ? 'Partly watched' : 'Watched';
+      var label = SC().labelOf(r);
+      var why = r.unknownReason === 'completion' ? 'Studio lists this student as a viewer but gave no completion for them'
+        : r.unknownReason === 'ambiguous' ? 'More than one student or viewer has this name, and no email settles which is which' : '';
+      // Unknown shows no share at all; a student Studio never saw shows none.
+      var pct = r.status === 'unknown' ? '<span class="muted">–</span>' : (r.viewer ? pctText(r.completion) : '<span class="muted">–</span>');
       return '<tr data-status="' + r.status + '"' + (filter === 'all' || filter === r.status ? '' : ' hidden') + '>' +
         '<td>' + esc(r.name) + '</td>' +
-        '<td><span class="pill pill--' + r.status + '">' + label + '</span></td>' +
+        '<td><span class="pill pill--' + r.status + '"' + (why ? ' title="' + esc(why) + '"' : '') + '>' + esc(label) + '</span></td>' +
         '<td><div class="meter"><div class="track"><div class="fill" style="width:' + Math.round((r.completion || 0) * 100) + '%"></div></div>' +
-        '<span class="pct">' + (r.viewer ? pctText(r.completion) : '<span class="muted">0%</span>') + '</span></div></td>' +
+        '<span class="pct">' + pct + '</span></div></td>' +
         '</tr>';
     }).join('');
     var table = '<div class="scroll"><table><thead><tr><th>Student</th><th>Status</th><th>Share of the video watched</th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="3" class="muted">No students.</td></tr>') + '</tbody></table></div>';
-    var extra = L.extra.length
+    var extra = (L.extra.length
       ? '<p class="note">Also watched, but not on this course’s roster: ' + L.extra.map(function (v) { return esc(v.name) + ' (' + pctText(v.completion) + ')'; }).join(', ') + '.</p>'
-      : '';
+      : '') + (L.unclear && L.unclear.length
+      ? '<p class="note">Couldn’t tell which student watched as: ' + L.unclear.map(function (v) { return esc(v.name) + (v.email ? ' (' + esc(v.email) + ')' : ''); }).join(', ') + '.</p>'
+      : '');
     var foot = '<p class="note">“Watched” is at least ' + Math.round(SC().WATCHED_AT * 100) + '% of the video, from Studio’s completion rate for this embed. ' +
-      'Students are matched to Studio’s viewers by email.</p>';
+      'Students are matched to Studio’s viewers by email; by name only when the name fits exactly one student and one viewer.' +
+      (n.unknown ? ' “Completion unavailable”: Studio listed the viewer without a share. “Match unclear”: a shared name. Neither counts as not watched or in the average.' : '') + '</p>';
     return head + '<div class="body">' + warn + tiles + chart + '<div class="bar">' + chips + copy + '</div>' + table + extra + foot + '</div>';
   }
 
@@ -498,7 +506,8 @@
     if (a === 'copy') {
       var c = current();
       if (!c) return;
-      var rows = c.list.rows.filter(function (r) { return r.status !== 'watched'; });
+      // Only students known not to have finished: unknown is not "hasn't".
+      var rows = c.list.rows.filter(function (r) { return r.status === 'none' || r.status === 'partial'; });
       copyText(SC().namesText(rows)).then(function () {
         act.textContent = 'Copied ' + rows.length + (rows.length === 1 ? ' name' : ' names');
       }, function () { act.textContent = 'Couldn’t copy'; });

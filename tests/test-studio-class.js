@@ -38,7 +38,7 @@ suite('Studio class list', (test) => {
     a.eq(by['Avery Adams'].completion, null);
     a.eq(by['Zachary (Zach) Fellman'].status, 'partial');
     a.eq(by['Thomas (Tommy) Tegler'].status, 'watched');
-    a.deep(L.counts, { total: 5, watched: 1, partial: 2, none: 2 });
+    a.deep(L.counts, { total: 5, watched: 1, partial: 2, none: 2, unknown: 0 });
     a.deep(L.extra.map((v) => v.name), ['Dropped Student'], 'a student viewer not on the roster; the teacher left out');
     a.eq(Math.round(L.averageCompletion * 1000), Math.round(((1 + 0.65625 + 0.4375) / 5) * 1000));
   });
@@ -48,11 +48,11 @@ suite('Studio class list', (test) => {
     a.eq(L.rows[0].status, 'watched');
   });
 
-  test('90% or more counts as watched; nothing or 0% is not watched', () => {
+  test('90% or more counts as watched; 0% is not watched; no share at all is unknown', () => {
     a.eq(sc().statusOf(0.9), 'watched');
     a.eq(sc().statusOf(0.89), 'partial');
     a.eq(sc().statusOf(0), 'none');
-    a.eq(sc().statusOf(null), 'none');
+    a.eq(sc().statusOf(null), 'unknown');
   });
 
   test('without a roster: Studio’s student viewers alone, by last name', () => {
@@ -252,5 +252,126 @@ suite('Studio videos for one student', (test) => {
     a.deep(j.videos[0].places.map((p) => p.modules[0]), ['Unit 1', 'Unit 2'], 'both modules kept, a repeat once');
     const noIds = sc().joinEmbeds([{ uuid: 'v1', title: 'Review video' }], [place('/courses/1/modules', 'Unit 1'), place('/courses/1/modules', 'Unit 2')]);
     a.deep(noIds.videos[0].places.map((p) => p.modules), [['Unit 1', 'Unit 2']], 'one address: its modules merged');
+  });
+});
+
+/* ------------------------------------------- attribution and identity */
+
+suite('Studio: who watched, and which video', (test) => {
+  const ALEX1 = { id: '101', name: 'Alex Rivera', sortable_name: 'Rivera, Alex', email: 'arivera1@school.org' };
+  const ALEX2 = { id: '102', name: 'Alex Rivera', sortable_name: 'Rivera, Alex', email: 'arivera2@school.org' };
+  const VIEWER2 = { insights: [{ id: 77, display_name: 'Alex Rivera', email: 'ARivera2@school.org', role_names: ['Student'], completion_rate: 0.95 }] };
+  const show = (L) => L.rows.map((r) => [r.id, r.label, r.completion]);
+  const out = (label, x) => console.log('       fixture ' + label + ': ' + JSON.stringify(x));
+
+  test('REGRESSION: two Alex Riveras, the viewer’s email is the second one’s - in both roster orders', () => {
+    [[ALEX1, ALEX2], [ALEX2, ALEX1]].forEach((roster, n) => {
+      const L = sc().classList(roster, sc().viewersFrom(VIEWER2));
+      const by = Object.fromEntries(L.rows.map((r) => [r.id, r]));
+      a.eq(by['101'].status, 'none', 'order ' + n + ': the first never watched');
+      a.eq(by['101'].label, 'Not watched');
+      a.eq(by['101'].viewer, null);
+      a.eq(by['102'].status, 'watched', 'order ' + n);
+      a.eq(by['102'].matchedBy, 'email');
+      a.eq(by['102'].completion, 0.95);
+      a.deep(L.counts, { total: 2, watched: 1, partial: 0, none: 1, unknown: 0 });
+      a.deep(L.extra, []);
+      out('order ' + (n ? 'Alex2, Alex1' : 'Alex1, Alex2'), { rows: show(L), counts: L.counts, average: L.averageCompletion });
+    });
+  });
+
+  test('a name is used only when it names one student and one viewer, and no email disagrees', () => {
+    // The viewer's email belongs to nobody: someone else, not either Alex.
+    const other = sc().viewersFrom({ insights: [{ id: 5, display_name: 'Alex Rivera', email: 'alex.r@elsewhere.org', role_names: ['Student'], completion_rate: 1 }] });
+    const L1 = sc().classList([ALEX1], other);
+    a.eq(L1.rows[0].label, 'Not watched', 'a conflicting email is never overridden by a name');
+    a.eq(L1.extra.length, 1);
+    // No emails on either side: one Alex on the roster is fine...
+    const bare = sc().viewersFrom({ insights: [{ id: 6, display_name: 'Alex Rivera', role_names: ['Student'], completion_rate: 0.5 }] });
+    const noMail = (x) => Object.assign({}, x, { email: '' });
+    a.eq(sc().classList([noMail(ALEX1)], bare).rows[0].label, 'Partly watched');
+    // ...two are "Match unclear" for both, in either order, and not counted.
+    [[noMail(ALEX1), noMail(ALEX2)], [noMail(ALEX2), noMail(ALEX1)]].forEach((roster) => {
+      const L = sc().classList(roster, bare);
+      a.deep(L.rows.map((r) => r.label), ['Match unclear', 'Match unclear']);
+      a.deep(L.counts, { total: 2, watched: 0, partial: 0, none: 0, unknown: 2 });
+      a.eq(L.averageCompletion, null, 'unknown is not 0%');
+      a.eq(L.unclear.length, 1);
+      a.eq(L.extra.length, 0, 'not called “not on the roster”');
+      out('two Alexes, no emails', { rows: show(L), counts: L.counts, average: L.averageCompletion });
+    });
+  });
+
+  test('a matched viewer with no completion is “Completion unavailable”; a known 0 is “Not watched” at 0%', () => {
+    const v = sc().viewersFrom({ insights: [
+      { id: 1, display_name: 'Alex Rivera', email: 'arivera1@school.org', role_names: ['Student'] },
+      { id: 2, display_name: 'Alex Rivera', email: 'arivera2@school.org', role_names: ['Student'], completion_rate: 0 }
+    ] });
+    const L = sc().classList([ALEX1, ALEX2, { id: '103', name: 'Bo Chen', sortable_name: 'Chen, Bo', email: 'bchen@school.org' }], v);
+    const by = Object.fromEntries(L.rows.map((r) => [r.id, r]));
+    a.eq(by['101'].label, 'Completion unavailable');
+    a.eq(by['101'].status, 'unknown');
+    a.eq(by['101'].completion, null);
+    a.eq(by['102'].label, 'Not watched');
+    a.eq(by['102'].completion, 0);
+    a.eq(by['103'].label, 'Not watched');
+    a.eq(by['103'].completion, null);
+    a.deep(L.counts, { total: 3, watched: 0, partial: 0, none: 2, unknown: 1 });
+    a.eq(L.averageCompletion, 0);
+    a.eq(L.averageOf, 2, 'the average leaves out the unknown share');
+    const only = sc().viewersOnly(v);
+    a.deep(only.counts, { total: 2, watched: 0, partial: 0, none: 1, unknown: 1 });
+    out('missing vs zero completion', { rows: show(L), counts: L.counts, average: L.averageCompletion, averageOf: L.averageOf });
+  });
+
+  test('the student overview matches against the whole class, so a shared name is not taken', () => {
+    const vid = (viewers) => [{ uuid: 'v1', title: 'Cell walk', duration: 300, createdAt: '2026-11-01', viewers: sc().viewersFrom(viewers) }];
+    // Alex 1's own overview: the email belongs to Alex 2.
+    [[ALEX1, ALEX2], [ALEX2, ALEX1]].forEach((roster) => {
+      const r1 = sc().studentVideos(vid(VIEWER2), ALEX1, { roster }).rows[0];
+      a.eq(r1.label, 'Not watched');
+      a.eq(r1.completion, null);
+      const r2 = sc().studentVideos(vid(VIEWER2), ALEX2, { roster }).rows[0];
+      a.eq(r2.label, 'Watched');
+      a.eq(r2.watchedSeconds, 285);
+    });
+    // No emails: on a one-student roster the name would match; with the class it is unclear.
+    const bare = { insights: [{ id: 6, display_name: 'Alex Rivera', role_names: ['Student'], completion_rate: 0.5 }] };
+    const lone = Object.assign({}, ALEX1, { email: '' }), twin = Object.assign({}, ALEX2, { email: '' });
+    const s = sc().studentVideos(vid(bare), lone, { roster: [lone, twin] });
+    a.eq(s.rows[0].label, 'Match unclear');
+    a.eq(s.rows[0].watchedSeconds, null);
+    a.deep(s.counts, { total: 1, watched: 0, partial: 0, none: 0, unknown: 1 });
+    // Completion missing in the overview too, and "in class" counts only known viewing.
+    const nc = sc().studentVideos(vid({ insights: [{ id: 1, display_name: 'Alex Rivera', email: 'arivera1@school.org', role_names: ['Student'] }] }), ALEX1, { roster: [ALEX1, ALEX2] });
+    a.eq(nc.rows[0].label, 'Completion unavailable');
+    a.eq(nc.rows[0].classWatched, 0);
+    out('student overview', { alex1: 'Not watched', alex2: 'Watched (285 s)', sharedNameNoEmail: s.rows[0].label, noCompletion: nc.rows[0].label });
+  });
+
+  test('two videos with different media ids stay two, though titles match and lengths differ by a second', () => {
+    const a1 = { uuid: 'p1', mediaId: 501, title: 'Lab safety', duration: 240, viewers: [] };
+    const a2 = { uuid: 'p2', mediaId: 502, title: 'Lab safety', duration: 241, viewers: [] };
+    const folded = sc().foldEmbeds([a1, a2].map((x) => Object.assign({}, x)));
+    a.deep(folded.map((v) => v.uuid), ['p1', 'p2']);
+    // An embed with no media id and no length still joins the one it can only be... unless two media share the title.
+    const emb = { uuid: 'e9', title: 'Lab safety', duration: null, embeddedOnly: true, viewers: [] };
+    a.eq(sc().foldEmbeds([a1, a2, emb].map((x) => Object.assign({}, x))).length, 3, 'nothing guessed between two media');
+    // Same media id, or same title and length with no media ids: still one.
+    a.eq(sc().foldEmbeds([Object.assign({}, a1), Object.assign({}, a1, { uuid: 'p3', duration: 238 })]).length, 1);
+    a.eq(sc().foldEmbeds([{ uuid: 'q1', title: 'Lab safety', duration: 240, viewers: [] }, { uuid: 'q2', title: 'Lab safety', duration: 241, viewers: [] }]).length, 1);
+    out('distinct media', { videos: folded.map((v) => v.uuid + ':' + v.mediaId) });
+  });
+
+  test('a verified Studio alias still folds into its course video, with its viewers', () => {
+    const course = { uuid: 'p1', mediaId: 501, title: 'Lab safety', duration: 240, viewers: sc().viewersFrom({ insights: [{ id: 1, display_name: 'Alex Rivera', email: 'arivera1@school.org', role_names: ['Student'], completion_rate: 0.3 }] }) };
+    const embed = { uuid: 'emb-7', title: 'Copied embed', duration: null, embeddedOnly: true,
+      viewers: sc().viewersFrom({ insights: [{ id: 2, display_name: 'Alex Rivera', email: 'arivera2@school.org', role_names: ['Student'], completion_rate: 1 }] }) };
+    const out1 = sc().foldEmbeds([course, embed], { 'emb-7': 'p1' });
+    a.eq(out1.length, 1);
+    a.deep(out1[0].aliases, ['emb-7']);
+    const L = sc().classList([ALEX1, ALEX2], out1[0].viewers);
+    a.deep(L.rows.map((r) => [r.id, r.label]), [['101', 'Partly watched'], ['102', 'Watched']]);
+    out('verified alias', { aliases: out1[0].aliases, rows: L.rows.map((r) => [r.id, r.label, r.completion]) });
   });
 });
