@@ -412,6 +412,52 @@
     return Promise.all(jobs.concat(waits).map(function (p) { return p.catch(function () { return null; }); }));
   };
 
+  /* Load these columns and say which ones are actually current.
+   *
+   * ensureAssignments resolves whether or not its read worked (a failed
+   * column simply stays out of loadedAssignments), which is right for
+   * painting but not for a caller that must DECIDE from the records - the
+   * paste's "N grades will be replaced" question most of all. A column whose
+   * record is missing would count as "nothing to overwrite", the question
+   * would be skipped, and a later read (the writer's own) would find the
+   * grades only after it was too late to ask.
+   *
+   * So: a column still not loaded after the first read is read again, once
+   * by default (opts.retries), and the answer names what is loaded and what
+   * is still missing. A read already in flight for a column (a Post's own
+   * re-check, say) is waited for rather than counted as a failure. Columns
+   * already loaded cost nothing: no request is made at all. */
+  GradebookModel.prototype.ensureAssignmentsLoaded = function (ids, opts) {
+    var self = this;
+    opts = opts || {};
+    var requested = [];
+    (ids || []).forEach(function (id) {
+      var s = String(id);
+      if (requested.indexOf(s) < 0) requested.push(s);
+    });
+    var retries = opts.retries === undefined ? 1 : Math.max(0, opts.retries);
+    var readOpts = Object.assign({}, opts);
+    delete readOpts.retries;
+    function missing() { return requested.filter(function (id) { return !self.loadedAssignments.has(id); }); }
+    function answer() { return { loaded: requested.filter(function (id) { return self.loadedAssignments.has(id); }), missing: missing() }; }
+    function round(n) {
+      return self.ensureAssignments(missing(), readOpts).then(function () {
+        var pending = missing().filter(function (id) { return self.pendingAssignments.has(id); });
+        return pending.length ? self.ensureAssignments(pending, readOpts) : null;
+      }).then(function () {
+        var left = missing();
+        if (left.length && n < retries) {
+          CGP.diag.bump('model.columnReadRetried', left.length);
+          return round(n + 1);
+        }
+        if (left.length) CGP.diag.warn('model.columnsUnverified', { count: left.length });
+        return answer();
+      });
+    }
+    if (!missing().length) return Promise.resolve(answer());
+    return round(0);
+  };
+
   /* Verify comments for the assignment columns that are actually visible.
    * The multi-assignment endpoint is fast, but Canvas installations can differ
    * in which associations they serialize there. The assignment-specific list

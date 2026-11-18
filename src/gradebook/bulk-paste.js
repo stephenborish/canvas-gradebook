@@ -8,7 +8,13 @@
  *   1. the whole block is mapped to real ids first (scrolling the grid if the
  *      target rows or columns have not been rendered yet)
  *   2. one unresolved cell or one unparseable token aborts everything
- *   3. overwriting existing grades past the confirmation threshold asks once */
+ *   3. the overwrite question is decided from verified ids and the grades
+ *      Canvas holds NOW: every target column is read (and read again once if
+ *      the first read fails) before the question, and a paste whose students,
+ *      assignments or current grades can't be verified stops - it never
+ *      falls through to a write that would find the grades too late
+ *   4. overwriting existing grades past the confirmation threshold asks once,
+ *      and the writer skips any cell whose grade changed after that answer */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
@@ -115,11 +121,18 @@
       // guess, which after a sort or filter can be a different student.
       rowsConfirmed = ok !== false;
       return matrix.colCount > 1 ? adapter.ensureColumnsMapped(anchor.colIndex, matrix.colCount) : true;
-    }).then(function () {
+    }).then(function (colsOk) {
       if (!rowsConfirmed) {
         CGP.diag.error('paste.rowsUnconfirmed', { rows: matrix.rowCount });
         CGP.ui.error('Paste stopped: Gradebook+ couldn\u2019t confirm which student every pasted row belongs to ' +
           '(the paste may run past the last student, or the grid is still re-sorting). Nothing was changed.');
+        return null;
+      }
+      if (colsOk === false) {
+        CGP.diag.error('paste.columnsUnconfirmed', { cols: matrix.colCount });
+        CGP.ui.error('Paste stopped: Gradebook+ couldn\u2019t confirm which assignment every pasted column belongs to ' +
+          '(the paste may run past the last column, or the grid is still loading). Nothing was changed. ' +
+          'Scroll so the target columns are on screen and paste again.');
         return null;
       }
       var mapped = CGP.gridMap.mapMatrixToTargets(matrix, anchor, {
@@ -152,40 +165,99 @@
       }
       if (!built.targets.length) return null;
 
+      // Every target must be a student and an assignment this course
+      // actually has, not just whatever the grid's DOM said. (Hidden Test
+      // Student rows were already refused above, by mapMatrixToTargets.)
+      var model = self.model;
+      var unknown = built.targets.filter(function (t) {
+        return !model.student(t.userId) || !model.assignment(t.assignmentId);
+      });
+      if (unknown.length) {
+        CGP.diag.error('paste.unverifiedTargets', { count: unknown.length });
+        CGP.ui.error('Paste stopped: ' + unknown.length + (unknown.length === 1 ? ' cell' : ' cells') +
+          ' could not be matched to a student and assignment in this course. Nothing was changed. ' +
+          'Reload the page if the roster or assignments changed, then paste again.');
+        return null;
+      }
+
       // The overwrite count below is the confirmation's whole point, and it
-      // reads the model: a column not loaded yet would count as "nothing to
-      // overwrite" and skip the question entirely.
+      // reads the model: a column not loaded would count as "nothing to
+      // overwrite" and skip the question entirely - and the writer would
+      // then load it itself and replace the grades it found, unasked. So
+      // every column that will be written is read now (and once more if
+      // that read fails); one that still can't be read stops the paste.
+      // Protected (anonymous/moderated) columns are never written - the
+      // writer skips and reports them - so they need no read.
       var columns = [];
-      built.targets.forEach(function (t) { if (columns.indexOf(String(t.assignmentId)) < 0) columns.push(String(t.assignmentId)); });
-      return self.model.ensureAssignments(columns).then(function () {
+      built.targets.forEach(function (t) {
+        var id = String(t.assignmentId);
+        if (columns.indexOf(id) < 0 && !self.isProtected(id)) columns.push(id);
+      });
+      return model.ensureAssignmentsLoaded(columns).then(function (state) {
+        if (state.missing.length) {
+          var names = state.missing.map(function (id) {
+            var asg = model.assignment(id);
+            return '\u201c' + ((asg && asg.name) || 'an assignment') + '\u201d';
+          });
+          CGP.diag.error('paste.columnsUnverified', { count: state.missing.length });
+          CGP.ui.error('Paste stopped: Canvas didn\u2019t send the current grades for ' + names.join(', ') +
+            ', so Gradebook+ can\u2019t tell which cells the paste would overwrite. Nothing was changed. ' +
+            'Wait a moment and paste again; if this keeps happening, reload the page.');
+          return null;
+        }
         return self.confirmAndApply(built, matrix);
       });
     });
+  };
+
+  /** Anonymous/moderated: the writer refuses these cells (see writer.js). */
+  P.isProtected = function (assignmentId) {
+    var asg = this.model.assignment(assignmentId);
+    return !!(asg && (asg.anonymous || asg.moderated));
+  };
+
+  /* Will this target replace the grade the cell holds? Status-only tokens
+   * (M, L) never touch the grade, and protected columns are never written. */
+  P.overwrites = function (t) {
+    var KIND = CGP.gradeOps.KIND;
+    var kind = t.parsed.kind;
+    if (kind === KIND.MISSING || kind === KIND.LATE) return false;
+    if (this.isProtected(t.assignmentId)) return false;
+    var rec = this.model.cell(t.assignmentId, t.userId);
+    if (!rec) return false;
+    var hasGrade = rec.excused || (rec.grade !== null && rec.grade !== undefined && rec.grade !== '');
+    if (!hasGrade) return false;
+    if (kind === KIND.EXCUSED) return !rec.excused;
+    if (kind === KIND.CLEAR) return true;
+    if (rec.excused) return true;
+    var incoming = t.parsed.value;
+    if (kind === KIND.NUMBER && rec.score !== null && rec.score !== undefined && Number(rec.score) === Number(incoming)) return false;
+    return String(rec.grade).toLowerCase() !== String(incoming).toLowerCase();
   };
 
   /* How many targets would replace a grade that is already there. Status-only
    * tokens (M, L) never touch the grade, so they never count. */
   P.countOverwrites = function (targets) {
     var self = this;
-    var KIND = CGP.gradeOps.KIND;
-    return targets.filter(function (t) {
-      var kind = t.parsed.kind;
-      if (kind === KIND.MISSING || kind === KIND.LATE) return false;
-      var rec = self.model.cell(t.assignmentId, t.userId);
-      if (!rec) return false;
-      var hasGrade = rec.excused || (rec.grade !== null && rec.grade !== undefined && rec.grade !== '');
-      if (!hasGrade) return false;
-      if (kind === KIND.EXCUSED) return !rec.excused;
-      if (kind === KIND.CLEAR) return true;
-      if (rec.excused) return true;
-      var incoming = t.parsed.value;
-      if (kind === KIND.NUMBER && rec.score !== null && rec.score !== undefined && Number(rec.score) === Number(incoming)) return false;
-      return String(rec.grade).toLowerCase() !== String(incoming).toLowerCase();
-    }).length;
+    return targets.filter(function (t) { return self.overwrites(t); }).length;
   };
 
   P.confirmAndApply = function (built, matrix) {
+    var self = this;
     var overwrites = this.countOverwrites(built.targets);
+    // What each grade-changing cell holds as the question is decided -
+    // captured before asking, while nothing can have changed underneath. The
+    // writer skips any whose grade is different by the time it gets there
+    // (another tab, SpeedGrader, a co-teacher), rather than replace a grade
+    // nobody was asked about.
+    var KIND = CGP.gradeOps.KIND;
+    var expected = {};
+    built.targets.forEach(function (t) {
+      if (t.parsed.kind === KIND.MISSING || t.parsed.kind === KIND.LATE) return;
+      expected[String(t.assignmentId) + ':' + String(t.userId)] =
+        CGP.gradeOps.gradeSignature(self.model.cell(t.assignmentId, t.userId));
+    });
+
     var threshold = this.settings.values.bulkConfirmThreshold;
     // Large pastes always ask; so does any multi-cell paste that would
     // replace a grade already there, since that is the one a misaligned
@@ -200,7 +272,7 @@
       cells: built.targets.length, rows: matrix.rowCount, cols: matrix.colCount,
       source: matrix.source, overwrites: overwrites
     });
-    return this.writer.apply(built.targets, { announce: true });
+    return this.writer.apply(built.targets, { announce: true, expectedGrades: expected });
   };
 
   CGP.BulkPasteController = BulkPasteController;

@@ -427,9 +427,20 @@
     });
   }
 
+  /* The grade a cell holds, as one comparable string: what a confirmation
+   * was decided from (bulk-paste.js) and what the write checks it is still
+   * replacing (writer.js). No record and no grade read the same. */
+  function gradeSignature(rec) {
+    if (!rec) return '';
+    if (rec.excused) return 'EX';
+    var g = rec.grade;
+    return g === null || g === undefined ? '' : String(g);
+  }
+
   CGP.gradeOps = {
     KIND: KIND,
     formSettledIn: formSettledIn,
+    gradeSignature: gradeSignature,
     parseToken: parseToken,
     operationFor: operationFor,
     earnedCredit: earnedCredit,

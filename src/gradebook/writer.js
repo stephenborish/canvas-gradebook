@@ -175,6 +175,12 @@
         messages.push(result.unloaded + (result.unloaded === 1 ? ' cell was' : ' cells were') +
           ' left unchanged because Canvas did not send that column\u2019s current grades. Try again in a moment.');
       }
+      if (result.changedSinceConfirm) {
+        var n = result.changedSinceConfirm;
+        messages.push(n + (n === 1 ? ' cell was' : ' cells were') + ' left unchanged because ' +
+          (n === 1 ? 'its grade' : 'their grades') + ' changed in Canvas after you confirmed the paste. ' +
+          'Paste again to review ' + (n === 1 ? 'it' : 'them') + '.');
+      }
       if (result.skipped) {
         messages.push(result.skipped + (result.skipped === 1 ? ' cell was' : ' cells were') +
           ' skipped (an anonymous or moderated assignment, or an unresolved student/assignment) ' +
@@ -259,6 +265,18 @@
       result.skipped++;
       CGP.diag.warn('write.anonymousAssignmentSkipped', { assignmentId: assignmentId, moderated: !!assignment.moderated });
       return Promise.resolve();
+    }
+    // A paste's confirmation was decided from the grade each cell held then
+    // (bulk-paste.js confirmAndApply). A cell whose grade has changed since
+    // is one the teacher was never asked about: left alone, and reported.
+    if (opts.expectedGrades) {
+      var expectKey = String(assignmentId) + ':' + String(userId);
+      if (Object.prototype.hasOwnProperty.call(opts.expectedGrades, expectKey) &&
+        CGP.gradeOps.gradeSignature(this.model.cell(assignmentId, userId)) !== opts.expectedGrades[expectKey]) {
+        result.changedSinceConfirm = (result.changedSinceConfirm || 0) + 1;
+        CGP.diag.warn('write.changedSinceConfirm', { assignmentId: assignmentId });
+        return Promise.resolve();
+      }
     }
 
     // Stamped before anything else: a column-wide fetch already in flight
