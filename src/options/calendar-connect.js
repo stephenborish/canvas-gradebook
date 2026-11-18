@@ -110,6 +110,19 @@
       try { if (CGP.diag && CGP.diag.log) CGP.diag.log('calendar.connect', { result: kind, code: code || null }); } catch (e) { /* ignore */ }
     }
 
+    // Whatever happens, the next click is not answered with this one: a bug
+    // in a later step comes back as an error, never a promise that stays
+    // pending (or rejected) and leaves the buttons disabled.
+    function settle(r) { self.inflight = null; return r; }
+    function fail(url) {
+      return function (err) {
+        self.inflight = null;
+        diag('error');
+        var why = err && err.message ? ': ' + C().scrub(err.message, url) : '.';
+        return done('unreadable', { url: url, code: 'error', message: 'Something went wrong connecting the calendar' + why, actions: [RETRY] });
+      };
+    }
+
     function finish(url, rec, save) {
       var step = save ? Promise.resolve(deps.saveUrl(url)) : Promise.resolve();
       return step.then(function () {
@@ -177,7 +190,7 @@
         return done('denied', { url: url, message: 'Chrome didn’t ask for permission. Click Try again.' + keep, actions: [RETRY] });
       });
       // A second click while this runs gets this same answer.
-      self.inflight = p.then(function (r) { self.inflight = null; return r; });
+      self.inflight = p.then(settle, fail(url));
       return self.inflight;
     }
 
@@ -191,7 +204,7 @@
       if (self.inflight) return self.inflight;
       if (!self.pending) return Promise.resolve(done('empty', { message: 'Click Connect calendar first.', actions: [] }));
       var pend = self.pending;
-      self.inflight = finish(pend.url, pend.rec, true).then(function (r) { self.inflight = null; return r; });
+      self.inflight = finish(pend.url, pend.rec, true).then(settle, fail(pend.url));
       return self.inflight;
     }
 

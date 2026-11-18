@@ -218,7 +218,9 @@
     var students = (viewers || []).filter(function (v) { return v && !v.teacher; });
     var list = (roster || []).filter(Boolean);
     var m = matchViewers(list, students);
-    var rows = list.map(function (s, i) { return rowFor(s, m.match.get(i), m.unclear.has(i)); });
+    // An exact email or id match settles a row, even when another viewer's
+    // identifiers also pointed at it (that viewer is the unclear one).
+    var rows = list.map(function (s, i) { return rowFor(s, m.match.get(i), m.unclear.has(i) && !m.match.has(i)); });
     rows.sort(function (a, b) {
       return a.sortableName.localeCompare(b.sortableName, undefined, { sensitivity: 'base' }) || a.name.localeCompare(b.name);
     });

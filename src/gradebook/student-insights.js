@@ -1639,7 +1639,6 @@
     if (s.none) return section(title, '<p class="cgp-si__note">Studio has no course named ' + names + ', so there are no Studio videos to show.</p>');
     if (!s.rows.length) return section(title, '<p class="cgp-si__note">No Studio videos have been added to this course.</p>');
     var c = s.counts;
-    var labels = VIDEO_LABELS;
     var ASSIGNED = { Assignment: 1, Quiz: 1, Discussion: 1 };
     var placeTags = function (v) {
       if (!r.indexKnown && (!v.places || !v.places.length)) return ['pending'];

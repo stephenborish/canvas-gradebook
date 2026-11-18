@@ -350,6 +350,22 @@
         '. Times are in ' + esc(st.tz || 'your time zone') + '.</p>' : '');
   };
 
+  /* One row's "Due:" line, updated without re-rendering its boxes. */
+  P.updateDueSummary = function (d) {
+    if (!this.panel || !this.state) return;
+    var span = null;
+    var spans = this.panel.querySelectorAll('[data-due]');
+    for (var i = 0; i < spans.length; i++) {
+      var row = spans[i].closest && spans[i].closest('[data-row]');
+      if (row && row.getAttribute('data-row') === d) { span = spans[i]; break; }
+    }
+    var due = this.rowSummary(d).due;
+    if (!span || !due) return;
+    span.setAttribute('data-due', due.kind);
+    span.classList.toggle('is-warn', due.kind === 'unreadable');
+    span.textContent = 'Due: ' + due.text;
+  };
+
   /* Problems with a row's boxes. */
   P.rowErrors = function (d) {
     var st = this.state;
@@ -382,7 +398,10 @@
       if (t.value) row.entry[f].none = false;
       var err = this.panel.querySelector('[data-err="' + d + '"]');
       if (err) err.textContent = this.rowErrors(d).join('; ');
-      if (final) this.renderBody();
+      // The row's "Due:" line follows the boxes in place: re-rendering the
+      // panel would replace the box being typed in (a date box fires change
+      // on each keystroke that makes a valid date) and drop its focus.
+      if (final) this.updateDueSummary(d);
     } else return;
     st.armedAt = st.armedAt || Date.now();
     this.saveIntent();
@@ -554,6 +573,9 @@
       var key = self.intentKey(saved.editId);
       var it = live(key);
       if (!it || it.editId !== saved.editId) return null;
+      // Save's own write to chrome.storage may not have landed before the
+      // page unloaded; this tab's Save mark (written synchronously) says it.
+      if (!it.savedAt && saved.at) it = Object.assign({}, it, { savedAt: Number(saved.at) });
       var sameType = here && here.courseId === self.courseId && it.courseId === self.courseId &&
         (here.type === it.type || (it.type === 'discussion' && here.type === 'announcement'));
       var check = sameType ? self.matchSaved(it, here) : Promise.resolve(null);
@@ -647,7 +669,16 @@
     if (res.errors.length) return Promise.resolve({ error: res.errors.join('; ') + '.' });
     var iso = Promise.resolve(res.iso);
     if (res.keep.length && mode === 'update' && !info.origin) {
-      iso = this.api.dateDetails(d, item.type, info.destId).then(function (dd) {
+      // Read the way the dates are written (sync-runner applyDates): an
+      // announcement's post date is on the topic, not in date_details.
+      var readDates = sync.TYPES[item.type].datesVia === 'details'
+        ? this.api.dateDetails(d, item.type, info.destId)
+        : this.api.sectionItem(d, item.type, info.destId).then(function (o) {
+          var got = {};
+          sync.dateFields(item).forEach(function (f) { got[f] = o ? (o[f] || null) : undefined; });
+          return got;
+        });
+      iso = readDates.then(function (dd) {
         var out = Object.assign({}, res.iso);
         var ok = res.keep.every(function (f) { return dd && dd[f] !== undefined; });
         if (!ok) return null;
@@ -726,6 +757,12 @@
         var jobs = Object.keys(all || {}).filter(function (k) { return k.indexOf(JOB) === 0; }).map(function (k) { return all[k]; });
         return Promise.all(dests.map(function (d) {
           var l = rec.lines[d] || {};
+          // A due-date retry the reload cut short: the copy exists, and its
+          // date is offered again (never a second copy).
+          if (l.prev && !l.result) {
+            banner.set(d, { result: Object.assign({}, l.prev, { dates: 'failed', error: 'The page reloaded before its due date was confirmed.' }), prev: null });
+            return null;
+          }
           if (l.phase === 'done') return null;
           if (l.phase === 'waiting') {
             banner.set(d, { error: 'Not started: the page reloaded before this course’s copy began.', retry: 'copy', result: null });
@@ -734,6 +771,8 @@
           var job = l.phase === 'copying' && jobs.filter(function (j) {
             // This Canvas's job, from this course: ids repeat across schools.
             if (!j || String(j.origin) !== String(self.copier.origin)) return false;
+            // Already being finished on this page (resumePending): never twice.
+            if (self.copier.active && self.copier.active[j.id]) return false;
             return (j.tasks || (j.task ? [j.task] : [])).some(function (t) {
               return String(t.srcCourseId) === self.courseId && String(t.destCourseId) === d &&
                 String(t.item.id) === String(item0.id) && t.item.type === item0.type;
@@ -871,11 +910,12 @@
     // One at a time: a second click while the first runs does nothing.
     if (!r || !r.destId || !l.iso || banner.busy[d]) return Promise.resolve();
     banner.busy[d] = true;
-    banner.set(d, { step: 'Setting dates', result: null });
+    // prev: the copy it is for, kept for a reload while this runs.
+    banner.set(d, { step: 'Setting dates', result: null, prev: r });
     return this.copier.retryDates(d, item, r.destId, l.iso).then(function (x) {
       var next = Object.assign({}, r, { dates: x.dates, warnings: x.warnings, error: x.dates === 'failed' ? (x.warnings[0] || 'Canvas refused the dates.') : null });
       delete banner.busy[d];
-      banner.set(d, { result: next });
+      banner.set(d, { result: next, prev: null });
       banner.finish();
     });
   };
@@ -893,6 +933,12 @@
     var current = this.controller ? this.controller.currentItem() : Promise.resolve(null);
     return current.then(function (item) {
       if (!item) { banner.set(d, { error: 'The item couldn’t be read again.', retry: 'copy' }); return null; }
+      // copyNow skips a course no longer linked: say so, not "Trying again" for ever.
+      if (self.siblings().indexOf(d) < 0 || !(intent && intent.sections && intent.sections[d])) {
+        banner.set(d, { error: 'That course is no longer linked to this one. Use Copy to other classes.' });
+        banner.finish();
+        return null;
+      }
       return self.copyNow(item, intent, [d], banner);
     }).then(done, function (e) { done(); banner.set(d, { error: String(e && e.message || 'Something went wrong'), retry: 'copy' }); });
   };
