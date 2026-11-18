@@ -136,7 +136,7 @@
 
     /* Every web address shown on the page (text and boxes), by kind. */
     function readLinks() {
-      var found = { source: '', sourceEl: null, secret: '', publicIcal: '', calId: '' };
+      var found = { source: '', sourceEl: null, secret: '', secretEl: null, publicIcal: '', publicEl: null, calId: '' };
       var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
       var items = [];
       var node;
@@ -157,8 +157,11 @@
           var host = '';
           try { host = new URL(u.replace(/^webcals?:/i, 'https:')).hostname.toLowerCase(); } catch (e) { continue; }
           if (host === 'calendar.google.com' || host === 'www.google.com') {
-            if (/\/calendar\/ical\/[^/]+\/private-[^/]+\//i.test(u)) found.secret = found.secret || u;
-            else if (/\/calendar\/ical\/[^/]+\/public\//i.test(u)) found.publicIcal = found.publicIcal || u;
+            if (/\/calendar\/ical\/[^/]+\/private-[^/]+\//i.test(u)) {
+              if (!found.secret) { found.secret = u; found.secretEl = it.el; }
+            } else if (/\/calendar\/ical\/[^/]+\/public\//i.test(u)) {
+              if (!found.publicIcal) { found.publicIcal = u; found.publicEl = it.el; }
+            }
             continue;
           }
           if (/(^|\.)google(usercontent)?\.com$|(^|\.)gstatic\.com$/.test(host)) continue;
@@ -265,7 +268,8 @@
         say('found “' + name + '”, but no calendar link on its settings page.', false);
         return result('nolink', { name: name, calendarId: calId, links: { source: '', secret: '', publicIcal: '' } });
       }
-      highlight(links.sourceEl);
+      // The best link shown: the school's own, else Google's iCal address.
+      highlight(links.sourceEl || links.secretEl || links.publicEl);
       say(opts.mode === 'show'
         ? 'this is your “' + name + '” link. It’s selected: copy it (Ctrl+C or ⌘C) and paste it in Gradebook+.'
         : 'found your “' + name + '” link. Connecting it in Gradebook+…', true);
