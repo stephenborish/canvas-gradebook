@@ -53,15 +53,6 @@
    * hidden comment from the teacher), never the whole column. */
   var GRADED_ONLY = true;
 
-  /* The mutation may have run, but its answer says nothing usable: the
-   * connection dropped, a 5xx, or a 2xx that is not the mutation's payload
-   * (canvas-api.js marks those err.unconfirmed). Only a re-read of the
-   * column can say what happened. */
-  function isUnconfirmed(err) {
-    return !!(err && (err.unconfirmed === true || err.network === true ||
-      (err.status >= 500 && err.status < 600)));
-  }
-
   /* ------------------------------------------------------------- rendering */
 
   P.buttonFor = function (headerEl) {
@@ -116,10 +107,9 @@
     // Never on an anonymous/moderated assignment: writer.js refuses to POST
     // to one (the identity mapping it depends on is deliberately hidden
     // there), and postAssignmentGrades can legitimately refuse a moderated
-    // column too (moderation not finished) - a refusal that must surface as
-    // an error, not silently widen into the older "unmute the whole column"
-    // fallback (see post()). A button that cannot be safely pressed should
-    // not be offered in the first place.
+    // column too (moderation not finished) - a refusal the teacher could
+    // only act on in Canvas's own workflow. A button that cannot be safely
+    // pressed should not be offered in the first place.
     var assignmentMeta = this.model.assignment(id);
     if (assignmentMeta && (assignmentMeta.anonymous || assignmentMeta.moderated)) {
       if (existing) existing.remove();
@@ -281,7 +271,8 @@
       // this; see the reporting block.
       var confirmed = false;
       // Set when Canvas's answer could not tell us what happened (see
-      // isUnconfirmed, and a Progress read that came back unreadable). The
+      // CGP.util.isUnconfirmedError, a Progress read that came back
+      // unreadable, and a job Canvas reported failed). The
       // column is then re-read before anything is said, and nothing is
       // stamped posted on the strength of the mutation alone.
       var uncertain = null;
@@ -290,54 +281,47 @@
           // null is Canvas's mutation payload with no job: it did the work
           // synchronously (canvas-api.js only resolves null for a real
           // payload). Otherwise the posting happens in a background job and
-          // the new posted_at timestamps do not exist until it finishes. A
-          // job that reports FAILED throws from here and is reported.
+          // the new posted_at timestamps do not exist until it finishes.
           if (!progress) { confirmed = true; return null; }
           return self.api.waitForProgress(progress._id).then(function (result) {
             confirmed = !!(result && result.done);
             if (result && result.unreadable) uncertain = { progressUnreadable: true };
             return result;
+          }, function (jobErr) {
+            // Canvas reported the job failed. It may have posted part of the
+            // column before it did, so "nothing was changed" would be a
+            // guess: the column is re-read like any other unclear outcome.
+            CGP.diag.warn('post.jobFailed', { assignmentId: id, message: String(jobErr && jobErr.message) });
+            uncertain = { jobFailed: true, err: jobErr };
+            return null;
           });
         }, function (err) {
-          if (isUnconfirmed(err)) {
+          // The mutation may have run, but its answer says nothing usable:
+          // only a re-read of the column can say what happened.
+          if (CGP.util.isUnconfirmedError(err)) {
             CGP.diag.warn('post.unconfirmedAnswer', {
               assignmentId: id, status: err.status, network: !!err.network, malformed: !!err.malformed
             });
             uncertain = { err: err };
             return null;
           }
-          // Fall back to the older, broader "unmute the whole column" REST
-          // endpoint ONLY on a signal that specifically means the mutation
-          // itself is unavailable on this Canvas build: an HTTP 404/501 (the
-          // endpoint/route genuinely not there) or a schema-mismatch error.
-          // Never on a network failure: that says nothing about the mutation
-          // existing, and it may well have run before the response was lost -
-          // while the fallback posts the WHOLE column, ungraded submissions
-          // included, which is exactly what gradedOnly was protecting.
-          // Nothing weaker than that: err.graphql===true is set for EVERY
-          // top-level GraphQL error alike, including an authorization or
-          // resolver-level refusal, not just an unrecognized mutation - and
-          // a 400/403/422 can just as easily mean "understood, refused" as
-          // "not implemented". Only a message that itself looks like a
-          // schema mismatch (the shape an unrecognized mutation/field
-          // actually produces) counts as evidence from that path. Anything
-          // else - moderation not finished, nothing left to post, a
-          // plain permissions error - must surface as a real error instead:
-          // falling back for THAT would silently post grades Canvas just
-          // said should stay hidden, through an endpoint with no moderation
-          // awareness at all.
+          // Is the mutation itself unavailable on this Canvas build? Only an
+          // HTTP 404/501 (the route genuinely not there) or a message that
+          // looks like a schema mismatch counts. err.graphql===true alone does
+          // not: it is set for every top-level GraphQL error, refusals
+          // included, and a 400/403/422 can as easily mean "understood,
+          // refused". Anything else - moderation not finished, nothing left
+          // to post, a permissions error - is reported as Canvas's refusal.
           var schemaMismatch = err && err.graphql === true &&
             /cannot query field|unknown (field|argument|operation)|doesn.?t exist on type/i.test(String(err.message || ''));
           var mutationUnavailable = !!(err && (err.status === 404 || err.status === 501 || schemaMismatch));
           if (!mutationUnavailable) throw err;
-          // The older endpoint posts the WHOLE column, ungraded submissions
-          // included. This button promised graded only, so it is never used
-          // in its place: the teacher is told and posts from Canvas's menu.
-          if (GRADED_ONLY) {
-            CGP.diag.warn('post.gradedOnlyUnavailable', { assignmentId: id, status: err.status });
-            throw Object.assign(new Error('graded-only posting unavailable'), { postingUnsupported: true, cause: err });
-          }
-          return self.postWithoutGraphql(id, err, { gradedOnly: GRADED_ONLY }).then(function (r) { confirmed = true; return r; });
+          // Canvas's older "unmute" endpoint would post the WHOLE column,
+          // ungraded submissions included. This button promises graded only,
+          // so it is never used in its place: the teacher is told, and posts
+          // from Canvas's own menu.
+          CGP.diag.warn('post.gradedOnlyUnavailable', { assignmentId: id, status: err.status });
+          throw Object.assign(new Error('graded-only posting unavailable'), { postingUnsupported: true, cause: err });
         })
         .then(function () {
           return self.settleAfterPost(id, count);
@@ -468,11 +452,18 @@
     var self = this;
     var err = uncertain && uncertain.err;
     var hint = err && err.signIn ? ' Canvas answered with its sign-in page: your session may have expired.' : '';
+    // Counted over the submissions this post was for, not the whole column:
+    // grades hidden since the pre-post read are not part of this answer.
+    var stillPending = settled && settled.known ? this.model.pendingPosts(id) : [];
+    var hidden = pendingIds.filter(function (uid) { return stillPending.indexOf(uid) >= 0; }).length;
     var now = settled && settled.known
-      ? ' Canvas still shows ' + settled.left + ' of ' + pendingIds.length + ' hidden from students.'
+      ? ' Canvas still shows ' + hidden + ' of ' + pendingIds.length + ' hidden from students.'
       : ' The column couldn\u2019t be re-read to check.';
+    var lead = uncertain && uncertain.jobFailed
+      ? 'Canvas couldn\u2019t finish posting the grades in ' + name + (err && err.message && err.message !== 'Canvas could not finish posting these grades' ? ' (' + err.message + ')' : '') + '.'
+      : 'Couldn\u2019t confirm whether the grades in ' + name + ' were posted.';
     CGP.diag.bump('post.unconfirmed', pendingIds.length);
-    CGP.ui.error('Couldn\u2019t confirm whether the grades in ' + name + ' were posted.' + now + hint, {
+    CGP.ui.error(lead + now + hint, {
       action: { label: 'Check again', run: function () { self.checkPostAgain(id, pendingIds, name); } }
     });
     this.recheckLater(id, 0, pendingIds);
@@ -617,35 +608,6 @@
         postedAt: when || new Date().toISOString()
       }, location.origin);
     } catch (e) { /* the CSS fallback in gradebook.css still applies */ }
-  };
-
-  /* Fallback for Canvas builds without the postAssignmentGrades mutation.
-   *
-   * Before posting policies, "post the grades" was spelled "unmute the
-   * assignment", and that REST parameter still posts an assignment's grades on
-   * Canvas builds that accept it. It is broader than the mutation above - it
-   * posts the column rather than only its graded submissions - so it is
-   * refused outright for a graded-only post (the only kind the Post button
-   * makes), and otherwise used only when the proper path is genuinely
-   * unavailable, with the teacher told which one ran. */
-  P.postWithoutGraphql = function (assignmentId, originalError, opts) {
-    if (!opts || opts.gradedOnly !== false) return Promise.reject(originalError);
-    CGP.diag.warn('post.graphqlUnavailable', {
-      assignmentId: String(assignmentId),
-      status: originalError && originalError.status,
-      message: String(originalError && originalError.message)
-    });
-    return this.api.request('/api/v1/courses/' + this.model.courseId + '/assignments/' + assignmentId, {
-      method: 'PUT',
-      form: { 'assignment[muted]': 'false' },
-      retries: 1
-    }).then(function () {
-      CGP.diag.bump('post.viaUnmute');
-      CGP.ui.toast('Posted using Canvas’s older posting endpoint');
-      return null;
-    }, function () {
-      throw originalError;   // report what actually went wrong first
-    });
   };
 
   CGP.PostGradesController = PostGradesController;

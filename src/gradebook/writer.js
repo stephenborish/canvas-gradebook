@@ -372,17 +372,12 @@
           // will not show either.
           String((snapshot && snapshot.grade) || '') !== String((shown && shown.grade) || '');
         if (shown && !opts.noOptimistic && gradeChanged) {
-          var display;
-          if (shown.excused) display = 'EX';
           // Canvas spells "no grade" as null on some submissions and as an
           // empty string on others; both mean the cell has nothing to show.
-          else if (shown.grade !== null && shown.grade !== undefined && String(shown.grade) !== '') display = String(shown.grade);
-          // No grade left, because this write deliberately took one away (a
-          // clear). Dropping the overlay here would uncover the grade
-          // Canvas still has painted in the cell, so the score would appear
-          // to come back.
-          else display = clearsGrade ? '\u2013' : null;
-          self.model.patchCell(assignmentId, userId, { pending: false, override: display });
+          // With no grade left because this write deliberately took one away
+          // (a clear), dropping the overlay would uncover the grade Canvas
+          // still has painted in the cell, so a clear draws a dash.
+          self.model.patchCell(assignmentId, userId, { pending: false, override: overlayText(shown, clearsGrade) });
         } else if (!opts.noOptimistic) {
           self.model.patchCell(assignmentId, userId, { pending: false });
         }
@@ -393,7 +388,7 @@
     }
     return this.api.updateSubmission(this.model.courseId, assignmentId, userId, op.form)
       .then(onSaved, function (err) {
-        if (isUnconfirmed(err)) {
+        if (CGP.util.isUnconfirmedError(err)) {
           return self.settleUnconfirmed({
             assignmentId: assignmentId, userId: userId, op: op, snapshot: snapshot,
             startedAt: startedAt, err: err, result: result, onSaved: onSaved
@@ -419,13 +414,12 @@
       });
   };
 
-  /* Canvas may have applied a write whose answer is unusable: the
-   * connection dropped, a 5xx came back, or a 2xx carried something other
-   * than the submission (its sign-in page). A refusal (any other 4xx, or a
-   * throttle) is not this: Canvas said no before acting. */
-  function isUnconfirmed(err) {
-    return !!(err && (err.unconfirmed === true || err.network === true ||
-      (err.status >= 500 && err.status < 600)));
+  /* What the overlay draws for a record: EX, its grade, or (when the cell
+   * should read empty rather than uncover Canvas's stale value) a dash. */
+  function overlayText(rec, dashWhenEmpty) {
+    if (rec.excused) return 'EX';
+    if (rec.grade !== null && rec.grade !== undefined && String(rec.grade) !== '') return String(rec.grade);
+    return dashWhenEmpty ? '\u2013' : null;
   }
 
   /* Read one submission back, for settling a write. null when the read
@@ -540,11 +534,7 @@
           var rec = model.applySubmission(sub);
           var touchesGrade = Object.prototype.hasOwnProperty.call(u.form, 'submission[posted_grade]') ||
             Object.prototype.hasOwnProperty.call(u.form, 'submission[excuse]');
-          if (rec && touchesGrade) {
-            var display = rec.excused ? 'EX'
-              : (rec.grade !== null && rec.grade !== undefined && String(rec.grade) !== '' ? String(rec.grade) : '\u2013');
-            model.patchCell(u.assignmentId, u.userId, { pending: false, override: display });
-          }
+          if (rec && touchesGrade) model.patchCell(u.assignmentId, u.userId, { pending: false, override: overlayText(rec, true) });
           self.handOff(sub, readStartedAt);
           model.queueTotalRefresh(u.userId);
         }
@@ -596,7 +586,7 @@
         return fresh;
       }, function (err) {
         CGP.diag.error('write.missingRetryFailed', { assignmentId: assignmentId, status: err && err.status });
-        if (!isUnconfirmed(err)) {
+        if (!CGP.util.isUnconfirmedError(err)) {
           CGP.ui.error('Canvas rejected the Missing status' +
             (err && err.status ? ' (' + err.status + ')' : '') + '.');
           return rec;

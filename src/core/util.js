@@ -408,6 +408,16 @@
     return base + '.';
   };
 
+  /* The write may or may not have reached Canvas: the connection dropped, a
+   * 5xx came back, or a 2xx carried something other than the record
+   * (canvas-api.js marks those err.unconfirmed). Only a re-read can say what
+   * happened. A refusal (any other 4xx, or a throttle) is not this: Canvas
+   * said no before acting. */
+  util.isUnconfirmedError = function (err) {
+    return !!(err && (err.unconfirmed === true || err.network === true ||
+      (err.status >= 500 && err.status < 600)));
+  };
+
   /** True for the one error shape every other check above already handles by
    * name - kept separate so a call site that only needs the yes/no (to skip
    * a retry, say, rather than to build a message) does not have to repeat the

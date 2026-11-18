@@ -33,9 +33,15 @@
    * after the session lapsed, a maintenance page, an empty body. Reading
    * any of those as success is how a grade that never saved got reported
    * as saved. */
+  /* Was this answer Canvas's sign-in page? Only on real evidence: the
+   * request ended up at /login, or the page's title or a form posting to
+   * /login says so. A page that merely mentions "log in" (a maintenance
+   * page's nav link) is unreadable, not a sign-in page. */
   function looksLikeSignIn(r) {
     var url = String((r && r.url) || '');
-    return /\/login(?:[\/?#]|$)/i.test(url) || !!(r && r.html && /log\s?in|sign\s?in/i.test(String(r.snippet || '')));
+    if (/\/login(?:[\/?#]|$)/i.test(url)) return true;
+    var page = String((r && r.html && r.snippet) || '');
+    return /<title[^>]*>[^<]*(log\s?in|sign\s?in)/i.test(page) || /<form[^>]+action=["'][^"']*\/login/i.test(page);
   }
 
   /* The error every write operation raises when Canvas answered, but not
@@ -222,11 +228,12 @@
               date: res.headers.get('Date') || res.headers.get('date') || null, sentAt: sentAt,
               // What a write operation needs to tell "Canvas answered with
               // the record" from "Canvas answered with a page" (see
-              // unusableAnswer). Only the first few characters are kept.
+              // unusableAnswer). Only the start of the body is kept: enough
+              // to reach a sign-in page's <title> past its <head> markup.
               status: res.status, method: method, path: u.pathname,
               url: res.url || '', redirected: !!res.redirected, contentType: contentType,
               html: /text\/html/i.test(contentType) || /^</.test(trimmed),
-              snippet: trimmed.slice(0, 400) };
+              snippet: trimmed.slice(0, 2000) };
           });
         }).then(function (r) { clear(); return r; }, function (e) {
           clear();

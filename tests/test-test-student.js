@@ -242,6 +242,23 @@ suite('Test Student guard: grades already in the hidden row', (test) => {
     a.eq(quiz.form['submission[excuse]'], 'false');
   });
 
+  test('a clear whose answer was lost is read back, not reported as failed - and not resent', async () => {
+    const { g, writes } = setup(SUBS);
+    g.api.updateSubmission = (c, aid, uid, form) => {
+      writes.push({ aid, uid, form });
+      return Promise.reject(Object.assign(new Error('Network error'), { network: true }));
+    };
+    const reads = [];
+    g.api.submission = (c, aid, uid) => {
+      reads.push(aid);
+      return Promise.resolve({ assignment_id: aid, user_id: uid, grade: null, score: null, entered_grade: null, late_policy_status: 'none' });
+    };
+    const res = await g.clear([{ assignmentId: '50', userId: '999', excused: false }]);
+    a.deep(res, { ok: 1, failed: 0 });
+    a.eq(writes.length, 1, 'sent once');
+    a.deep(reads, ['50'], 'read back once');
+  });
+
   test('nothing is read at all while the row is shown', async () => {
     const { g, writes } = setup(SUBS);
     g.settings.values.hideTestStudent = false;

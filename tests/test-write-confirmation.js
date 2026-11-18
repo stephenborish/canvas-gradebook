@@ -439,12 +439,60 @@ suite('posting: refusals never widen into the whole-column fallback', (test) => 
     a.ok(/only graded/.test(last().text), last().text);
   });
 
-  test('postWithoutGraphql refuses a graded-only request outright', async () => {
-    const h = poster([], {});
-    const original = new Error('x');
-    const err = await h.ctrl.postWithoutGraphql('99', original).catch((e) => e);
-    a.eq(err, original);
-    a.eq(h.count('PUT', UNMUTE), 0);
+  test('the legacy whole-column fallback no longer exists at all', () => {
+    a.eq(typeof CGP.PostGradesController.prototype.postWithoutGraphql, 'undefined');
+  });
+});
+
+suite('posting: review fixes', (test) => {
+  test('a job Canvas reports failed is re-read, not reported as "Nothing was changed"', async () => {
+    const h = poster([[true, true], [false, true]], {
+      ['POST ' + GQL]: [gql({ progress: { _id: 'p1', state: 'queued' }, errors: null })],
+      'GET /api/v1/progress/p1$': [json(200, { id: 'p1', workflow_state: 'failed', message: 'job crashed' })]
+    });
+    await h.post();
+    a.eq(last().text, '1 of 2 grades posted in Lab 4', 'the partial post is reported as what it is');
+    a.eq(said.filter((s) => /Nothing was changed/.test(s.text)).length, 0);
+  });
+
+  test('a failed job whose re-reads show nothing posted says Canvas couldn’t finish, with Check again', async () => {
+    const h = poster([[true, true]], {
+      ['POST ' + GQL]: [gql({ progress: { _id: 'p1', state: 'queued' }, errors: null })],
+      'GET /api/v1/progress/p1$': [json(200, { id: 'p1', workflow_state: 'failed', message: 'job crashed' })]
+    });
+    await h.post();
+    const err = said.find((s) => s.level === 'error');
+    a.ok(/^Canvas couldn’t finish posting the grades in Lab 4 \(job crashed\)\. Canvas still shows 2 of 2 hidden/.test(err.text), err.text);
+    a.eq(err.action && err.action.label, 'Check again');
+  });
+
+  test('"N of M hidden" counts only the submissions this post was for', async () => {
+    const h = poster([[true, true]], { ['POST ' + GQL]: [json(200, { data: null })] });
+    const real = h.model.pendingPosts.bind(h.model);
+    let calls = 0;
+    // After the pre-post read, a third hidden grade appears in the column.
+    h.model.pendingPosts = (aid) => (++calls > 1 ? real(aid).concat(['3']) : real(aid));
+    await h.post();
+    const err = said.find((s) => s.level === 'error');
+    a.ok(/Canvas still shows 2 of 2 hidden/.test(err.text), err.text);
+  });
+});
+
+suite('sign-in detection: only on real evidence', (test) => {
+  test('a maintenance page that merely links to "Log in" is unreadable, not a sign-in page', async () => {
+    const page = '<!DOCTYPE html><html><head><title>Scheduled maintenance</title></head><body><a href="/help">Help</a> <a href="/x">Log in</a> Back soon.</body></html>';
+    const h = setup({ ['PUT ' + SUB_PATH]: [html(200, page)], ['GET ' + SUB_PATH]: ['network'] });
+    await h.write('9');
+    a.ok(/^Couldn’t confirm this grade/.test(last().text));
+    a.ok(!/sign-in page/.test(last().text), last().text);
+  });
+
+  test('a sign-in page whose <title> sits after a long <head> is still recognised', async () => {
+    const page = '<!DOCTYPE html><html><head>' + '<meta name="x" content="' + 'y'.repeat(900) + '">' +
+      '<title>Log In to Canvas</title></head><body></body></html>';
+    const h = setup({ ['PUT ' + SUB_PATH]: [html(200, page)], ['GET ' + SUB_PATH]: ['network'] });
+    await h.write('9');
+    a.ok(/sign-in page/.test(last().text), last().text);
   });
 });
 
