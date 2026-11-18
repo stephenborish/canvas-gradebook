@@ -803,7 +803,7 @@
           var l = lines[d];
           var o = outs[i];
           var r = l.result;
-          var icon = { copied: '✓', updated: '✓', dates: '✓', 'date-failed': '!', copying: '…', working: '…', failed: '×', unknown: '?' }[o.state];
+          var icon = { copied: '✓', updated: '✓', dates: '✓', 'date-failed': '!', 'date-skipped': '!', copying: '…', working: '…', failed: '×', unknown: '?' }[o.state];
           var link = r && r.url ? ' <a href="' + esc(r.url) + '" target="_blank" rel="noopener">Open</a>' : '';
           var warns = r && r.warnings && r.warnings.length ? '<ul>' + r.warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' : '';
           var btn = '';
@@ -819,6 +819,7 @@
     var api = {
       el: box,
       lines: lines,
+      busy: {},
       set: function (d, patch) {
         var l = lines[d];
         Object.assign(l, patch);
@@ -867,10 +868,13 @@
   P.retryDate = function (banner, item, d) {
     var l = banner.lines[d];
     var r = l.result;
-    if (!r || !r.destId || !l.iso) return Promise.resolve();
-    banner.set(d, { step: 'Setting dates' });
+    // One at a time: a second click while the first runs does nothing.
+    if (!r || !r.destId || !l.iso || banner.busy[d]) return Promise.resolve();
+    banner.busy[d] = true;
+    banner.set(d, { step: 'Setting dates', result: null });
     return this.copier.retryDates(d, item, r.destId, l.iso).then(function (x) {
       var next = Object.assign({}, r, { dates: x.dates, warnings: x.warnings, error: x.dates === 'failed' ? (x.warnings[0] || 'Canvas refused the dates.') : null });
+      delete banner.busy[d];
       banner.set(d, { result: next });
       banner.finish();
     });
@@ -880,11 +884,17 @@
    * is found and updated, not doubled), then copied. */
   P.retryCopy = function (banner, intent, d) {
     var self = this;
+    // Marked at once, before anything is read: a second click while the
+    // item loads or the survey runs must never start a second copy.
+    if (banner.busy[d]) return Promise.resolve();
+    banner.busy[d] = true;
+    banner.set(d, { step: 'Trying again', error: null, retry: null, unknown: null, result: null });
+    var done = function () { delete banner.busy[d]; };
     var current = this.controller ? this.controller.currentItem() : Promise.resolve(null);
     return current.then(function (item) {
-      if (!item) return null;
+      if (!item) { banner.set(d, { error: 'The item couldn’t be read again.', retry: 'copy' }); return null; }
       return self.copyNow(item, intent, [d], banner);
-    });
+    }).then(done, function (e) { done(); banner.set(d, { error: String(e && e.message || 'Something went wrong'), retry: 'copy' }); });
   };
 
   /* --------------------------------------------- Canvas's Add Module dialog */

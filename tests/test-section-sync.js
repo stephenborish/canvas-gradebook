@@ -2056,6 +2056,48 @@ suite('copy from the editor: one edit, one copy, one honest result', (test) => {
     a.deep(copies(w), ['22'], 'and no second copy');
   });
 
+  test('REVIEW: dates Canvas’s assignment rules made us leave alone are reported, not called updated', () => {
+    const O = S().inlineOutcome;
+    const skip = { ok: true, destId: '88', warnings: ['“Lab 4”: dates left as copied, because it is assigned only to particular students or sections there, so its dates are set in its Assign To.'], dates: 'skipped' };
+    const kept = O({ result: skip, mode: 'keep' });
+    a.eq(kept.state, 'date-skipped');
+    a.eq(kept.label, 'Dates left unchanged');
+    a.ok(/Assign To/.test(kept.detail));
+    a.eq(O({ result: skip, mode: 'copy' }).label, 'Copied · due date left unchanged');
+    const head = S().inlineHeadline([kept, O({ result: { ok: true, destId: '9', warnings: [], dates: 'ok' }, mode: 'copy' })], 'Lab 4');
+    a.eq(head.text, 'Copied “Lab 4” to 2 classes · 1 due date left unchanged');
+    a.eq(head.ok, false, 'not announced as a clean success');
+  });
+
+  test('REVIEW: “Try again” clicked twice while the item loads starts one copy', async () => {
+    const w = world();
+    w.api.dateDetails = () => Promise.reject(Object.assign(new Error('x'), { status: 500 }));
+    ['22'].forEach((d) => { w.api.db.migrations[d] = [{ id: '1', migration_type: 'course_copy_importer', workflow_state: 'completed', settings: { source_course_id: '11' } }]; });
+    landCopy(w.api, '22', '705', '<p>Do the lab.</p>');
+    const s = tabSession();
+    const ed = await editor(w, s, { 22: { due_at: { date: '', time: '', unreadable: true } } });
+    await ed.markSaved();
+    const ic = tab(w, s);
+    let banner;
+    const make = ic.banner.bind(ic);
+    ic.banner = function () { banner = make.apply(null, arguments); return banner; };
+    await ic.runSaved();
+    a.eq(S().inlineOutcome(banner.lines['22']).state, 'failed');
+    // The date can be read now; the item takes a while to load.
+    w.api.dateDetails = (c, t, id) => Promise.resolve(Object.assign({}, w.api.db.details[`${c}:${t}:${id}`]));
+    let release;
+    const slow = new Promise((r) => { release = r; });
+    const realCurrent = ic.controller.currentItem;
+    ic.controller.currentItem = () => slow.then(realCurrent);
+    const first = ic.retryCopy(banner, { editId: 'x', sections: { 22: { entry: { due_at: { date: '', time: '', unreadable: true } } } } }, '22');
+    const second = ic.retryCopy(banner, { editId: 'x', sections: { 22: { entry: { due_at: { date: '', time: '', unreadable: true } } } } }, '22');
+    a.not(/data-retry-copy="22"/.test(banner.el.innerHTML), 'the button is gone while it runs');
+    release();
+    await Promise.all([first, second]);
+    a.deep(copies(w), ['22'], 'one copy');
+    a.eq(w.api.db.details['22:assignment:705'].due_at, '2026-03-02T13:00:00Z', 'its own date, kept');
+  });
+
   test('a copy whose due date failed: the banner offers the date again, and retrying copies nothing', async () => {
     const w = world({ datesStatus: 500 });
     const s = tabSession();

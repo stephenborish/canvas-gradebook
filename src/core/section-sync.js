@@ -1403,6 +1403,12 @@
     }
     var base = line.mode === 'keep' ? 'Dates updated' : (line.mode === 'update' ? 'Updated' : 'Copied');
     if (r.dates === 'failed') return { state: 'date-failed', label: base + ' · due date not set', detail: r.error || '' };
+    // Left alone on purpose (assigned to particular students or sections
+    // there, checkpoints): not a date update, and retrying won't change it.
+    if (r.dates === 'skipped') {
+      return { state: 'date-skipped', label: line.mode === 'keep' ? 'Dates left unchanged' : base + ' · due date left unchanged',
+        detail: (r.warnings || []).filter(function (w) { return /dates left as copied/.test(w); })[0] || '' };
+    }
     return { state: line.mode === 'keep' ? 'dates' : (line.mode === 'update' ? 'updated' : 'copied'), label: base, detail: r.error || '' };
   }
 
@@ -1411,23 +1417,25 @@
   function inlineHeadline(outcomes, title) {
     var n = outcomes.length;
     var count = function (states) { return outcomes.filter(function (o) { return states.indexOf(o.state) >= 0; }).length; };
-    var there = count(['copied', 'updated', 'dates', 'date-failed']);
+    var there = count(['copied', 'updated', 'dates', 'date-failed', 'date-skipped']);
     var working = count(['working']);
     var copying = count(['copying']);
     var failed = count(['failed']);
     var unknown = count(['unknown']);
     var dateBad = count(['date-failed']);
+    var dateSkipped = count(['date-skipped']);
     var cls = function (k) { return k + ' ' + (k === 1 ? 'class' : 'classes'); };
     var what = title ? '“' + title + '”' : 'it';
     if (working) return { text: 'Copying ' + what + ' to ' + cls(n) + '…', final: false, ok: false };
     var parts = [];
     if (copying) parts.push(copying + ' still copying');
     if (dateBad) parts.push(dateBad + ' due date' + (dateBad === 1 ? '' : 's') + ' not set');
+    if (dateSkipped) parts.push(dateSkipped + ' due date' + (dateSkipped === 1 ? '' : 's') + ' left unchanged');
     if (unknown) parts.push(unknown + ' to check');
     if (failed) parts.push(failed + ' not copied');
     var text = (there === n ? 'Copied ' + what + ' to ' + cls(n) : 'Copied to ' + there + ' of ' + cls(n)) +
       (parts.length ? ' · ' + parts.join(' · ') : '');
-    return { text: text, final: true, ok: there === n && !dateBad };
+    return { text: text, final: true, ok: there === n && !dateBad && !dateSkipped };
   }
 
   CGP.sectionSync = {
