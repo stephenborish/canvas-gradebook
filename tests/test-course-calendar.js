@@ -616,8 +616,26 @@ suite('class schedule: the Assign To picker', (test) => {
     a.ok(ctrl.group && ctrl.group.date === pair.date, 'open again for the date box');
   });
 
-  test('stays out of the way until a calendar is connected', async () => {
-    const { ctrl, handlers } = bootPicker(cache, { courseCalendarUrl: '' });
+  test('with no calendar: a setup card links to Class Schedule settings; “Not now” leaves Canvas’s boxes alone after that', async () => {
+    const { ctrl, handlers, root, sent, settings } = bootPicker(cache, { courseCalendarUrl: '' });
+    const saved = [];
+    settings.save = async (patch) => { saved.push(patch); Object.assign(settings.values, patch); return settings.values; };
+    const pair = duePair('Nov 9, 2026');
+    root.add(pair.card);
+    handlers.focusin({ target: pair.time });
+    a.ok(ctrl.group, 'the card opens');
+    a.ok(/Set up class schedule/.test(ctrl.panel.innerHTML) && /Not now/.test(ctrl.panel.innerHTML), ctrl.panel.innerHTML);
+    ctrl.onButton({ getAttribute: () => 'setup' });
+    a.deep(sent.filter((m) => m.type === 'cgp.openOptions'), [{ type: 'cgp.openOptions', hash: 'schedule' }]);
+    ctrl.onButton({ getAttribute: () => 'dismiss' });
+    a.deep(saved, [{ courseScheduleSetupDismissed: true }]);
+    a.eq(ctrl.group, null);
+    handlers.focusin({ target: pair.date });
+    a.eq(ctrl.group, null, 'dismissed: dates are typed as before');
+  });
+
+  test('stays out of the way once setup was dismissed', async () => {
+    const { ctrl, handlers } = bootPicker(cache, { courseCalendarUrl: '', courseScheduleSetupDismissed: true });
     const { time } = duePair('Nov 9, 2026');
     handlers.focusin({ target: time });
     a.eq(ctrl.group, null);
@@ -819,7 +837,7 @@ suite('class schedule: the Assign To picker', (test) => {
     handlers.focusin({ target: duePair('Nov 9, 2026').time });
     await tick(); await tick();
     a.ok(/came with your settings/.test(ctrl.panel.innerHTML));
-    a.ok(/data-act="settings"[^>]*>Allow on this computer/.test(ctrl.panel.innerHTML));
+    a.ok(/data-act="settings"[^>]*>Allow calendar access on this computer/.test(ctrl.panel.innerHTML));
     ctrl.onButton({ getAttribute: (k) => (k === 'data-act' ? 'settings' : null) });
     a.eq(sent[sent.length - 1].type, 'cgp.openOptions');
   });
@@ -833,5 +851,181 @@ suite('class schedule: the Assign To picker', (test) => {
     a.ok(/Loading your calendar/.test(ctrl.panel.innerHTML));
     handlers.keydown({ key: 'Escape' });
     a.eq(ctrl.group, null);
+  });
+});
+
+/* ------------------------------------------- calendar onboarding (Connect) */
+
+suite('class schedule: Connect calendar, from first click to first class', (test) => {
+  const SECRET = 'https://calendar.google.com/calendar/ical/me%40school.org/private-s3cr3t/basic.ics';
+  const OTHER = 'https://calendar.google.com/calendar/ical/other%40school.org/private-0th3r/basic.ics';
+  const PUBLIC = 'https://calendar.google.com/calendar/ical/school%40school.org/public/basic.ics';
+  const NOW = Date.UTC(2026, 10, 8, 15, 0);   // Sun, Nov 8 2026, 10:00 AM in New York
+  const EMPTY = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'X-WR-CALNAME:Old Schedule', 'X-WR-TIMEZONE:America/New_York',
+    'BEGIN:VEVENT', 'DTSTART;TZID=America/New_York:20250910T085500', 'DTEND;TZID=America/New_York:20250910T095000', 'UID:old@x', 'SUMMARY:Last year', 'END:VEVENT',
+    'BEGIN:VEVENT', 'DTSTART;VALUE=DATE:20261201', 'DTEND;VALUE=DATE:20261202', 'UID:d@x', 'SUMMARY:A Day', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+
+  function load() {
+    if (!CGP.calendarConnect) vm.runInThisContext(fs.readFileSync(path.join(ROOT, 'src/options/calendar-connect.js'), 'utf8'), { filename: 'options/calendar-connect.js' });
+    return CGP.calendarConnect;
+  }
+  /* The options page's world: Chrome's permission, the service worker's
+   * calendar-sync (real), and the synced settings (one key). */
+  async function world(o) {
+    o = Object.assign({ grant: true, feeds: {} }, o);
+    const { createCalendarSync, CALENDAR_KEY } = await import(SYNC_MODULE);
+    const chrome = fakeChrome({ granted: true });
+    const fetch = async (url) => {
+      fetch.calls.push(url);
+      const f = o.feeds[url];
+      if (f instanceof Error) throw f;
+      if (!f) return { ok: false, status: 404, text: async () => '' };
+      return { ok: true, status: 200, text: async () => f };
+    };
+    fetch.calls = [];
+    const sync = createCalendarSync(chrome, { fetch, now: () => NOW });
+    const w = { chrome, sync, fetch, KEY: CALENDAR_KEY, settings: { courseCalendarUrl: o.saved || '', other: 'unsaved edits stay on the page' }, requests: [], saves: [], adopts: [], o };
+    w.connector = load().create({
+      locale: 'en-US', now: () => NOW,
+      request: (origins) => { w.requests.push(origins); return Promise.resolve(w.o.grant); },
+      probe: (url) => sync.refresh(url, { force: true, probe: true }),
+      adopt: (rec) => { w.adopts.push(rec.url); return sync.adopt(rec); },
+      saveUrl: (url) => { w.saves.push(url); if (w.o.saveFails) return Promise.reject(new Error('QUOTA_BYTES_PER_ITEM quota exceeded')); w.settings.courseCalendarUrl = url; return Promise.resolve(); }
+    });
+    return w;
+  }
+  const noLink = (r) => { [SECRET, OTHER, 's3cr3t', '0th3r', 'private-'].forEach((x) => a.not(String(r.message).includes(x), 'no link in: ' + r.message)); };
+
+  test('first connection: one click checks, asks Chrome, reads, saves, and shows the next class', async () => {
+    const w = await world({ feeds: { [SECRET]: ICS } });
+    const p = w.connector.connect('  ' + SECRET + ' ', { savedUrl: '' });
+    a.eq(w.requests.length, 1, 'Chrome is asked before anything waits (the click still counts)');
+    a.deep(w.requests[0], ['https://calendar.google.com/*']);
+    const r = await p;
+    a.eq(r.kind, 'connected');
+    a.deep(w.saves, [SECRET], 'the verified link saved, and only it');
+    a.eq(w.settings.other, 'unsaved edits stay on the page');
+    a.eq(w.chrome.bag[w.KEY].url, SECRET, 'the meetings stored for Canvas pages');
+    a.eq(r.message, 'Connected to “Borish Classes”. Next class: AP Biology P1, Mon, Nov 9 at 8:55 AM EST. ' + CGP.calendarConnect.USE_IN_CANVAS);
+    noLink(r);
+    console.log('       message: ' + r.message);
+  });
+
+  test('reopening settings: the stored calendar is described the same way, without reading it again', async () => {
+    const w = await world({ feeds: { [SECRET]: ICS } });
+    await w.connector.connect(SECRET, { savedUrl: '' });
+    const reads = w.fetch.calls.length;
+    const reopened = load().create({ locale: 'en-US', now: () => NOW, request: () => a.fail('no question on reopening') });
+    const view = reopened.describe((await w.sync.read()));
+    a.ok(view.text.startsWith('Connected to “Borish Classes”. Next class: AP Biology P1, Mon, Nov 9 at 8:55 AM EST.'), view.text);
+    a.eq(w.fetch.calls.length, reads);
+  });
+
+  test('a replacement that fails keeps the previous link and its meetings: unreadable, denied, or not saved', async () => {
+    const w = await world({ saved: SECRET, feeds: { [SECRET]: ICS } });
+    await w.sync.refresh(SECRET, { force: true });
+    const before = JSON.stringify(w.chrome.bag[w.KEY]);
+    // Unreadable (Google refuses the public link of a calendar that is not public).
+    const bad = await w.connector.connect(PUBLIC, { savedUrl: SECRET });
+    a.eq(bad.kind, 'unreadable');
+    a.eq(bad.code, 'notfound');
+    a.ok(/Secret address in iCal format/.test(bad.message) && /still connected/.test(bad.message), bad.message);
+    a.not(/make (it|the calendar|your calendar)? ?public|Make available to public/i.test(bad.message), 'never “make it public”');
+    a.deep(bad.actions.map((x) => x.id), ['guide']);
+    // Denied.
+    w.o.grant = false;
+    const denied = await w.connector.connect(OTHER, { savedUrl: SECRET });
+    a.eq(denied.kind, 'denied');
+    a.deep(denied.actions.map((x) => x.id), ['connect']);
+    // Read, but the save fails.
+    w.o.grant = true;
+    w.o.feeds[OTHER] = ICS.replace('Borish Classes', 'New Schedule');
+    w.o.saveFails = true;
+    const failed = await w.connector.connect(OTHER, { savedUrl: SECRET });
+    a.eq(failed.kind, 'save-failed');
+    a.deep(failed.actions.map((x) => x.id), ['save']);
+    a.ok(/still connected/.test(failed.message), failed.message);
+    [bad, denied, failed].forEach(noLink);
+    a.eq(w.settings.courseCalendarUrl, SECRET, 'the previous link is still the saved one');
+    a.eq(JSON.stringify(w.chrome.bag[w.KEY]), before, 'and its meetings are untouched');
+    a.deep(w.adopts, []);
+    // Try saving again: saved without reading the feed again.
+    const reads = w.fetch.calls.length;
+    w.o.saveFails = false;
+    const ok = await w.connector.retrySave();
+    a.eq(ok.kind, 'connected');
+    a.eq(w.fetch.calls.length, reads, 'not read again');
+    a.eq(w.settings.courseCalendarUrl, OTHER);
+    a.eq(w.chrome.bag[w.KEY].name, 'New Schedule');
+    console.log('       unreadable: ' + bad.message + '\n       denied: ' + denied.message + '\n       save failed: ' + failed.message);
+  });
+
+  test('a link synced from another computer: “Allow calendar access on this computer” needs no link typed and saves nothing', async () => {
+    const w = await world({ saved: SECRET, feeds: { [SECRET]: ICS } });
+    const p = w.connector.authorize(SECRET);
+    a.eq(w.requests.length, 1, 'asked from the click');
+    const r = await p;
+    a.eq(r.kind, 'connected');
+    a.deep(w.saves, [], 'the link was already saved');
+    a.deep(w.adopts, [SECRET]);
+  });
+
+  test('a readable calendar with no upcoming timed meetings is connected, with its own message', async () => {
+    const w = await world({ feeds: { [SECRET]: EMPTY } });
+    const r = await w.connector.connect(SECRET, { savedUrl: '' });
+    a.eq(r.kind, 'connected-empty');
+    a.eq(r.ok, true);
+    a.deep(w.saves, [SECRET]);
+    a.ok(/^Connected to “Old Schedule”\. It has no upcoming class meetings with a time/.test(r.message), r.message);
+    console.log('       empty: ' + r.message);
+  });
+
+  test('double-clicking Connect: one question, one read, one save', async () => {
+    const w = await world({ feeds: { [SECRET]: ICS } });
+    const p1 = w.connector.connect(SECRET, { savedUrl: '' });
+    const p2 = w.connector.connect(SECRET, { savedUrl: '' });
+    a.eq(p1, p2, 'the second click joins the first');
+    await p1;
+    a.eq(w.requests.length, 1);
+    a.eq(w.fetch.calls.length, 1);
+    a.deep(w.saves, [SECRET]);
+  });
+
+  test('an invalid link, or none, is said before Chrome is asked anything', async () => {
+    const w = await world();
+    const bad = await w.connector.connect('https://calendar.google.com/calendar/r/week', { savedUrl: '' });
+    a.eq(bad.kind, 'invalid');
+    a.deep(bad.actions.map((x) => x.id), ['guide']);
+    a.eq((await w.connector.connect('   ', { savedUrl: '' })).kind, 'empty');
+    a.eq(w.requests.length, 0);
+    // School subscription links already read by the parser are accepted.
+    a.eq(Cal().normalizeUrl('webcal://school.example.org/calendars/bio.ics'), 'https://school.example.org/calendars/bio.ics');
+    console.log('       invalid: ' + bad.message);
+  });
+
+  test('a probe stores nothing; adopt stores it and wins over a slower read of the old link', async () => {
+    const { createCalendarSync, CALENDAR_KEY } = await import(SYNC_MODULE);
+    const chrome = fakeChrome();
+    const sync = createCalendarSync(chrome, { fetch: fakeFetch([{ status: 200, body: ICS }, { status: 404, body: '' }]), now: () => NOW });
+    const ok = await sync.refresh(SECRET, { probe: true, force: true });
+    a.ok(ok.rec && ok.rec.occ.length);
+    a.eq(CALENDAR_KEY in chrome.bag, false);
+    const no = await sync.refresh(OTHER, { probe: true, force: true });
+    a.eq(no.ok, false);
+    a.eq(no.rec, null);
+    a.eq(CALENDAR_KEY in chrome.bag, false);
+    await sync.adopt(ok.rec);
+    a.eq(chrome.bag[CALENDAR_KEY].url, SECRET);
+    a.eq((await sync.adopt({ url: 'nope', ok: true, occ: [] })).ok, false);
+  });
+
+  test('the next meeting skips past and all-day events, in the calendar’s zone; status text never carries a secret link', () => {
+    const occ = Cal().expand(Cal().parseIcs(ICS), '2026-11-01', '2026-11-30');
+    const n = Cal().nextMeeting(occ, Date.UTC(2026, 10, 9, 14, 0), 'America/New_York');   // Mon 9:00 AM: 8:55 has begun
+    a.eq(n.title, 'Honors Chemistry, Period 4');
+    a.eq(n.start, '13:30');
+    a.eq(Cal().zoneName('America/New_York', n.at), 'EST');
+    a.eq(Cal().scrub('Could not read ' + SECRET, SECRET), 'Could not read your calendar link');
+    a.eq(Cal().scrub('see https://x.org/a/private-abc123/basic.ics now'), 'see your calendar link now');
   });
 });

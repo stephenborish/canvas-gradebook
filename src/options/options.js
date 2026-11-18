@@ -358,6 +358,7 @@
 
   var CAL_KEY = 'cgp.calendar';
   var CAL_REFRESH = 'cgp.calendar.refresh';
+  var CAL_ADOPT = 'cgp.calendar.adopt';
   var scheduleDay = null;
   var lastCalendar = null;
 
@@ -374,56 +375,180 @@
     return Cal().normalizeUrl(raw);
   }
 
-  function setCalendarStatus(text, kind) {
-    var el = $('calendarStatus');
-    if (!el) return;
-    el.textContent = text || '';
-    el.classList.toggle('is-error', kind === 'error');
-    el.classList.toggle('is-ok', kind === 'ok');
-  }
+  /* The link saved in the settings ('' for none). Connect calendar and
+   * Remove change it, each in one step; Save changes never does, so a link
+   * typed in the box is not saved until it has been read. */
+  var savedCalUrl = '';
+  var savedSetupDismissed = false;
+  var calendarResult = null;    // the last Connect's outcome, until the box changes
+  var connectedRec = null;      // what Connect read, until storage has it
+  var calendarConnector = null;
 
-  /* Asks Chrome to let the extension read the feed's site - only from a
-   * click, which Chrome requires - then has the service worker read it. */
-  function connectCalendar() {
-    var url = typedCalendarUrl();
-    if (url === '') { setCalendarStatus('Paste your calendar\u2019s address first.', 'error'); return Promise.resolve(false); }
-    if (!url) {
-      setCalendarStatus('That is not a calendar\u2019s link. In Google Calendar open Settings, click your class calendar, then Integrate calendar, and copy \u201cPublic URL to this calendar\u201d.', 'error');
-      return Promise.resolve(false);
-    }
-    $('courseCalendarUrl').value = url;
-    var host = calendarHost(url);
-    return chrome.permissions.request({ origins: [Cal().originPattern(url)] }).then(function (granted) {
-      if (!granted) {
-        setCalendarStatus('Chrome was not allowed to let Gradebook+ read ' + host + ', so the calendar cannot be read.', 'error');
-        return false;
-      }
-      setCalendarStatus('Reading your calendar\u2026');
-      return new Promise(function (resolve) {
-        chrome.runtime.sendMessage({ type: CAL_REFRESH, url: url, force: true }, function (res) {
-          void chrome.runtime.lastError;
-          renderCalendarStatus().then(function () {
-            if (res && res.ok && url !== (baseline && baseline.courseCalendarUrl)) status('Calendar connected \u2014 click Save changes to keep it.');
-            resolve(!!(res && res.ok));
+  function connector() {
+    if (calendarConnector) return calendarConnector;
+    calendarConnector = CGP.calendarConnect.create({
+      locale: navigator.language,
+      request: function (origins) { return chrome.permissions.request({ origins: origins }); },
+      probe: function (url) {
+        return new Promise(function (resolve) {
+          chrome.runtime.sendMessage({ type: CAL_REFRESH, url: url, force: true, probe: true }, function (res) {
+            void chrome.runtime.lastError;
+            resolve(res || { ok: false, code: 'error' });
           });
         });
-      });
-    }, function (e) {
-      setCalendarStatus('Not connected: ' + String(e && e.message), 'error');
-      return false;
+      },
+      adopt: function (rec) {
+        return new Promise(function (resolve) {
+          chrome.runtime.sendMessage({ type: CAL_ADOPT, rec: rec }, function (res) { void chrome.runtime.lastError; resolve(res); });
+        });
+      },
+      saveUrl: function (url) { return saveSettingFields({ courseCalendarUrl: url }); }
+    });
+    return calendarConnector;
+  }
+
+  /* Writes only these settings, on top of what is stored now: whatever
+   * else is being edited on this page stays unsaved, as it was. */
+  function saveSettingFields(patch) {
+    saving = true;
+    return CGP.settingsStorage.read().then(function (r) {
+      var next = CGP.sanitizeSettings(Object.assign({}, r.values, patch));
+      return CGP.settingsStorage.write(r.values, next);
+    }).then(function (stored) {
+      saving = false;
+      shown = JSON.stringify(stored);
+      if (baseline) Object.keys(patch).forEach(function (k) { baseline[k] = stored[k]; });
+      if ('courseCalendarUrl' in patch) savedCalUrl = Cal().normalizeUrl(stored.courseCalendarUrl) || '';
+      if ('courseScheduleSetupDismissed' in patch) savedSetupDismissed = !!stored.courseScheduleSetupDismissed;
+      return stored;
+    }, function (err) {
+      saving = false;
+      throw err;
     });
   }
 
+  function setCalendarStatus(text, kind, actions, next) {
+    var el = $('calendarStatus');
+    if (!el) return;
+    el.innerHTML = '';
+    if (text) {
+      var p = document.createElement('p');
+      p.className = 'schedule-status__text';
+      p.textContent = text;
+      el.appendChild(p);
+    }
+    (function () {
+      if (!actions || !actions.length) return;
+      var row = document.createElement('div');
+      row.className = 'schedule-status__actions';
+      actions.forEach(function (x) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn btn--secondary btn--sm';
+        b.setAttribute('data-cal-act', x.id);
+        b.textContent = x.label;
+        row.appendChild(b);
+      });
+      el.appendChild(row);
+    })();
+    void next;
+    el.classList.toggle('is-error', kind === 'error');
+    el.classList.toggle('is-ok', kind === 'ok');
+    el.classList.toggle('is-busy', kind === 'busy');
+  }
+
+  function setCalendarBusy(on) {
+    ['connectCalendar', 'authorizeCalendar', 'disconnectCalendar'].forEach(function (id) {
+      var b = $(id);
+      if (b) b.disabled = !!on;
+    });
+  }
+
+  function showResult(res) {
+    if (!res || res.kind === 'busy') return;
+    calendarResult = res.ok ? null : res;
+    if (res.ok) {
+      connectedRec = res.rec;
+      $('courseCalendarUrl').value = savedCalUrl;
+      scheduleDay = null;
+    }
+    renderCalendarStatus();
+  }
+
+  /* Connect calendar: everything in one click (calendar-connect.js). The
+   * connector asks Chrome first, while the click still counts. */
+  function connectCalendar() {
+    var c = connector();
+    if (c.inflight) return c.inflight;
+    var p = c.connect($('courseCalendarUrl').value, { savedUrl: savedCalUrl });
+    if (c.inflight) { setCalendarBusy(true); setCalendarStatus('Checking your calendar…', 'busy'); }
+    return p.then(function (res) { setCalendarBusy(false); showResult(res); return res; });
+  }
+
+  /* The saved link, on a computer Chrome has not allowed its site on yet:
+   * the link is not asked for again. */
+  function authorizeCalendar() {
+    var c = connector();
+    if (c.inflight) return c.inflight;
+    var p = c.authorize(savedCalUrl);
+    if (c.inflight) { setCalendarBusy(true); setCalendarStatus('Checking your calendar…', 'busy'); }
+    return p.then(function (res) { setCalendarBusy(false); if (res && !res.ok) res.authorize = true; showResult(res); return res; });
+  }
+
+  function retryCalendarSave() {
+    var c = connector();
+    if (c.inflight) return c.inflight;
+    var p = c.retrySave();
+    if (c.inflight) { setCalendarBusy(true); setCalendarStatus('Saving…', 'busy'); }
+    return p.then(function (res) { setCalendarBusy(false); showResult(res); return res; });
+  }
+
+  /* Remove: the link leaves the settings at once, and only then the stored
+   * meetings and Chrome's permission for the site. */
   function disconnectCalendar() {
-    var url = typedCalendarUrl() || Cal().normalizeUrl(baseline && baseline.courseCalendarUrl);
-    $('courseCalendarUrl').value = '';
-    scheduleDay = null;
-    chrome.runtime.sendMessage({ type: CAL_REFRESH, url: '' }, function () {
-      void chrome.runtime.lastError;
+    var url = savedCalUrl;
+    if (!url) { $('courseCalendarUrl').value = ''; calendarResult = null; renderCalendarStatus(); return Promise.resolve(); }
+    setCalendarBusy(true);
+    return saveSettingFields({ courseCalendarUrl: '' }).then(function () {
+      setCalendarBusy(false);
+      $('courseCalendarUrl').value = '';
+      calendarResult = null;
+      connectedRec = null;
+      scheduleDay = null;
+      chrome.runtime.sendMessage({ type: CAL_REFRESH, url: '' }, function () { void chrome.runtime.lastError; renderCalendarStatus(); });
+      if (chrome.permissions.remove) chrome.permissions.remove({ origins: [Cal().originPattern(url)] }).catch(function () { return false; });
+      setCalendarStatus('Calendar removed. Canvas’s date boxes no longer show your classes.');
+    }, function (err) {
+      setCalendarBusy(false);
+      calendarResult = { kind: 'save-failed', message: 'Couldn’t remove the calendar (' + String((err && err.message) || 'Chrome storage refused it') + '). It is still connected.', actions: [] };
       renderCalendarStatus();
     });
-    if (url && chrome.permissions.remove) chrome.permissions.remove({ origins: [Cal().originPattern(url)] }).catch(function () { return false; });
-    status('Calendar removed below \u2014 click Save changes to keep it that way.');
+  }
+
+  function skipCalendar() {
+    return saveSettingFields({ courseScheduleSetupDismissed: true }).then(function () {
+      $('skipCalendarNote').hidden = false;
+      $('skipCalendar').hidden = true;
+    }, function (err) {
+      status('Not saved: ' + String((err && err.message) || 'Chrome storage refused it'), { error: true });
+    });
+  }
+
+  function onCalendarAction(id) {
+    if (id === 'guide') {
+      var g = $('calendarGuide');
+      g.open = true;
+      var sum = g.querySelector('summary');
+      if (sum && sum.focus) sum.focus();
+      if (g.scrollIntoView) g.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    } else if (id === 'connect') {
+      if (calendarResult && calendarResult.authorize) authorizeCalendar(); else connectCalendar();
+    } else if (id === 'authorize') authorizeCalendar();
+    else if (id === 'save') retryCalendarSave();
+    else if (id === 'refresh') {
+      setCalendarStatus('Reading your calendar…', 'busy');
+      chrome.runtime.sendMessage({ type: CAL_REFRESH, url: savedCalUrl, force: true }, function () { void chrome.runtime.lastError; renderCalendarStatus(); });
+    }
   }
 
   function fmtWhen(ms) {
@@ -431,40 +556,55 @@
     try { return new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return ''; }
   }
 
-  /** What is stored for the address in the box: connected or not, how many
-   * classes, any error, and the preview. */
+  /** What the Class Schedule tab says now: the last Connect's problem, or
+   * the saved calendar's state, with what can be done next. Never the link. */
   function renderCalendarStatus() {
-    var url = typedCalendarUrl();
+    var typed = typedCalendarUrl();
+    var raw = String($('courseCalendarUrl').value || '').trim();
+    var saved = savedCalUrl;
     var get = chrome.storage && chrome.storage.local ? chrome.storage.local.get(CAL_KEY) : Promise.resolve({});
-    var perm = url && chrome.permissions && chrome.permissions.contains
-      ? chrome.permissions.contains({ origins: [Cal().originPattern(url)] }).catch(function () { return false; })
+    var perm = saved && chrome.permissions && chrome.permissions.contains
+      ? chrome.permissions.contains({ origins: [Cal().originPattern(saved)] }).catch(function () { return false; })
       : Promise.resolve(true);
     return Promise.all([get, perm]).then(function (r) {
       var rec = (r[0] && r[0][CAL_KEY]) || null;
       var granted = r[1];
-      lastCalendar = rec && url && rec.url === url ? rec : null;
-      if (url === '') setCalendarStatus('No calendar connected.');
-      else if (!url) setCalendarStatus('That is not a calendar address yet.', 'error');
-      else if (!granted) {
-        // Typically the address arrived through Chrome sync from another
-        // computer: Chrome asks for the site's permission on each one.
-        setCalendarStatus('Your calendar is saved in your settings, but Chrome asks once on each computer: click Connect to let Gradebook+ read ' +
-          calendarHost(url) + ' here.', 'error');
-      }
-      else if (!lastCalendar) setCalendarStatus('Not read yet \u2014 click Connect.');
-      else if (!lastCalendar.ok) {
-        setCalendarStatus(lastCalendar.error + (lastCalendar.occ ? ' (Showing the schedule read ' + fmtWhen(lastCalendar.lastOk) + '.)' : ''), 'error');
+      lastCalendar = saved && rec && rec.url === saved ? rec : (saved && connectedRec && connectedRec.url === saved ? connectedRec : null);
+      if (connectedRec && rec && rec.url === connectedRec.url) connectedRec = null;
+      var switching = !!raw && typed !== saved;
+      var needsAllow = !!saved && !granted && !switching;
+      $('connectCalendar').hidden = needsAllow;
+      $('authorizeCalendar').hidden = !needsAllow;
+      $('disconnectCalendar').hidden = !saved;
+      $('skipCalendar').hidden = !!saved || savedSetupDismissed;
+      $('skipCalendarNote').hidden = !!saved || !savedSetupDismissed;
+
+      if (calendarResult) {
+        setCalendarStatus(calendarResult.message, 'error', calendarResult.actions);
+      } else if (switching) {
+        setCalendarStatus(saved
+          ? 'Click Connect calendar to switch to this link. Your current calendar stays connected until the new one has been read and saved.'
+          : 'Click Connect calendar.');
+      } else if (!saved) {
+        setCalendarStatus('');
+      } else if (needsAllow) {
+        // The link came through Chrome sync: Chrome asks once per computer.
+        setCalendarStatus('Your calendar link came with your settings from another computer. Chrome asks once on each computer: click ' +
+          'Allow calendar access on this computer, and choose Allow. You don\u2019t need to paste the link again.', 'error');
+      } else if (!lastCalendar) {
+        setCalendarStatus('Saved. Your calendar hasn’t been read on this computer yet.', null, [{ id: 'refresh', label: 'Read it now' }]);
+      } else if (!lastCalendar.ok) {
+        setCalendarStatus(Cal().scrub(lastCalendar.error, saved) +
+          (lastCalendar.occ ? ' (Showing the schedule read ' + fmtWhen(lastCalendar.lastOk) + '.)' : ''), 'error', [{ id: 'refresh', label: 'Try again' }]);
       } else {
-        var timed = (lastCalendar.occ || []).filter(function (o) { return !o.a; }).length;
-        setCalendarStatus('\u2713 Connected' + (lastCalendar.name ? ' to \u201c' + lastCalendar.name + '\u201d' : '') + ': ' +
-          timed + ' class meeting' + (timed === 1 ? '' : 's') + ' between ' + fmtDay(lastCalendar.from) + ' and ' + fmtDay(lastCalendar.to) +
-          '. Read ' + fmtWhen(lastCalendar.fetchedAt) + '.', timed ? 'ok' : 'error');
+        var view = connector().describe(lastCalendar);
+        var off = !$('courseScheduleEnabled').checked ? ' The class schedule is turned off above: turn it on and click Save changes to see it in Canvas.' : '';
+        setCalendarStatus(view.text + off, 'ok');
       }
-      var needsConnect = !!url && !granted;
-      var btn = $('connectCalendar');
-      btn.classList.toggle('btn--attention', needsConnect);
+      var btn = $('authorizeCalendar');
+      btn.classList.toggle('btn--attention', needsAllow);
       // Sent here from the schedule panel in Canvas ("Allow on this computer").
-      if (needsConnect && location.hash === '#schedule' && !renderCalendarStatus.focused) {
+      if (needsAllow && location.hash === '#schedule' && !renderCalendarStatus.focused) {
         renderCalendarStatus.focused = true;
         btn.focus();
       }
@@ -508,11 +648,18 @@
 
   function initScheduleUI() {
     $('connectCalendar').addEventListener('click', function () { connectCalendar(); });
-    $('disconnectCalendar').addEventListener('click', disconnectCalendar);
+    $('authorizeCalendar').addEventListener('click', function () { authorizeCalendar(); });
+    $('disconnectCalendar').addEventListener('click', function () { disconnectCalendar(); });
+    $('skipCalendar').addEventListener('click', function () { skipCalendar(); });
+    $('calendarStatus').addEventListener('click', function (e) {
+      var b = e.target && e.target.closest && e.target.closest('[data-cal-act]');
+      if (b) onCalendarAction(b.getAttribute('data-cal-act'));
+    });
     $('courseCalendarUrl').addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { e.preventDefault(); connectCalendar(); }
     });
-    $('courseCalendarUrl').addEventListener('input', CGP.util.debounce(function () { scheduleDay = null; renderCalendarStatus(); }, 300));
+    $('courseCalendarUrl').addEventListener('input', CGP.util.debounce(function () { calendarResult = null; scheduleDay = null; renderCalendarStatus(); }, 300));
+    $('courseScheduleEnabled').addEventListener('change', function () { renderCalendarStatus(); });
     $('schedulePrev').addEventListener('click', function () { scheduleDay = Cal().addDays(scheduleDay, -1); renderSchedulePreview(); });
     $('scheduleNext').addEventListener('click', function () { scheduleDay = Cal().addDays(scheduleDay, 1); renderSchedulePreview(); });
     if (chrome.storage && chrome.storage.onChanged) {
@@ -532,7 +679,10 @@
     var snips = Array.isArray(values.snippets) ? values.snippets.slice() : [];
     renderSnippetCards(snips);
     $('snippets').value = snippetsToText(snips);
-    $('courseCalendarUrl').value = values.courseCalendarUrl || '';
+    savedCalUrl = Cal().normalizeUrl(values.courseCalendarUrl || '') || '';
+    savedSetupDismissed = !!values.courseScheduleSetupDismissed;
+    $('courseCalendarUrl').value = savedCalUrl;
+    calendarResult = null;
     $('courseScheduleTime').value = values.courseScheduleTime === 'end' ? 'end' : 'start';
     scheduleDay = null;
     renderCalendarStatus();
@@ -726,10 +876,10 @@
     BOOLS.forEach(function (k) { var el = $(k); if (el) patch[k] = el.checked; });
     NUMS.forEach(function (k) { var el = $(k); if (el) patch[k] = Number(el.value); });
     patch.snippets = readRawSnippets();
-    // Stored as the feed address it stands for (a Public URL or share link
-    // becomes its .ics address); left as typed if it is not one, so save()
-    // can say so.
-    patch.courseCalendarUrl = typedCalendarUrl() || String($('courseCalendarUrl').value || '').trim();
+    // The calendar link is saved only by Connect calendar and Remove, once
+    // it has been read: Save changes keeps the saved one, whatever is typed.
+    patch.courseCalendarUrl = savedCalUrl;
+    patch.courseScheduleSetupDismissed = savedSetupDismissed;
     patch.courseScheduleTime = $('courseScheduleTime').value;
     patch.gradingScale = CGP.totals.textToScale($('gradingScale').value);
     patch.totalHighlightRules = currentThresholds.slice();
@@ -883,21 +1033,15 @@
     }
     var thresholdProblem = thresholdProblems(currentThresholds);
     if (thresholdProblem) { status('Not saved: ' + thresholdProblem, { error: true }); return Promise.resolve(); }
-    var calUrl = typedCalendarUrl();
-    if (calUrl === null) {
-      status('Not saved: the Class Schedule calendar address is not a calendar address. Fix it or click Remove, then save again.', { error: true });
-      return Promise.resolve();
-    }
-    // A new address needs Chrome's permission for its site, which can only
-    // be asked from this click.
-    if (calUrl && calUrl !== Cal().normalizeUrl(baseline && baseline.courseCalendarUrl) && !(lastCalendar && lastCalendar.url === calUrl && lastCalendar.ok)) {
-      connectCalendar();
-    }
     var raw = readRawSnippets();
     var values = read();
     var problem = checkSavable(values, raw);
     if (problem) { status(problem, { error: true }); return Promise.resolve(); }
-    return writeSettings(baseline, values, 'Saved. Reload the gradebook tab to see the change.');
+    var typedRaw = String($('courseCalendarUrl').value || '').trim();
+    var pendingLink = typedRaw && typedCalendarUrl() !== savedCalUrl;
+    return writeSettings(baseline, values, pendingLink
+      ? 'Saved. The calendar link was not changed: click Connect calendar to switch to the one in the box.'
+      : 'Saved. Reload the gradebook tab to see the change.');
   }
 
   /* ------------------------------------------------------- export / import */

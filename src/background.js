@@ -13,7 +13,7 @@ import { CONTENT_JS, CONTENT_CSS, FRAME_JS, isCustomCanvasOrigin } from './scrip
 import { createSelfUpdater, CHECK_NOW } from './self-update.js';
 import { createLiveRelay, LIVE_SYNC_TYPE } from './live-relay.js';
 import { createSettingsTimes } from './settings-times.js';
-import { createCalendarSync, CALENDAR_REFRESH } from './calendar-sync.js';
+import { createCalendarSync, CALENDAR_REFRESH, CALENDAR_ADOPT } from './calendar-sync.js';
 // The welcome tour's record (a plain script that adds CGP.TourState to
 // globalThis), so its shape is defined in one place.
 import './tour/tour-state.js';
@@ -163,8 +163,15 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     return false;
   }
   if (msg && msg.type === CALENDAR_REFRESH) {
-    calendarSync.refresh(msg.url, { force: !!msg.force })
+    calendarSync.refresh(msg.url, { force: !!msg.force, probe: !!msg.probe })
       .then(respond, (e) => respond({ ok: false, error: String(e && e.message) }));
+    return true;
+  }
+  // Only the options page (an extension page, no tab) may store a probed calendar.
+  if (msg && msg.type === CALENDAR_ADOPT) {
+    const fromOptions = sender && sender.id === chrome.runtime.id && String(sender.url || '').indexOf(chrome.runtime.getURL('src/options/')) === 0;
+    if (!fromOptions) { respond({ ok: false, code: 'refused' }); return false; }
+    calendarSync.adopt(msg.rec).then(respond, () => respond({ ok: false, code: 'store' }));
     return true;
   }
   if (msg && msg.type === 'cgp.openOptions') {

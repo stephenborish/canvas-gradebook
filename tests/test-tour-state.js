@@ -96,6 +96,7 @@ suite('Welcome tour: once per install', (test) => {
     // Every stop that opens the student overview also closes it on the way out.
     stops.filter((x) => x.group === 'si').forEach((x) => a.ok(typeof x.enter === 'function' && typeof x.leave === 'function', x.id));
     a.ok(globalThis.CGP.tourScheduleStops.some((x) => x.id === 'opt-paste'), 'guided calendar setup on the options page');
+    a.not(globalThis.CGP.tourScheduleStops.some((x) => x.id === 'opt-save'), 'no separate Save step: Connect saves');
   });
 
   test('"Connect my calendar" can open the options page with its guided setup', () => {

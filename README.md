@@ -597,8 +597,8 @@ its dialog: *which of your classes are the same course as this one?*), copying w
 with its own dates, **Compare classes** and *Also post to your other classes*, and the **class
 schedule**: what it does in Canvas's Assign To boxes and the two steps to connect a calendar.
 **Connect my calendar** opens the options page's Class Schedule tab with a guided setup on top
-(switch on, copy the link from Google Calendar, paste and Connect, Save) that lets the teacher
-type and click as they go.
+(switch on, find the link with *Where do I find my link?*, paste it and click **Connect calendar**,
+check the next class it shows) that lets the teacher type and click as they go. **Later** skips it.
 
 - `←` / `→` move between stops, `Esc` ends the tour. **Skip tour** is on the first card, and every
   card has a close button.
@@ -707,15 +707,20 @@ edited are marked **This course** (numbers tell sections apart, so *Chemistry 3*
 The same Assign To card on quizzes, discussions and modules is covered, and so are the time boxes in
 **Also post to your other classes**, where each class is matched against its own course name.
 
-To set it up, open the **Class Schedule** tab of the options page and follow its two steps: in Google
-Calendar's **Settings**, click the calendar that holds your classes (a calendar your school shares,
-such as *All Classes*, is under *Settings for other calendars*), then **Integrate calendar**, and copy
-**Public URL to this calendar**; paste it and click **Connect**: Chrome asks once to let the extension read `calendar.google.com` (that one
-site, only to fetch this calendar), a preview shows the classes it found, and **Save changes** keeps
-it. That link works only when the calendar is public; for a calendar you made, its **Secret address in
-iCal format** works without making it public. A *Public address in iCal format*, a share link, a bare
-calendar ID, or any other
-`.ics` feed (Outlook, Apple, a school's scheduling system — Chrome asks for that site instead) work
+To set it up, open the **Class Schedule** tab of the options page (the welcome tour links there, and so
+does the class-time panel in Canvas while no calendar is connected). Paste the link under **Calendar
+link** and click **Connect calendar**. That one click checks the link, asks Chrome once to let the
+extension read that calendar's site (only to fetch this calendar), reads the calendar and saves the
+link; anything else you were editing on the page stays unsaved. It says *Connected* only when all of
+that worked, with the calendar's name, your next class meeting (day, time and time zone), and where to
+use it in Canvas. A calendar with no upcoming timed meetings is connected and says so.
+
+**Where do I find my link?** opens the short version for Google Calendar: **Settings** → select the
+calendar containing your classes → **Integrate calendar**, then copy its **Secret address in iCal
+format** (private: it works without the calendar being public; keep it to yourself), or the *Public
+address in iCal format* / *Public URL* of a calendar that is already public. A subscription link your
+school gives you (`webcal://` or `.ics`), a share link, a bare calendar ID, or any other `.ics` feed
+(Outlook, Apple, a school's scheduling system — Chrome asks for that site instead) works
 too. Repeating events (weekly, daily, monthly), skipped, moved and cancelled meetings, and daylight-
 saving changes are all handled; times are shown in your Canvas profile's time zone, which is what
 Canvas's boxes mean. The calendar is read again every six hours, or with **Refresh** in the panel.
@@ -1022,8 +1027,9 @@ time (these go by Chrome sync only). Three things stay on the computer where the
 
 - **Class Schedule's calendar permission.** Your calendar's address travels with Chrome sync, but
   Chrome asks for permission to read `calendar.google.com` separately on each computer. On a new
-  computer the schedule panel in Canvas says so and offers **Allow on this computer**, which opens
-  Class Schedule with **Connect** ready to click — once per computer. (The address is not kept in
+  computer the schedule panel in Canvas says so and offers **Allow calendar access on this computer**,
+  which opens Class Schedule with that button ready to click — once per computer, without pasting the
+  link again. (The address is not kept in
   the Canvas copy, since a Google "secret address" lets whoever has it read that calendar: with Chrome
   sync off, paste it on each computer.)
 - **SpeedGrader comment drafts** — unsent drafts stay with the computer you typed them on.

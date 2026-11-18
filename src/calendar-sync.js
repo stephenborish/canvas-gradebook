@@ -10,12 +10,18 @@
  *
  * Stored: {url, ok, fetchedAt, lastOk, name, zone, from, to, events, occ,
  * error, code}. A failed refresh keeps the last good meetings for the same
- * address, so a blip offline does not empty the picker. */
+ * address, so a blip offline does not empty the picker.
+ *
+ * A probe (Connect on the options page) stores nothing: it answers with the
+ * whole record (`rec`), and the options page stores it only once the
+ * address is saved in the settings - so a calendar that fails to replace
+ * the current one leaves the current one, and its meetings, as they were. */
 
 import './core/course-calendar.js';
 
 export const CALENDAR_KEY = 'cgp.calendar';
 export const CALENDAR_REFRESH = 'cgp.calendar.refresh';
+export const CALENDAR_ADOPT = 'cgp.calendar.adopt';
 // A feed is fetched again once it is this old (schedules rarely change
 // within a day); a failure is retried no sooner than RETRY_MS unless forced.
 export const FRESH_MS = 6 * 60 * 60 * 1000;
@@ -38,7 +44,7 @@ export function summarize(rec) {
   if (!rec) return { ok: false, empty: true };
   return {
     ok: !!rec.ok, url: rec.url, fetchedAt: rec.fetchedAt, lastOk: rec.lastOk || null,
-    error: rec.error || null, code: rec.code || null, name: rec.name || '',
+    error: rec.error || null, code: rec.code || null, name: rec.name || '', zone: rec.zone || '',
     events: rec.events || 0, count: Array.isArray(rec.occ) ? rec.occ.length : 0
   };
 }
@@ -63,7 +69,7 @@ export function createCalendarSync(chrome, opts = {}) {
     try { return await chrome.permissions.contains({ origins: [C.originPattern(url)] }); } catch (e) { return false; }
   }
 
-  async function load(url, cached) {
+  async function load(url, cached, probe) {
     let rec;
     try {
       if (!(await allowed(url))) {
@@ -107,6 +113,7 @@ export function createCalendarSync(chrome, opts = {}) {
         ['occ', 'name', 'zone', 'from', 'to', 'events', 'lastOk'].forEach((k) => { if (cached[k] !== undefined) rec[k] = cached[k]; });
       }
     }
+    if (probe) return Object.assign(summarize(rec), { rec: rec.ok ? rec : null });
     if (latest === undefined || latest === url) await chrome.storage.local.set({ [CALENDAR_KEY]: rec });
     return summarize(rec);
   }
@@ -121,6 +128,13 @@ export function createCalendarSync(chrome, opts = {}) {
     }
     const url = C.normalizeUrl(input);
     if (!url) return { ok: false, code: 'badurl', error: 'That is not a calendar address.' };
+    if (o.probe) {
+      const key = 'probe|' + url;
+      if (inflight.has(key)) return inflight.get(key);
+      const pr = load(url, null, true).finally(() => inflight.delete(key));
+      inflight.set(key, pr);
+      return pr;
+    }
     latest = url;
     const cached = await read();
     if (!o.force && cached && cached.url === url) {
@@ -133,5 +147,16 @@ export function createCalendarSync(chrome, opts = {}) {
     return p;
   }
 
-  return { refresh, read };
+  /** A probe's record, stored once its address is saved in the settings.
+   * It becomes the latest address, so a slower read of the previous one
+   * cannot write over it. */
+  async function adopt(rec) {
+    const url = rec && C.normalizeUrl(rec.url);
+    if (!url || url !== rec.url || !rec.ok || !Array.isArray(rec.occ)) return { ok: false, code: 'badrecord' };
+    latest = url;
+    await chrome.storage.local.set({ [CALENDAR_KEY]: rec });
+    return summarize(rec);
+  }
+
+  return { refresh, read, adopt };
 }
