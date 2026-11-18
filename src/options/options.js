@@ -702,7 +702,8 @@
       var links = res.status === 'found' ? CGP.calendarFinder.rank(res) : [];
       if (mode === 'show' && links.length) {
         setCalendarBusy(false);
-        setCalendarStatus('Your ' + name + ' link is highlighted in the Google Calendar tab. Copy it, come back, and paste it in the box above – ' +
+        $('calendarManual').open = true;
+        setCalendarStatus('Your ' + name + ' link is highlighted in the Google Calendar tab. Copy it, come back, and paste it in the box below – ' +
           'or click Find my calendar link to have it connected for you.', 'ok');
         return res;
       }
@@ -814,7 +815,10 @@
       $('findCalendar').classList.toggle('btn--primary', !saved);
       $('findCalendar').classList.toggle('btn--secondary', !!saved);
       $('calendarManualSummary').textContent = saved ? 'Use a different calendar, or remove this one' : 'I already have a calendar link';
-      if ((calendarResult && calendarResult.kind === 'found-unconnected') || switching) $('calendarManual').open = true;
+      // Opened when that starts, not on every render, so it can be folded again.
+      var wantOpen = !!((calendarResult && calendarResult.kind === 'found-unconnected') || switching);
+      if (wantOpen && !renderCalendarStatus.opened) $('calendarManual').open = true;
+      renderCalendarStatus.opened = wantOpen;
       var btn = $('calendarStatus').querySelector('[data-cal-act="authorize"]') || $('authorizeCalendar');
       btn.classList.toggle('btn--attention', needsAllow);
       // Sent here from the schedule panel in Canvas ("Allow on this computer").
