@@ -163,35 +163,44 @@
   }
   var BUBBLE = '<span class="mk-cmt"><svg viewBox="0 0 16 16"><path d="M2.5 4.2A1.7 1.7 0 0 1 4.2 2.5h7.6a1.7 1.7 0 0 1 1.7 1.7v4.9a1.7 1.7 0 0 1-1.7 1.7H7.6l-3 2.6v-2.6h-.4a1.7 1.7 0 0 1-1.7-1.7z"/></svg></span>';
 
+  /* The feedback-bubble legend: the introduction and the comments stop. */
+  function commentLegend() {
+    return '<div class="legend">' +
+      '<div class="lg">' + miniCell('92', BUBBLE) + '<span>You left feedback</span></div>' +
+      '<div class="lg">' + miniCell('88', BUBBLE + '<span class="mk-cnt">3</span>') + '<span>3 comments from you</span></div>' +
+      '<div class="lg">' + miniCell('75', '<span class="mk-cmt mk-cmt--reply"><svg viewBox="0 0 16 16"><path d="M2.5 4.2A1.7 1.7 0 0 1 4.2 2.5h7.6a1.7 1.7 0 0 1 1.7 1.7v4.9a1.7 1.7 0 0 1-1.7 1.7H7.6l-3 2.6v-2.6h-.4a1.7 1.7 0 0 1-1.7-1.7z"/></svg></span>') + '<span>Student replied</span></div>' +
+      '</div>';
+  }
+
   /* ----------------------------------------------------------------- stops */
 
   var stops = [
+    /* The introduction: what a teacher sees on their first gradebook visit.
+     * One feature, on a real cell when there is one, then a choice. */
     {
-      id: 'welcome',
-      kind: 'hero',
-      eyebrow: 'Welcome to Gradebook+',
-      title: 'Grading in Canvas just got faster.',
-      body: 'Take a quick look around your own gradebook. We’ll point out what’s new, then show you how to link your classes and connect your schedule. <strong>Nothing changes while you look.</strong>',
-      art: function () {
-        var rows = [
-          ['92', BUBBLE, 'in'], ['88', '', 'in'], ['–', '<span class="mk-m">M</span>', 'out'], ['95', BUBBLE + '<span class="mk-cnt">2</span>', 'in'],
-          ['81', '', 'in'], ['74', '<span class="mk-l">L</span>', 'in'], ['90', BUBBLE, 'in'], ['86', '', 'in'],
-          ['–', '', 'out'], ['97', BUBBLE, 'in'], ['79', '', 'in'], ['84', '<span class="mk-cmt mk-cmt--reply"><svg viewBox="0 0 16 16"><path d="M2.5 4.2A1.7 1.7 0 0 1 4.2 2.5h7.6a1.7 1.7 0 0 1 1.7 1.7v4.9a1.7 1.7 0 0 1-1.7 1.7H7.6l-3 2.6v-2.6h-.4a1.7 1.7 0 0 1-1.7-1.7z"/></svg></span>', 'in']
-        ];
-        var names = ['Avery K.', 'Jordan P.', 'Sam R.'];
-        var html = '<div class="hero-grid">';
-        html += '<div class="hg-row hg-head"><span class="hg-name">Student</span><span>Lab 3</span><span>Essay</span><span>Quiz 2</span><span>Lab 4</span></div>';
-        for (var r = 0; r < 3; r++) {
-          html += '<div class="hg-row" style="--r:' + r + '"><span class="hg-name">' + names[r] + '</span>';
-          for (var c = 0; c < 4; c++) {
-            var d = rows[r * 4 + c];
-            html += '<span class="hg-cell" style="--i:' + (r * 4 + c) + '"><span class="mk-sub mk-sub--' + d[2] + '"></span>' + d[0] + d[1] + '</span>';
-          }
-          html += '</div>';
-        }
-        return html + '</div>';
-      },
-      meta: ['2 parts · about 4 minutes', '← → to move', 'Esc to skip']
+      id: 'intro',
+      kind: 'intro',
+      icon: 'bubble',
+      eyebrow: 'Gradebook+ is on',
+      title: 'A blue bubble means you left feedback',
+      body: 'Look for it in a grade cell’s corner. A number beside it counts your comments; <b class="c-purple">hollow purple</b> means the student replied.',
+      target: function () { return cellOf(pick('.cgp-cmt')); },
+      fallbackArt: true,
+      fallbackNote: 'No feedback on screen yet. Comment on a submission and its bubble appears in that cell.',
+      padding: 4,
+      art: commentLegend,
+      question: 'Or learn one thing next:',
+      choices: [
+        { id: 'grade', icon: 'keys', label: 'Grade faster', help: 'One-key statuses, paste, badges · 1 min',
+          run: function (tour) { tour.choose('grade'); } },
+        { id: 'copy', icon: 'swap', label: 'Copy to another class', help: 'Opens your course page',
+          run: function (tour) { tour.goChapter('classes', 'copy'); } },
+        { id: 'schedule', icon: 'calendar', label: 'Set up my schedule', help: 'Opens calendar setup in settings',
+          run: function (tour) {
+            tour.openOptions('schedule-tour');
+            tour.end('completed', { path: 'schedule', note: 'Calendar setup opened in a new tab' });
+          } }
+      ]
     },
     {
       id: 'comments',
@@ -204,13 +213,7 @@
       fallback: assignmentCell,
       fallbackNote: 'No comments from you on screen yet. Leave one and its bubble appears in that cell.',
       tryIt: true,
-      art: function () {
-        return '<div class="legend">' +
-          '<div class="lg">' + miniCell('92', BUBBLE) + '<span>You left feedback</span></div>' +
-          '<div class="lg">' + miniCell('88', BUBBLE + '<span class="mk-cnt">3</span>') + '<span>3 comments from you</span></div>' +
-          '<div class="lg">' + miniCell('75', '<span class="mk-cmt mk-cmt--reply"><svg viewBox="0 0 16 16"><path d="M2.5 4.2A1.7 1.7 0 0 1 4.2 2.5h7.6a1.7 1.7 0 0 1 1.7 1.7v4.9a1.7 1.7 0 0 1-1.7 1.7H7.6l-3 2.6v-2.6h-.4a1.7 1.7 0 0 1-1.7-1.7z"/></svg></span>') + '<span>Student replied</span></div>' +
-          '</div>';
-      }
+      art: commentLegend
     },
     {
       id: 'submissions',
@@ -289,6 +292,14 @@
           '<div class="pd-cell pd-cell--hid">88</div><div class="pd-cell pd-cell--hid">93</div><div class="pd-cell">76</div>' +
           '</div>';
       }
+    },
+    {
+      id: 'grade-done',
+      kind: 'finale',
+      eyebrow: 'Grade faster',
+      title: 'You’re ready to grade',
+      body: 'More when you want it: student overviews, the Total column and course tools.',
+      secondary: { label: 'More tips', run: function (tour) { tour.choose('more'); } }
     },
     {
       id: 'student',
@@ -498,7 +509,7 @@
         { icon: 'calendar', t: 'Class schedule', d: 'Click a class period to set a due time.' },
         { icon: 'bubble', t: 'SpeedGrader', d: 'Drafts are protected; <code>/snippet</code> + Tab adds a saved comment.' }
       ],
-      primary: { label: 'Continue to part 2', run: function (tour) { tour.goChapter('classes'); } },
+      primary: { label: 'Continue to part 2', run: function (tour) { tour.goChapter('classes', 'classes'); } },
       secondary: { label: 'Finish for now', run: function (tour) { tour.end('completed'); } }
     },
 
@@ -681,7 +692,21 @@
     }
   ];
 
+  /* The paths through the stops (TourState.pathFor picks one). */
+  var paths = {
+    intro: ['intro'],
+    grade: ['submissions', 'statuses', 'spreadsheet', 'post', 'grade-done'],
+    more: ['student', 'si-overview', 'si-standout', 'si-work', 'si-activity', 'total', 'menus', 'switcher', 'find', 'gear', 'bridge'],
+    // The whole first part, as it was before the introduction: for a tour
+    // already under way when Gradebook+ updated.
+    full: ['comments', 'submissions', 'statuses', 'spreadsheet', 'post', 'student', 'si-overview', 'si-standout', 'si-work',
+      'si-activity', 'total', 'menus', 'switcher', 'find', 'gear', 'bridge'],
+    copy: ['classes-link', 'classes-copy', 'classes-compare', 'done'],
+    classes: ['classes-link', 'classes-copy', 'classes-compare', 'schedule', 'schedule-connect', 'done']
+  };
+
   CGP.tourStops = stops;
+  CGP.tourPaths = paths;
   CGP.tourScheduleStops = scheduleStops;
   CGP.tourIcons = ICON;
   CGP.tourFind = { onScreen: onScreen, pick: pick };

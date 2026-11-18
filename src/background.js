@@ -126,10 +126,10 @@ async function syncDynamicScripts() {
 // an update - marks it due on this computer, and the first gradebook that
 // shows it clears the mark again. chrome.storage.local, so it is per install.
 chrome.runtime.onInstalled.addListener(async (details) => {
-  if (details && details.reason === 'install') {
-    // write() swallows storage errors: the tour never blocks setup.
-    await new TourState(chrome.storage.local).markInstalled();
-  }
+  // A fresh install marks it due; an update leaves the record as it was
+  // (finished, skipped or part-way). write() swallows storage errors: the
+  // tour never blocks setup.
+  if (details) await new TourState(chrome.storage.local).handleInstalled(details.reason);
   // A new version: the Canvas tabs already open still run the old one until
   // they are reloaded, so they are told (self-update.js).
   if (details && details.reason === 'update') await selfUpdater.afterUpdate(details);

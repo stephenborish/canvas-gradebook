@@ -12,14 +12,18 @@
   function $(id) { return document.getElementById(id); }
 
   /* opts.error: shown in the error style and left in place until the next
-   * message - a "not saved" must not fade away before it has been read. */
+   * message - a "not saved" must not fade away before it has been read.
+   * opts.persist: an instruction (reload Canvas) that stays until the next
+   * message, without the error style. */
   function status(message, opts) {
     var el = $('status');
     var isError = !!(opts && opts.error);
     el.textContent = message || '';
     el.classList.toggle('status--error', isError);
     el.setAttribute('role', isError ? 'alert' : 'status');
-    if (message && !isError) setTimeout(function () { if (el.textContent === message) el.textContent = ''; }, 2600);
+    if (message && !isError && !(opts && opts.persist)) {
+      setTimeout(function () { if (el.textContent === message) el.textContent = ''; }, 2600);
+    }
   }
 
   /* ------------------------------------------------------------- snippets */
@@ -410,20 +414,19 @@
   /* Writes only these settings, on top of what is stored now: whatever
    * else is being edited on this page stays unsaved, as it was. */
   function saveSettingFields(patch) {
-    saving = true;
-    return CGP.settingsStorage.read().then(function (r) {
-      var next = CGP.sanitizeSettings(Object.assign({}, r.values, patch));
-      return CGP.settingsStorage.write(r.values, next);
+    // In line behind any Save still running, so the two never interleave.
+    return saver.enqueue(function () {
+      return CGP.settingsStorage.read().then(function (r) {
+        var next = CGP.sanitizeSettings(Object.assign({}, r.values, patch));
+        return CGP.settingsStorage.write(r.values, next);
+      });
     }).then(function (stored) {
-      saving = false;
       shown = JSON.stringify(stored);
-      if (baseline) Object.keys(patch).forEach(function (k) { baseline[k] = stored[k]; });
+      if (saver.baseline) Object.keys(patch).forEach(function (k) { saver.baseline[k] = stored[k]; });
       if ('courseCalendarUrl' in patch) savedCalUrl = Cal().normalizeUrl(stored.courseCalendarUrl) || '';
       if ('courseScheduleSetupDismissed' in patch) savedSetupDismissed = !!stored.courseScheduleSetupDismissed;
+      renderSaveState();
       return stored;
-    }, function (err) {
-      saving = false;
-      throw err;
     });
   }
 
@@ -719,17 +722,18 @@
     }).join(' · ') + '.';
   }
 
-  /* What sanitizeSettings would silently drop from the threshold rows. */
-  function thresholdProblems(rules) {
+  /* What sanitizeSettings would silently drop from the threshold rows:
+   * { index: the row to fix, message } or null. */
+  function thresholdProblem(rules) {
     var seen = {};
     for (var i = 0; i < rules.length; i++) {
       var b = rules[i].below;
-      if (!isFinite(b) || b < 0.1 || b > 1000) return 'a Total threshold needs a number from 0 to 999.9 - fill it in or remove that row.';
-      if (seen[b]) return 'two Total thresholds are both "at or below ' + tenth(b - 0.1) + '%" - change or remove one.';
+      if (!isFinite(b) || b < 0.1 || b > 1000) return { index: i, message: 'Enter a percentage from 0 to 999.9, or remove this row.' };
+      if (seen[b]) return { index: i, message: 'Another row already uses ' + tenth(b - 0.1) + '%. Change this one or remove it.' };
       seen[b] = true;
     }
-    if (rules.length > 8) return 'at most 8 Total thresholds can be saved.';
-    return '';
+    if (rules.length > 8) return { index: 8, message: 'At most 8 thresholds can be saved. Remove this row and any below it.' };
+    return null;
   }
 
   function renderThresholds(list) {
@@ -860,15 +864,31 @@
     }).join('');
   }
 
-  /** The snippets exactly as the teacher entered them, before sanitizing. */
+  /** The snippets exactly as the teacher entered them, before sanitizing.
+   * In card view each carries `card`, the index of its card. */
   function readRawSnippets() {
     if (isRawMode) return textToSnippets($('snippets').value);
-    return currentSnippets.map(function (s) {
+    return currentSnippets.map(function (s, i) {
       return {
         trigger: String(s.trigger || '').replace(/^\/+/, '').trim(),
-        text: String(s.text || '').trim()
+        text: String(s.text || '').trim(),
+        card: i
       };
     }).filter(function (s) { return s.trigger && s.text; });
+  }
+
+  /* A card with a shortcut but no text, or text but no shortcut: it would be
+   * left out of a save without a word, so it counts as unsaved and Save
+   * points at it. */
+  function incompleteSnippet() {
+    if (isRawMode) return null;
+    for (var i = 0; i < currentSnippets.length; i++) {
+      var t = String(currentSnippets[i].trigger || '').replace(/^\/+/, '').trim();
+      var x = String(currentSnippets[i].text || '').trim();
+      if (t && !x) return { card: i, part: 'text', message: 'Add the comment for /' + t + ', or delete this snippet.' };
+      if (!t && x) return { card: i, part: 'trigger', message: 'Give this snippet a shortcut, or delete it.' };
+    }
+    return null;
   }
 
   function read() {
@@ -895,18 +915,21 @@
   }
 
   /* What sanitizeSettings would silently drop or cut from these snippets,
-   * spelled out by shortcut so the teacher knows exactly what to fix. */
+   * spelled out by shortcut so the teacher knows exactly what to fix. Each
+   * note is { message, snip (the raw snippet it is about), part: 'trigger' |
+   * 'text' }. */
   function snippetLosses(raw) {
     var notes = [];
+    var note = function (message, s, part) { notes.push({ message: message, snip: s, part: part }); };
     var seen = Object.create(null);
     var usable = (raw || []).filter(function (s) {
       var t = sanitizedTrigger(s.trigger);
       if (!t) {
-        notes.push('"' + s.trigger + '" is not a usable shortcut (letters, numbers, - and _ only).');
+        note('"' + s.trigger + '" can’t be a shortcut. Use letters, numbers, - and _ only.', s, 'trigger');
         return false;
       }
       if (seen[t.toLowerCase()]) {
-        notes.push('/' + t + ' is used twice (shortcuts ignore capitals), and only the first one would be kept.');
+        note('/' + t + ' is already a shortcut (capitals don’t count). Rename this one or delete it.', s, 'trigger');
         return false;
       }
       seen[t.toLowerCase()] = true;
@@ -914,45 +937,50 @@
     });
     var label = function (s) { return '/' + sanitizedTrigger(s.trigger); };
     if (usable.length > MAX_SNIPPETS) {
-      notes.push('Only ' + MAX_SNIPPETS + ' snippets fit, so ' + usable.slice(MAX_SNIPPETS).map(label).join(', ') +
-        ' would be dropped.');
+      note('Only ' + MAX_SNIPPETS + ' snippets fit, so ' + usable.slice(MAX_SNIPPETS).map(label).join(', ') +
+        ' would be dropped. Delete some you no longer use.', usable[MAX_SNIPPETS], 'trigger');
     }
     var kept = usable.slice(0, MAX_SNIPPETS);
-    var long = kept.filter(function (s) { return String(s.text || '').length > MAX_SNIPPET_TEXT; });
-    if (long.length) {
-      notes.push(long.map(function (s) { return label(s) + ' (' + String(s.text).length + ' characters)'; }).join(', ') +
-        ' would be cut to ' + MAX_SNIPPET_TEXT + ' characters.');
-    }
+    kept.filter(function (s) { return String(s.text || '').length > MAX_SNIPPET_TEXT; }).forEach(function (s) {
+      note(label(s) + ' has ' + String(s.text).length + ' characters. Shorten it to ' + MAX_SNIPPET_TEXT + '.', s, 'text');
+    });
     // Chrome sync's quotas count UTF-8 bytes, per snippet and in total, so
     // accented or emoji-heavy text can hit them even when every count and
     // length above is fine.
     if (!notes.length) {
       var store = CGP.settingsStorage;
-      var items = kept.map(function (s) { return { trigger: sanitizedTrigger(s.trigger), text: String(s.text || '') }; });
+      var items = kept.map(function (s) { return { trigger: sanitizedTrigger(s.trigger), text: String(s.text || ''), snip: s }; });
       var big = items.filter(function (s) { return store.snippetItemBytes(s) > LIMITS.MAX_SNIPPET_ITEM_BYTES; });
-      if (big.length) {
-        notes.push(big.map(function (s) { return '/' + s.trigger; }).join(', ') + ' would be cut: Chrome sync stores at most ' +
-          LIMITS.MAX_SNIPPET_ITEM_BYTES + ' bytes per snippet (accented letters count as 2 bytes, emoji as 4).');
-      }
+      big.forEach(function (s) {
+        note('/' + s.trigger + ' is too long for Chrome sync (at most ' + LIMITS.MAX_SNIPPET_ITEM_BYTES +
+          ' bytes; accented letters count as 2, emoji as 4). Shorten it.', s.snip, 'text');
+      });
       var bytes = items.reduce(function (t, s) { return t + store.snippetItemBytes(s); }, 0);
       if (!big.length && bytes > LIMITS.MAX_SNIPPET_BYTES) {
-        notes.push('Your snippets come to ' + bytes + ' bytes and at most ' + LIMITS.MAX_SNIPPET_BYTES +
-          ' fit in Chrome sync (accented letters count as 2 bytes, emoji as 4), so the last ones would be dropped.');
+        note('Your snippets come to ' + bytes + ' bytes and at most ' + LIMITS.MAX_SNIPPET_BYTES +
+          ' fit in Chrome sync. Shorten or delete some.', items[items.length - 1] && items[items.length - 1].snip, 'text');
       }
     }
     return notes;
   }
 
-  /* What the form held when it was last filled from storage, read back
-   * through the form itself, so the comparison in a save only ever sees the
-   * teacher's own edits (see CGP.settingsStorage.plan). */
-  var baseline = null;
-  var shown = null;   // the stored settings the form was last filled from
+  /* One save at a time, edits made during a save kept, and the reload
+   * notice only when it is needed (save-state.js). saver.baseline is what
+   * the form held when it was last filled from storage, read back through
+   * the form itself, so a save only ever writes the teacher's own edits (see
+   * CGP.settingsStorage.plan). */
+  var shown = null;   // the stored settings, as JSON, that this page last saw
+  var saver = new CGP.optionsSave.Saver({
+    read: function () { return read(); },
+    write: function (base, values) { return CGP.settingsStorage.write(base, values); }
+  });
 
   function show(values) {
     fill(values);
     shown = JSON.stringify(values);
-    baseline = read();
+    saver.baseline = read();
+    clearProblems();
+    renderSaveState();
   }
 
   function load() {
@@ -970,12 +998,12 @@
     if (!chrome.storage || !chrome.storage.onChanged) return;
     chrome.storage.onChanged.addListener(function (changes, area) {
       if (area !== 'sync' || !Object.keys(changes).some(CGP.settingsStorage.isSettingsKey)) return;
-      if (saving) return;
-      var untouched = baseline && JSON.stringify(read()) === JSON.stringify(baseline);
+      if (saver.busy()) return;
+      var untouched = !isDirty();
       CGP.settingsStorage.read().then(function (r) {
         // This page's own save (its change event can arrive after the save
         // has finished) or nothing that changes what is shown.
-        if (JSON.stringify(r.values) === shown) return;
+        if (JSON.stringify(r.values) === shown || saver.busy()) return;
         if (untouched) {
           show(r.values);
           status('Updated with settings saved on another computer.');
@@ -986,62 +1014,221 @@
     });
   }
 
-  /* Refuses, with the reason, anything that would not round-trip intact:
-   * snippets sanitizing would drop or cut (the form keeps them so nothing is
-   * lost). A merged library too big for sync is refused by the write
-   * itself (CGP.settingsStorage.plan), with its own explanation. */
-  function checkSavable(values, raw) {
-    var losses = raw ? snippetLosses(raw) : [];
-    if (losses.length) {
-      return 'Not saved: ' + losses.join(' ') + ' Shorten or remove those snippets, then save again.';
+  /* ------------------------------------------------------ save and status */
+
+  /* Unsaved: the form differs from what is stored, or a snippet card is
+   * half filled in (a save would leave it out). */
+  function isDirty() { return saver.dirty() || !!incompleteSnippet(); }
+
+  /* The tab each setting lives on, for the "unsaved" dot and for sending
+   * the teacher to a field that needs fixing. */
+  function tabOf(el) {
+    var panel = el && el.closest && el.closest('.panel');
+    return panel ? panel.getAttribute('data-panel') : null;
+  }
+
+  function tabOfKey(k) {
+    if (k === 'snippets') return 'snippets';
+    if (k === 'totalHighlightRules') return 'layout';
+    if (k === 'sectionGroups') return 'course';
+    return tabOf($(k));
+  }
+
+  /* The button, the line under it, a dot on each tab with unsaved edits,
+   * and a note beside each changed setting that needs a Canvas reload. */
+  function renderSaveState() {
+    var btn = $('save');
+    var line = $('saveState');
+    if (!btn || !line) return;
+    var busy = !!saver.inflight;
+    var dirty = !busy && isDirty();
+    btn.textContent = busy ? 'Saving…' : (dirty ? 'Save changes' : 'Saved');
+    btn.setAttribute('aria-disabled', busy ? 'true' : 'false');
+    btn.setAttribute('aria-busy', busy ? 'true' : 'false');
+    btn.classList.toggle('btn--done', !busy && !dirty);
+    line.textContent = busy ? 'Saving…' : (dirty ? 'Unsaved changes' : '');
+    line.classList.toggle('save-state--dirty', dirty);
+
+    var changed = saver.baseline ? saver.changed() : [];
+    if (incompleteSnippet()) changed.push('snippets');
+    var tabs = {};
+    changed.forEach(function (k) { var t = tabOfKey(k); if (t) tabs[t] = true; });
+    Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (tab) {
+      var on = !busy && !!tabs[tab.getAttribute('data-tab')];
+      var dot = tab.querySelector('.tab__dot');
+      if (on && !dot) {
+        dot = document.createElement('span');
+        dot.className = 'tab__dot';
+        dot.innerHTML = '<span class="sr-only">(unsaved changes)</span>';
+        tab.appendChild(dot);
+      } else if (!on && dot) dot.remove();
+    });
+
+    var reload = saver.baseline ? CGP.optionsSave.reloadKeys(saver.baseline, read()) : [];
+    Array.prototype.forEach.call(document.querySelectorAll('.reload-note'), function (n) {
+      if (reload.indexOf(n.getAttribute('data-key')) < 0) n.remove();
+    });
+    reload.forEach(function (k) {
+      var el = $(k);
+      var lab = el && document.querySelector('label[for="' + k + '"]');
+      if (!lab || lab.querySelector('.reload-note')) return;
+      var note = document.createElement('span');
+      note.className = 'reload-note';
+      note.setAttribute('data-key', k);
+      note.textContent = 'Reload Canvas after saving';
+      lab.appendChild(note);
+    });
+  }
+
+  // Coalesced: a burst of keystrokes repaints the state once.
+  var stateQueued = false;
+  function queueSaveState() {
+    if (stateQueued) return;
+    stateQueued = true;
+    setTimeout(function () { stateQueued = false; renderSaveState(); }, 0);
+  }
+
+  /* -------------------------------------------------------------- problems */
+
+  /* Everything that would not save as shown, in page order:
+   * [{ el: the field to fix, message }]. Fields sanitizing would quietly
+   * clamp (a width of 900) count too: what is saved must be what is shown. */
+  function problems() {
+    var out = [];
+    NUMS.forEach(function (k) {
+      var el = $(k);
+      if (!el || el.type !== 'number') return;
+      var v = el.validity || {};
+      if (el.value === '' || v.badInput || v.rangeUnderflow || v.rangeOverflow) {
+        out.push({ el: el, message: 'Enter a number from ' + el.min + ' to ' + el.max + '.' });
+      }
+    });
+    var t = thresholdProblem(currentThresholds);
+    if (t) {
+      var rows = document.querySelectorAll('#totalHighlightList .threshold-row');
+      var row = rows[Math.min(t.index, rows.length - 1)];
+      out.push({ el: row ? row.querySelector('input[type="number"]') : $('addTotalHighlight'), message: t.message });
     }
-    // Every other setting is its own small sync item (CGP.settingsStorage),
-    // well inside Chrome sync's per-item quota.
-    return null;
+    var bad = CGP.totals.badScaleLines($('gradingScale').value);
+    if (bad.length) {
+      out.push({ el: $('gradingScale'), message: 'Use one “Letter: number” per line, like B+: 87. Fix ' +
+        (bad.length === 1 ? 'this line: ' : 'these lines: ') + bad.join('; ') + '.' });
+    }
+    var half = incompleteSnippet();
+    if (half) out.push({ el: snippetField(half.card, half.part), message: half.message });
+    var raw = readRawSnippets();
+    snippetLosses(raw).forEach(function (n) {
+      out.push({ el: n.snip && n.snip.card !== undefined ? snippetField(n.snip.card, n.part) : $('snippets'), message: n.message });
+    });
+    // Page order, so the first one reported is the first one on the page.
+    out = out.filter(function (p) { return p.el; });
+    out.sort(function (a, b) {
+      if (a.el === b.el) return 0;
+      return a.el.compareDocumentPosition(b.el) & 4 ? -1 : 1;  // 4: b follows a
+    });
+    return out;
+  }
+
+  function snippetField(card, part) {
+    if (isRawMode) return $('snippets');
+    var cards = document.querySelectorAll('#snippets-card-list .snippet-card');
+    var c = cards[card];
+    if (!c) return $('snippets-card-list');
+    return c.querySelector(part === 'text' ? '.snippet-card__text-input' : '.snippet-card__trigger-input');
+  }
+
+  function clearProblems() {
+    Array.prototype.forEach.call(document.querySelectorAll('.field-error'), function (n) { n.remove(); });
+    Array.prototype.forEach.call(document.querySelectorAll('[aria-invalid="true"]'), function (el) {
+      el.removeAttribute('aria-invalid');
+      var ids = (el.getAttribute('aria-describedby') || '').split(/\s+/).filter(function (id) { return id && id !== 'cgp-field-error'; });
+      if (ids.length) el.setAttribute('aria-describedby', ids.join(' ')); else el.removeAttribute('aria-describedby');
+    });
+  }
+
+  /* Opens the tab the first problem is on, puts the explanation right under
+   * the field, and focuses it. */
+  function reportProblems(list) {
+    clearProblems();
+    var p = list[0];
+    var tab = tabOf(p.el);
+    if (tab && showTab) showTab(tab);
+    var msg = document.createElement('p');
+    msg.className = 'field-error';
+    msg.id = 'cgp-field-error';
+    msg.textContent = p.message;
+    var anchor = p.el.closest('.threshold-row, .snippet-card, .setting__control, .snippets-raw-container') || p.el;
+    anchor.insertAdjacentElement('afterend', msg);
+    p.el.setAttribute('aria-invalid', 'true');
+    var ids = (p.el.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+    ids.push('cgp-field-error');
+    p.el.setAttribute('aria-describedby', ids.join(' '));
+    try { p.el.scrollIntoView({ block: 'center' }); } catch (e) { /* ignore */ }
+    try { p.el.focus({ preventScroll: true }); } catch (e) { p.el.focus(); }
+    var where = tab ? (document.querySelector('.tab[data-tab="' + tab + '"] .tab__label') || {}).textContent : '';
+    status('Not saved. ' + (list.length > 1 ? list.length + ' fields need fixing, starting with ' : 'Fix ') +
+      'the one shown' + (where ? ' in ' + where : '') + '.', { error: true });
+  }
+
+  /* -------------------------------------------------------------- writing */
+
+  /* After any save: the reload notice only when a changed setting needs it. */
+  function savedMessage(lead, reload) {
+    return reload.length ? lead + ' Reload open Canvas tabs to apply ' + (reload.length === 1 ? 'it.' : 'them.') : lead;
   }
 
   /* base: what the form started from, so only the teacher's edits are
-   * written; null replaces everything (Restore defaults, Import). */
-  var saving = false;
-  function writeSettings(base, values, okMessage) {
-    var done;
-    saving = true;
-    try {
-      done = Promise.resolve(CGP.settingsStorage.write(base, values));
-    } catch (e) {
-      done = Promise.reject(e);
-    }
+   * written; null replaces everything (Restore defaults, Import). The form
+   * is then filled from what was stored. */
+  function writeSettings(base, values, okMessage, failLead) {
+    var before = shown ? JSON.parse(shown) : null;
+    var done = saver.enqueue(function () { return CGP.settingsStorage.write(base, values); });
+    renderSaveState();
     return done.then(function (stored) {
-      saving = false;
       show(stored); // the clamped, sanitized result, merged with anything saved elsewhere
-      status(okMessage);
+      var reload = before ? CGP.optionsSave.reloadKeys(before, stored) : [];
+      status(savedMessage(okMessage, reload), { persist: reload.length > 0 });
     }, function (err) {
-      saving = false;
+      renderSaveState();
       // A rejected write (a sync quota, or snippets saved elsewhere that
       // would not fit alongside these) used to vanish silently.
-      status('Not saved: ' + (err && err.message ? err.message : 'Chrome storage rejected this. Try shortening your snippets.'),
+      status((failLead || 'Not saved: ') + (err && err.message ? err.message : 'Chrome storage rejected this. Try shortening your snippets.'),
         { error: true });
     });
   }
 
   function save() {
-    var badLines = CGP.totals.badScaleLines($('gradingScale').value);
-    if (badLines.length) {
-      status('Not saved: the letter-grade scale has line(s) that are not "Letter: number" - ' +
-        badLines.join('; ') + '. Fix or remove them, then save again.', { error: true });
-      return Promise.resolve();
-    }
-    var thresholdProblem = thresholdProblems(currentThresholds);
-    if (thresholdProblem) { status('Not saved: ' + thresholdProblem, { error: true }); return Promise.resolve(); }
-    var raw = readRawSnippets();
-    var values = read();
-    var problem = checkSavable(values, raw);
-    if (problem) { status(problem, { error: true }); return Promise.resolve(); }
+    // A second click while saving joins the save already running.
+    if (saver.inflight) return saver.inflight.catch(function () { /* reported by the first click */ });
     var typedRaw = String($('courseCalendarUrl').value || '').trim();
     var pendingLink = typedRaw && typedCalendarUrl() !== savedCalUrl;
-    return writeSettings(baseline, values, pendingLink
-      ? 'Saved. The calendar link was not changed: click Connect calendar to switch to the one in the box.'
-      : 'Saved. Reload the gradebook tab to see the change.');
+    var linkNote = ' Your calendar link isn’t saved: click Connect calendar to use it.';
+    var list = problems();
+    if (list.length) { reportProblems(list); return Promise.resolve(); }
+    clearProblems();
+    if (!isDirty()) {
+      status(pendingLink ? 'Nothing else to save.' + linkNote : 'Everything is already saved.');
+      return Promise.resolve();
+    }
+    var done = saver.save();
+    renderSaveState();
+    return done.then(function (r) {
+      if (!r.edited.length) {
+        show(r.stored);   // nothing typed meanwhile: show exactly what is stored
+      } else {
+        // Typed after clicking Save: those fields stay as typed, unsaved.
+        shown = JSON.stringify(r.stored);
+        renderSaveState();
+      }
+      var msg = savedMessage(r.edited.length ? 'Saved what you had when you clicked Save.' : 'Saved.', r.reload);
+      if (r.stale.length) msg += ' Another computer changed some settings meanwhile; they are kept.';
+      if (pendingLink) msg += linkNote;
+      status(msg, { persist: r.reload.length > 0 || pendingLink || r.stale.length > 0 });
+    }, function (err) {
+      renderSaveState();
+      status('Not saved: ' + (err && err.message ? err.message : 'Chrome storage rejected this. Try shortening your snippets.'),
+        { error: true });
+    });
   }
 
   /* ------------------------------------------------------- export / import */
@@ -1100,9 +1287,13 @@
     var rawSnippets = Array.isArray(raw.snippets) ? raw.snippets.map(function (s) {
       return { trigger: String((s && s.trigger) || '').replace(/^\/+/, '').trim(), text: String((s && s.text) || '') };
     }).filter(function (s) { return s.trigger && s.text; }) : null;
-    var problem = checkSavable(values, rawSnippets);
-    if (problem) { status(problem.replace(/^Not saved:/, 'Not restored:'), { error: true }); return; }
-    writeSettings(null, values, 'Settings restored from file. Reload the gradebook tab to see the change.');
+    // Refused, with the reason, when snippets would not round-trip intact.
+    var losses = rawSnippets ? snippetLosses(rawSnippets) : [];
+    if (losses.length) {
+      status('Not restored: ' + losses.map(function (n) { return n.message; }).join(' '), { error: true });
+      return;
+    }
+    writeSettings(null, values, 'Settings restored from file.', 'Not restored: ');
   }
 
   function importSettingsFile(file) {
@@ -1188,6 +1379,7 @@
   /* -------------------------------------------------------------------- tabs */
 
   var TAB_STORAGE_KEY = 'cgp.options.activeTab';
+  var showTab = null;   // opens a tab by id (set by initTabs)
 
   function initTabs() {
     var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
@@ -1210,6 +1402,7 @@
       }
       return true;
     }
+    showTab = activate;
 
     tabs.forEach(function (tab, i) {
       tab.addEventListener('click', function () { activate(tab.dataset.tab); });
@@ -1265,17 +1458,22 @@
   });
   $('save').addEventListener('click', save);
 
+  /* Any edit anywhere on the page updates the button and its status. Clicks
+   * count too: adding or deleting a snippet or a threshold is an edit. An
+   * edit to a field that was flagged clears its explanation. */
+  (function trackEdits() {
+    var main = document.querySelector('.content') || document.body;
+    var onEdit = function (e) {
+      var t = e && e.target;
+      if (t && t.getAttribute && t.getAttribute('aria-invalid') === 'true' && e.type !== 'click') clearProblems();
+      queueSaveState();
+    };
+    ['input', 'change', 'click'].forEach(function (type) { main.addEventListener(type, onEdit); });
+  })();
+
   $('reset').addEventListener('click', function () {
     if (!window.confirm('Restore every setting to its default? Your linked sections are kept (unlink them below).')) return;
-    saving = true;
-    CGP.settingsStorage.write(null, CGP.sanitizeSettings({ sectionGroups: currentGroups })).then(function (stored) {
-      saving = false;
-      show(stored);
-      status('Defaults restored.');
-    }, function (err) {
-      saving = false;
-      status('Defaults not restored: ' + (err && err.message ? err.message : 'Chrome storage rejected this.'), { error: true });
-    });
+    writeSettings(null, CGP.sanitizeSettings({ sectionGroups: currentGroups }), 'Defaults restored.', 'Defaults not restored: ');
   });
 
   var groupsBox = $('sectionGroupsList');
@@ -1283,13 +1481,14 @@
     groupsBox.addEventListener('click', function (e) {
       var btn = e.target.closest && e.target.closest('[data-unlink]');
       if (!btn) return;
-      if (JSON.stringify(read()) !== JSON.stringify(baseline)) {
+      if (saver.busy() || saver.dirty()) {
         status('Save (or reload to discard) your other changes first, then unlink.', { error: true });
         return;
       }
       var i = Number(btn.getAttribute('data-unlink'));
-      var next = Object.assign({}, baseline, { sectionGroups: currentGroups.filter(function (g, j) { return j !== i; }) });
-      writeSettings(baseline, next, 'Unlinked. Those courses no longer copy to each other.');
+      var base = saver.baseline;
+      var next = Object.assign({}, base, { sectionGroups: currentGroups.filter(function (g, j) { return j !== i; }) });
+      writeSettings(base, next, 'Unlinked. Those courses no longer copy to each other.');
     });
   }
 
