@@ -136,8 +136,8 @@
     return html;
   }
 
-  /* Parents and guardians: the course's observers (Canvas's word) who are
-   * linked to one of these students. An observer with no student link is
+  /* Parents and guardians: the course's observers (Canvas's word, read by
+   * CanvasApi.courseObservers) who are linked to one of these students. An observer with no student link is
    * left out - that is a colleague or administrator watching the course,
    * not a family member. Returns
    *   emails       each address once, in the students' order
@@ -148,10 +148,18 @@
     (observers || []).forEach(function (u) {
       var email = emailOf(u);
       if (!email) return;
+      // Canvas gives the link either way (the student overview's
+      // guardiansFor reads both): each observer enrollment's
+      // associated_user_id, or the observed_users list.
+      var linked = {};
       (u && u.enrollments || []).forEach(function (en) {
         var sid = en && en.associated_user_id;
-        if (sid === undefined || sid === null) return;
-        sid = String(sid);
+        if (sid !== undefined && sid !== null) linked[String(sid)] = true;
+      });
+      (u && u.observed_users || []).forEach(function (o) {
+        if (o && o.id !== undefined && o.id !== null) linked[String(o.id)] = true;
+      });
+      Object.keys(linked).forEach(function (sid) {
         (byStudent[sid] = byStudent[sid] || []).push(email);
       });
     });

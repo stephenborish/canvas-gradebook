@@ -685,18 +685,6 @@
     }, { maxPages: 30 });
   };
 
-  /* The course's parents and guardians - Canvas's observers - with their
-   * email and the enrollment that says which student each one is linked to
-   * (associated_user_id). For Copy Roster's "Parents & guardians" emails;
-   * read only when the teacher asks for them, and kept in memory only. */
-  CanvasApi.prototype.courseObservers = function (courseId) {
-    return this.getAll('/api/v1/courses/' + courseId + '/users', {
-      'enrollment_type[]': ['observer'],
-      'enrollment_state[]': ['active', 'invited'],
-      'include[]': ['email', 'enrollments']
-    }, { maxPages: 30 });
-  };
-
   /* The course's Test Student (Student View) user ids. Canvas keeps that
    * pseudo-student in its own enrollment type, which the roster read above
    * deliberately leaves out. */

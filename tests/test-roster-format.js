@@ -92,15 +92,17 @@ suite('roster export: parents and guardians', (test) => {
     { id: 93, name: 'Dean', email: 'dean@school.org', enrollments: [{ associated_user_id: null }] },
     // Linked to someone not on this roster: left out.
     { id: 94, name: 'Other', email: 'other@home.org', enrollments: [{ associated_user_id: 77 }] },
-    { id: 95, name: 'No Email', enrollments: [{ associated_user_id: 3 }] }
+    { id: 95, name: 'No Email', enrollments: [{ associated_user_id: 3 }] },
+    // Linked only through observed_users, as the student overview also reads.
+    { id: 96, name: 'Kim Sutton', email: 'kim@home.org', observed_users: [{ id: 3 }] }
   ];
 
   test('only observers linked to a student on the roster, each address once', () => {
     const rows = fmt().normalize(USERS, 'last');
     const g = fmt().guardians(OBSERVERS, rows);
-    a.deep(g.emails, ['pat@home.org', 'LEE@home.org']);
-    a.eq(g.count, 2);
-    a.eq(g.uncovered, 2, 'Cher and Omari have no linked address');
+    a.deep(g.emails, ['pat@home.org', 'LEE@home.org', 'kim@home.org']);
+    a.eq(g.count, 3);
+    a.eq(g.uncovered, 1, 'only Cher has no linked address; Omari\'s comes through observed_users');
   });
 
   test('the email list takes students, guardians or both, without repeats', () => {
