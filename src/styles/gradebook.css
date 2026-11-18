@@ -1304,9 +1304,32 @@ html.cgp-on .cgp-total-tip span { color: #d5dde3; }
  * student's grades page - only the underline is gone, because two dozen
  * underlined names stacked down the frozen column is the single noisiest
  * thing on the screen. Hover keeps the affordance with colour instead. */
-html.cgp-on .slick-cell[data-cgp-col="student"],
-html.cgp-on .slick-header-column[data-cgp-col="student"] .slick-column-name {
+html.cgp-on .slick-cell[data-cgp-col="student"] {
   text-align: left !important;
+}
+/* The column's own title is centered, the way Total's is, in the space left
+ * of its "..." menu button. */
+html.cgp-on .slick-header-column[data-cgp-col="student"] .slick-column-name,
+html.cgp-on .slick-header-column[data-cgp-col="student"] .Gradebook__ColumnHeaderDetail,
+html.cgp-on .slick-header-column[data-cgp-col="student"] .Gradebook__ColumnHeaderDetailLine {
+  text-align: center !important;
+  justify-content: center !important;
+}
+html.cgp-on .slick-header-column[data-cgp-col="student"] .Gradebook__ColumnHeaderDetail {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+}
+/* Canvas reveals a column's "..." button only on hover, so the Student Name
+ * menu (Copy Roster, Sort by, Display as...) read as if it didn't exist.
+ * This one column keeps it showing; the click handling is still Canvas's. */
+html.cgp-on .slick-header-column[data-cgp-col="student"] .Gradebook__ColumnHeaderAction,
+html.cgp-on .slick-header-column[data-cgp-col="student"] .Gradebook__ColumnHeaderAction *,
+html.cgp-on .slick-header-column[data-cgp-col="student"] button,
+html.cgp-on .slick-header-column[data-cgp-col="student"] button *,
+html.cgp-on .slick-header-column[data-cgp-col="student"] [aria-haspopup],
+html.cgp-on .slick-header-column[data-cgp-col="student"] [aria-haspopup] * {
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 html.cgp-on .slick-cell[data-cgp-col="student"] {
   font-size: 14px !important;

@@ -126,6 +126,46 @@ suite('roster export: Student Name menu', (test) => {
     a.eq(added[0].getAttribute('aria-label'), 'Copy Roster');
   });
 
+  test('resting on Copy Roster closes a submenu left open, and keeps focus', () => {
+    const C = loadRoster();
+    const doc = domshim.install();
+    const FakeElement = domshim.FakeElement;
+    const menu = studentMenu(doc, FakeElement);
+    menu.children[0].setAttribute('aria-expanded', 'true'); // Sort by's flyout is open
+    const plain = new FakeElement('div');
+    plain.setAttribute('role', 'menuitemcheckbox');
+    plain.textContent = 'Inactive enrollments';
+    let hovered = 0;
+    plain.addEventListener('mouseover', () => {
+      hovered++;
+      plain.focus(); // what Canvas's own item does on hover
+      menu.children.forEach((c) => c.getAttribute('aria-expanded') && c.setAttribute('aria-expanded', 'false'));
+    });
+    menu.appendChild(plain);
+    const hadMouseEvent = 'MouseEvent' in globalThis;
+    const saved = globalThis.MouseEvent;
+    globalThis.MouseEvent = function (type, init) { return Object.assign({ type }, init); };
+    if (!globalThis.window) globalThis.window = globalThis;
+    let prevUi;
+    try {
+      prevUi = globalThis.CGP.ui;
+      delete globalThis.CGP.ui;
+      vm.runInThisContext(fs.readFileSync(path.resolve(__dirname, '../src/core/ui.js'), 'utf8'));
+      const ctrl = new C({ api: {}, courseId: '379', adapter: {} });
+      ctrl._lastTrigger = Date.now();
+      ctrl.decorateMenu(menu);
+      const item = menu.querySelector('.cgp-roster-item');
+      item.dispatchEvent({ type: 'mouseenter' });
+      a.eq(hovered, 1, 'Canvas\'s own plain item was told about the hover');
+      a.eq(doc.activeElement, item, 'focus came back to Copy Roster');
+      item.dispatchEvent({ type: 'mouseenter' });
+      a.eq(hovered, 1, 'nothing open, nothing to close');
+    } finally {
+      if (hadMouseEvent) globalThis.MouseEvent = saved; else delete globalThis.MouseEvent;
+      if (prevUi) globalThis.CGP.ui = prevUi;
+    }
+  });
+
   test('a menu opened from anywhere else is left alone', () => {
     const C = loadRoster();
     const doc = domshim.install();

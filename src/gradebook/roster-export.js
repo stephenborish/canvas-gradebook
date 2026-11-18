@@ -188,10 +188,16 @@
     item.addEventListener('click', choose, true);
     item.addEventListener('mousedown', function (e) { e.stopPropagation(); }, true);
     if (!item.hasAttribute('tabindex')) item.setAttribute('tabindex', '-1');
-    item.addEventListener('mouseenter', function () {
+    var settle = function () {
       if (document.activeElement !== item) {
         try { item.focus({ preventScroll: true }); } catch (e) { item.focus(); }
       }
+      // Close any submenu (Sort by, Display as...) still standing open.
+      if (CGP.ui && CGP.ui.closeFlyouts) CGP.ui.closeFlyouts(menu, item);
+    };
+    item.addEventListener('mouseenter', settle);
+    item.addEventListener('focus', function () {
+      if (CGP.ui && CGP.ui.closeFlyouts) CGP.ui.closeFlyouts(menu, item);
     });
     item.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' || e.key === ' ') choose(e);
