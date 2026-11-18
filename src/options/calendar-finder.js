@@ -27,9 +27,9 @@
  *
  * deps (create): {
  *   request(origins) -> Promise<bool>        chrome.permissions.request
- *   openTab(url)     -> Promise<{id}>         a new tab, in the background
- *   navigate(tabId, url) -> Promise
- *   waitLoaded(tabId, ms) -> Promise<{url}>  url undefined when not readable
+ *   openTab(url)     -> Promise<{id, url}>   a new tab, once it has loaded
+ *   navigate(tabId, url) -> Promise<{id, url}>  the same, for another address
+ *                                            (url undefined when not readable)
  *   run(tabId, opts) -> Promise<result>       findInPage in that tab
  *   onProgress(text)                          optional
  * } */
@@ -84,15 +84,14 @@
     function byText(text, root) {
       var want = norm(text);
       var out = [];
-      var all = (root || document.body).querySelectorAll('*');
-      for (var i = 0; i < all.length; i++) {
-        var el = all[i];
-        if (el.children.length > 3) continue;
-        if (norm(el.textContent) !== want) continue;
-        // The innermost one only.
-        var inner = false;
-        for (var j = 0; j < el.children.length; j++) if (norm(el.children[j].textContent) === want) { inner = true; break; }
-        if (!inner && visible(el)) out.push(el);
+      // Text nodes, not every element's whole textContent: Google's page is
+      // large and this runs several times a second.
+      var walker = document.createTreeWalker(root || document.body, NodeFilter.SHOW_TEXT);
+      var node;
+      while ((node = walker.nextNode())) {
+        if (norm(node.nodeValue) !== want) continue;
+        var el = node.parentElement;
+        if (el && out.indexOf(el) < 0 && norm(el.textContent) === want && visible(el)) out.push(el);
       }
       return out;
     }
@@ -173,6 +172,8 @@
             return false;
           });
           var score = (labelled ? 4 : 0) + (/^webcals?:/i.test(u) ? 2 : 0) + (/\.ics(\?|$)|subscribe|ical|calendar/i.test(u) ? 1 : 0);
+          // Any other link (one in the calendar's description, say) is not it.
+          if (!score) continue;
           if (!found.source || score > found.score) { found.source = u; found.sourceEl = it.el; found.score = score; }
         }
       });
@@ -243,6 +244,7 @@
       var links = null;
       var clickedAt = Date.now();
       var nudged = false;
+      var idSeenAt = 0;
       while (left() > 0) {
         await sleep(300);
         if (location.pathname === before && !/\/settings\/calendar\//.test(before)) {
@@ -256,7 +258,10 @@
           continue;
         }
         links = readLinks();
-        if (links.source || links.secret || links.publicIcal || links.calId) {
+        var anyLink = links.source || links.secret || links.publicIcal;
+        // Only the calendar's id so far: the URL box may still be coming.
+        if (!anyLink && links.calId && !idSeenAt) idSeenAt = Date.now();
+        if (anyLink || (idSeenAt && Date.now() - idSeenAt > 3000)) {
           // Give the rest of the page a moment to fill in.
           await sleep(500);
           links = readLinks();
@@ -299,12 +304,14 @@
   function create(deps) {
     var progress = deps.onProgress || function () {};
     var self = { inflight: null, tabId: null, find: find };
+    var opened = null;   // the tab as it first loaded
 
     /* Must be called from the click: Chrome's question comes first.
      * opts.mode: 'find' (connect it) or 'show' (leave the tab open on it). */
     function find(opts) {
       opts = opts || {};
       if (self.inflight) return self.inflight;
+      self.tabId = null;
       var asked;
       try { asked = Promise.resolve(deps.request(origins())); } catch (e) { asked = Promise.reject(e); }
       var p = asked.then(function (granted) {
@@ -312,6 +319,7 @@
         progress('Opening Google Calendar…');
         return deps.openTab(settingsUrl(0)).then(function (tab) {
           self.tabId = tab.id;
+          opened = tab;
           return search(tab.id, 0, opts, null);
         });
       }, function () { return { status: 'denied' }; });
@@ -323,8 +331,8 @@
     }
 
     function search(tabId, acct, opts, first) {
-      var nav = acct === 0 ? Promise.resolve() : deps.navigate(tabId, settingsUrl(acct));
-      return nav.then(function () { return deps.waitLoaded(tabId, 30000); }).then(function (tab) {
+      var nav = acct === 0 ? Promise.resolve(opened) : deps.navigate(tabId, settingsUrl(acct));
+      return nav.then(function (tab) {
         var url = String((tab && tab.url) || '');
         // Not on Google Calendar: a sign-in page, or no such account.
         if (!/^https:\/\/calendar\.google\.com\/calendar\//.test(url)) {

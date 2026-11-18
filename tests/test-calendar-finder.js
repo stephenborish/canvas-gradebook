@@ -32,9 +32,8 @@ function world(o) {
   let current = 0;
   w.finder = F().create({
     request: (origins) => { w.asked.push(origins); return Promise.resolve(o.grant !== false); },
-    openTab: (url) => { w.opened.push(url); current = 0; return Promise.resolve({ id: 7 }); },
-    navigate: (id, url) => { w.navigated.push(url); current = Number(/\/u\/(\d+)\//.exec(url)[1]); return Promise.resolve(); },
-    waitLoaded: () => Promise.resolve({ id: 7, url: urlFor(current) }),
+    openTab: (url) => { w.opened.push(url); current = 0; return Promise.resolve({ id: 7, url: urlFor(0) }); },
+    navigate: (id, url) => { w.navigated.push(url); current = Number(/\/u\/(\d+)\//.exec(url)[1]); return Promise.resolve({ id: 7, url: urlFor(current) }); },
     run: (id, opts) => { w.ran.push({ acct: current, opts }); return Promise.resolve((o.answers || {})[current] || { status: 'notfound', calendars: [] }); },
     onProgress: (t) => w.progress.push(t)
   });
@@ -112,10 +111,11 @@ suite('Find my calendar link', (test) => {
     const f = F().create({
       request: () => Promise.resolve(true),
       openTab: () => Promise.reject(new Error('No tab')),
-      navigate: () => Promise.resolve(), waitLoaded: () => Promise.resolve({}), run: () => Promise.resolve(null)
+      navigate: () => Promise.resolve({}), run: () => Promise.resolve(null)
     });
     const r = await f.find({});
     a.eq(r.status, 'error');
     a.eq(f.inflight, null);
+    a.eq(r.tabId, null, 'no tab of an earlier run is named (it would be closed)');
   });
 });

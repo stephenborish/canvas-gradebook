@@ -389,6 +389,7 @@
   var calendarConnector = null;
   var calendarCheckOnly = false; // connecting a found link: never ask Chrome
   var calendarFinderInst = null;
+  var calendarFinding = false;   // Find my calendar link is running
 
   function connector() {
     if (calendarConnector) return calendarConnector;
@@ -488,6 +489,7 @@
   /* Connect calendar: everything in one click (calendar-connect.js). The
    * connector asks Chrome first, while the click still counts. */
   function connectCalendar() {
+    if (calendarFinding) return Promise.resolve(null);
     var c = connector();
     if (c.inflight) return c.inflight;
     var p = c.connect($('courseCalendarUrl').value, { savedUrl: savedCalUrl });
@@ -539,9 +541,10 @@
 
   /* Resolves with the tab once it has finished loading (start() opens or
    * navigates it). checkNow: it may have finished before we listened. */
-  function untilLoaded(start, checkNow, ms) {
+  function untilLoaded(start, checkNow, knownTabId) {
     return new Promise(function (resolve, reject) {
-      var tabId = null;
+      // Known up front when navigating, so a quick load is never missed.
+      var tabId = knownTabId == null ? null : knownTabId;
       var done = false;
       var timer = null;
       function finish() {
@@ -555,7 +558,7 @@
       chrome.tabs.onUpdated.addListener(onUpd);
       Promise.resolve(start()).then(function (tab) {
         tabId = tab.id;
-        timer = setTimeout(finish, ms || 30000);
+        timer = setTimeout(finish, 30000);
         if (checkNow) chrome.tabs.get(tabId).then(function (t) { if (t && t.status === 'complete') finish(); }, function () { return null; });
       }, function (e) {
         done = true;
@@ -574,9 +577,8 @@
         return untilLoaded(function () { return chrome.tabs.create({ url: url, active: true }); }, true);
       },
       navigate: function (tabId, url) {
-        return untilLoaded(function () { return chrome.tabs.update(tabId, { url: url }); }, false);
+        return untilLoaded(function () { return chrome.tabs.update(tabId, { url: url }); }, false, tabId);
       },
-      waitLoaded: function (tabId) { return chrome.tabs.get(tabId); },
       run: function (tabId, opts) {
         function once() {
           return chrome.scripting.executeScript({ target: { tabId: tabId }, func: CGP.calendarFinder.findInPage, args: [opts] })
@@ -641,6 +643,7 @@
     var p = f.find({ mode: mode });
     var here = chrome.tabs.getCurrent ? chrome.tabs.getCurrent().catch(function () { return null; }) : Promise.resolve(null);
     calendarResult = null;
+    calendarFinding = true;
     setCalendarBusy(true);
     setCalendarStatus('Waiting for Chrome – choose Allow…', 'busy');
     return Promise.all([p, here]).then(function (r) {
@@ -674,7 +677,7 @@
       setCalendarBusy(false);
       calendarResult = { kind: 'find-failed', message: CGP.calendarFinder.explain({ status: 'error', error: e && e.message }), actions: [] };
       renderCalendarStatus();
-    });
+    }).then(function (out) { calendarFinding = false; return out; }, function (e) { calendarFinding = false; throw e; });
   }
 
   function skipCalendar() {
