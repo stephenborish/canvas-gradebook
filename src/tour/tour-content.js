@@ -670,8 +670,8 @@
       icon: 'check',
       eyebrow: 'Connect your calendar',
       title: 'Or paste a link yourself',
-      body: 'Have a different calendar link? Paste it under <b>Or paste a calendar link yourself</b> and click <b>Connect calendar</b>. <b>Where do I find my link?</b> shows where Google keeps it, and can open it for you.',
-      target: function () { return document.querySelector('.schedule-connect__row'); },
+      body: 'Already have a calendar link? Open <b>I already have a calendar link</b>, paste it and click <b>Connect calendar</b>. <b>Where do I find my link?</b> in there shows where Google keeps it, and can open it for you.',
+      target: function () { var m = document.getElementById('calendarManual'); return m && m.open ? m : (m && m.querySelector('summary')) || document.querySelector('.schedule-connect'); },
       tryIt: true, padding: 8
     },
     {
@@ -679,7 +679,7 @@
       icon: 'sparkle',
       eyebrow: 'Connect your calendar',
       title: 'Check your next class',
-      body: 'When it says <b>Connected</b>, it names your calendar and your next class meeting, with its day, time and time zone. Nothing else needs saving.',
+      body: 'When the green <b>Your calendar is connected</b> card appears, it names your calendar and your next class meeting, with its day, time and time zone. Nothing else needs saving.',
       target: function () { var st = document.getElementById('calendarStatus'); return st && st.textContent ? st : document.querySelector('.schedule-connect'); },
       tryIt: true, padding: 6
     },

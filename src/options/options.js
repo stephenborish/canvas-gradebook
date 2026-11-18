@@ -365,6 +365,10 @@
   var CAL_ADOPT = 'cgp.calendar.adopt';
   var scheduleDay = null;
   var lastCalendar = null;
+  // The teacher's Canvas time zone, remembered by the schedule picker on a
+  // Canvas page ('' until then): the preview shows classes on that clock.
+  var ZONE_KEY = 'cgp.canvasZone';
+  var canvasZone = '';
 
   function Cal() { return CGP.courseCalendar; }
 
@@ -395,6 +399,7 @@
     if (calendarConnector) return calendarConnector;
     calendarConnector = CGP.calendarConnect.create({
       locale: navigator.language,
+      zone: function () { return canvasZone; },
       request: function (origins) {
         // A link found by Find my calendar link is connected after the click
         // has passed: Chrome can't be asked then, only checked.
@@ -466,6 +471,50 @@
     el.classList.toggle('is-error', kind === 'error');
     el.classList.toggle('is-ok', kind === 'ok');
     el.classList.toggle('is-busy', kind === 'busy');
+  }
+
+  /* Connected: a card that can't be mistaken for anything else - a check,
+   * "Your calendar is connected", what was read, and that nothing else is
+   * needed here. */
+  function setCalendarSuccess(view, extra) {
+    var el = $('calendarStatus');
+    if (!el) return;
+    el.innerHTML = '';
+    el.classList.remove('is-error', 'is-busy');
+    el.classList.add('is-ok');
+    var card = document.createElement('div');
+    card.className = 'schedule-success';
+    card.innerHTML = '<span class="schedule-success__icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22">' +
+      '<path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
+    var body = document.createElement('div');
+    body.className = 'schedule-success__body';
+    var title = document.createElement('p');
+    title.className = 'schedule-success__title';
+    title.textContent = 'Your calendar is connected';
+    body.appendChild(title);
+    var what = document.createElement('p');
+    what.className = 'schedule-success__text';
+    what.appendChild(document.createTextNode('Gradebook+ is reading ' + view.name + '. Next class: '));
+    var b = document.createElement('strong');
+    b.textContent = view.next.title;
+    what.appendChild(b);
+    what.appendChild(document.createTextNode(', ' + view.when + '.'));
+    body.appendChild(what);
+    var next = document.createElement('p');
+    next.className = 'schedule-success__next';
+    var done = document.createElement('strong');
+    done.textContent = 'You\u2019re all set \u2013 nothing else to do here. ';
+    next.appendChild(done);
+    next.appendChild(document.createTextNode(CGP.calendarConnect.USE_IN_CANVAS));
+    body.appendChild(next);
+    if (extra) {
+      var warn = document.createElement('p');
+      warn.className = 'schedule-success__warn';
+      warn.textContent = extra;
+      body.appendChild(warn);
+    }
+    card.appendChild(body);
+    el.appendChild(card);
   }
 
   function setCalendarBusy(on) {
@@ -653,7 +702,8 @@
       var links = res.status === 'found' ? CGP.calendarFinder.rank(res) : [];
       if (mode === 'show' && links.length) {
         setCalendarBusy(false);
-        setCalendarStatus('Your ' + name + ' link is highlighted in the Google Calendar tab. Copy it, come back, and paste it in the box above – ' +
+        $('calendarManual').open = true;
+        setCalendarStatus('Your ' + name + ' link is highlighted in the Google Calendar tab. Copy it, come back, and paste it in the box below – ' +
           'or click Find my calendar link to have it connected for you.', 'ok');
         return res;
       }
@@ -691,6 +741,7 @@
 
   function onCalendarAction(id) {
     if (id === 'guide') {
+      $('calendarManual').open = true;
       var g = $('calendarGuide');
       g.open = true;
       var sum = g.querySelector('summary');
@@ -745,7 +796,8 @@
       } else if (needsAllow) {
         // The link came through Chrome sync: Chrome asks once per computer.
         setCalendarStatus('Your calendar link came with your settings from another computer. Chrome asks once on each computer: click ' +
-          'Allow calendar access on this computer, and choose Allow. You don\u2019t need to paste the link again.', 'error');
+          'Allow calendar access on this computer, and choose Allow. You don\u2019t need to paste the link again.', 'error',
+          [{ id: 'authorize', label: 'Allow calendar access on this computer' }]);
       } else if (!lastCalendar) {
         setCalendarStatus('Saved. Your calendar hasn’t been read on this computer yet.', null, [{ id: 'refresh', label: 'Read it now' }]);
       } else if (!lastCalendar.ok) {
@@ -753,10 +805,21 @@
           (lastCalendar.occ ? ' (Showing the schedule read ' + fmtWhen(lastCalendar.lastOk) + '.)' : ''), 'error', [{ id: 'refresh', label: 'Try again' }]);
       } else {
         var view = connector().describe(lastCalendar);
-        var off = !$('courseScheduleEnabled').checked ? ' The class schedule is turned off above: turn it on and click Save changes to see it in Canvas.' : '';
-        setCalendarStatus(view.text + off, 'ok');
+        var off = !$('courseScheduleEnabled').checked ? 'The class schedule is turned off above: turn it on and click Save changes to see it in Canvas.' : '';
+        if (view.empty) setCalendarStatus(view.text + (off ? ' ' + off : ''), 'ok');
+        else setCalendarSuccess(view, off);
       }
-      var btn = $('authorizeCalendar');
+      // The paste box and its buttons are folded away until asked for (or
+      // needed: a found link that still needs a click to connect).
+      // Once connected, the green card is what matters: Find steps back.
+      $('findCalendar').classList.toggle('btn--primary', !saved);
+      $('findCalendar').classList.toggle('btn--secondary', !!saved);
+      $('calendarManualSummary').textContent = saved ? 'Use a different calendar, or remove this one' : 'I already have a calendar link';
+      // Opened when that starts, not on every render, so it can be folded again.
+      var wantOpen = !!((calendarResult && calendarResult.kind === 'found-unconnected') || switching);
+      if (wantOpen && !renderCalendarStatus.opened) $('calendarManual').open = true;
+      renderCalendarStatus.opened = wantOpen;
+      var btn = $('calendarStatus').querySelector('[data-cal-act="authorize"]') || $('authorizeCalendar');
       btn.classList.toggle('btn--attention', needsAllow);
       // Sent here from the schedule panel in Canvas ("Allow on this computer").
       if (needsAllow && location.hash === '#schedule' && !renderCalendarStatus.focused) {
@@ -777,9 +840,10 @@
     var rec = lastCalendar;
     if (!rec || !Array.isArray(rec.occ) || !rec.occ.length) { box.hidden = true; return; }
     box.hidden = false;
-    // The calendar's own zone - the one the teacher thinks in - else this
-    // computer's (Canvas's own zone is only known on a Canvas page).
-    var tz = (rec.zone && Cal().validZone(rec.zone)) ? rec.zone : Cal().localZone();
+    // The times the teacher's own calendar (and Canvas) shows: their Canvas
+    // zone once a Canvas page has told us, else the zone the classes were
+    // written in - never the UTC a feed like Veracross stores times in.
+    var tz = Cal().displayZone(rec, canvasZone);
     var today = Cal().today(tz);
     if (!scheduleDay) {
       scheduleDay = Cal().dayView(rec.occ, today, tz).classes.length ? today : (Cal().nextClassDay(rec.occ, today, tz, 1, 60) || today);
@@ -799,6 +863,11 @@
         (c.loc ? ' \u00b7 ' + escapeHtml(c.loc) : '') + '</span></div>';
     }).join('') : '<p class="schedule-preview__empty">No classes on this day.</p>';
     $('scheduleDayList').innerHTML = html;
+    var zoneEl = $('scheduleZone');
+    if (zoneEl) {
+      zoneEl.textContent = tz ? 'Times shown in ' + Cal().zoneName(tz, Cal().wallToMs(scheduleDay, '12:00', tz)) + ' (' + tz.replace(/_/g, ' ') + ')' +
+        (canvasZone ? ', your Canvas time zone.' : '. Once you open an assignment in Canvas, this uses your Canvas time zone.') : '';
+    }
   }
 
   function initScheduleUI() {
@@ -821,9 +890,19 @@
     $('scheduleNext').addEventListener('click', function () { scheduleDay = Cal().addDays(scheduleDay, 1); renderSchedulePreview(); });
     if (chrome.storage && chrome.storage.onChanged) {
       chrome.storage.onChanged.addListener(function (changes, area) {
-        if (area === 'local' && changes[CAL_KEY]) renderCalendarStatus();
+        if (area === 'local' && changes[ZONE_KEY]) {
+          var nz = String(changes[ZONE_KEY].newValue || '');
+          canvasZone = Cal().validZone(nz) ? nz : '';
+        }
+        if (area === 'local' && (changes[CAL_KEY] || changes[ZONE_KEY])) renderCalendarStatus();
       });
     }
+    try {
+      chrome.storage.local.get(ZONE_KEY).then(function (got) {
+        var z = got && got[ZONE_KEY];
+        if (z && Cal().validZone(z) && z !== canvasZone) { canvasZone = z; renderCalendarStatus(); }
+      }, function () { /* this computer's zone */ });
+    } catch (e) { /* this computer's zone */ }
   }
 
   /* --------------------------------------------------------------- form io */
@@ -1889,7 +1968,7 @@
   function initVersion() {
     var el = $('extensionVersion');
     if (!el) return;
-    var ver = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest && chrome.runtime.getManifest().version) || CGP.VERSION || '1.32.0';
+    var ver = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest && chrome.runtime.getManifest().version) || CGP.VERSION || '1.32.1';
     el.textContent = ver;
   }
 

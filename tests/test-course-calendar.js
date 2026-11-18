@@ -1028,4 +1028,31 @@ suite('class schedule: Connect calendar, from first click to first class', (test
     a.eq(Cal().scrub('Could not read ' + SECRET, SECRET), 'Could not read your calendar link');
     a.eq(Cal().scrub('see https://x.org/a/private-abc123/basic.ics now'), 'see your calendar link now');
   });
+  test('a feed that stores its times in UTC (Veracross) is shown on the teacher’s clock, not UTC', () => {
+    const utcIcs = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'X-WR-CALNAME:All Classes', 'X-WR-TIMEZONE:UTC',
+      'BEGIN:VEVENT', 'DTSTART:20261118T133500Z', 'DTEND:20261118T135000Z', 'UID:hr@v', 'SUMMARY:Service Squad Homeroom - 14', 'END:VEVENT',
+      'BEGIN:VEVENT', 'DTSTART:20261118T160000Z', 'DTEND:20261118T165000Z', 'UID:b1@v', 'SUMMARY:AP Biology - 1', 'END:VEVENT',
+      'END:VCALENDAR'
+    ].join('\r\n');
+    const cal = Cal().parseIcs(utcIcs);
+    const rec = { name: cal.name, zone: cal.zone, occ: Cal().expand(cal, '2026-11-01', '2026-11-30') };
+    a.eq(Cal().isUtcZone('UTC'), true);
+    a.eq(Cal().isUtcZone('Etc/GMT'), true);
+    a.eq(Cal().isUtcZone('America/New_York'), false);
+    // The teacher's Canvas zone, once known, wins.
+    a.eq(Cal().displayZone(rec, 'America/New_York'), 'America/New_York');
+    const day = Cal().dayView(rec.occ, '2026-11-18', Cal().displayZone(rec, 'America/New_York'));
+    a.eq(day.classes[0].start, '08:35');
+    a.eq(day.classes[1].start, '11:00');
+    // Without it: never UTC.
+    a.ok(!Cal().isUtcZone(Cal().displayZone(rec, '')) || Cal().isUtcZone(Cal().localZone()), 'falls back to this computer’s zone');
+    // A feed whose classes carry their own zone uses that zone.
+    const ny = Cal().parseIcs(ICS);
+    const nyRec = { zone: 'UTC', occ: Cal().expand(ny, '2026-11-01', '2026-11-30') };
+    a.eq(Cal().displayZone(nyRec, ''), 'America/New_York');
+    // "Next class" names the teacher's time, not UTC.
+    const view = CGP.calendarConnect.describe(rec, Date.UTC(2026, 10, 18, 12, 0), 'en-US', 'America/New_York');
+    a.ok(/8:35 AM EST/.test(view.text), view.text);
+  });
 });

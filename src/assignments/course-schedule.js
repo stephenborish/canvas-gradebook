@@ -26,6 +26,11 @@
   var CGP = (globalThis.CGP = globalThis.CGP || {});
 
   var CAL_KEY = 'cgp.calendar';
+  var ZONE_KEY = 'cgp.canvasZone';
+  // Drawn, not text glyphs: ‹ › × render tiny in most fonts.
+  var ICON_PREV = '<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.5 4.5 7 10l5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var ICON_NEXT = '<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M7.5 4.5 13 10l-5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var ICON_CLOSE = '<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   var REFRESH = 'cgp.calendar.refresh';
   var STALE_MS = 6 * 60 * 60 * 1000;
   var PANEL_W = 320;
@@ -348,7 +353,14 @@
     this._zoneAsked = true;
     if (!this.api || !this.api.profileTimeZone) return;
     this.api.profileTimeZone().then(function (z) {
-      if (z && C().validZone(z)) { self.tz = z; if (self.group) self.render(); }
+      if (!z || !C().validZone(z)) return;
+      self.tz = z;
+      if (self.group) self.render();
+      // For the settings preview, which has no Canvas page to ask.
+      try {
+        var put = {}; put[ZONE_KEY] = z;
+        chrome.storage.local.set(put).catch(function () { /* the preview guesses */ });
+      } catch (e) { /* the preview guesses */ }
     }, function () { /* this computer's zone */ });
   };
 
@@ -470,12 +482,12 @@
     var data = this.data();
     var names = g.kind === 'inline' ? g.names : (this.courseNames || []);
     var html = '<div class="cgp-sched__head">' +
-      '<button type="button" class="cgp-sched__nav" data-act="prev" aria-label="Previous day" title="Previous day">&lsaquo;</button>' +
+      '<button type="button" class="cgp-sched__nav" data-act="prev" aria-label="Previous day" title="Previous day">' + ICON_PREV + '</button>' +
       '<div class="cgp-sched__day">' + esc(cal.formatDay(day, lang, today.slice(0, 4))) +
       (day === today ? ' <span class="cgp-sched__today-tag">Today</span>' : '') + '</div>' +
-      '<button type="button" class="cgp-sched__nav" data-act="next" aria-label="Next day" title="Next day">&rsaquo;</button>' +
+      '<button type="button" class="cgp-sched__nav" data-act="next" aria-label="Next day" title="Next day">' + ICON_NEXT + '</button>' +
       (day !== today ? '<button type="button" class="cgp-sched__link" data-act="today">Today</button>' : '') +
-      '<button type="button" class="cgp-sched__x" data-act="close" aria-label="Close" title="Close (Esc)">&times;</button>' +
+      '<button type="button" class="cgp-sched__x" data-act="close" aria-label="Close" title="Close (Esc)">' + ICON_CLOSE + '</button>' +
       '</div>';
     this.lastView = null;
     if (!this.calendarUrl()) {

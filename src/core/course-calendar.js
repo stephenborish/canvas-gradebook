@@ -637,6 +637,43 @@
     return { title: best.t || '(untitled)', date: l.date, start: l.start, end: l.end, zone: zone, loc: best.l || '', at: bestAt };
   }
 
+  /** Whether tz is UTC under one of its names. A feed often declares UTC
+   * (X-WR-TIMEZONE, or every time written with a Z) only because that is how
+   * its server stores times: nobody teaches on UTC's clock. */
+  function isUtcZone(tz) {
+    return /^(?:Etc\/)?(?:UTC|GMT|UCT|Zulu|Universal|Greenwich)(?:[+-]0)?$/i.test(String(tz || ''));
+  }
+
+  /** The zone a calendar's classes are shown in outside Canvas (the
+   * settings preview and "Next class"), so they read as the teacher's own
+   * calendar shows them: `preferred` (the teacher's Canvas zone, when known),
+   * else the zone most of the timed classes were written in, else the
+   * calendar's own zone, else this computer's - never UTC because a feed
+   * stores its times that way. */
+  /* The zone most timed occurrences were written in (not UTC), once per
+   * stored list: a new list arrives only when the calendar is read again. */
+  var writtenCache = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function writtenZone(occ) {
+    if (writtenCache && writtenCache.has(occ)) return writtenCache.get(occ);
+    var count = Object.create(null), best = '', bestN = 0;
+    for (var i = 0; i < occ.length; i++) {
+      var z = occ[i] && !occ[i].a && occ[i].z;
+      if (!z || isUtcZone(z)) continue;
+      count[z] = (count[z] || 0) + 1;
+      if (count[z] > bestN) { best = z; bestN = count[z]; }
+    }
+    if (writtenCache) writtenCache.set(occ, best);
+    return best;
+  }
+
+  function displayZone(rec, preferred) {
+    if (preferred && validZone(preferred)) return preferred;
+    var best = rec && Array.isArray(rec.occ) ? writtenZone(rec.occ) : '';
+    if (best && validZone(best)) return best;
+    if (rec && rec.zone && !isUtcZone(rec.zone) && validZone(rec.zone)) return rec.zone;
+    return localZone() || (rec && validZone(rec.zone) ? rec.zone : '');
+  }
+
   /** A zone's short name at an instant ("EST", "GMT+1"), else the zone id. */
   function zoneName(tz, ms) {
     try {
@@ -773,6 +810,8 @@
     nextClassDay: nextClassDay,
     nextMeeting: nextMeeting,
     zoneName: zoneName,
+    displayZone: displayZone,
+    isUtcZone: isUtcZone,
     scrub: scrub,
     matchScore: matchScore,
     matches: matches,
