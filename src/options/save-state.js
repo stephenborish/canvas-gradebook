@@ -27,6 +27,7 @@
   if (CGP.optionsSave) return;
 
   function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+  function clone(v) { return v === null || v === undefined ? v : JSON.parse(JSON.stringify(v)); }
 
   /* When a change needs a reload of open Canvas tabs:
    *   always - the page reads it once at load (or never undoes it live);
@@ -142,7 +143,11 @@
   Saver.prototype.save = function () {
     if (this.inflight) return this.inflight;
     var self = this;
-    var base = this.baseline;
+    // Both taken now, at the click. A write queued ahead of this one (Connect
+    // calendar) updates this.baseline in place when it lands; reading it
+    // then would make the field it just saved look like an edit of the
+    // teacher's, and this save would write the old value back.
+    var base = clone(this.baseline);
     var submitted = this.read();
     var done = this.enqueue(function () { return self.write(base, submitted); }).then(function (stored) {
       self.inflight = null;

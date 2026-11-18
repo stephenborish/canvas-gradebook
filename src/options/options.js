@@ -1499,7 +1499,7 @@
         return;
       }
       var i = Number(btn.getAttribute('data-unlink'));
-      var base = saver.baseline;
+      var base = JSON.parse(JSON.stringify(saver.baseline));
       var next = Object.assign({}, base, { sectionGroups: currentGroups.filter(function (g, j) { return j !== i; }) });
       writeSettings(base, next, 'Unlinked. Those courses no longer copy to each other.');
     });

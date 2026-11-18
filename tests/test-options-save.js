@@ -135,6 +135,31 @@ suite('Options Save: what the button claims', (test) => {
     a.not(saver.busy());
   });
 
+  test('a calendar connected just before Save is not undone by it', async () => {
+    // Connect calendar is still writing when Save is clicked; when it lands
+    // it updates the baseline for the link (as saveSettingFields does).
+    const base = C().sanitizeSettings({});
+    const fake = fakeChrome({});
+    await withChrome(fake, async () => {
+      const f = form(base);
+      const saver = new (S().Saver)({ read: f.read, write: (b, n) => C().settingsStorage.write(b, n) });
+      saver.baseline = f.read();
+      const url = 'https://calendar.example.com/feed.ics';
+      const connect = deferred();
+      const linked = saver.enqueue(() => connect.promise.then(() => C().settingsStorage.write(saver.baseline, Object.assign({}, saver.baseline, { courseCalendarUrl: url })))).then((stored) => {
+        saver.baseline.courseCalendarUrl = stored.courseCalendarUrl;
+        f.values.courseCalendarUrl = stored.courseCalendarUrl;   // read() now gives the saved link
+      });
+      f.values.gradeFontSize = 18;
+      const saved = saver.save();            // clicked while Connect is still writing
+      connect.resolve();
+      await Promise.all([linked, saved]);
+      a.eq(fake.data['cgp.setting.courseCalendarUrl'], url, 'the connected link is kept');
+      a.eq(fake.data['cgp.setting.gradeFontSize'], 18, 'and the edit is saved');
+      a.not(saver.dirty(), 'nothing left unsaved');
+    });
+  });
+
   test('a refused save keeps every edit unsaved, and the button can try again', async () => {
     const f = form({ x: 1 });
     const saver = new (S().Saver)({ read: f.read, write: () => Promise.reject(new Error('quota')) });
