@@ -216,8 +216,19 @@
       return gate(function () {
         return self.api.updateSubmission(self.model.courseId, f.assignmentId, f.userId, form);
       }).then(function () { ok++; }, function (err) {
-        failed++;
-        if (!firstError) firstError = err;
+        // The clear is sent once (see CanvasApi.updateSubmission). When its
+        // answer was lost or unreadable it may still have landed, so the
+        // record is read back rather than counted as a failure on a guess.
+        var settle = CGP.util.isUnconfirmedError(err) && typeof self.api.submission === 'function'
+          ? self.api.submission(self.model.courseId, f.assignmentId, f.userId).then(function (sub) {
+            return CGP.gradeOps.formSettledIn(form, sub);
+          }, function () { return false; })
+          : Promise.resolve(false);
+        return settle.then(function (landed) {
+          if (landed) { ok++; return; }
+          failed++;
+          if (!firstError) firstError = err;
+        });
       });
     })).then(function () {
       CGP.diag.bump('testStudent.cleared', ok);

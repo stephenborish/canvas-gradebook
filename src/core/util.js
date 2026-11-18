@@ -379,6 +379,12 @@
    * folded into the specific messages below where it reads naturally. */
   util.describeApiError = function (err, opts) {
     opts = opts || {};
+    // Canvas answered, but not with anything that says what happened (see
+    // canvas-api.js unusableAnswer): not a refusal, so never worded as one.
+    if (err && err.unconfirmed === true && err.malformed === true) {
+      return String(err.message || 'Canvas\u2019s answer couldn\u2019t be read, so this couldn\u2019t be confirmed.') +
+        (err.signIn ? ' Canvas answered with its sign-in page: your session may have expired.' : '');
+    }
     if (util.isPermissionDeniedError(err)) {
       return 'Canvas says you don\u2019t have permission to change this' +
         ' (the grading period may be closed, the course concluded, or your role may not allow it).';
@@ -400,6 +406,16 @@
     if (err && err.status) return base + ' (Canvas ' + err.status + ').';
     if (err && err.message) return base + ': ' + err.message + '.';
     return base + '.';
+  };
+
+  /* The write may or may not have reached Canvas: the connection dropped, a
+   * 5xx came back, or a 2xx carried something other than the record
+   * (canvas-api.js marks those err.unconfirmed). Only a re-read can say what
+   * happened. A refusal (any other 4xx, or a throttle) is not this: Canvas
+   * said no before acting. */
+  util.isUnconfirmedError = function (err) {
+    return !!(err && (err.unconfirmed === true || err.network === true ||
+      (err.status >= 500 && err.status < 600)));
   };
 
   /** True for the one error shape every other check above already handles by

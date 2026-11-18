@@ -5,7 +5,10 @@
  *   - refuse anything whose student id / assignment id is not confidently known
  *   - suppress duplicate in-flight writes for the same cell + value
  *   - optimistic patch, then reconcile with Canvas's response
- *   - on failure, restore the previous record and say so out loud */
+ *   - on a refusal, restore the previous record and say so out loud
+ *   - when Canvas's answer is lost or unreadable (the write may or may not
+ *     have landed), re-read the submission instead of guessing, and never
+ *     send the write a second time to find out */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
@@ -81,16 +84,19 @@
     var deduped = CGP.gradeOps.dedupe(targets);
     var ops = deduped.ops;
     if (deduped.duplicates) CGP.diag.bump('write.duplicatesCollapsed', deduped.duplicates);
-    if (!ops.length) return Promise.resolve({ ok: 0, failed: 0, skipped: 0, errors: [] });
+    if (!ops.length) return Promise.resolve({ ok: 0, failed: 0, skipped: 0, errors: [], unconfirmed: [] });
 
-    var result = { ok: 0, failed: 0, skipped: 0, errors: [] };
+    // unconfirmed: writes whose answer was lost or unreadable and whose
+    // re-read did not show them applied - neither saved nor refused, as far
+    // as anyone can tell yet (see settleUnconfirmed).
+    var result = { ok: 0, failed: 0, skipped: 0, errors: [], unconfirmed: [] };
 
     // Nothing can be checked (anonymous/moderated, a known student, the
     // cell's current status) until the course itself has loaded, and a write
     // made blind is exactly how a toggle goes the wrong way.
     if (!this.model.ready) {
       CGP.ui.error('Gradebook+ is still loading this course from Canvas. Nothing was changed \u2014 try again in a moment.');
-      return Promise.resolve({ ok: 0, failed: 0, skipped: ops.length, errors: [], notReady: true });
+      return Promise.resolve({ ok: 0, failed: 0, skipped: ops.length, errors: [], unconfirmed: [], notReady: true });
     }
 
     // M and L toggle off only what is already on, and a grade typed over an
@@ -146,10 +152,13 @@
       // successful paste, with nothing telling the teacher part of what they
       // pasted never went anywhere.
       var messages = [];
+      // Everything counted as failed here is a refusal: Canvas answered with
+      // an error status before acting (a lost answer or a 5xx goes to
+      // result.unconfirmed instead), so "left unchanged" is known, not hoped.
       if (result.failed) {
         var first = result.errors[0] || {};
         if (CGP.util.isSessionExpiredError(first) || CGP.util.isPermissionDeniedError(first) ||
-          first.status === 429 || first.network === true) {
+          first.status === 429) {
           // The one failure reason worth calling out on its own: every other
           // status differs cell to cell in ways a teacher can't act on
           // uniformly, but a session timing out mid-grading explains ALL of
@@ -166,18 +175,31 @@
         messages.push(result.unloaded + (result.unloaded === 1 ? ' cell was' : ' cells were') +
           ' left unchanged because Canvas did not send that column\u2019s current grades. Try again in a moment.');
       }
+      if (result.changedSinceConfirm) {
+        var n = result.changedSinceConfirm;
+        messages.push(n + (n === 1 ? ' cell was' : ' cells were') + ' left unchanged because ' +
+          (n === 1 ? 'its grade' : 'their grades') + ' changed in Canvas after you confirmed the paste. ' +
+          'Paste again to review ' + (n === 1 ? 'it' : 'them') + '.');
+      }
       if (result.skipped) {
         messages.push(result.skipped + (result.skipped === 1 ? ' cell was' : ' cells were') +
           ' skipped (an anonymous or moderated assignment, or an unresolved student/assignment) ' +
           'and left unchanged.');
       }
+      var action = null;
+      if (result.unconfirmed.length) {
+        var pending = result.unconfirmed.slice();
+        messages.push(self.unconfirmedMessage(pending));
+        action = { label: 'Check again', run: function () { self.checkAgain(pending); } };
+      }
       if (messages.length) {
-        CGP.ui.error(messages.join(' '));
+        CGP.ui.error(messages.join(' '), action ? { action: action } : undefined);
       } else if (opts.announce && result.ok > 1) {
         CGP.ui.toast(result.ok + ' grades saved');
       }
       CGP.diag.bump('write.ok', result.ok);
       CGP.diag.bump('write.failed', result.failed);
+      CGP.diag.bump('write.unconfirmed', result.unconfirmed.length);
       return result;
     }, function (err) {
       // writeOne is written to always resolve (its own network failures are
@@ -243,6 +265,18 @@
       result.skipped++;
       CGP.diag.warn('write.anonymousAssignmentSkipped', { assignmentId: assignmentId, moderated: !!assignment.moderated });
       return Promise.resolve();
+    }
+    // A paste's confirmation was decided from the grade each cell held then
+    // (bulk-paste.js confirmAndApply). A cell whose grade has changed since
+    // is one the teacher was never asked about: left alone, and reported.
+    if (opts.expectedGrades) {
+      var expectKey = String(assignmentId) + ':' + String(userId);
+      if (Object.prototype.hasOwnProperty.call(opts.expectedGrades, expectKey) &&
+        CGP.gradeOps.gradeSignature(this.model.cell(assignmentId, userId)) !== opts.expectedGrades[expectKey]) {
+        result.changedSinceConfirm = (result.changedSinceConfirm || 0) + 1;
+        CGP.diag.warn('write.changedSinceConfirm', { assignmentId: assignmentId });
+        return Promise.resolve();
+      }
     }
 
     // Stamped before anything else: a column-wide fetch already in flight
@@ -310,51 +344,56 @@
 
     var startedAt = Date.now();
     var answer = null;
+    // Canvas's record for this cell, once it holds what this write asked
+    // for: from the write's own answer, or from a re-read after that answer
+    // was lost (settleUnconfirmed). Either way the same bookkeeping follows.
+    function onSaved(submission) {
+      answer = submission;
+      self.model.finishLocalWrite(assignmentId, userId);
+      var rec = self.model.applySubmission(submission);
+      // Awaited, not fired and forgotten: the write is not finished until
+      // the status it promised is actually on the record. Letting it run
+      // loose also let it escape the request pool and the in-flight guard,
+      // so during a bulk M it could race a later edit to the same cell.
+      // Only the M that APPLIES Missing is worth verifying; the second M
+      // is a toggle whose whole point is that the status goes away.
+      var verified = (op.kind === CGP.gradeOps.KIND.MISSING && !op.toggledOff)
+        ? self.confirmMissing(assignmentId, userId, rec, function (retried) { answer = retried; })
+        : Promise.resolve(rec);
+      return verified.then(function (finalRec) {
+        var shown = finalRec || rec;
+        // A status-only write (M, L, Missing cleared after grading) leaves
+        // the grade Canvas is already showing untouched, so there is no
+        // overlay to draw over it - only a write that changed the grade
+        // needs one, since Canvas's own cell never hears about our write.
+        var gradeChanged = (op.display !== null && op.display !== undefined) ||
+          // A status write can still move the grade (a course late or
+          // missing policy deducting points), which Canvas's own cell
+          // will not show either.
+          String((snapshot && snapshot.grade) || '') !== String((shown && shown.grade) || '');
+        if (shown && !opts.noOptimistic && gradeChanged) {
+          // Canvas spells "no grade" as null on some submissions and as an
+          // empty string on others; both mean the cell has nothing to show.
+          // With no grade left because this write deliberately took one away
+          // (a clear), dropping the overlay would uncover the grade Canvas
+          // still has painted in the cell, so a clear draws a dash.
+          self.model.patchCell(assignmentId, userId, { pending: false, override: overlayText(shown, clearsGrade) });
+        } else if (!opts.noOptimistic) {
+          self.model.patchCell(assignmentId, userId, { pending: false });
+        }
+        self.handOff(answer, startedAt);
+        self.model.queueTotalRefresh(userId);
+        result.ok++;
+      });
+    }
     return this.api.updateSubmission(this.model.courseId, assignmentId, userId, op.form)
-      .then(function (submission) {
-        answer = submission;
-        self.model.finishLocalWrite(assignmentId, userId);
-        var rec = self.model.applySubmission(submission);
-        // Awaited, not fired and forgotten: the write is not finished until
-        // the status it promised is actually on the record. Letting it run
-        // loose also let it escape the request pool and the in-flight guard,
-        // so during a bulk M it could race a later edit to the same cell.
-        // Only the M that APPLIES Missing is worth verifying; the second M
-        // is a toggle whose whole point is that the status goes away.
-        var verified = (op.kind === CGP.gradeOps.KIND.MISSING && !op.toggledOff)
-          ? self.confirmMissing(assignmentId, userId, rec, function (retried) { answer = retried; })
-          : Promise.resolve(rec);
-        return verified.then(function (finalRec) {
-          var shown = finalRec || rec;
-          // A status-only write (M, L, Missing cleared after grading) leaves
-          // the grade Canvas is already showing untouched, so there is no
-          // overlay to draw over it - only a write that changed the grade
-          // needs one, since Canvas's own cell never hears about our write.
-          var gradeChanged = (op.display !== null && op.display !== undefined) ||
-            // A status write can still move the grade (a course late or
-            // missing policy deducting points), which Canvas's own cell
-            // will not show either.
-            String((snapshot && snapshot.grade) || '') !== String((shown && shown.grade) || '');
-          if (shown && !opts.noOptimistic && gradeChanged) {
-            var display;
-            if (shown.excused) display = 'EX';
-            // Canvas spells "no grade" as null on some submissions and as an
-            // empty string on others; both mean the cell has nothing to show.
-            else if (shown.grade !== null && shown.grade !== undefined && String(shown.grade) !== '') display = String(shown.grade);
-            // No grade left, because this write deliberately took one away (a
-            // clear). Dropping the overlay here would uncover the grade
-            // Canvas still has painted in the cell, so the score would appear
-            // to come back.
-            else display = clearsGrade ? '\u2013' : null;
-            self.model.patchCell(assignmentId, userId, { pending: false, override: display });
-          } else if (!opts.noOptimistic) {
-            self.model.patchCell(assignmentId, userId, { pending: false });
-          }
-          self.handOff(answer, startedAt);
-          self.model.queueTotalRefresh(userId);
-          result.ok++;
-        });
-      }, function (err) {
+      .then(onSaved, function (err) {
+        if (CGP.util.isUnconfirmedError(err)) {
+          return self.settleUnconfirmed({
+            assignmentId: assignmentId, userId: userId, op: op, snapshot: snapshot,
+            startedAt: startedAt, err: err, result: result, onSaved: onSaved
+          });
+        }
         self.model.restoreCell(assignmentId, userId, snapshot);
         // This write never actually happened - restore whatever protection
         // existed before IT started (an earlier write to this same cell may
@@ -373,6 +412,146 @@
       }).then(function () {
         self.inflight.delete(dupKey);
       });
+  };
+
+  /* What the overlay draws for a record: EX, its grade, or (when the cell
+   * should read empty rather than uncover Canvas's stale value) a dash. */
+  function overlayText(rec, dashWhenEmpty) {
+    if (rec.excused) return 'EX';
+    if (rec.grade !== null && rec.grade !== undefined && String(rec.grade) !== '') return String(rec.grade);
+    return dashWhenEmpty ? '\u2013' : null;
+  }
+
+  /* Read one submission back, for settling a write. null when the read
+   * fails or answers with anything but this cell's record. Never a write. */
+  P.readBack = function (assignmentId, userId) {
+    if (!this.api || typeof this.api.submission !== 'function') return Promise.resolve(null);
+    return this.api.submission(this.model.courseId, assignmentId, userId).then(function (sub) {
+      return sub && typeof sub === 'object' && String(sub.assignment_id) === String(assignmentId) &&
+        String(sub.user_id) === String(userId) ? sub : null;
+    }, function (err) {
+      CGP.diag.warn('write.readBackFailed', { assignmentId: assignmentId, status: err && err.status, unconfirmed: !!(err && err.unconfirmed) });
+      return null;
+    });
+  };
+
+  /* The write's answer was unusable. Re-read the record and decide from
+   * what Canvas holds now - the write is never sent again to find out:
+   *   - the record holds what was asked for: saved, reported as saved
+   *   - anything else (the read failed too, or the record differs): the
+   *     write is UNCONFIRMED. A differing record is not proof it was
+   *     dropped - a 502/504 can still be applying behind the gateway - so
+   *     nothing claims the cell was left unchanged. The cell shows the
+   *     record Canvas sent back when there is one, and the teacher gets
+   *     "Couldn't confirm this grade" with a Check again that only reads. */
+  P.settleUnconfirmed = function (c) {
+    var self = this;
+    var model = this.model;
+    CGP.diag.warn('write.unconfirmedAnswer', {
+      assignmentId: c.assignmentId, status: c.err && c.err.status, network: !!(c.err && c.err.network),
+      malformed: !!(c.err && c.err.malformed), signIn: !!(c.err && c.err.signIn)
+    });
+    return this.readBack(c.assignmentId, c.userId).then(function (sub) {
+      if (sub && CGP.gradeOps.formSettledIn(c.op.form, sub)) {
+        CGP.diag.bump('write.confirmedOnReread');
+        c.result.confirmedOnReread = (c.result.confirmedOnReread || 0) + 1;
+        return c.onSaved(sub);
+      }
+      // The write is over, one way or the other: reads started from now on
+      // see whatever it did.
+      model.finishLocalWrite(c.assignmentId, c.userId);
+      model.restoreCell(c.assignmentId, c.userId, c.snapshot);
+      if (sub) {
+        model.applySubmission(sub);
+        self.handOff(sub, c.startedAt);
+        model.queueTotalRefresh(c.userId);
+      }
+      c.result.unconfirmed.push({
+        assignmentId: String(c.assignmentId), userId: String(c.userId),
+        form: c.op.form, summary: c.op.summary,
+        canvasNow: sub ? describeRecord(sub) : null,
+        signIn: !!(c.err && c.err.signIn), network: !!(c.err && c.err.network),
+        status: c.err && c.err.status
+      });
+    });
+  };
+
+  /* A submission as the teacher would read it in a cell: grade, then any
+   * status. */
+  function describeRecord(sub) {
+    var parts = [];
+    if (sub.excused) parts.push('EX');
+    else if (sub.grade !== null && sub.grade !== undefined && String(sub.grade) !== '') parts.push('\u201c' + String(sub.grade) + '\u201d');
+    else parts.push('no grade');
+    if (sub.late_policy_status === 'missing' || (sub.missing && !sub.late_policy_status)) parts.push('Missing');
+    else if (sub.late_policy_status === 'late') parts.push('Late');
+    return parts.join(', ');
+  }
+
+  P.cellName = function (u) {
+    var student = this.model.student(u.userId);
+    var assignment = this.model.assignment(u.assignmentId);
+    return ((student && student.name) || 'this student') + ', ' + ((assignment && assignment.name) || 'this assignment');
+  };
+
+  /** What the teacher is told about writes that couldn't be confirmed. */
+  P.unconfirmedMessage = function (list) {
+    var signIn = list.some(function (u) { return u.signIn; });
+    var hint = signIn ? ' Canvas answered with its sign-in page: your session may have expired. Sign in again in another tab, then check again.' : '';
+    if (list.length === 1) {
+      var u = list[0];
+      var where = ' (' + this.cellName(u) + ')';
+      if (u.canvasNow) {
+        return 'Couldn\u2019t confirm this grade' + where + '. Canvas currently shows ' + u.canvasNow +
+          ' there; the cell shows that.' + hint;
+      }
+      return 'Couldn\u2019t confirm this grade' + where + ': Canvas\u2019s answer couldn\u2019t be read, and the cell couldn\u2019t be re-read' +
+        ' to check, so it may not show what Canvas has.' + hint;
+    }
+    var unread = list.filter(function (x) { return !x.canvasNow; }).length;
+    return 'Couldn\u2019t confirm ' + list.length + ' grades: Canvas\u2019s answers couldn\u2019t be read.' +
+      (unread ? ' ' + unread + (unread === 1 ? ' cell' : ' cells') + ' couldn\u2019t be re-read either and may not show what Canvas has;' +
+        ' the rest show what Canvas holds now.' : ' The cells show what Canvas holds now.') + hint;
+  };
+
+  /* "Check again": read each unconfirmed cell back and report. Only ever
+   * reads - the writes are never resent from here; if one still isn't
+   * there, the teacher decides whether to enter it again. */
+  P.checkAgain = function (list) {
+    var self = this;
+    var model = this.model;
+    var still = [];
+    var confirmed = 0;
+    return Promise.all((list || []).map(function (u) {
+      var readStartedAt = Date.now();
+      return self.readBack(u.assignmentId, u.userId).then(function (sub) {
+        // A write of ours still out, or finished after this read began,
+        // holds newer truth for the cell; the read still answers whether
+        // the unconfirmed write landed.
+        var newer = model.writeInFlight(u.assignmentId, u.userId) ||
+          model.localWriteSince(u.assignmentId, u.userId, readStartedAt);
+        if (sub && !newer) {
+          var rec = model.applySubmission(sub);
+          var touchesGrade = Object.prototype.hasOwnProperty.call(u.form, 'submission[posted_grade]') ||
+            Object.prototype.hasOwnProperty.call(u.form, 'submission[excuse]');
+          if (rec && touchesGrade) model.patchCell(u.assignmentId, u.userId, { pending: false, override: overlayText(rec, true) });
+          self.handOff(sub, readStartedAt);
+          model.queueTotalRefresh(u.userId);
+        }
+        if (sub && CGP.gradeOps.formSettledIn(u.form, sub)) { confirmed++; return; }
+        still.push(Object.assign({}, u, { canvasNow: sub ? describeRecord(sub) : null }));
+      });
+    })).then(function () {
+      CGP.diag.bump('write.checkAgain.confirmed', confirmed);
+      if (!still.length) {
+        CGP.ui.toast(confirmed === 1 ? 'Grade saved \u2014 confirmed with Canvas' : confirmed + ' grades saved \u2014 confirmed with Canvas');
+      } else {
+        var msg = (confirmed ? confirmed + (confirmed === 1 ? ' grade is' : ' grades are') + ' confirmed saved. ' : '') +
+          self.unconfirmedMessage(still);
+        CGP.ui.error(msg, { action: { label: 'Check again', run: function () { self.checkAgain(still); } } });
+      }
+      return { confirmed: confirmed, unconfirmed: still };
+    });
   };
 
   /* Did Missing actually take?
@@ -407,9 +586,21 @@
         return fresh;
       }, function (err) {
         CGP.diag.error('write.missingRetryFailed', { assignmentId: assignmentId, status: err && err.status });
-        CGP.ui.error('Canvas rejected the Missing status' +
-          (err && err.status ? ' (' + err.status + ')' : '') + '.');
-        return rec;
+        if (!CGP.util.isUnconfirmedError(err)) {
+          CGP.ui.error('Canvas rejected the Missing status' +
+            (err && err.status ? ' (' + err.status + ')' : '') + '.');
+          return rec;
+        }
+        // The answer was lost or unreadable: read the record rather than
+        // calling it a refusal (or sending it a third time).
+        return self.readBack(assignmentId, userId).then(function (sub) {
+          if (sub && typeof onAnswer === 'function') onAnswer(sub);
+          var fresh = sub ? self.model.applySubmission(sub) : null;
+          if (self.isMissing(fresh)) return fresh;
+          CGP.ui.error('Couldn\u2019t confirm the Missing status: Canvas\u2019s answer couldn\u2019t be read' +
+            (fresh ? ', and the submission does not show Missing yet.' : '.'));
+          return fresh || rec;
+        });
       });
   };
 

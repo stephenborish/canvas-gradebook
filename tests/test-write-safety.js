@@ -125,15 +125,16 @@ suite('write safety: Canvas errors and retries', (test) => {
   });
 
   test('a throttled comment IS retried - Canvas refused it before acting', async () => {
-    const { api, calls } = apiWith([{ status: 403, body: '403 Forbidden (Rate Limit Exceeded)' }, { status: 200, body: '{}' }]);
+    const { api, calls } = apiWith([{ status: 403, body: '403 Forbidden (Rate Limit Exceeded)' }, { status: 200, body: '{"assignment_id":"50","user_id":"10"}' }]);
     await api.addComment('7', '50', '10', 'Nice');
     a.eq(calls.length, 2);
   });
 
-  test('a grade write still retries a lost response once (idempotent)', async () => {
-    const { api, calls } = apiWith(['network', { status: 200, body: '{}' }]);
-    await api.updateSubmission('7', '50', '10', { 'submission[posted_grade]': '5' });
-    a.eq(calls.length, 2);
+  test('a grade write is never resent after a lost response - the writer re-reads instead', async () => {
+    const { api, calls } = apiWith(['network', { status: 200, body: '{"assignment_id":"50","user_id":"10"}' }]);
+    const err = await api.updateSubmission('7', '50', '10', { 'submission[posted_grade]': '5' }).catch((e) => e);
+    a.eq(calls.length, 1, 'one PUT only');
+    a.eq(err.network, true);
   });
 
   test('a plain 403 refusal is not retried', async () => {
@@ -638,7 +639,7 @@ suite('write safety: PR review round 2', (test) => {
         const first = calls.length === 1;
         return Promise.resolve({
           ok: !first, status: first ? 429 : 200,
-          text: () => Promise.resolve(first ? '' : '{}'),
+          text: () => Promise.resolve(first ? '' : '{"assignment_id":"50","user_id":"10"}'),
           headers: { get: (h) => (first && h === 'Retry-After' ? String(retryAfterSecs) : null) }
         });
       }

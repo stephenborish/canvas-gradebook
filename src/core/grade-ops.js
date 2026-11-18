@@ -380,8 +380,67 @@
     return { ops: Array.from(map.values()), duplicates: duplicates };
   }
 
+  /* Does this submission record (as Canvas sends it) already hold what this
+   * write form asked for? Used to settle a write whose answer was lost or
+   * unreadable from a fresh read of the record, so the write itself never
+   * has to be sent twice. Deliberately strict: anything it cannot compare
+   * (a comment, an unknown field) answers false, and a false only ever
+   * means "couldn't confirm", never "not saved". */
+  function sameGrade(a, b) {
+    var x = String(a === null || a === undefined ? '' : a).trim().toLowerCase();
+    var y = String(b === null || b === undefined ? '' : b).trim().toLowerCase();
+    if (x === y) return true;
+    // A percentage and a points (or letter) grade are different units: 90%
+    // of a 10-point assignment is 9, not 90. Without the points possible to
+    // convert, they are never called the same - "couldn't confirm" is the
+    // safe answer, a false "saved" is not.
+    if (/%$/.test(x) !== /%$/.test(y)) return false;
+    x = x.replace(/%$/, '');
+    y = y.replace(/%$/, '');
+    if (x === '' || y === '') return false;
+    var nx = Number(x), ny = Number(y);
+    return isFinite(nx) && isFinite(ny) && Math.abs(nx - ny) < 1e-9;
+  }
+
+  function formSettledIn(form, sub) {
+    if (!form || !sub || typeof sub !== 'object') return false;
+    var keys = Object.keys(form);
+    if (!keys.length) return false;
+    return keys.every(function (k) {
+      var want = form[k];
+      if (k === 'submission[posted_grade]') {
+        var entered = sub.entered_grade !== undefined ? sub.entered_grade : sub.grade;
+        if (want === '') return (entered === null || entered === undefined || entered === '') && !sub.excused;
+        return !sub.excused && sameGrade(entered, want);
+      }
+      if (k === 'submission[excuse]') return String(want) === 'true' ? !!sub.excused : !sub.excused;
+      if (k === 'submission[late_policy_status]') {
+        var have = sub.late_policy_status === undefined ? null : sub.late_policy_status;
+        if (want === null) return have === null;
+        if (want === 'none') return have === 'none' || have === null;
+        return have === want;
+      }
+      // Canvas may round or recompute lateness; the status above is what
+      // the write was for.
+      if (k === 'submission[seconds_late_override]') return true;
+      return false;
+    });
+  }
+
+  /* The grade a cell holds, as one comparable string: what a confirmation
+   * was decided from (bulk-paste.js) and what the write checks it is still
+   * replacing (writer.js). No record and no grade read the same. */
+  function gradeSignature(rec) {
+    if (!rec) return '';
+    if (rec.excused) return 'EX';
+    var g = rec.grade;
+    return g === null || g === undefined ? '' : String(g);
+  }
+
   CGP.gradeOps = {
     KIND: KIND,
+    formSettledIn: formSettledIn,
+    gradeSignature: gradeSignature,
     parseToken: parseToken,
     operationFor: operationFor,
     earnedCredit: earnedCredit,
