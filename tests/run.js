@@ -54,6 +54,7 @@ require('./test-tour-state');
 require('./test-options-save');
 require('./test-dossier-loading');
 require('./test-group-builder');
+require('./test-airmail');
 
 // run() awaits each case, so the process must not exit before it settles.
 harness.run().then((okAll) => {

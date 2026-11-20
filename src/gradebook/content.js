@@ -602,6 +602,8 @@
         // Background, after the visible columns: one roster read and one
         // submissions read for the Test Student.
         setTimeout(function () { testStudentGuard.scan(); }, 2500);
+        // The rare paper airplane (gems/airmail-state.js).
+        if (CGP.AirmailState) CGP.AirmailState.watchGradebook(model);
 
         // Do not wait for a later paint/scroll cycle to discover comments. Load
         // the assignment columns that are on screen right now immediately.

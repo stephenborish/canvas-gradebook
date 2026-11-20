@@ -60,6 +60,7 @@ export const CONTENT_JS = [
   'src/speedgrader/sidebar-layout.js',
   'src/speedgrader/content.js',
   'src/tour/tour-state.js',
+  'src/gems/airmail-state.js',
   'src/gradebook/content.js'
 ];
 

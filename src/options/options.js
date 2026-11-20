@@ -1630,8 +1630,11 @@
     var panels = Array.prototype.slice.call(document.querySelectorAll('.panel'));
     if (!tabs.length) return;
 
+    // Read afresh each time: the Shoebox tab (shoebox.js) is added later.
     function activate(id, opts) {
       var found = false;
+      tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
+      panels = Array.prototype.slice.call(document.querySelectorAll('.panel'));
       tabs.forEach(function (tab) {
         var on = tab.dataset.tab === id;
         if (on) found = true;
@@ -1647,8 +1650,10 @@
       return true;
     }
     showTab = activate;
+    CGP.optionsShowTab = activate;
 
-    tabs.forEach(function (tab, i) {
+    CGP.optionsWireTab = wireTab;
+    function wireTab(tab) {
       tab.addEventListener('click', function () { activate(tab.dataset.tab); });
       // Standard roving-tabindex arrow-key navigation for a vertical tablist:
       // Up/Down move focus one tab at a time (wrapping at the ends), Home/End
@@ -1658,6 +1663,8 @@
       tab.addEventListener('keydown', function (e) {
         var dir = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
         var target = null;
+        tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
+        var i = tabs.indexOf(tab);
         if (dir) target = tabs[(i + dir + tabs.length) % tabs.length];
         else if (e.key === 'Home') target = tabs[0];
         else if (e.key === 'End') target = tabs[tabs.length - 1];
@@ -1666,7 +1673,8 @@
         activate(target.dataset.tab);
         target.focus();
       });
-    });
+    }
+    tabs.forEach(wireTab);
 
     // A link straight to one tab (the class-schedule picker's "settings").
     // "#schedule-tour" (the welcome tour's "Connect my calendar") opens that

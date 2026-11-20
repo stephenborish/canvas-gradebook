@@ -920,3 +920,48 @@ input.switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2p
 .setting:has(> .field-error) { flex-wrap: wrap; }
 .setting > .field-error { flex: 1 0 100%; margin-top: 0; }
 .snippets-card-list > .field-error { grid-column: 1 / -1; margin-top: -4px; }
+
+/* --------------------------------------------------------------- shoebox */
+/* The notes caught from paper airplanes (shoebox.js): index cards pinned
+ * slightly askew, in handwriting. */
+
+.shoebox__stats { margin: -8px 0 18px; color: var(--muted); font-size: 13px; }
+.shoebox__empty { color: var(--muted); font-style: italic; }
+.shoebox .panel__group { margin-top: 34px; }
+.shoebox__grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 18px;
+}
+.shoebox__note {
+  position: relative;
+  margin: 0;
+  padding: 18px 18px 14px 34px;
+  border-radius: 3px;
+  color: #2b2f38;
+  background: repeating-linear-gradient(#fffdf6 0 23px, #c9dcef 23px 24px) 0 14px / 100% 24px, #fffdf6;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, .06), 0 6px 16px rgba(23, 43, 58, .12);
+  transform: rotate(var(--tilt, 0deg));
+  transition: transform .2s ease;
+  font: 16px/24px "Segoe Print", "Bradley Hand", "Noteworthy", "Chalkboard SE", "Comic Sans MS", cursive;
+}
+.shoebox__note::before { content: ""; position: absolute; left: 24px; top: 0; bottom: 0; width: 1px; background: #ef9a9a; }
+.shoebox__note:hover { transform: rotate(0deg) translateY(-2px); }
+.shoebox__note p { margin: 0; }
+.shoebox__from { margin-top: 8px !important; text-align: right; font-size: 14px; color: #4a5160; }
+.shoebox__date {
+  margin-top: 10px !important;
+  font: 11.5px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--muted-soft);
+}
+.shoebox__note.is-night { background: repeating-linear-gradient(#f4f6ff 0 23px, #cdd6f6 23px 24px) 0 14px / 100% 24px, #f4f6ff; }
+.shoebox__note.is-gold {
+  padding-left: 18px;
+  background: radial-gradient(circle at 20% 0%, #fff8e1, #fdf0c8 70%, #f7e2a1);
+  box-shadow: 0 0 0 2px #e2b33c, 0 8px 22px rgba(120, 80, 0, .25);
+}
+.shoebox__note.is-gold::before { display: none; }
+@media (prefers-reduced-motion: reduce) { .shoebox__note { transition: none; } }

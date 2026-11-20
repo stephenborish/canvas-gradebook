@@ -333,6 +333,7 @@
             self.markPostedLocally(id, pendingIds);
             CGP.ui.toast(count + (count === 1 ? ' grade' : ' grades') + ' posted to students');
             CGP.diag.bump('post.completed', count);
+            if (CGP.AirmailState) CGP.AirmailState.trigger('posted');
             if (btn && btn.parentElement) {
               btn.parentElement.classList.add('cgp-posted');
               btn.parentElement.classList.remove('cgp-has-post');

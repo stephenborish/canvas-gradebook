@@ -1022,6 +1022,39 @@ Limits worth knowing:
 
 ---
 
+### Airmail (a hidden one)
+
+Every so often (not often) a folded paper airplane drifts across the gradebook, loops once
+over the grid and glides off. Click it before it gets away and it unfolds into a handwritten
+note, stamped and postmarked: the kind of note a teacher finds on their desk once in a while
+and keeps for years. Miss it and it banks round for one slower pass; miss that and it's gone.
+
+- **When:** at most one plane a day, and only by luck: 1 in 5 when you fill in the last
+  empty cell of a column (every student graded or excused), 1 in 8 when a column's grades are
+  posted, 1 in 100 a few minutes after the gradebook opens.
+- **What it says** depends on the class and the moment. More often than not it is about the
+  subject, read from the course's name: Spanish, French, German, Latin and Chinese classes get
+  notes written in that language; math, biology, chemistry, physics, science, history, English,
+  theology, music, art, theatre, computer science, PE, economics and psychology each have
+  their own. Otherwise it's a night note after 10pm, a Friday note on Friday afternoons, a
+  seasonal note at the start of the year, before winter break or in the last weeks. About one
+  plane in twenty is gold: a note from your own first year of teaching.
+- **The trail** is drawn in the subject's marks: π and ∑ behind a math plane, ♪ behind a band's,
+  ¡ ¿ ñ behind a Spanish class's, paint colors behind an art class's, snowflakes in December.
+- **A flock:** about one flight in thirty is five planes in a V. Catch any one.
+- **The Shoebox:** every note you catch is kept there, newest first, with the day it arrived.
+  It's a tab on the options page that doesn't exist until your first catch. It counts the
+  ones that got away and has the one switch: *Let paper airplanes fly now and then*.
+- Add `#cgp-airmail` to a gradebook address to call a plane on demand (to see it, or show a
+  colleague). That one ignores the one-a-day limit and the switch.
+
+The plane itself (`src/gems/airmail.js`, `airmail-notes.js`) is only injected on a day one
+flies; every page carries just the small `src/gems/airmail-state.js`. It is drawn in a shadow
+root, never takes focus uninvited, and with *reduce motion* on it settles quietly in the
+corner instead of flying. The record (`cgp.airmail` in `chrome.storage.local`) holds note ids,
+dates and counts, nothing about students, grades or courses. Notes have stable ids: add new
+ones with new ids, never renumber.
+
 ## Settings
 
 Everything is in the options page — click the toolbar icon, or `chrome://extensions` →
