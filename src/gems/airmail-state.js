@@ -1,10 +1,11 @@
 /* Canvas Gradebook+ - Airmail: the rare paper airplane.
  *
- * Every so often - not often - a folded paper airplane drifts across the
- * gradebook. Click it before it glides away and it unfolds into a note: the
- * kind a teacher finds on their desk once in a while and keeps for years.
- * Caught notes go into the Shoebox (a tab on the options page that does not
- * exist until the first note is caught). A plane that gets away is gone.
+ * Every so often - not often - a folded paper airplane glides slowly across
+ * the gradebook and lands in the corner, where it waits. Click it and it
+ * opens into an airmail letter: the kind of note a teacher finds on their
+ * desk once in a while and keeps for years. Caught notes go into the Shoebox
+ * (a tab on the options page that does not exist until the first note is
+ * caught). One left waiting for over a minute flies off, and is gone.
  *
  * When one can fly - never more than one a day, and only by luck:
  *   - 'columnDone': the teacher fills in the last empty cell of a column, so

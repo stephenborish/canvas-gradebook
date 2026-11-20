@@ -214,18 +214,18 @@ suite('Airmail: a finished column', (test) => {
 });
 
 suite('Airmail: the plane\'s flight path', (test) => {
-  test('a pass starts off the left edge and ends off the right, and back for the return', () => {
+  test('a flight starts off the left edge and comes down exactly on its landing spot', () => {
     globalThis.CGP.AirmailFlight = undefined;
     vm.runInThisContext(fs.readFileSync(path.join(ROOT, 'src/gems/airmail.js'), 'utf8'), { filename: 'src/gems/airmail.js' });
     const pathAt = globalThis.CGP.AirmailFlight._pathAt;
-    const geo = { w: 1000, h: 800, y0: 300, amp: 30, waves: 1, drift: 0, loopAt: 0.4, loopLen: 0.16, r: 50, reverse: false };
-    a.ok(pathAt(0, geo).x < 0);
-    a.ok(pathAt(1, geo).x > 1000);
-    const back = Object.assign({}, geo, { reverse: true, loopLen: 0 });
-    a.ok(pathAt(0, back).x > 1000);
-    a.ok(pathAt(1, back).x < 0);
-    // Half way round the loop the plane is upside down, a loop's height above.
-    const top = pathAt(0.4 + 0.08, geo), entry = pathAt(0.4, geo);
-    a.ok(Math.abs(entry.y - top.y - 100) < 0.01, 'the top of the loop is 2r above where it began');
+    const geo = { x0: -140, y0: 200, x1: 400, y1: 60, x2: 900, y2: 300, x3: 1180, y3: 680,
+      swell: 30, waves: 1.5, loopAt: 0.35, loopLen: 0.13, r: 70, drag: 40 };
+    a.ok(pathAt(0, geo).x < 0, 'starts off screen');
+    const end = pathAt(1, geo);
+    a.ok(Math.abs(end.x - 1180) < 0.01 && Math.abs(end.y - 680) < 0.01, 'lands on the spot');
+    // Half way round the loop it is a full loop's height above the arc.
+    const k = 0.35 + 0.065;
+    const noLoop = pathAt(k, Object.assign({}, geo, { loopLen: 0 }));
+    a.ok(Math.abs(noLoop.y - pathAt(k, geo).y - 140) < 0.01, 'the top of the loop is 2r up');
   });
 });

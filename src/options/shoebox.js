@@ -85,10 +85,13 @@
         var n = byId(c.id);
         if (!n) return;
         var li = el('li', 'shoebox__note' + (n.pile === 'golden' ? ' is-gold' : n.pile === 'night' ? ' is-night' : ''));
-        li.style.setProperty('--tilt', ((i % 2 ? 1 : -1) * (0.6 + (i % 3) * 0.5)).toFixed(1) + 'deg');
+        var meta = el('p', 'shoebox__meta');
+        var subj = CGP.AirmailState.subjectLabel(n.pile);
+        meta.appendChild(el('span', '', n.pile === 'golden' ? 'A rare one' : subj || (n.pile === 'night' ? 'Late delivery' : 'Par avion')));
+        meta.appendChild(el('span', '', dateLabel(c.at)));
+        li.appendChild(meta);
         li.appendChild(el('p', 'shoebox__text', n.text));
-        li.appendChild(el('p', 'shoebox__from', '— ' + n.from));
-        li.appendChild(el('p', 'shoebox__date', 'Caught ' + dateLabel(c.at)));
+        li.appendChild(el('p', 'shoebox__from', '\u2014 ' + n.from));
         grid.appendChild(li);
       });
       panel.appendChild(grid);
