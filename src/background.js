@@ -19,8 +19,12 @@ import { createCalendarSync, CALENDAR_REFRESH, CALENDAR_ADOPT } from './calendar
 import './tour/tour-state.js';
 // What a frame inside a course page gets (frame-gate.js), likewise.
 import './frame-gate.js';
+// Airmail, the rare paper airplane (gems/airmail-state.js): which files make
+// the plane, injected only on the day one flies.
+import './gems/airmail-state.js';
 
 const TourState = globalThis.CGP.TourState;
+const AirmailState = globalThis.CGP.AirmailState;
 const FrameGate = globalThis.CGP.FrameGate;
 
 const DYNAMIC_ID = 'cgp-custom-domains';
@@ -189,6 +193,16 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
       }).catch(() => 0);
     }
     return false;
+  }
+  // A course page that rolled a paper airplane (gems/airmail-state.js): the
+  // plane and its notes go into that frame now. Answered once they have run.
+  if (msg && msg.type === AirmailState.INJECT) {
+    if (!sender || !sender.tab || sender.tab.id === undefined) { respond({ ok: false }); return false; }
+    chrome.scripting.executeScript({
+      target: { tabId: sender.tab.id, frameIds: [sender.frameId || 0] },
+      files: AirmailState.FILES
+    }).then(() => respond({ ok: true }), () => respond({ ok: false }));
+    return true;
   }
   // A comment editor's frame in the gradebook or SpeedGrader (frame-gate.js):
   // the scripts that expand snippets, into that frame only. Answered once
