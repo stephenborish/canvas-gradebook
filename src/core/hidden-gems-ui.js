@@ -29,30 +29,55 @@
     return (document.title || '').trim();
   }
 
-  function readCachedCourseNames() {
+  var cachedUidPromise = null;
+  function resolveCurrentUserId() {
+    if (cachedUidPromise) return cachedUidPromise;
     try {
-      var raw = sessionStorage.getItem(COURSES_CACHE_KEY);
-      if (!raw) return [];
-      var parsed = JSON.parse(raw);
-      var list = parsed && Array.isArray(parsed.courses) ? parsed.courses : [];
-      var out = [];
-      for (var i = 0; i < list.length; i++) {
-        var c = list[i];
-        if (!c) continue;
-        if (c.name) out.push(String(c.name));
-        if (c.course_code) out.push(String(c.course_code));
+      var snap = CGP.diag && typeof CGP.diag.snapshot === 'function' ? CGP.diag.snapshot() : null;
+      var envUid = snap && snap.envUserId ? String(snap.envUserId) : '';
+      if (envUid) {
+        cachedUidPromise = Promise.resolve(envUid);
+        return cachedUidPromise;
       }
-      return out;
-    } catch (e) {
-      return [];
+    } catch (e) { /* ignore */ }
+    if (CGP.CanvasApi && typeof CGP.CanvasApi.prototype.currentUser === 'function') {
+      cachedUidPromise = new CGP.CanvasApi().currentUser()
+        .then(function (u) { return u && u.id ? String(u.id) : null; }, function () { return null; });
+      return cachedUidPromise;
     }
+    return Promise.resolve(null);
   }
 
-  function detectCurrentSubject(override) {
+  function loadCachedCourseNames() {
+    return new Promise(function (resolve) {
+      try {
+        if (!chrome || !chrome.storage || !chrome.storage.local) { resolve([]); return; }
+        chrome.storage.local.get(COURSES_CACHE_KEY, function (res) {
+          if (chrome.runtime && chrome.runtime.lastError) { resolve([]); return; }
+          var box = res && res[COURSES_CACHE_KEY];
+          if (!box || box.origin !== location.origin) { resolve([]); return; }
+          resolveCurrentUserId().then(function (uid) {
+            resolve(CGP.hiddenGems.extractCachedCourseNames(box, location.origin, uid, Date.now()));
+          }, function () { resolve([]); });
+        });
+      } catch (e) { resolve([]); }
+    });
+  }
+
+  function resolveCurrentSubject(override) {
     if (override && CGP.hiddenGems.SUBJECT_LABELS[override]) {
-      return { id: override, label: CGP.hiddenGems.SUBJECT_LABELS[override], source: 'override' };
+      return Promise.resolve({ id: override, label: CGP.hiddenGems.SUBJECT_LABELS[override], source: 'override' });
     }
-    return CGP.hiddenGems.detectSubject(readCurrentCourseName(), readCachedCourseNames());
+    var curName = readCurrentCourseName();
+    var direct = CGP.hiddenGems.matchSubject(curName);
+    if (direct) {
+      return Promise.resolve({ id: direct, label: CGP.hiddenGems.SUBJECT_LABELS[direct], source: 'course' });
+    }
+    return loadCachedCourseNames().then(function (names) {
+      return CGP.hiddenGems.detectSubject(curName, names);
+    }, function () {
+      return CGP.hiddenGems.detectSubject(curName, []);
+    });
   }
 
   /* --------------------------------------------------------- storage helper */
@@ -70,12 +95,28 @@
   }
 
   function writeState(state) {
+    return new Promise(function (resolve) {
+      try {
+        if (!chrome || !chrome.storage || !chrome.storage.local) { resolve(false); return; }
+        var obj = {};
+        obj[STORAGE_KEY] = state;
+        chrome.storage.local.set(obj, function () {
+          resolve(!(chrome.runtime && chrome.runtime.lastError));
+        });
+      } catch (e) { resolve(false); }
+    });
+  }
+
+  function withClaimLock(fn) {
     try {
-      if (!chrome || !chrome.storage || !chrome.storage.local) return;
-      var obj = {};
-      obj[STORAGE_KEY] = state;
-      chrome.storage.local.set(obj, function () { /* ignore errors */ });
-    } catch (e) { /* ignore */ }
+      if (typeof navigator !== 'undefined' && navigator.locks && typeof navigator.locks.request === 'function') {
+        return navigator.locks.request('cgp-hidden-gems-claim', { ifAvailable: true }, function (lock) {
+          if (!lock) return null;
+          return fn(true);
+        });
+      }
+    } catch (e) { /* fall through */ }
+    return fn(false);
   }
 
   function prefersReducedMotion() {
@@ -1121,12 +1162,7 @@
 
   var P = HiddenGemsController.prototype;
 
-  P.play = function (gemId, subjectOverride, opts) {
-    if (!CGP.hiddenGems) return null;
-    var id = PLAYERS[gemId] ? gemId : CGP.hiddenGems.pickGem(null);
-    var subject = detectCurrentSubject(subjectOverride);
-    var props = CGP.hiddenGems.contentFor(id, subject.id, undefined, opts);
-
+  P._render = function (id, subject, props) {
     if (this._active) {
       this._active.destroy();
       this._active = null;
@@ -1142,6 +1178,16 @@
     }
     if (CGP.diag) CGP.diag.log('hiddenGems.played', { gem: id, subject: subject.id, source: subject.source });
     return { gem: id, subject: subject, cardId: props && props.card ? props.card.id : null };
+  };
+
+  P.play = function (gemId, subjectOverride, opts) {
+    if (!CGP.hiddenGems) return Promise.resolve(null);
+    var self = this;
+    var id = PLAYERS[gemId] ? gemId : CGP.hiddenGems.pickGem(null);
+    return resolveCurrentSubject(subjectOverride).then(function (subject) {
+      var props = CGP.hiddenGems.contentFor(id, subject.id, undefined, opts);
+      return self._render(id, subject, props);
+    });
   };
 
   P.stop = function () {
@@ -1191,18 +1237,39 @@
       var delay = CGP.hiddenGems.nextDelayMs();
       self._timer = setTimeout(function () {
         self._timer = null;
-        if (document.hidden || !self.settings.values.hiddenGems) return;
-        var recentGems = Array.isArray(state && state.recentGems) ? state.recentGems.slice(-4) : (state && state.lastGemId ? [state.lastGemId] : []);
-        var recentCards = Array.isArray(state && state.recentCards) ? state.recentCards.slice(-16) : [];
-        var gemId = CGP.hiddenGems.pickGem(recentGems);
-        var res = self.play(gemId, null, { recentCards: recentCards });
-        recentGems.push(gemId);
-        if (res && res.cardId) recentCards.push(res.cardId);
-        writeState({
-          lastShownAt: Date.now(),
-          lastGemId: gemId,
-          recentGems: recentGems.slice(-4),
-          recentCards: recentCards.slice(-16)
+        if (document.hidden || !self.settings.values.hiddenGems || prefersReducedMotion()) return;
+        withClaimLock(function (hasLock) {
+          return readState().then(function (fresh) {
+            if (document.hidden || !self.settings.values.hiddenGems || prefersReducedMotion()) return null;
+            var claimNow = Date.now();
+            if (!CGP.hiddenGems.isCooldownClear(fresh, claimNow, { enabled: true, reducedMotion: false })) return null;
+            var recentGems = Array.isArray(fresh && fresh.recentGems) ? fresh.recentGems.slice(-4) : (fresh && fresh.lastGemId ? [fresh.lastGemId] : []);
+            var recentCards = Array.isArray(fresh && fresh.recentCards) ? fresh.recentCards.slice(-16) : [];
+            var gemId = CGP.hiddenGems.pickGem(recentGems);
+            return resolveCurrentSubject(null).then(function (subject) {
+              var props = CGP.hiddenGems.contentFor(gemId, subject.id, undefined, { recentCards: recentCards });
+              var nextGems = recentGems.concat([gemId]).slice(-4);
+              var nextCards = (props && props.card && props.card.id)
+                ? recentCards.concat([props.card.id]).slice(-16)
+                : recentCards;
+              var claimId = claimNow + ':' + Math.random().toString(36).slice(2, 8);
+              return writeState({
+                lastShownAt: claimNow,
+                lastGemId: gemId,
+                recentGems: nextGems,
+                recentCards: nextCards,
+                claimId: claimId
+              }).then(function (okWrite) {
+                if (!okWrite) return null;
+                if (hasLock) return self._render(gemId, subject, props);
+                // Fallback when Web Locks API is unavailable: verify our claim won.
+                return readState().then(function (verify) {
+                  if (!verify || verify.claimId !== claimId) return null;
+                  return self._render(gemId, subject, props);
+                });
+              });
+            });
+          });
         });
       }, delay);
     });

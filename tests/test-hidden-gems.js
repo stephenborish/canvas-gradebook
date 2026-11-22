@@ -140,6 +140,33 @@ suite('Hidden Gems: rarity, cooldown & non-repeat', (test) => {
     }
   });
 
+  test('extractCachedCourseNames enforces origin, user id, and cache freshness', () => {
+    const now = 1_700_000_000_000;
+    const box = {
+      origin: 'https://school.instructure.com',
+      uid: '42',
+      at: now - 5 * 60 * 1000,
+      courses: [
+        { name: 'AP Chemistry', course_code: 'CHEM-101' },
+        { name: 'Honors Chemistry', course_code: 'CHEM-102' }
+      ]
+    };
+    const valid = hg.extractCachedCourseNames(box, 'https://school.instructure.com', '42', now);
+    ok(valid.includes('AP Chemistry') && valid.includes('CHEM-102'), 'reads valid cache');
+    eq(hg.extractCachedCourseNames(box, 'https://other.instructure.com', '42', now).length, 0, 'rejects wrong origin');
+    eq(hg.extractCachedCourseNames(box, 'https://school.instructure.com', '99', now).length, 0, 'rejects wrong uid');
+    eq(hg.extractCachedCourseNames(box, 'https://school.instructure.com', null, now).length, 0, 'rejects missing uid');
+    const stale = Object.assign({}, box, { at: now - 31 * 60 * 1000 });
+    eq(hg.extractCachedCourseNames(stale, 'https://school.instructure.com', '42', now).length, 0, 'rejects stale cache');
+  });
+
+  test('isCooldownClear blocks playback when another window claimed the period', () => {
+    const now = 1_700_000_000_000;
+    ok(hg.isCooldownClear({}, now, { enabled: true }));
+    not(hg.isCooldownClear({ lastShownAt: now - 5000 }, now, { enabled: true }));
+    ok(hg.isCooldownClear({ lastShownAt: now - hg.DEFAULT_COOLDOWN_MS - 1 }, now, { enabled: true }));
+  });
+
   test('manifest.json and script-manifest.js both list hidden-gems assets', () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
     const scriptManifest = fs.readFileSync(path.join(ROOT, 'src/script-manifest.js'), 'utf8');

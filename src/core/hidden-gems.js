@@ -607,18 +607,46 @@
     return { subjectId: key };
   }
 
-  /* Decide whether an automatic surprise should trigger on this page visit. */
-  function shouldTrigger(state, now, opts, rng) {
+  /* Check whether the shared cooldown window is currently clear (used both on
+   * initial roll and immediately before playback after the settle delay). */
+  function isCooldownClear(state, now, opts) {
     var o = opts || {};
     if (o.enabled === false) return false;
     if (o.reducedMotion) return false;
     var cooldownMs = typeof o.cooldownMs === 'number' ? o.cooldownMs : DEFAULT_COOLDOWN_MS;
-    var chance = typeof o.chance === 'number' ? o.chance : DEFAULT_CHANCE;
     var ts = typeof now === 'number' ? now : Date.now();
     var last = state && typeof state.lastShownAt === 'number' ? state.lastShownAt : 0;
     if (last && ts - last < cooldownMs) return false;
+    return true;
+  }
+
+  /* Decide whether an automatic surprise should trigger on this page visit. */
+  function shouldTrigger(state, now, opts, rng) {
+    if (!isCooldownClear(state, now, opts)) return false;
+    var o = opts || {};
+    var chance = typeof o.chance === 'number' ? o.chance : DEFAULT_CHANCE;
     var r = typeof rng === 'function' ? rng() : Math.random();
     return r < chance;
+  }
+
+  /* Extract course names/codes from course-switcher's chrome.storage.local
+   * cache box only when origin, logged-in user id, and freshness all match. */
+  var COURSE_CACHE_MAX_AGE_MS = 30 * 60 * 1000;
+  function extractCachedCourseNames(box, origin, uid, now, maxAgeMs) {
+    if (!box || !origin || !uid) return [];
+    if (box.origin !== origin || String(box.uid || '') !== String(uid)) return [];
+    var ageLimit = typeof maxAgeMs === 'number' ? maxAgeMs : COURSE_CACHE_MAX_AGE_MS;
+    var ts = typeof now === 'number' ? now : Date.now();
+    if (typeof box.at !== 'number' || ts - box.at > ageLimit) return [];
+    var list = Array.isArray(box.courses) ? box.courses : [];
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i];
+      if (!c) continue;
+      if (c.name) out.push(String(c.name));
+      if (c.course_code) out.push(String(c.course_code));
+    }
+    return out;
   }
 
   /* Pick a gem id uniformly, avoiding any recently seen gems (up to 4) so
@@ -648,8 +676,10 @@
     DEFAULT_CHANCE: DEFAULT_CHANCE,
     matchSubject: matchSubject,
     detectSubject: detectSubject,
+    extractCachedCourseNames: extractCachedCourseNames,
     timeContext: timeContext,
     contentFor: contentFor,
+    isCooldownClear: isCooldownClear,
     shouldTrigger: shouldTrigger,
     pickGem: pickGem,
     nextDelayMs: nextDelayMs
