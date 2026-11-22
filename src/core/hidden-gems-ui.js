@@ -266,10 +266,11 @@
     var squeegeeY = 0;
     var armTip = 0;
 
+    var cableTop = -(targetY + 300);
     rig.innerHTML =
       '<svg viewBox="0 0 96 600" width="96" height="600" style="overflow:visible">' +
-        '<line x1="16" y1="-600" x2="16" y2="56" stroke="#6c7a89" stroke-width="1.4"/>' +
-        '<line x1="80" y1="-600" x2="80" y2="56" stroke="#6c7a89" stroke-width="1.4"/>' +
+        '<line x1="16" y1="' + cableTop + '" x2="16" y2="56" stroke="#6c7a89" stroke-width="1.4"/>' +
+        '<line x1="80" y1="' + cableTop + '" x2="80" y2="56" stroke="#6c7a89" stroke-width="1.4"/>' +
         '<g class="cgp-w-mist" opacity="0" fill="#7ec4e8">' +
           '<circle cx="24" cy="36" r="1.8"/><circle cx="19" cy="32" r="1.4"/><circle cx="21" cy="40" r="1.3"/><circle cx="15" cy="36" r="1.1"/>' +
         '</g>' +
@@ -944,7 +945,7 @@
       var lineAngles = [-0.32, -0.08, 0.21, 0.39];
       for (var j = 0; j < lineAngles.length; j++) {
         var la = lineAngles[j] * spread * (Math.PI / 180);
-        absorptionMarkup += '<line x1="22" y1="0" x2="' + (Math.cos(la) * 165).toFixed(1) + '" y2="' + (Math.sin(la) * 165).toFixed(1) + '" stroke="rgba(25,35,48,0.16)" stroke-width="0.9"/>';
+        absorptionMarkup += '<line x1="' + (Math.cos(la) * 22).toFixed(1) + '" y1="' + (Math.sin(la) * 22).toFixed(1) + '" x2="' + (Math.cos(la) * 165).toFixed(1) + '" y2="' + (Math.sin(la) * 165).toFixed(1) + '" stroke="rgba(25,35,48,0.16)" stroke-width="0.9"/>';
       }
     }
 
@@ -959,7 +960,7 @@
           '<filter id="cgp-caustic-blur" x="-30%" y="-30%" width="160%" height="160%">' +
             '<feGaussianBlur stdDeviation="5.5"/>' +
           '</filter>' +
-          '<radialGradient id="cgp-beam-fade" cx="0%" cy="50%" r="100%">' +
+          '<radialGradient id="cgp-beam-fade" cx="50%" cy="50%" r="50%">' +
             '<stop offset="0%" stop-color="#fff" stop-opacity="0.9"/>' +
             '<stop offset="72%" stop-color="#fff" stop-opacity="0.5"/>' +
             '<stop offset="100%" stop-color="#fff" stop-opacity="0"/>' +
@@ -1111,21 +1112,22 @@
       lastT = now;
 
       if (!nudgedOff) {
-        vx += dir * 58 * dt;
-        vx *= Math.pow(0.58, dt);
-        x += vx * dt;
-        var minX = 8;
-        var maxX = W - spec.w - 8;
-        if (dir === 1 && x > maxX) {
-          x = maxX;
-          vx = -Math.abs(vx) * 0.42;
-          if (Math.abs(vx) < 14) { vx = 0; if (!settledAt) settledAt = now; }
-        } else if (dir === -1 && x < minX) {
-          x = minX;
-          vx = Math.abs(vx) * 0.42;
-          if (Math.abs(vx) < 14) { vx = 0; if (!settledAt) settledAt = now; }
-        }
-        if (settledAt && now - settledAt > 6500) {
+        if (!settledAt) {
+          vx += dir * 58 * dt;
+          vx *= Math.pow(0.58, dt);
+          x += vx * dt;
+          var minX = 8;
+          var maxX = W - spec.w - 8;
+          if (dir === 1 && x > maxX) {
+            x = maxX;
+            vx = -Math.abs(vx) * 0.42;
+            if (Math.abs(vx) < 14) { vx = 0; settledAt = now; }
+          } else if (dir === -1 && x < minX) {
+            x = minX;
+            vx = Math.abs(vx) * 0.42;
+            if (Math.abs(vx) < 14) { vx = 0; settledAt = now; }
+          }
+        } else if (now - settledAt > 6500) {
           el.classList.add('is-fading');
           session.after(750, function () { session.destroy(); });
           return;
