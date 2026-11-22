@@ -270,6 +270,11 @@
 .cgp-gem-peel.is-left .cgp-gem-peel-caption {
   transform: scaleX(-1);
 }
+.cgp-gem-peel.is-left .cgp-gem-peel-world svg text {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scaleX(-1);
+}
 
 .cgp-gem-peel-hit {
   position: absolute;

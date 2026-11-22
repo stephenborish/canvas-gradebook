@@ -29,21 +29,29 @@
     return (document.title || '').trim();
   }
 
-  var cachedUidPromise = null;
+  var cachedUid = null;
+  var uidInFlight = null;
   function resolveCurrentUserId() {
-    if (cachedUidPromise) return cachedUidPromise;
+    if (cachedUid) return Promise.resolve(cachedUid);
     try {
-      var snap = CGP.diag && typeof CGP.diag.snapshot === 'function' ? CGP.diag.snapshot() : null;
-      var envUid = snap && snap.envUserId ? String(snap.envUserId) : '';
+      var envUid = CGP.diag && CGP.diag.facts && CGP.diag.facts.envUserId ? String(CGP.diag.facts.envUserId) : '';
       if (envUid) {
-        cachedUidPromise = Promise.resolve(envUid);
-        return cachedUidPromise;
+        cachedUid = envUid;
+        return Promise.resolve(envUid);
       }
     } catch (e) { /* ignore */ }
+    if (uidInFlight) return uidInFlight;
     if (CGP.CanvasApi && typeof CGP.CanvasApi.prototype.currentUser === 'function') {
-      cachedUidPromise = new CGP.CanvasApi().currentUser()
-        .then(function (u) { return u && u.id ? String(u.id) : null; }, function () { return null; });
-      return cachedUidPromise;
+      uidInFlight = new CGP.CanvasApi().currentUser()
+        .then(function (u) {
+          uidInFlight = null;
+          if (u && u.id) { cachedUid = String(u.id); return cachedUid; }
+          return null;
+        }, function () {
+          uidInFlight = null;
+          return null;
+        });
+      return uidInFlight;
     }
     return Promise.resolve(null);
   }
@@ -127,10 +135,10 @@
 
   /* -------------------------------------------------------- stage lifecycle */
 
-  function createSession() {
+  function createSession(isInteractive) {
     var stage = document.createElement('div');
     stage.className = 'cgp-gem-stage';
-    stage.setAttribute('aria-hidden', 'true');
+    if (!isInteractive) stage.setAttribute('aria-hidden', 'true');
     document.body.appendChild(stage);
 
     var timers = [];
@@ -402,6 +410,7 @@
   function playBoat(session, props) {
     var waterline = document.createElement('div');
     waterline.className = 'cgp-gem-waterline';
+    waterline.setAttribute('aria-hidden', 'true');
     session.stage.appendChild(waterline);
     session.after(40, function () { waterline.classList.add('is-visible'); });
 
@@ -414,6 +423,7 @@
 
     var refl = document.createElement('div');
     refl.className = 'cgp-gem-boat-reflection';
+    refl.setAttribute('aria-hidden', 'true');
     refl.innerHTML = boatSvg('', props.paperTint);
 
     session.stage.appendChild(refl);
@@ -549,6 +559,7 @@
         paused = false;
         speed = 58;
         lastT = performance.now();
+        session.raf(tick);
       });
     }
 
@@ -562,23 +573,21 @@
     });
 
     function tick(now) {
-      if (session.isDone()) return;
+      if (session.isDone() || paused) return;
       var dt = Math.min(0.05, (now - lastT) / 1000);
       lastT = now;
 
-      if (!paused) {
-        x += dir * speed * dt;
-        var t = (now - startT) / 1000;
-        var bob = Math.sin(t * 2.6) * 2.2;
-        var tilt = Math.cos(t * 2.1) * 3.2;
-        btn.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + bob.toFixed(1) + 'px,0) rotate(' + tilt.toFixed(2) + 'deg)';
-        refl.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + (-bob * 0.5).toFixed(1) + 'px,0) scaleY(-0.55)';
-        var doneSail = dir === 1 ? x > window.innerWidth + 80 : x < -90;
-        if (doneSail) {
-          waterline.classList.remove('is-visible');
-          session.after(900, function () { session.destroy(); });
-          return;
-        }
+      x += dir * speed * dt;
+      var t = (now - startT) / 1000;
+      var bob = Math.sin(t * 2.6) * 2.2;
+      var tilt = Math.cos(t * 2.1) * 3.2;
+      btn.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + bob.toFixed(1) + 'px,0) rotate(' + tilt.toFixed(2) + 'deg)';
+      refl.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + (-bob * 0.5).toFixed(1) + 'px,0) scaleY(-0.55)';
+      var doneSail = dir === 1 ? x > window.innerWidth + 80 : x < -90;
+      if (doneSail) {
+        waterline.classList.remove('is-visible');
+        session.after(900, function () { session.destroy(); });
+        return;
       }
       session.raf(tick);
     }
@@ -1167,7 +1176,7 @@
       this._active.destroy();
       this._active = null;
     }
-    var session = createSession();
+    var session = createSession(id === 'boat');
     this._active = session;
     try {
       PLAYERS[id](session, props);
@@ -1247,6 +1256,7 @@
             var recentCards = Array.isArray(fresh && fresh.recentCards) ? fresh.recentCards.slice(-16) : [];
             var gemId = CGP.hiddenGems.pickGem(recentGems);
             return resolveCurrentSubject(null).then(function (subject) {
+              if (document.hidden || !self.settings.values.hiddenGems || prefersReducedMotion()) return null;
               var props = CGP.hiddenGems.contentFor(gemId, subject.id, undefined, { recentCards: recentCards });
               var nextGems = recentGems.concat([gemId]).slice(-4);
               var nextCards = (props && props.card && props.card.id)
@@ -1260,11 +1270,11 @@
                 recentCards: nextCards,
                 claimId: claimId
               }).then(function (okWrite) {
-                if (!okWrite) return null;
+                if (!okWrite || document.hidden || !self.settings.values.hiddenGems) return null;
                 if (hasLock) return self._render(gemId, subject, props);
                 // Fallback when Web Locks API is unavailable: verify our claim won.
                 return readState().then(function (verify) {
-                  if (!verify || verify.claimId !== claimId) return null;
+                  if (!verify || verify.claimId !== claimId || document.hidden || !self.settings.values.hiddenGems) return null;
                   return self._render(gemId, subject, props);
                 });
               });
