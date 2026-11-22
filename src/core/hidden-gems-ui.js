@@ -477,13 +477,20 @@
       var actions = document.createElement('div');
       actions.className = 'cgp-gem-note-actions';
 
+      var flipBtn = null;
+      var back = null;
+      var flipBack = null;
+
       if (isRiddle) {
-        var flipBtn = document.createElement('button');
+        flipBtn = document.createElement('button');
         flipBtn.type = 'button';
         flipBtn.className = 'cgp-gem-note-btn cgp-gem-note-btn--primary';
         flipBtn.textContent = 'Flip for answer';
         flipBtn.addEventListener('click', function () {
+          front.inert = true;
+          if (back) back.inert = false;
           noteWrap.classList.add('is-flipped');
+          if (flipBack) flipBack.focus();
         });
         actions.appendChild(flipBtn);
       }
@@ -501,8 +508,9 @@
       inner.appendChild(front);
 
       if (isRiddle) {
-        var back = document.createElement('div');
+        back = document.createElement('div');
         back.className = 'cgp-gem-note-face cgp-gem-note-face--back';
+        back.inert = true;
 
         var backMeta = document.createElement('div');
         backMeta.className = 'cgp-gem-note-meta';
@@ -520,12 +528,15 @@
 
         var backActions = document.createElement('div');
         backActions.className = 'cgp-gem-note-actions';
-        var flipBack = document.createElement('button');
+        flipBack = document.createElement('button');
         flipBack.type = 'button';
         flipBack.className = 'cgp-gem-note-btn';
         flipBack.textContent = 'Back';
         flipBack.addEventListener('click', function () {
+          back.inert = true;
+          front.inert = false;
           noteWrap.classList.remove('is-flipped');
+          if (flipBtn) flipBtn.focus();
         });
         var refoldBack = document.createElement('button');
         refoldBack.type = 'button';
