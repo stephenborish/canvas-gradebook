@@ -86,6 +86,8 @@
         "src/core/course-calendar.js",
         "src/core/section-sync.js",
         "src/core/group-builder.js",
+        "src/core/hidden-gems.js",
+        "src/core/hidden-gems-ui.js",
         "src/core/ui.js",
         "src/core/model.js",
         "src/gradebook/dom-adapter.js",
@@ -128,7 +130,8 @@
       ],
       "css": [
         "src/styles/gradebook.css",
-        "src/styles/speedgrader.css"
+        "src/styles/speedgrader.css",
+        "src/styles/hidden-gems.css"
       ],
       "run_at": "document_idle"
     },

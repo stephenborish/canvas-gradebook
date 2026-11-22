@@ -228,6 +228,9 @@
     // reach every computer where the teacher opens Canvas even when Chrome
     // sync is off (core/settings-mirror.js).
     settingsInCanvas: true,
+    // Infrequent, unobtrusive miniature surprises in the margins of Canvas
+    // pages, tailored to the subject the teacher teaches (core/hidden-gems.js).
+    hiddenGems: true,
     diagnostics: false
   };
 

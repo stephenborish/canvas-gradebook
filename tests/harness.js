@@ -32,6 +32,7 @@ const CORE_FILES = [
   'src/core/course-calendar.js',
   'src/core/section-sync.js',
   'src/core/group-builder.js',
+  'src/core/hidden-gems.js',
   'src/core/model.js'
 ];
 
