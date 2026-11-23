@@ -639,6 +639,32 @@
     return null;
   }
 
+  /* A points figure like "45 / 60", "45.5/60" or "1,045 / 1,200". */
+  var POINTS_RE = /\d[\d,]*(?:\.\d+)?\s*\/\s*\d[\d,]*(?:\.\d+)?/;
+  var POINTS_ONLY = /^\s*\d[\d,]*(?:\.\d+)?(?:\s*\/\s*\d[\d,]*(?:\.\d+)?)?\s*$/;
+
+  /* Canvas's Total tooltip text -> {points, note}: the earned / possible
+   * figure (if any) and whatever other message it carries. A percentage in
+   * the text is dropped (the letter line already stands for it). */
+  function splitTotalTip(text) {
+    var out = { points: '', note: '' };
+    text = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!text) return out;
+    var m = POINTS_RE.exec(text);
+    var rest = text;
+    if (m) {
+      out.points = m[0].replace(/\s*\/\s*/, ' / ');
+      rest = text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length);
+    }
+    rest = rest.replace(/\b\d+(?:\.\d+)?\s*%/g, ' ')
+      .replace(/\bpts?\b\.?/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/^[\s,;:()\-\u2013\u2014]+|[\s,;:(\-\u2013\u2014]+$/g, '')
+      .trim();
+    if (/[A-Za-z]{2,}/.test(rest)) out.note = rest;
+    return out;
+  }
+
   /* Canvas's own Total, drawn by Canvas and never rewritten: everything here
    * is attributes the stylesheet reads. They sit on the elements Canvas
    * builds, which Canvas replaces whenever the Total changes - so a stale
@@ -674,8 +700,14 @@
     // own tooltip text; when the Total is shown as points, the cell's).
     var lines = [];
     if (letter) lines.push(letter);
-    if (tipText && T.parsePercent(tipText) === null) lines.push(tipText + ' pts');
-    else if (!shownIsPct && shown) lines.push(shown + ' pts');
+    // Canvas's tooltip is not always a score: with grades not yet posted it
+    // is (or also holds) a sentence like "This grade may differ from the
+    // student's view...". Only an actual "earned / possible" figure gets
+    // " pts"; any other text is shown as its own line, as written.
+    var tipParts = splitTotalTip(tipText);
+    if (tipParts.points) lines.push(tipParts.points + ' pts');
+    else if (!shownIsPct && POINTS_ONLY.test(shown)) lines.push(shown + ' pts');
+    if (tipParts.note) lines.push(tipParts.note);
     setAttr(cell, 'data-cgp-tip', lines.join('\n'));
     if (this._tipCell === cell) this.showTotalTip(cell);
   };
@@ -722,6 +754,7 @@
       lines.forEach(function (line, i) {
         var row = document.createElement(i ? 'span' : 'b');
         row.textContent = line;
+        if (i && /[A-Za-z]{3,}\s+[A-Za-z]{3,}/.test(line)) row.className = 'cgp-total-tip__note';
         el.appendChild(row);
       });
     }
@@ -911,4 +944,5 @@
   };
 
   CGP.IndicatorController = IndicatorController;
+  CGP.splitTotalTip = splitTotalTip;
 })();

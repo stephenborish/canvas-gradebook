@@ -1306,10 +1306,24 @@ html.cgp-on .cgp-total-tip {
   font-size: 12px;
   line-height: 1.35;
   text-align: center;
-  white-space: nowrap;
+  /* Short lines (letter, points) stay on one line; Canvas's longer
+   * "may differ from the student's view" note wraps instead of stretching
+   * the tooltip across the grid. */
+  white-space: normal;
+  max-width: 240px;
+  overflow-wrap: break-word;
   pointer-events: none;
 }
 html.cgp-on .cgp-total-tip[hidden] { display: none; }
+html.cgp-on .cgp-total-tip b,
+html.cgp-on .cgp-total-tip span { white-space: nowrap; }
+html.cgp-on .cgp-total-tip span.cgp-total-tip__note {
+  white-space: normal;
+  max-width: 218px;
+  margin-top: 2px;
+  font-size: 11.5px;
+  text-align: left;
+}
 html.cgp-on .cgp-total-tip b { font-size: 16px; font-weight: 700; color: #fff; }
 html.cgp-on .cgp-total-tip span { color: #d5dde3; }
 
