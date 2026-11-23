@@ -488,6 +488,6 @@ html.cgp-sg-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overfl
   column-gap: 2px !important;
   padding: 0 2px !important;
 }
-html.cgp-sg-tidy [data-cgp-tray-rce] .tox-toolbar__group {
+html.cgp-sg-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar__group {
   padding: 0 1px !important;
 }

@@ -36,7 +36,7 @@
   // Something on show: a control, a picture, an icon, a spinner.
   var VISIBLE = 'img, svg, picture, canvas, video, audio, iframe, object, embed, input, select, textarea, button, ' +
     'i, [role="button"], [role="img"], [role="combobox"], [role="progressbar"], [role="separator"], ' +
-    '[class*="icon" i], [class*="spinner" i], [class*="loading" i], [class*="resiz" i], [class*="handle" i], ' +
+    '[class*="icon" i], [class*="avatar" i], [class*="spinner" i], [class*="loading" i], [class*="resiz" i], [class*="handle" i], ' +
     '[data-cgp-tray-rce], [data-cgp-sg-own]';
   var NO_BOX = /^(br|hr|wbr|script|style|template|link|meta|noscript|option|optgroup)$/i;
   var GRADE_LABEL = /^\s*grade\b/i;
@@ -253,26 +253,35 @@
    * so they leave no gap. The tag comes off as soon as one holds something. */
   function tagEmpty(panel, cards) {
     var keep = [];
+    var kept = typeof Set === 'function' ? new Set() : null;
     toArray(panel.querySelectorAll('*')).forEach(function (el) {
       if (NO_BOX.test(el.tagName || '')) return;
       if (cards.some(function (c) { return c.el === el; })) return;
-      if (isEmpty(el)) keep.push(el);
+      if (isEmpty(el)) { keep.push(el); if (kept) kept.add(el); }
     });
-    toArray(panel.querySelectorAll('[data-cgp-sg-empty]')).forEach(function (el) {
-      if (keep.indexOf(el) < 0) el.removeAttribute('data-cgp-sg-empty');
+    // Across the whole page: a box left outside a panel that moved keeps no tag.
+    var doc = panel.ownerDocument || document;
+    toArray(doc.querySelectorAll('[data-cgp-sg-empty]')).forEach(function (el) {
+      if (kept ? !kept.has(el) : keep.indexOf(el) < 0) el.removeAttribute('data-cgp-sg-empty');
     });
     keep.forEach(function (el) { setAttr(el, 'data-cgp-sg-empty', ''); });
   }
 
   function isEmpty(el) {
-    if (/\S/.test(String(el.textContent || ''))) return false;
+    // innerText leaves out text Canvas hides (a display:none template).
+    var text = typeof el.innerText === 'string' && el.isConnected ? el.innerText : el.textContent;
+    if (/\S/.test(String(text || ''))) return false;
     if (el.closest && el.closest(VISIBLE)) return false;
     if (el.querySelector && el.querySelector(VISIBLE)) return false;
     if (el.getAttribute('data-cgp-sg-foot') !== null || el.getAttribute('data-cgp-sg-heading') !== null) return false;
     // Taken out of the flow already: it makes no gap.
     if (typeof getComputedStyle === 'function') {
-      var pos = String((getComputedStyle(el) || {}).position || '');
+      var cs = getComputedStyle(el) || {};
+      var pos = String(cs.position || '');
       if (pos === 'absolute' || pos === 'fixed') return false;
+      // A picture drawn as a background (an avatar) is content.
+      var bg = String(cs.backgroundImage || '');
+      if (bg && bg !== 'none') return false;
     }
     return true;
   }
