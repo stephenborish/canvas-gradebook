@@ -760,6 +760,15 @@
       var courseId = CGP.util.courseIdFromPath(path);
       CGP.diag.set('page', isSpeedGrader ? 'speedgrader' : (isGradebook ? 'gradebook' : (courseId ? 'course-other' : 'other')));
 
+      if (CGP.HiddenGemsController) {
+        try {
+          CGP.hiddenGemsController = new CGP.HiddenGemsController({ settings: CGP.settings });
+          CGP.hiddenGemsController.start();
+        } catch (e) {
+          CGP.diag.error('hiddenGems.startFailed', { message: String(e && e.message) });
+        }
+      }
+
       if (isSpeedGrader) {
         if (CGP.startSpeedGrader) CGP.startSpeedGrader(courseId);
         return null;

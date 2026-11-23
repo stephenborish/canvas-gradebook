@@ -22,6 +22,8 @@ export const CONTENT_JS = [
   'src/core/course-calendar.js',
   'src/core/section-sync.js',
   'src/core/group-builder.js',
+  'src/core/hidden-gems.js',
+  'src/core/hidden-gems-ui.js',
   'src/core/ui.js',
   'src/core/model.js',
   'src/gradebook/dom-adapter.js',
@@ -72,7 +74,8 @@ export const FRAME_JS = [
 
 export const CONTENT_CSS = [
   'src/styles/gradebook.css',
-  'src/styles/speedgrader.css'
+  'src/styles/speedgrader.css',
+  'src/styles/hidden-gems.css'
 ];
 
 /* Which granted host permissions are self-hosted Canvas domains. The
