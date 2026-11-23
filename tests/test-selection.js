@@ -116,6 +116,119 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     a.eq(doc.getElementById('cgp-selection-bar'), null, 'selection bar removed');
   });
 
+  function startWithListeners(CGP, doc, adapter) {
+    const handlers = {};
+    doc.addEventListener = (event, fn) => { handlers[event] = fn; };
+    const ctrl = new CGP.SelectionController({
+      adapter, model: {}, settings: { values: { multiCellSelection: true } },
+      requestPaint: () => {}, bulkComment: null
+    });
+    ctrl.start();
+    return { ctrl, handlers };
+  }
+  function gridCell(doc, FakeElement, sid) {
+    const el = new FakeElement('div');
+    el.classList.add('slick-cell');
+    el.setAttribute('data-sid', sid);
+    doc.body.appendChild(el);
+    return el;
+  }
+  function evt(target, mods) {
+    const e = Object.assign({ button: 0, target, metaKey: false, ctrlKey: false, shiftKey: false,
+      defaultPrevented: false, stopped: false }, mods || {});
+    e.preventDefault = () => { e.defaultPrevented = true; };
+    e.stopPropagation = () => { e.stopped = true; };
+    e.stopImmediatePropagation = () => { e.stopped = true; };
+    return e;
+  }
+
+  test('Ctrl-click also keeps the follow-up click, dblclick and Mac context menu away from Canvas', () => {
+    const CGP = loadGradebookDom();
+    const doc = domshim.install();
+    const FakeElement = domshim.FakeElement;
+    const cellA = gridCell(doc, FakeElement, '201');
+    const cellB = gridCell(doc, FakeElement, '202');
+    const adapter = {
+      cellInfo: (el) => el && el.classList.contains('slick-cell')
+        ? { el, columnType: 'assignment', assignmentId: '101', studentId: el.getAttribute('data-sid'),
+            rowIndex: Number(el.getAttribute('data-sid')) - 201, colIndex: 1 }
+        : null,
+      activeCellInfo: () => null
+    };
+    const { ctrl, handlers } = startWithListeners(CGP, doc, adapter);
+    a.ok(handlers.click && handlers.dblclick && handlers.contextmenu, 'click/dblclick/contextmenu listeners registered');
+
+    const down = evt(cellA, { ctrlKey: true });
+    handlers.mousedown(down);
+    a.ok(down.stopped && down.defaultPrevented, 'mousedown taken from Canvas');
+    a.eq(ctrl.size(), 1);
+
+    const click = evt(cellA, { ctrlKey: true });
+    handlers.click(click);
+    a.ok(click.stopped, 'the click that follows never reaches SlickGrid (no editor opens)');
+    const ctx = evt(cellA, { ctrlKey: true });
+    handlers.contextmenu(ctx);
+    a.ok(ctx.defaultPrevented, 'no browser context menu over the selected cell');
+    const dbl = evt(cellA, { ctrlKey: true });
+    handlers.dblclick(dbl);
+    a.ok(dbl.stopped, 'no grade tray from a fast double modifier click');
+
+    // A click on a cell that was not just claimed passes through untouched.
+    const other = evt(cellB, {});
+    handlers.click(other);
+    a.ok(!other.stopped, 'unrelated click left alone');
+  });
+
+  test('first Ctrl-click includes the cell Canvas already shows as active', () => {
+    const CGP = loadGradebookDom();
+    const doc = domshim.install();
+    const FakeElement = domshim.FakeElement;
+    const cellA = gridCell(doc, FakeElement, '201');
+    const cellB = gridCell(doc, FakeElement, '202');
+    const info = (el) => ({ el, columnType: 'assignment', assignmentId: '101', studentId: el.getAttribute('data-sid'),
+      rowIndex: Number(el.getAttribute('data-sid')) - 201, colIndex: 1 });
+    const adapter = {
+      cellInfo: (el) => el && el.classList.contains('slick-cell') ? info(el) : null,
+      activeCellInfo: () => info(cellA)
+    };
+    const { ctrl, handlers } = startWithListeners(CGP, doc, adapter);
+    handlers.mousedown(evt(cellA, {}));          // plain click: Canvas activates A
+    a.eq(ctrl.size(), 0);
+    handlers.mousedown(evt(cellB, { metaKey: true }));
+    a.eq(ctrl.size(), 2, 'active A plus Cmd-clicked B');
+    const ids = ctrl.targets().map((t) => t.userId).sort();
+    a.eq(ids.join(','), '201,202');
+    // Cmd-clicking B again removes only B.
+    handlers.mousedown(evt(cellB, { metaKey: true }));
+    a.eq(ctrl.targets().map((t) => t.userId).join(','), '201');
+  });
+
+  test('modifier clicks on our own in-cell controls are not taken over', () => {
+    const CGP = loadGradebookDom();
+    const doc = domshim.install();
+    const FakeElement = domshim.FakeElement;
+    const cellA = gridCell(doc, FakeElement, '201');
+    const link = new FakeElement('a');
+    link.classList.add('cgp-sub');
+    link.setAttribute('href', '/x');
+    cellA.appendChild(link);
+    const adapter = {
+      cellInfo: () => ({ el: cellA, columnType: 'assignment', assignmentId: '101', studentId: '201', rowIndex: 0, colIndex: 1 }),
+      activeCellInfo: () => null
+    };
+    const { ctrl, handlers } = startWithListeners(CGP, doc, adapter);
+    const down = evt(link, { metaKey: true });
+    handlers.mousedown(down);
+    a.ok(!down.defaultPrevented && !down.stopped, 'Cmd-click on the submission link still opens it');
+    a.eq(ctrl.size(), 0);
+  });
+
+  test('selection styling beats row hover and the active-cell ring', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'styles', 'gradebook.css'), 'utf8');
+    a.ok(/\.slick-row\.cgp-row-hover > \.slick-cell\.cgp-sel/.test(css), 'hovered row keeps the selection tint');
+    a.ok(/outline:\s*2px solid var\(--cgp-sel\) !important/.test(css), 'selection ring is an !important outline');
+  });
+
   test('KeyboardGradingController opens bulk comment on C when multi-selected, blurring active input', () => {
     const CGP = loadGradebookDom();
     const doc = domshim.install();

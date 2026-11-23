@@ -146,6 +146,7 @@
     }
     this.showBar();
     this.repaint();
+    CGP.diag.set('selectionSize', this.keys.size);
   };
 
   /* Shift-click: select the rectangle from the anchor to this cell.
@@ -228,17 +229,53 @@
     if (this.requestPaint) this.requestPaint();
   };
 
+  /* Our own controls inside a cell keep their own gestures: Cmd-click on the
+   * submission link must still open a tab, a click on the comment bubble
+   * still opens its popover. */
+  var OWN_CELL_CONTROLS = '.cgp-sub, .cgp-cmt, a[href], button, [role="button"], input, textarea, select';
+
+  /* The cell Canvas is showing as active (its blue outline), as a selection
+   * target - or null. See the seeding note in start(). */
+  P.activeTarget = function () {
+    if (!this.adapter || typeof this.adapter.activeCellInfo !== 'function') return null;
+    var info = null;
+    try { info = this.adapter.activeCellInfo(); } catch (err) { info = null; }
+    if (!info || info.columnType !== 'assignment' || !info.assignmentId || !info.studentId) return null;
+    if (info.rowIndex === null || info.colIndex === null) return null;
+    return info;
+  };
+
   P.start = function () {
     var self = this;
+    // The cell (and moment) of the last modifier gesture we took over, so the
+    // click / dblclick / contextmenu events that the browser fires right
+    // after that same mousedown can be kept away from Canvas too.
+    this._claimed = null;
+
+    function claimedFor(e) {
+      var c = self._claimed;
+      if (!c || Date.now() - c.at > 1500) return false;
+      var cell = e.target && e.target.closest ? e.target.closest('.slick-cell') : null;
+      return !!cell && cell === c.cell;
+    }
+    function swallow(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+    }
+
     document.addEventListener('mousedown', function (e) {
       if (!self.settings.values.multiCellSelection) return;
       if (e.button !== 0) return;
       var modifierAdd = e.metaKey || e.ctrlKey;
       var modifierRange = e.shiftKey;
+      if ((modifierAdd || modifierRange) && e.target && e.target.closest &&
+          e.target.closest(OWN_CELL_CONTROLS)) return;
       var info = self.adapter.cellInfo(e.target);
       // Any newer gesture outranks a Shift-click range still waiting on its
       // rows to be confirmed; extendTo issues its own fresh token below.
       self._extendToken = null;
+      self._claimed = null;
 
       if (!info) {
         var inOurControls = e.target && e.target.closest &&
@@ -266,9 +303,45 @@
       }
       if (info.columnType !== 'assignment') return;
       // Take the gesture away from Canvas so it does not open an editor.
-      e.preventDefault();
-      e.stopPropagation();
-      if (modifierRange) self.extendTo(info); else self.toggle(info);
+      swallow(e);
+      self._claimed = { cell: info.el, at: Date.now() };
+      if (modifierRange) {
+        self.extendTo(info);
+        return;
+      }
+      // Spreadsheet behaviour: the cell Canvas is already showing as active
+      // (the one plain-clicked first, drawn with the same blue outline a
+      // selected cell gets) is part of what the teacher sees as selected, so
+      // the first Cmd/Ctrl-click adds to it instead of silently leaving it
+      // out - otherwise M / E / L or a comment skipped a cell that looked
+      // selected.
+      if (!self.keys.size) {
+        var active = self.activeTarget();
+        if (active && !(String(active.assignmentId) === String(info.assignmentId) &&
+            String(active.studentId) === String(info.studentId))) {
+          self.add(active);
+        }
+      }
+      self.toggle(info);
+    }, true);
+
+    // SlickGrid activates (and opens an editor in) a cell on `click`, not on
+    // mousedown, so stopping the mousedown alone still let Canvas grab the
+    // cell a beat later: the editor covered the cell just selected and the
+    // focus moved into it, which made the selection look like it had not
+    // happened at all.
+    document.addEventListener('click', function (e) {
+      if (claimedFor(e)) swallow(e);
+    }, true);
+    // Two quick modifier clicks on one cell are a double-click, which would
+    // otherwise open the grade tray (cell-actions.js) on top of the selection.
+    document.addEventListener('dblclick', function (e) {
+      if ((e.metaKey || e.ctrlKey || e.shiftKey) && claimedFor(e)) swallow(e);
+    }, true);
+    // On a Mac, Ctrl-click is also a right-click: the browser's context menu
+    // popped up over the cell that had just been selected.
+    document.addEventListener('contextmenu', function (e) {
+      if (e.ctrlKey && claimedFor(e)) e.preventDefault();
     }, true);
   };
 
