@@ -33,8 +33,17 @@
   var FOOT_TEXT = /^\s*(reassign\s+assignment|download\s+submission\s+comments)\s*$/i;
   var FILE_EXT = /\.(pdf|docx?|pptx?|xlsx?|png|jpe?g|gif|heic|txt|rtf|odt|pages|key|numbers|zip|mp[34]|mov|m4a|csv|html?)\s*$/i;
 
+  // Something on show: a control, a picture, an icon, a spinner.
+  var VISIBLE = 'img, svg, picture, canvas, video, audio, iframe, object, embed, input, select, textarea, button, ' +
+    'i, [role="button"], [role="img"], [role="combobox"], [role="progressbar"], [role="separator"], ' +
+    '[class*="icon" i], [class*="spinner" i], [class*="loading" i], [class*="resiz" i], [class*="handle" i], ' +
+    '[data-cgp-tray-rce], [data-cgp-sg-own]';
+  var NO_BOX = /^(br|hr|wbr|script|style|template|link|meta|noscript|option|optgroup)$/i;
+  var GRADE_LABEL = /^\s*grade\b/i;
+  var STATUS_LABEL = /^\s*status\s*$/i;
+
   var ATTRS = ['data-cgp-sg-panel', 'data-cgp-sg-card', 'data-cgp-sg-heading', 'data-cgp-sg-label',
-    'data-cgp-sg-file', 'data-cgp-sg-foot'];
+    'data-cgp-sg-file', 'data-cgp-sg-foot', 'data-cgp-sg-fields', 'data-cgp-sg-field', 'data-cgp-sg-empty'];
 
   function SpeedGraderSidebarLayout(ctx) {
     this.settings = ctx && ctx.settings;
@@ -99,9 +108,10 @@
       setAttr(c.el, 'data-cgp-sg-card', c.kind);
       if (c.heading && c.el.contains(c.heading)) setAttr(c.heading, 'data-cgp-sg-heading', '');
       if (c.kind === 'submission') tagFiles(c.el);
-      if (c.kind === 'assessment') tagLabels(c.el);
+      if (c.kind === 'assessment') { tagLabels(c.el); tagFields(c.el); }
     });
     tagFoot(panel, found.cards);
+    tagEmpty(panel, found.cards);
     return panel;
   };
 
@@ -212,6 +222,63 @@
     textElements(card).forEach(function (t) {
       if (FIELD_LABEL.test(t.text) && !ASSESSMENT_HEAD.test(t.text)) setAttr(t.el, 'data-cgp-sg-label', '');
     });
+  }
+
+  /** Grade out of N and Status side by side: the box holding both is the
+   * row, its children the fields. The row may wrap and the fields share its
+   * width, so a wide Status menu never runs past the card's edge. */
+  function tagFields(card) {
+    var labels = toArray(card.querySelectorAll('[data-cgp-sg-label]'));
+    var grade = labels.filter(function (l) { return GRADE_LABEL.test(textOf(l)); })[0];
+    var status = labels.filter(function (l) { return STATUS_LABEL.test(textOf(l)); })[0];
+    var row = grade && status ? commonAncestor([grade, status]) : null;
+    if (row && !card.contains(row)) row = null;
+    var fields = [];
+    if (row) {
+      if (row !== card) setAttr(row, 'data-cgp-sg-fields', '');
+      toArray(row.children).forEach(function (ch) {
+        if (ch.getAttribute('data-cgp-sg-heading') !== null) return;
+        if (ch.contains(grade) || ch.contains(status) || ch.querySelector('input, select, [role="combobox"]')) fields.push(ch);
+      });
+    }
+    toArray(card.querySelectorAll('[data-cgp-sg-fields], [data-cgp-sg-field]')).forEach(function (el) {
+      if (el !== row) el.removeAttribute('data-cgp-sg-fields');
+      if (fields.indexOf(el) < 0) el.removeAttribute('data-cgp-sg-field');
+    });
+    fields.forEach(function (f) { setAttr(f, 'data-cgp-sg-field', ''); });
+  }
+
+  /** Boxes in the panel with nothing in them - an empty comment list, a
+   * mount point Canvas has not filled, a spacer - keep no margin or padding,
+   * so they leave no gap. The tag comes off as soon as one holds something. */
+  function tagEmpty(panel, cards) {
+    var keep = [];
+    toArray(panel.querySelectorAll('*')).forEach(function (el) {
+      if (NO_BOX.test(el.tagName || '')) return;
+      if (cards.some(function (c) { return c.el === el; })) return;
+      if (isEmpty(el)) keep.push(el);
+    });
+    toArray(panel.querySelectorAll('[data-cgp-sg-empty]')).forEach(function (el) {
+      if (keep.indexOf(el) < 0) el.removeAttribute('data-cgp-sg-empty');
+    });
+    keep.forEach(function (el) { setAttr(el, 'data-cgp-sg-empty', ''); });
+  }
+
+  function isEmpty(el) {
+    if (/\S/.test(String(el.textContent || ''))) return false;
+    if (el.closest && el.closest(VISIBLE)) return false;
+    if (el.querySelector && el.querySelector(VISIBLE)) return false;
+    if (el.getAttribute('data-cgp-sg-foot') !== null || el.getAttribute('data-cgp-sg-heading') !== null) return false;
+    // Taken out of the flow already: it makes no gap.
+    if (typeof getComputedStyle === 'function') {
+      var pos = String((getComputedStyle(el) || {}).position || '');
+      if (pos === 'absolute' || pos === 'fixed') return false;
+    }
+    return true;
+  }
+
+  function textOf(el) {
+    return String(el.textContent || '').replace(/\s+/g, ' ').trim();
   }
 
   /** Reassign Assignment and Download Submission Comments: the box around

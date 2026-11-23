@@ -109,6 +109,36 @@ suite('SpeedGrader tidy sidebar', (test) => {
     a.not(has(t.foot, 'data-cgp-sg-card'), 'the footer is no card');
   });
 
+  test('Grade out of and Status: their row and both fields tagged, the heading is no field', () => {
+    const doc = load();
+    const t = idless(doc);
+    ctl().start();
+    const row = t.gradeLabel.parentElement.parentElement;
+    a.ok(has(row, 'data-cgp-sg-fields'), 'row');
+    a.ok(has(t.gradeLabel.parentElement, 'data-cgp-sg-field') && has(t.statusLabel.parentElement, 'data-cgp-sg-field'), 'fields');
+    a.not(has(t.heading, 'data-cgp-sg-field'), 'heading');
+    a.not(has(t.assess, 'data-cgp-sg-fields'), 'the card is no row');
+  });
+
+  test('empty boxes in the panel are tagged, and untagged once they hold something', () => {
+    const doc = load();
+    const t = classic(doc);
+    const c = ctl();
+    c.start();
+    const list = doc.querySelector('#comments');
+    const mount = doc.querySelector('#speedgrader_comment_textarea_mount_point');
+    a.ok(has(list, 'data-cgp-sg-empty'), 'empty comment list');
+    a.ok(has(mount, 'data-cgp-sg-empty'), 'unfilled mount point');
+    a.not(has(t.comHeading, 'data-cgp-sg-empty'), 'heading has text');
+    a.not(has(t.comments, 'data-cgp-sg-empty'), 'a card is never tagged');
+    a.not(has(doc.querySelector('#grading-box-extended').parentElement, 'data-cgp-sg-empty'), 'holds an input');
+    list.textContent = 'Nice work';   // the fake DOM keeps no child text in the parent's
+    mount.appendChild(el('textarea'));
+    c.scan();
+    a.not(has(list, 'data-cgp-sg-empty'), 'list now holds a comment');
+    a.not(has(mount, 'data-cgp-sg-empty'), 'mount now holds the box');
+  });
+
   test('setting off: every tag removed; no sidebar: nothing tagged', () => {
     const doc = load();
     const t = classic(doc);
@@ -116,7 +146,7 @@ suite('SpeedGrader tidy sidebar', (test) => {
     c.start();
     c.settings.values.speedgraderTidyComments = false;
     c.apply();
-    a.eq(doc.querySelectorAll('[data-cgp-sg-card], [data-cgp-sg-panel], [data-cgp-sg-heading], [data-cgp-sg-file]').length, 0);
+    a.eq(doc.querySelectorAll('[data-cgp-sg-card], [data-cgp-sg-panel], [data-cgp-sg-heading], [data-cgp-sg-file], [data-cgp-sg-empty], [data-cgp-sg-field]').length, 0);
     a.not(has(t.inner, 'data-cgp-sg-panel'));
     const doc2 = load();
     doc2.body.appendChild(el('div', {}, [el('h2', { text: 'Assessment' })]));

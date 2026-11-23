@@ -427,3 +427,67 @@ html.cgp-sg-tidy [data-cgp-sg-file] .submission-file-delete {
 }
 html.cgp-sg-tidy [data-cgp-sg-file] .submission-file-download { right: 12px !important; }
 html.cgp-sg-tidy [data-cgp-sg-file] .submission-file-delete { right: 34px !important; }
+
+/* Grade out of N and Status side by side ([data-cgp-sg-fields] holds both,
+ * each a [data-cgp-sg-field]): the fields share the card's width and wrap
+ * onto a second line when even that is too narrow, and no control is ever
+ * wider than its field - Canvas's Status menu used to run past the card's
+ * right edge and be cut off by the panel. */
+html.cgp-sg-tidy [data-cgp-sg-fields] {
+  flex-wrap: wrap !important;
+  gap: 10px 12px;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+html.cgp-sg-tidy [data-cgp-sg-field] {
+  box-sizing: border-box;
+  flex: 1 1 110px !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin-right: 0 !important;
+}
+html.cgp-sg-tidy [data-cgp-sg-field] * {
+  max-width: 100%;
+}
+html.cgp-sg-tidy [data-cgp-sg-card="assessment"] :is(input, select, textarea),
+html.cgp-sg-tidy [data-cgp-sg-field] :is(input, select, [role="combobox"]) {
+  box-sizing: border-box !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+html.cgp-sg-tidy [data-cgp-sg-card] {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Boxes with nothing in them (sidebar-layout.js tags [data-cgp-sg-empty]):
+ * an empty comment list, an unfilled mount point, a spacer. They take no
+ * room, so the Comments card is its heading straight over the composer. */
+html.cgp-sg-tidy [data-cgp-sg-panel] [data-cgp-sg-empty] {
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  border-width: 0 !important;
+}
+html.cgp-sg-tidy [data-cgp-sg-card] [data-cgp-sg-empty] {
+  height: auto !important;
+}
+/* A card's last box keeps no margin below it: the card's own padding is
+ * the gap. */
+html.cgp-sg-tidy [data-cgp-sg-card] > :last-child {
+  margin-bottom: 0 !important;
+}
+html.cgp-sg-tidy [data-cgp-sg-card] .cgp-sgbar:last-child {
+  margin-bottom: 0;
+}
+
+/* The comment editor's formatting buttons: tighter in SpeedGrader's narrow
+ * panel, so the ⋮ button fits on the line with them instead of taking a
+ * line of its own. */
+html.cgp-sg-tidy [data-cgp-tray-rce] .tox-editor-header:has(.tox-toolbar__overflow > .tox-toolbar__group) .tox-toolbar-overlord {
+  column-gap: 2px !important;
+  padding: 0 2px !important;
+}
+html.cgp-sg-tidy [data-cgp-tray-rce] .tox-toolbar__group {
+  padding: 0 1px !important;
+}
