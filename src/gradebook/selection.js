@@ -15,6 +15,10 @@
     this.model = ctx.model;
     this.settings = ctx.settings;
     this.bulkComment = ctx.bulkComment || null;
+    this.api = ctx.api || null;
+    this.courseId = ctx.courseId || (ctx.model && ctx.model.courseId) || null;
+    // Canvas's Student View "Test Student" user ids (see isTestTarget).
+    this.testIds = new Set();
     this.requestPaint = ctx.requestPaint;
     this.keys = new Map();   // "assignmentId:userId" -> {assignmentId, userId, rowIndex, colIndex}
     this.anchor = null;
@@ -121,8 +125,63 @@
     if (!(opts && opts.silent)) CGP.diag.log('selection.cleared');
   };
 
+  /* Canvas's Test Student is never part of a selection - not by Ctrl-click,
+   * not inside a Shift-click range, not as the seeded active cell - so M / E /
+   * L, a typed grade or a bulk comment can never land on it, whether its row
+   * is shown or hidden. Two independent signals: its user id (read once from
+   * the course's StudentViewEnrollment), and the adapter's own check of the
+   * row's name, which needs no request at all. */
+  P.loadTestIds = function () {
+    var self = this;
+    if (this._testIdsLoading || !this.api || typeof this.api.testStudentIds !== 'function' || !this.courseId) {
+      return Promise.resolve(this.testIds);
+    }
+    this._testIdsLoading = Promise.resolve(this.api.testStudentIds(this.courseId)).then(function (ids) {
+      (ids || []).forEach(function (id) { self.testIds.add(String(id)); });
+      // Anything picked up before the ids arrived comes back out.
+      if (self.testIds.size && self.keys.size) self.dropTestTargets();
+      return self.testIds;
+    }, function () {
+      self._testIdsLoading = null;   // try again on the next start/gesture
+      return self.testIds;
+    });
+    return this._testIdsLoading;
+  };
+
+  P.isTestTarget = function (t) {
+    if (!t) return false;
+    var uid = t.userId !== undefined ? t.userId : t.studentId;
+    if (uid !== undefined && uid !== null && this.testIds.has(String(uid))) return true;
+    var row = t.rowIndex;
+    if (row !== null && row !== undefined && this.adapter &&
+        typeof this.adapter.isTestStudentRowIndex === 'function') {
+      try { if (this.adapter.isTestStudentRowIndex(row)) return true; } catch (err) { /* treat as not test */ }
+    }
+    return false;
+  };
+
+  P.dropTestTargets = function () {
+    var self = this;
+    var dropped = 0;
+    Array.from(this.keys.entries()).forEach(function (entry) {
+      if (self.isTestTarget(entry[1])) { self.keys.delete(entry[0]); dropped++; }
+    });
+    if (dropped) {
+      this.changedAt = Date.now();
+      CGP.diag.bump('selection.testStudentSkipped', dropped);
+      CGP.diag.set('selectionSize', this.keys.size);
+      this.showBar();
+      this.repaint();
+    }
+    return dropped;
+  };
+
   P.add = function (info) {
     if (!info || info.columnType !== 'assignment' || !info.assignmentId || !info.studentId) return false;
+    if (this.isTestTarget(info)) {
+      CGP.diag.bump('selection.testStudentSkipped');
+      return false;
+    }
     this._extendToken = null;   // a Shift-click range still resolving is now stale
     var key = CGP.gridMap.cellKey(info.assignmentId, info.studentId);
     this.keys.set(key, {
@@ -189,9 +248,12 @@
       columnAt: function (c) { return self.adapter.columnAt(c); }
     });
     this.keys.clear();
+    var skipped = 0;
     targets.forEach(function (t) {
+      if (self.isTestTarget(t)) { skipped++; return; }
       self.keys.set(CGP.gridMap.cellKey(t.assignmentId, t.userId), t);
     });
+    if (skipped) CGP.diag.bump('selection.testStudentSkipped', skipped);
     this.anchor = anchor;
     this.changedAt = Date.now();
     this.showBar();
@@ -244,11 +306,13 @@
     try { info = this.adapter.activeCellInfo(); } catch (err) { info = null; }
     if (!info || info.columnType !== 'assignment' || !info.assignmentId || !info.studentId) return null;
     if (info.rowIndex === null || info.colIndex === null) return null;
+    if (this.isTestTarget(info)) return null;
     return info;
   };
 
   P.start = function () {
     var self = this;
+    this.loadTestIds();
     // The cell (and moment) of the last modifier gesture we took over, so the
     // click / dblclick / contextmenu events that the browser fires right
     // after that same mousedown can be kept away from Canvas too.

@@ -230,7 +230,8 @@
       onCommentDismiss: function () { popover.hidePreview(); }
     });
     var selection = new CGP.SelectionController({
-      adapter: adapter, model: model, settings: settings, requestPaint: requestPaint, bulkComment: bulkComment
+      adapter: adapter, model: model, settings: settings, requestPaint: requestPaint, bulkComment: bulkComment,
+      api: api, courseId: courseId
     });
     CGP.selection = selection;
     CGP.bulkComment = bulkComment;

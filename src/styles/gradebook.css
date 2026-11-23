@@ -570,8 +570,10 @@ html.cgp-on .slick-row.cgp-row-hover > .slick-cell.cgp-sel {
   border-radius: 3px;
   z-index: 4;
 }
+/* Selected AND active: the blue selection outline on the outer 2px, then a
+ * white gap and the charcoal active ring just inside it - both readable. */
 html.cgp-on .slick-row > .slick-cell.cgp-sel.active {
-  box-shadow: 0 2px 8px rgba(19, 33, 44, 0.14) !important;
+  box-shadow: inset 0 0 0 3px #fff, inset 0 0 0 5px var(--cgp-ink-strong), 0 2px 8px rgba(19, 33, 44, 0.14) !important;
   z-index: 5 !important;
 }
 html.cgp-on .slick-cell.cgp-has-pending::after {
@@ -1419,8 +1421,13 @@ html.cgp-on .slick-row.cgp-row-hover > .slick-cell[data-cgp-col="student"] {
 
 /* ------------------------------------------------------- the active cell */
 
+/* Deliberately NOT the selection's blue: the active cell (where Canvas's
+ * cursor is) is a dark charcoal ring with a thin white keyline inside, the
+ * way a spreadsheet draws its current cell, while selected cells are blue
+ * with a blue tint. A teacher can tell at a glance whether a cell will be
+ * included in M / E / L or a bulk comment. */
 html.cgp-on .slick-cell.active {
-  box-shadow: inset 0 0 0 2px var(--cgp-brand), 0 2px 8px rgba(19, 33, 44, 0.14) !important;
+  box-shadow: inset 0 0 0 2px var(--cgp-ink-strong), inset 0 0 0 3px #fff, 0 2px 8px rgba(19, 33, 44, 0.14) !important;
   border-radius: 4px;
   z-index: 5 !important;
 }

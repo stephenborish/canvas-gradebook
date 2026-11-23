@@ -248,6 +248,64 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     a.eq(ctrl.targets().map((t) => t.userId).sort().join(','), '203,204', 'range is rows 2-3, not 0-3');
   });
 
+  test('the Test Student is skipped by Ctrl-click, Shift-click ranges and active-cell seeding', async () => {
+    const CGP = loadGradebookDom();
+    const doc = domshim.install();
+    const FakeElement = domshim.FakeElement;
+    // Rows 0-3: 201, 202, 999 (Test Student), 204
+    const sids = ['201', '202', '999', '204'];
+    const cells = sids.map((sid) => gridCell(doc, FakeElement, sid));
+    const info = (el) => ({ el, columnType: 'assignment', assignmentId: '101', studentId: el.getAttribute('data-sid'),
+      rowIndex: sids.indexOf(el.getAttribute('data-sid')), colIndex: 1 });
+    let active = cells[2];
+    const adapter = {
+      cellInfo: (el) => el && el.classList.contains('slick-cell') ? info(el) : null,
+      activeCellInfo: () => info(active),
+      ensureRowsMapped: () => Promise.resolve(true),
+      studentAt: (r) => sids[r],
+      columnAt: () => ({ type: 'assignment', assignmentId: '101' }),
+      isTestStudentRowIndex: () => false          // name check unavailable: the id alone must do it
+    };
+    const handlers = {};
+    doc.addEventListener = (event, fn) => { handlers[event] = fn; };
+    const ctrl = new CGP.SelectionController({
+      adapter, model: {}, settings: { values: { multiCellSelection: true } }, requestPaint: () => {},
+      api: { testStudentIds: () => Promise.resolve(['999']) }, courseId: '7'
+    });
+    ctrl.start();
+    await new Promise((r) => setTimeout(r, 0));
+
+    handlers.mousedown(evt(cells[2], { ctrlKey: true }));
+    a.eq(ctrl.size(), 0, 'Ctrl-click on the Test Student selects nothing');
+
+    handlers.mousedown(evt(cells[2], {}));        // plain click on Test Student row (active)
+    handlers.mousedown(evt(cells[3], { ctrlKey: true }));
+    a.eq(ctrl.targets().map((t) => t.userId).join(','), '204', 'active Test Student cell not seeded');
+
+    ctrl.clear();
+    active = cells[0];
+    handlers.mousedown(evt(cells[0], {}));
+    handlers.mousedown(evt(cells[3], { shiftKey: true }));
+    await new Promise((r) => setTimeout(r, 0));
+    a.eq(ctrl.targets().map((t) => t.userId).sort().join(','), '201,202,204', 'range skips the Test Student row');
+  });
+
+  test('the Test Student is also skipped by its row name when its id is unknown', () => {
+    const CGP = loadGradebookDom();
+    domshim.install();
+    const ctrl = new CGP.SelectionController({
+      adapter: { isTestStudentRowIndex: (r) => r === 5 }, model: {}, settings: { values: {} }, requestPaint: () => {}
+    });
+    a.eq(ctrl.add({ columnType: 'assignment', assignmentId: '1', studentId: '50', rowIndex: 5, colIndex: 0 }), false);
+    a.eq(ctrl.add({ columnType: 'assignment', assignmentId: '1', studentId: '51', rowIndex: 6, colIndex: 0 }), true);
+  });
+
+  test('active-cell ring is not the selection blue', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'styles', 'gradebook.css'), 'utf8');
+    const block = /html\.cgp-on \.slick-cell\.active \{[^}]*\}/.exec(css)[0];
+    a.ok(!/var\(--cgp-brand\)|var\(--cgp-sel\)/.test(block), 'active ring uses a different colour');
+  });
+
   test('modifier clicks on our own in-cell controls are not taken over', () => {
     const CGP = loadGradebookDom();
     const doc = domshim.install();
