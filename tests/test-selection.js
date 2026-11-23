@@ -203,6 +203,51 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     a.eq(ctrl.targets().map((t) => t.userId).join(','), '201');
   });
 
+  test('a cell Canvas kept active after Escape is not pulled into a new selection', () => {
+    const CGP = loadGradebookDom();
+    const doc = domshim.install();
+    const FakeElement = domshim.FakeElement;
+    const cellA = gridCell(doc, FakeElement, '201');
+    const cellB = gridCell(doc, FakeElement, '202');
+    const cellC = gridCell(doc, FakeElement, '203');
+    const info = (el) => ({ el, columnType: 'assignment', assignmentId: '101', studentId: el.getAttribute('data-sid'),
+      rowIndex: Number(el.getAttribute('data-sid')) - 201, colIndex: 1 });
+    const adapter = {
+      cellInfo: (el) => el && el.classList.contains('slick-cell') ? info(el) : null,
+      activeCellInfo: () => info(cellA)
+    };
+    const { ctrl, handlers } = startWithListeners(CGP, doc, adapter);
+    handlers.mousedown(evt(cellA, {}));
+    handlers.mousedown(evt(cellB, { ctrlKey: true }));
+    a.eq(ctrl.size(), 2);
+    ctrl.clear();                                 // Escape: A is still active in Canvas
+    handlers.mousedown(evt(cellC, { ctrlKey: true }));
+    a.eq(ctrl.targets().map((t) => t.userId).join(','), '203', 'only the Ctrl-clicked cell');
+  });
+
+  test('Shift-click extends from where the keyboard moved the active cell', async () => {
+    const CGP = loadGradebookDom();
+    const doc = domshim.install();
+    const FakeElement = domshim.FakeElement;
+    const cells = ['201', '202', '203', '204'].map((sid) => gridCell(doc, FakeElement, sid));
+    const info = (el) => ({ el, columnType: 'assignment', assignmentId: '101', studentId: el.getAttribute('data-sid'),
+      rowIndex: Number(el.getAttribute('data-sid')) - 201, colIndex: 1 });
+    let active = cells[0];
+    const adapter = {
+      cellInfo: (el) => el && el.classList.contains('slick-cell') ? info(el) : null,
+      activeCellInfo: () => info(active),
+      ensureRowsMapped: () => Promise.resolve(true),
+      studentAt: (r) => String(201 + r),
+      columnAt: () => ({ type: 'assignment', assignmentId: '101' })
+    };
+    const { ctrl, handlers } = startWithListeners(CGP, doc, adapter);
+    handlers.mousedown(evt(cells[0], {}));       // click row 0
+    active = cells[2];                            // arrow keys down to row 2
+    handlers.mousedown(evt(cells[3], { shiftKey: true }));
+    await new Promise((r) => setTimeout(r, 0));
+    a.eq(ctrl.targets().map((t) => t.userId).sort().join(','), '203,204', 'range is rows 2-3, not 0-3');
+  });
+
   test('modifier clicks on our own in-cell controls are not taken over', () => {
     const CGP = loadGradebookDom();
     const doc = domshim.install();

@@ -17,6 +17,13 @@ suite('Total tooltip text', (test) => {
     a.eq(r.note, '');
   });
 
+  test('a bare points value (with or without pts) keeps its points line', () => {
+    const CGP = loadGradebookDom();
+    a.eq(CGP.splitTotalTip('45').points, '45');
+    a.eq(CGP.splitTotalTip('45 pts').points, '45');
+    a.eq(CGP.splitTotalTip('45 pts').note, '');
+  });
+
   test('the unposted-grades note never gets "pts" appended', () => {
     const CGP = loadGradebookDom();
     const r = CGP.splitTotalTip(NOTE);

@@ -2,8 +2,9 @@
  *
  * Cmd/Ctrl-click adds a cell, Shift-click extends a rectangle, Escape clears.
  * Selection lives in identity space (assignment id + student id), so it stays
- * correct while rows and columns virtualize. Selected cells get a restrained
- * outline; there is no selection toolbar, count badge, or summary bar. */
+ * correct while rows and columns virtualize. Selected cells get an outline
+ * and tint; with two or more selected, a floating bar shows the count and a
+ * Comment button (showBar). */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
@@ -109,6 +110,7 @@
 
   P.clear = function (opts) {
     this.hideBar();
+    this.anchor = null;
     if (!this.keys.size && !this.pending) return;
     this.keys.clear();
     this.anchor = null;
@@ -309,6 +311,13 @@
       swallow(e);
       self._claimed = { cell: info.el, at: Date.now() };
       if (modifierRange) {
+        // With nothing selected yet, the range starts where Canvas's active
+        // cell is now - the teacher may have moved it with the arrow keys or
+        // Tab since the last mouse click.
+        if (!self.keys.size) {
+          var from = self.activeTarget();
+          if (from) self.anchor = { rowIndex: from.rowIndex, colIndex: from.colIndex };
+        }
         self.extendTo(info);
         return;
       }
@@ -320,7 +329,12 @@
       // selected.
       if (!self.keys.size) {
         var active = self.activeTarget();
-        if (active && !(String(active.assignmentId) === String(info.assignmentId) &&
+        // Only the cell the teacher just plain-clicked (the anchor that click
+        // recorded, which clear() resets) - never a cell Canvas has kept
+        // active from long ago or after Escape.
+        var isAnchor = active && self.anchor &&
+          active.rowIndex === self.anchor.rowIndex && active.colIndex === self.anchor.colIndex;
+        if (isAnchor && !(String(active.assignmentId) === String(info.assignmentId) &&
             String(active.studentId) === String(info.studentId))) {
           self.add(active);
         }

@@ -641,7 +641,13 @@
 
   /* A points figure like "45 / 60", "45.5/60" or "1,045 / 1,200". */
   var POINTS_RE = /\d[\d,]*(?:\.\d+)?\s*\/\s*\d[\d,]*(?:\.\d+)?/;
-  var POINTS_ONLY = /^\s*\d[\d,]*(?:\.\d+)?(?:\s*\/\s*\d[\d,]*(?:\.\d+)?)?\s*$/;
+  var POINTS_ONLY = /^\s*(\d[\d,]*(?:\.\d+)?(?:\s*\/\s*\d[\d,]*(?:\.\d+)?)?)\s*(?:pts?\.?)?\s*$/i;
+
+  /* "45", "45 pts" or "45 / 60" -> "45" / "45 / 60"; anything else -> ''. */
+  function pointsOnly(text) {
+    var m = POINTS_ONLY.exec(String(text || ''));
+    return m ? m[1].replace(/\s*\/\s*/, ' / ') : '';
+  }
 
   /* Canvas's Total tooltip text -> {points, note}: the earned / possible
    * figure (if any) and whatever other message it carries. A percentage in
@@ -650,6 +656,8 @@
     var out = { points: '', note: '' };
     text = String(text || '').replace(/\s+/g, ' ').trim();
     if (!text) return out;
+    var bare = pointsOnly(text);
+    if (bare) { out.points = bare; return out; }
     var m = POINTS_RE.exec(text);
     var rest = text;
     if (m) {
@@ -706,7 +714,7 @@
     // " pts"; any other text is shown as its own line, as written.
     var tipParts = splitTotalTip(tipText);
     if (tipParts.points) lines.push(tipParts.points + ' pts');
-    else if (!shownIsPct && POINTS_ONLY.test(shown)) lines.push(shown + ' pts');
+    else if (!shownIsPct && pointsOnly(shown)) lines.push(pointsOnly(shown) + ' pts');
     if (tipParts.note) lines.push(tipParts.note);
     setAttr(cell, 'data-cgp-tip', lines.join('\n'));
     if (this._tipCell === cell) this.showTotalTip(cell);
