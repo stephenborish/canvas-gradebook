@@ -269,13 +269,16 @@
       if (e.button !== 0) return;
       var modifierAdd = e.metaKey || e.ctrlKey;
       var modifierRange = e.shiftKey;
+      // Every new press ends the previous claim, so a quick Cmd-click on a
+      // cell's own submission link right after Cmd-clicking that cell still
+      // opens the link (its click is not mistaken for the claimed gesture's).
+      self._claimed = null;
       if ((modifierAdd || modifierRange) && e.target && e.target.closest &&
           e.target.closest(OWN_CELL_CONTROLS)) return;
       var info = self.adapter.cellInfo(e.target);
       // Any newer gesture outranks a Shift-click range still waiting on its
       // rows to be confirmed; extendTo issues its own fresh token below.
       self._extendToken = null;
-      self._claimed = null;
 
       if (!info) {
         var inOurControls = e.target && e.target.closest &&

@@ -221,6 +221,15 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     handlers.mousedown(down);
     a.ok(!down.defaultPrevented && !down.stopped, 'Cmd-click on the submission link still opens it');
     a.eq(ctrl.size(), 0);
+
+    // Cmd-click the cell, then quickly Cmd-click its submission link: the
+    // link's click must not be swallowed as the cell gesture's follow-up.
+    handlers.mousedown(evt(cellA, { metaKey: true }));
+    a.eq(ctrl.size(), 1);
+    handlers.mousedown(evt(link, { metaKey: true }));
+    const linkClick = evt(link, { metaKey: true });
+    handlers.click(linkClick);
+    a.ok(!linkClick.defaultPrevented && !linkClick.stopped, 'link click right after a cell claim still goes through');
   });
 
   test('selection styling beats row hover and the active-cell ring', () => {
