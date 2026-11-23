@@ -2,8 +2,9 @@
  *
  * Cmd/Ctrl-click adds a cell, Shift-click extends a rectangle, Escape clears.
  * Selection lives in identity space (assignment id + student id), so it stays
- * correct while rows and columns virtualize. Selected cells get a restrained
- * outline; there is no selection toolbar, count badge, or summary bar. */
+ * correct while rows and columns virtualize. Selected cells get an outline
+ * and tint; with two or more selected, a floating bar shows the count and a
+ * Comment button (showBar). */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
@@ -14,6 +15,10 @@
     this.model = ctx.model;
     this.settings = ctx.settings;
     this.bulkComment = ctx.bulkComment || null;
+    this.api = ctx.api || null;
+    this.courseId = ctx.courseId || (ctx.model && ctx.model.courseId) || null;
+    // Canvas's Student View "Test Student" user ids (see isTestTarget).
+    this.testIds = new Set();
     this.requestPaint = ctx.requestPaint;
     this.keys = new Map();   // "assignmentId:userId" -> {assignmentId, userId, rowIndex, colIndex}
     this.anchor = null;
@@ -109,6 +114,7 @@
 
   P.clear = function (opts) {
     this.hideBar();
+    this.anchor = null;
     if (!this.keys.size && !this.pending) return;
     this.keys.clear();
     this.anchor = null;
@@ -119,8 +125,63 @@
     if (!(opts && opts.silent)) CGP.diag.log('selection.cleared');
   };
 
+  /* Canvas's Test Student is never part of a selection - not by Ctrl-click,
+   * not inside a Shift-click range, not as the seeded active cell - so M / E /
+   * L, a typed grade or a bulk comment can never land on it, whether its row
+   * is shown or hidden. Two independent signals: its user id (read once from
+   * the course's StudentViewEnrollment), and the adapter's own check of the
+   * row's name, which needs no request at all. */
+  P.loadTestIds = function () {
+    var self = this;
+    if (this._testIdsLoading || !this.api || typeof this.api.testStudentIds !== 'function' || !this.courseId) {
+      return Promise.resolve(this.testIds);
+    }
+    this._testIdsLoading = Promise.resolve(this.api.testStudentIds(this.courseId)).then(function (ids) {
+      (ids || []).forEach(function (id) { self.testIds.add(String(id)); });
+      // Anything picked up before the ids arrived comes back out.
+      if (self.testIds.size && self.keys.size) self.dropTestTargets();
+      return self.testIds;
+    }, function () {
+      self._testIdsLoading = null;   // try again on the next start/gesture
+      return self.testIds;
+    });
+    return this._testIdsLoading;
+  };
+
+  P.isTestTarget = function (t) {
+    if (!t) return false;
+    var uid = t.userId !== undefined ? t.userId : t.studentId;
+    if (uid !== undefined && uid !== null && this.testIds.has(String(uid))) return true;
+    var row = t.rowIndex;
+    if (row !== null && row !== undefined && this.adapter &&
+        typeof this.adapter.isTestStudentRowIndex === 'function') {
+      try { if (this.adapter.isTestStudentRowIndex(row)) return true; } catch (err) { /* treat as not test */ }
+    }
+    return false;
+  };
+
+  P.dropTestTargets = function () {
+    var self = this;
+    var dropped = 0;
+    Array.from(this.keys.entries()).forEach(function (entry) {
+      if (self.isTestTarget(entry[1])) { self.keys.delete(entry[0]); dropped++; }
+    });
+    if (dropped) {
+      this.changedAt = Date.now();
+      CGP.diag.bump('selection.testStudentSkipped', dropped);
+      CGP.diag.set('selectionSize', this.keys.size);
+      this.showBar();
+      this.repaint();
+    }
+    return dropped;
+  };
+
   P.add = function (info) {
     if (!info || info.columnType !== 'assignment' || !info.assignmentId || !info.studentId) return false;
+    if (this.isTestTarget(info)) {
+      CGP.diag.bump('selection.testStudentSkipped');
+      return false;
+    }
     this._extendToken = null;   // a Shift-click range still resolving is now stale
     var key = CGP.gridMap.cellKey(info.assignmentId, info.studentId);
     this.keys.set(key, {
@@ -146,6 +207,7 @@
     }
     this.showBar();
     this.repaint();
+    CGP.diag.set('selectionSize', this.keys.size);
   };
 
   /* Shift-click: select the rectangle from the anchor to this cell.
@@ -186,9 +248,12 @@
       columnAt: function (c) { return self.adapter.columnAt(c); }
     });
     this.keys.clear();
+    var skipped = 0;
     targets.forEach(function (t) {
+      if (self.isTestTarget(t)) { skipped++; return; }
       self.keys.set(CGP.gridMap.cellKey(t.assignmentId, t.userId), t);
     });
+    if (skipped) CGP.diag.bump('selection.testStudentSkipped', skipped);
     this.anchor = anchor;
     this.changedAt = Date.now();
     this.showBar();
@@ -228,13 +293,54 @@
     if (this.requestPaint) this.requestPaint();
   };
 
+  /* Our own controls inside a cell keep their own gestures: Cmd-click on the
+   * submission link must still open a tab, a click on the comment bubble
+   * still opens its popover. */
+  var OWN_CELL_CONTROLS = '.cgp-sub, .cgp-cmt, a[href], button, [role="button"], input, textarea, select';
+
+  /* The cell Canvas is showing as active (its blue outline), as a selection
+   * target - or null. See the seeding note in start(). */
+  P.activeTarget = function () {
+    if (!this.adapter || typeof this.adapter.activeCellInfo !== 'function') return null;
+    var info = null;
+    try { info = this.adapter.activeCellInfo(); } catch (err) { info = null; }
+    if (!info || info.columnType !== 'assignment' || !info.assignmentId || !info.studentId) return null;
+    if (info.rowIndex === null || info.colIndex === null) return null;
+    if (this.isTestTarget(info)) return null;
+    return info;
+  };
+
   P.start = function () {
     var self = this;
+    this.loadTestIds();
+    // The cell (and moment) of the last modifier gesture we took over, so the
+    // click / dblclick / contextmenu events that the browser fires right
+    // after that same mousedown can be kept away from Canvas too.
+    this._claimed = null;
+
+    function claimedFor(e) {
+      var c = self._claimed;
+      if (!c || Date.now() - c.at > 1500) return false;
+      var cell = e.target && e.target.closest ? e.target.closest('.slick-cell') : null;
+      return !!cell && cell === c.cell;
+    }
+    function swallow(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+    }
+
     document.addEventListener('mousedown', function (e) {
       if (!self.settings.values.multiCellSelection) return;
       if (e.button !== 0) return;
       var modifierAdd = e.metaKey || e.ctrlKey;
       var modifierRange = e.shiftKey;
+      // Every new press ends the previous claim, so a quick Cmd-click on a
+      // cell's own submission link right after Cmd-clicking that cell still
+      // opens the link (its click is not mistaken for the claimed gesture's).
+      self._claimed = null;
+      if ((modifierAdd || modifierRange) && e.target && e.target.closest &&
+          e.target.closest(OWN_CELL_CONTROLS)) return;
       var info = self.adapter.cellInfo(e.target);
       // Any newer gesture outranks a Shift-click range still waiting on its
       // rows to be confirmed; extendTo issues its own fresh token below.
@@ -266,9 +372,57 @@
       }
       if (info.columnType !== 'assignment') return;
       // Take the gesture away from Canvas so it does not open an editor.
-      e.preventDefault();
-      e.stopPropagation();
-      if (modifierRange) self.extendTo(info); else self.toggle(info);
+      swallow(e);
+      self._claimed = { cell: info.el, at: Date.now() };
+      if (modifierRange) {
+        // With nothing selected yet, the range starts where Canvas's active
+        // cell is now - the teacher may have moved it with the arrow keys or
+        // Tab since the last mouse click.
+        if (!self.keys.size) {
+          var from = self.activeTarget();
+          if (from) self.anchor = { rowIndex: from.rowIndex, colIndex: from.colIndex };
+        }
+        self.extendTo(info);
+        return;
+      }
+      // Spreadsheet behaviour: the cell Canvas is already showing as active
+      // (the one plain-clicked first, drawn with the same blue outline a
+      // selected cell gets) is part of what the teacher sees as selected, so
+      // the first Cmd/Ctrl-click adds to it instead of silently leaving it
+      // out - otherwise M / E / L or a comment skipped a cell that looked
+      // selected.
+      if (!self.keys.size) {
+        var active = self.activeTarget();
+        // Only the cell the teacher just plain-clicked (the anchor that click
+        // recorded, which clear() resets) - never a cell Canvas has kept
+        // active from long ago or after Escape.
+        var isAnchor = active && self.anchor &&
+          active.rowIndex === self.anchor.rowIndex && active.colIndex === self.anchor.colIndex;
+        if (isAnchor && !(String(active.assignmentId) === String(info.assignmentId) &&
+            String(active.studentId) === String(info.studentId))) {
+          self.add(active);
+        }
+      }
+      self.toggle(info);
+    }, true);
+
+    // SlickGrid activates (and opens an editor in) a cell on `click`, not on
+    // mousedown, so stopping the mousedown alone still let Canvas grab the
+    // cell a beat later: the editor covered the cell just selected and the
+    // focus moved into it, which made the selection look like it had not
+    // happened at all.
+    document.addEventListener('click', function (e) {
+      if (claimedFor(e)) swallow(e);
+    }, true);
+    // Two quick modifier clicks on one cell are a double-click, which would
+    // otherwise open the grade tray (cell-actions.js) on top of the selection.
+    document.addEventListener('dblclick', function (e) {
+      if ((e.metaKey || e.ctrlKey || e.shiftKey) && claimedFor(e)) swallow(e);
+    }, true);
+    // On a Mac, Ctrl-click is also a right-click: the browser's context menu
+    // popped up over the cell that had just been selected.
+    document.addEventListener('contextmenu', function (e) {
+      if (e.ctrlKey && claimedFor(e)) e.preventDefault();
     }, true);
   };
 

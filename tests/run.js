@@ -28,6 +28,7 @@ require('./test-scrolled-column-resolution');
 require('./test-canvas-cell-classes');
 require('./test-course-menu');
 require('./test-selection');
+require('./test-total-tip');
 require('./test-course-switcher');
 require('./test-tray-layout');
 require('./test-speedgrader-layout');
