@@ -113,6 +113,77 @@ suite('Hidden Gems: the weather around Philadelphia', (test) => {
   });
 });
 
+suite('Hidden Gems: starting and stopping an effect', (test) => {
+  // A small fake page: enough DOM for a session's stage and listeners.
+  function sandbox() {
+    const nodes = [];
+    function el(tag) {
+      const e = {
+        tagName: String(tag).toUpperCase(), style: {}, className: '', parentNode: null, children: [],
+        setAttribute() {}, addEventListener() {}, removeEventListener() {},
+        appendChild(c) { c.parentNode = e; e.children.push(c); return c; },
+        removeChild(c) { e.children.splice(e.children.indexOf(c), 1); c.parentNode = null; return c; }
+      };
+      nodes.push(e);
+      return e;
+    }
+    const body = el('body');
+    const loads = [];
+    const injected = {}; // what the service worker would inject, by id
+    const sb = {
+      CGP: { hiddenGems: globalThis.CGP.hiddenGems },
+      document: { body, hidden: false, activeElement: null, createElement: el, addEventListener() {}, removeEventListener() {} },
+      window: { innerWidth: 1280, innerHeight: 760, devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} },
+      location: { hash: '' },
+      performance: { now: () => Date.now() },
+      requestAnimationFrame: () => 1, cancelAnimationFrame() {},
+      setTimeout, clearTimeout, Promise,
+      chrome: { runtime: { sendMessage(msg, cb) { loads.push(() => { sb.CGP.gemPlayers[msg.id] = injected[msg.id]; cb({ ok: true }); }); }, getURL: (x) => x } }
+    };
+    sb.globalThis = sb;
+    vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'src/core/hidden-gems-ui.js'), 'utf8'), sb);
+    const stages = () => body.children.filter((c) => c.className === 'cgp-gem-stage');
+    return { sb, injected, loads, stages, ctl: new sb.CGP.HiddenGemsController({ settings: { values: {} } }) };
+  }
+
+  test('an effect that throws at once (no WebGL) leaves nothing on the page', async () => {
+    const { sb, injected, loads, stages, ctl } = sandbox();
+    injected.snow = (session) => { session.stage.appendChild(sb.document.createElement('div')); throw new Error('no webgl'); };
+    const playing = ctl.play('snow', {});
+    loads.shift()();
+    eq(await playing, null, 'the play failed');
+    eq(stages().length, 0, 'the stage is gone');
+    eq(ctl._active, null);
+  });
+
+  test('stopping while the effect is still loading means it never starts', async () => {
+    const { sb, injected, loads, stages, ctl } = sandbox();
+    let started = 0;
+    injected.leaves = () => { started++; };
+    const playing = ctl.play('leaves', {});
+    ctl.stop();
+    loads.shift()();
+    eq(await playing, null);
+    eq(started, 0, 'the player was never called');
+    eq(stages().length, 0, 'no stage was made');
+  });
+
+  test('a newer effect wins over one still loading', async () => {
+    const { sb, injected, loads, stages, ctl } = sandbox();
+    const ran = [];
+    injected.leaves = () => { ran.push('leaves'); };
+    injected.lights = () => { ran.push('lights'); };
+    const first = ctl.play('leaves', {});
+    const second = ctl.play('lights', {});
+    loads.shift()(); loads.shift()();
+    await first; await second;
+    eq(ran.join(','), 'lights');
+    eq(stages().length, 1, 'one stage');
+    ctl.stop();
+    eq(stages().length, 0);
+  });
+});
+
 suite('Hidden Gems: wiring', (test) => {
   test('the core scripts and styles are content scripts; the effects are not', () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));

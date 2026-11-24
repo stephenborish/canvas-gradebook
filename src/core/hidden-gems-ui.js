@@ -278,11 +278,17 @@
   P.play = function (id, opts) {
     var self = this;
     if (!CGP.hiddenGems || CGP.hiddenGems.KINDS.indexOf(id) === -1) return Promise.resolve(null);
+    // stop(), or a newer play(), while this one's player is still loading
+    // cancels it: nothing starts once the load resolves.
+    var token = (self._playToken = (self._playToken || 0) + 1);
     return loadPlayer(id).then(function (player) {
+      if (token !== self._playToken) return null;
       if (self._active) { self._active.destroy(); self._active = null; }
       var session = createSession(function (s) { if (self._active === s) self._active = null; });
       self._active = session;
-      return Promise.resolve(player(session, opts || {})).then(function () {
+      // Called inside then(), so a player that throws at once (no WebGL, say)
+      // still rejects below and its session is torn down.
+      return Promise.resolve().then(function () { return player(session, opts || {}); }).then(function () {
         if (CGP.diag) CGP.diag.log('hiddenGems.played', { gem: id });
         return { gem: id };
       }, function (e) {
@@ -296,7 +302,9 @@
   };
 
   P.stop = function () {
+    this._playToken = (this._playToken || 0) + 1;
     if (this._timer) { clearTimeout(this._timer); this._timer = null; }
+    if (this._previewTimer) { clearTimeout(this._previewTimer); this._previewTimer = null; }
     if (this._active) { this._active.destroy(); this._active = null; }
   };
 
@@ -319,7 +327,8 @@
       // A preview replaces anything today's roll was about to play.
       if (this._timer) { clearTimeout(this._timer); this._timer = null; }
       this._previewed = true;
-      setTimeout(function () { self.play(p[0], p[1]); }, 50);
+      if (this._previewTimer) clearTimeout(this._previewTimer);
+      this._previewTimer = setTimeout(function () { self._previewTimer = null; self.play(p[0], p[1]); }, 50);
       return true;
     } catch (e) { return false; }
   };
