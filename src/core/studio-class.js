@@ -79,8 +79,20 @@
   /* What a row's status says, word for word, wherever it is shown. */
   var LABELS = {
     watched: 'Watched', partial: 'Partly watched', none: 'Not watched',
-    completion: 'Completion unavailable', ambiguous: 'Match unclear', error: 'Unavailable'
+    completion: 'Completion unavailable', ambiguous: 'Match unclear', error: 'Unavailable',
+    noaccess: 'No access in Studio', notfound: 'Not found in Studio'
   };
+
+  /* Why Studio didn't give a video's viewers, from its answer's status:
+   * 401/403 - the embed belongs to another Studio course or someone else's
+   * library, and Studio shares insights only with that course or owner;
+   * 404 - the embed no longer exists in Studio; anything else - unknown. */
+  function errorReason(status) {
+    status = Number(status) || 0;
+    if (status === 401 || status === 403) return 'noaccess';
+    if (status === 404 || status === 410) return 'notfound';
+    return 'error';
+  }
   function labelOf(row) {
     if (!row) return '';
     if (row.status === 'unknown') return LABELS[row.unknownReason] || LABELS.error;
@@ -365,12 +377,15 @@
     if (sid === null || at < 0) roster.push(student);
     else roster[at] = Object.assign({}, roster[at], student, { email: student.email || roster[at].email });
     var inClass = classEmails && Object.keys(classEmails).length ? function (x) { return !!(x.email && classEmails[x.email]); } : function () { return true; };
+    var submitted = (opts && opts.studentEmbeds) || {};
     var rows = (videos || []).filter(function (v) { return v && !v.archived; }).map(function (v) {
       var base = { uuid: v.uuid, title: v.title, duration: v.duration, thumbnail: v.thumbnail, createdAt: v.createdAt,
         places: v.places || [], embeddedOnly: !!v.embeddedOnly };
+      Object.assign(base, originOf(v, submitted));
       // Studio didn't give this video's viewers: unknown, not "not watched".
       if (v.error) {
-        return Object.assign(base, { completion: null, status: 'unknown', unknownReason: 'error', label: LABELS.error,
+        var why = errorReason(v.errorStatus);
+        return Object.assign(base, { completion: null, status: 'unknown', unknownReason: why, label: LABELS[why],
           watchedSeconds: null, classWatched: null, errorStatus: v.errorStatus || null });
       }
       var L = classList(roster, v.viewers || []);
@@ -391,8 +406,61 @@
     });
     rows.sort(function (a, b) { return String(b.createdAt || '').localeCompare(String(a.createdAt || '')); });
     var counts = { total: rows.length, watched: 0, partial: 0, none: 0, unknown: 0 };
-    rows.forEach(function (r) { counts[r.status]++; });
-    return { rows: rows, counts: counts };
+    var posted = { total: 0, watched: 0, partial: 0, none: 0, unknown: 0 };
+    rows.forEach(function (r) {
+      counts[r.status]++;
+      if (r.origin === 'posted') { posted.total++; posted[r.status]++; }
+    });
+    return { rows: rows, counts: counts, postedCounts: posted };
+  }
+
+  /* Studio's own default title for a recording made in the browser
+   * ("[Untitled Thu Nov 19 2026 16:42:28 GMT-0500 (Eastern Standard Time)]"):
+   * a quick capture - in a class's list, nearly always a student's. */
+  function isCaptureTitle(title) {
+    return /^\s*\[?\s*untitled\b.*\b\d{4}\b.*\bgmt\s*[+-]\d{4}/i.test(String(title || ''));
+  }
+
+  /* Where a video comes from, for a teacher's list:
+   *   'posted'  - embedded in an assignment, quiz, discussion, page or module;
+   *   'student' - not posted, and either a student embedded it in their own
+   *               work (a submission or discussion reply: Studio copies media
+   *               a student embeds into the course's list) or it carries
+   *               Studio's default "[Untitled <date>]" recording title;
+   *   'unposted' - in Studio's list for the course, but nowhere in Canvas.
+   * submitted: {embedUuid: {userId, kind}} (studentEmbeds). */
+  function originOf(v, submitted) {
+    if (v.places && v.places.length) return { origin: 'posted' };
+    var ids = [v.uuid].concat(v.aliases || []);
+    for (var i = 0; i < ids.length; i++) {
+      var hit = submitted[ids[i]];
+      if (hit) return { origin: 'student', submittedBy: hit.userId || null, submittedIn: hit.kind || null };
+    }
+    if (isCaptureTitle(v.title)) return { origin: 'student', submittedBy: null, submittedIn: null };
+    return { origin: 'unposted' };
+  }
+
+  /* The Studio videos students put in their own work:
+   * submissions [{user_id, url, body, submission_type}] (a Studio
+   * submission's launch address, or embeds in a text entry) and discussion
+   * entries [{user_id, message}] (replies). -> {embedUuid: {userId, kind}},
+   * the first student found for each. */
+  function studentEmbeds(submissions, entries) {
+    var out = Object.create(null);
+    function add(uuid, userId, kind) {
+      if (!uuid || out[uuid]) return;
+      out[uuid] = { userId: userId === undefined || userId === null ? null : String(userId), kind: kind };
+    }
+    (submissions || []).forEach(function (s) {
+      if (!s) return;
+      add(embedIdFromUrl(s.url || ''), s.user_id, 'Submission');
+      embedsFromHtml(s.body || '').forEach(function (e) { add(e.uuid, s.user_id, 'Submission'); });
+    });
+    (entries || []).forEach(function (e) {
+      if (!e) return;
+      embedsFromHtml(e.message || '').forEach(function (x) { add(x.uuid, e.user_id, 'Discussion reply'); });
+    });
+    return out;
   }
 
   /* ------------------------------------- Studio videos inside Canvas */
@@ -485,6 +553,7 @@
         return p.kind === e.place.kind && p.name === e.place.name && (p.url || '') === (e.place.url || '');
       })[0];
       if (!same) { target.places.push(Object.assign({}, e.place, { modules: (e.place.modules || []).slice() })); return; }
+      if (e.place.order !== undefined && (same.order === undefined || e.place.order < same.order)) same.order = e.place.order;
       (e.place.modules || []).forEach(function (m) {
         same.modules = same.modules || [];
         if (same.modules.indexOf(m) < 0) same.modules.push(m);
@@ -631,6 +700,10 @@
     embedIdFromUrl: embedIdFromUrl,
     embedsFromHtml: embedsFromHtml,
     joinEmbeds: joinEmbeds,
+    errorReason: errorReason,
+    isCaptureTitle: isCaptureTitle,
+    originOf: originOf,
+    studentEmbeds: studentEmbeds,
     foldEmbeds: foldEmbeds,
     mergeViewers: mergeViewers,
     plainName: plainName,

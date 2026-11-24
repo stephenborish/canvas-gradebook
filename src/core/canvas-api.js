@@ -941,6 +941,22 @@
     return this.getAll(cpath(courseId) + '/pages', { sort: 'title', order: 'asc', 'include[]': ['body'] }, { maxPages: 20 });
   };
 
+  /* The class's submissions to some assignments, without comments: where
+   * students put Studio videos in their own work (a Studio submission's
+   * launch address in `url`, embeds in a text entry's `body`). */
+  CanvasApi.prototype.classSubmissionsFor = function (courseId, assignmentIds) {
+    if (!assignmentIds || !assignmentIds.length) return Promise.resolve([]);
+    return this.getAll(cpath(courseId) + '/students/submissions', {
+      'student_ids[]': ['all'],
+      'assignment_ids[]': assignmentIds.map(String)
+    }, { maxPages: 40 });
+  };
+
+  /* A discussion's whole thread: {view: [entries, each with replies]}. */
+  CanvasApi.prototype.discussionView = function (courseId, topicId) {
+    return this.get(cpath(courseId) + '/discussion_topics/' + encodeURIComponent(String(topicId)) + '/view');
+  };
+
   /* One module's items, in order. */
   CanvasApi.prototype.moduleItems = function (courseId, moduleId) {
     return this.getAll(cpath(courseId) + '/modules/' + encodeURIComponent(String(moduleId)) + '/items', {}, { maxPages: 10 });

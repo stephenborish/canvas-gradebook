@@ -224,10 +224,47 @@
       ]).then(function (r) {
         // What was read is used now; the next panel tries the rest again.
         if (anyFailed) self._index = null;
+        self._indexRaw = { assignments: r[0] || [], discussions: r[2] || [] };
         return SI().courseIndex({ courseId: cid, assignments: r[0], quizzes: r[1], discussions: r[2], pages: r[3], modules: r[4] });
       }).catch(function () { self._index = null; return null; });
     }
     return this._index;
+  };
+
+  /* The Studio videos students put in their own work - a Studio
+   * submission, a text entry's embed, a discussion reply's embed - so the
+   * copies Studio makes of them in the course's list are told apart from
+   * the teacher's videos (studioClass.studentEmbeds). Read once per page,
+   * after the course index; anything Canvas refuses is just left out. */
+  P.studentEmbeds = function () {
+    if (!this._studentEmbeds) {
+      var self = this;
+      var api = this.fast, cid = this.courseId;
+      this._studentEmbeds = this.courseIndex().then(function () {
+        var raw = self._indexRaw || { assignments: [], discussions: [] };
+        var ids = raw.assignments.filter(function (a) {
+          var t = (a && a.submission_types) || [];
+          return t.indexOf('online_text_entry') >= 0 || t.indexOf('external_tool') >= 0 || t.indexOf('media_recording') >= 0;
+        }).map(function (a) { return a.id; }).slice(0, 200);
+        var gate = CGP.util.pool(3);
+        var entries = [];
+        function flat(list) {
+          (list || []).forEach(function (e) {
+            if (!e || e.deleted) return;
+            entries.push({ user_id: e.user_id, message: e.message });
+            flat(e.replies);
+          });
+        }
+        var topics = raw.discussions.filter(function (d) { return d && d.id !== undefined && (d.discussion_subentry_count === undefined || d.discussion_subentry_count > 0); }).slice(0, 60);
+        return Promise.all([
+          api.classSubmissionsFor(cid, ids).catch(function () { return []; }),
+          Promise.all(topics.map(function (d) {
+            return gate(function () { return api.discussionView(cid, d.id).then(function (v) { flat(v && v.view); }, function () { /* skip */ }); });
+          }))
+        ]).then(function (r) { return CGP.studioClass.studentEmbeds(r[0], entries); });
+      }).catch(function () { self._studentEmbeds = null; return {}; });
+    }
+    return this._studentEmbeds;
   };
 
   /* A Canvas whose pages list ignores include[]=body: each page read on
@@ -485,7 +522,12 @@
     Promise.all([this.courseInfo(), this.rosterEmails(), this.courseIndex()]).then(function (r) {
       if (!self._courseName) throw new Error('Couldn’t read this course’s name');
       var embeds = r[2] ? r[2].embeds : [];
-      return CGP.studioBridge.courseVideos(self.api, self.courseId, self._courseNames, embeds).then(function (res) {
+      var moduleOrder = r[2] ? r[2].moduleOrder || [] : [];
+      return Promise.all([
+        CGP.studioBridge.courseVideos(self.api, self.courseId, self._courseNames, embeds),
+        self.studentEmbeds()
+      ]).then(function (both) {
+        var res = both[0];
         // Where each video sits in Canvas, and the embedded ones Studio's
         // course list doesn't have.
         var joined = CGP.studioClass.joinEmbeds(res.videos || [], embeds);
@@ -495,7 +537,7 @@
           var m = byId[v.uuid];
           if (m && (!v.title || v.title === 'Studio video') && m.title) v.title = m.title;
         });
-        return { collection: res.collection, videos: joined.videos };
+        return { collection: res.collection, videos: joined.videos, studentEmbeds: both[1] || {}, moduleOrder: moduleOrder };
       });
     }).then(function (res) {
       o.parts.studio = res;
@@ -708,12 +750,29 @@
       this.applyActivitySearch();
       return;
     }
-    var vplace = t.closest('[data-si-vplace]');
-    if (vplace) {
-      var vp = vplace.getAttribute('data-si-vplace');
-      this._videoPlace = vp;
-      this._root.querySelectorAll('[data-si-vplace]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-si-vplace') === vp)); });
+    var vst = t.closest('[data-si-vstatus]');
+    if (vst) {
+      var vs = vst.getAttribute('data-si-vstatus');
+      this._videoStatus = vs;
+      this._root.querySelectorAll('[data-si-vstatus]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-si-vstatus') === vs)); });
       this.applyActivitySearch();
+      return;
+    }
+    // A module group opened or closed: kept as the teacher left it.
+    var vsum = t.closest('summary[data-si-vgroup]');
+    if (vsum) {
+      this._vgroups = this._vgroups || {};
+      this._vgroups[vsum.getAttribute('data-si-vgroup')] = !vsum.parentNode.open;
+      return;
+    }
+    var vall = t.closest('[data-si-vall]');
+    if (vall) {
+      var openAll = vall.getAttribute('data-si-vall') === 'open';
+      var st = this._vgroups = this._vgroups || {};
+      this._root.querySelectorAll('summary[data-si-vgroup]').forEach(function (sm) {
+        st[sm.getAttribute('data-si-vgroup')] = openAll;
+        sm.parentNode.open = openAll;
+      });
       return;
     }
     var sortBtn = t.closest('[data-si-sort]');
@@ -802,7 +861,7 @@
     if (!this._root) return;
     var q = this._query || '';
     var kind = this._contentKind || 'all';
-    var vplace = this._videoPlace || 'all';
+    var vstatus = this._videoStatus || 'all';
     var panel = this._root.querySelector('[data-si-panel="activity"]');
     if (!panel) return;
     panel.querySelectorAll('[data-si-nosearch]').forEach(function (el) { el.hidden = !!q.trim(); });
@@ -810,11 +869,19 @@
       var shown = 0;
       card.querySelectorAll('tbody tr[data-search]').forEach(function (tr) {
         var k = tr.getAttribute('data-kind');
-        var vp = tr.getAttribute('data-vplace');
-        var on = (!k || kind === 'all' || k === kind) && (vp === null || vplace === 'all' || vp.split(' ').indexOf(vplace) >= 0) &&
+        var vs = tr.getAttribute('data-vstatus');
+        var on = (!k || kind === 'all' || k === kind) && (vs === null || vstatus === 'all' || vs === vstatus) &&
           SI().matchesSearch(tr.getAttribute('data-search'), q);
         tr.hidden = !on;
         if (on) shown++;
+      });
+      // Video groups: one with nothing left to show steps aside, and a
+      // search opens the groups its matches are in.
+      var filtering = !!q.trim() || vstatus !== 'all';
+      card.querySelectorAll('[data-si-vgroup-box]').forEach(function (g) {
+        var any = !!g.querySelector('tbody tr[data-search]:not([hidden])');
+        g.hidden = filtering && !any;
+        if (q.trim() && any) g.open = true;
       });
       var empty = card.querySelector('.cgp-si__table-empty');
       if (empty) empty.hidden = shown > 0 || !card.querySelector('tbody tr[data-search]');
@@ -1591,8 +1658,13 @@
       }) : []);
     var out = CGP.studioClass.studentVideos(s.videos, {
       id: uid, name: student.name || student.fullName || '', sortable_name: student.sortableName || '', email: email
-    }, { classEmails: classEmails, roster: roster });
+    }, { classEmails: classEmails, roster: roster, studentEmbeds: s.studentEmbeds || {} });
     out.noCollection = !s.collection;
+    out.moduleOrder = s.moduleOrder || [];
+    // Who submitted each student recording, by name.
+    var names = {};
+    roster.forEach(function (x) { if (x && x.id !== undefined && x.id !== null) names[String(x.id)] = x.name || ''; });
+    out.rows.forEach(function (v) { if (v.submittedBy && names[v.submittedBy]) v.submittedByName = names[v.submittedBy]; });
     return out;
   };
 
@@ -1602,7 +1674,9 @@
   var UNKNOWN_WHY = {
     error: 'Studio didn’t give this video’s viewers',
     completion: 'Studio lists this student as a viewer but gave no completion',
-    ambiguous: 'Another student or viewer has this name, and no email settles which is which'
+    ambiguous: 'Another student or viewer has this name, and no email settles which is which',
+    noaccess: 'Studio won’t share this embed’s viewers: it belongs to another Studio course or someone else’s library. Re-embed the video from this course’s Studio to see who watched it',
+    notfound: 'This embed no longer exists in Studio (deleted or archived). Re-embed the video to track watching'
   };
 
   /* The Studio videos embedded in each assignment (its own description, or
@@ -1622,9 +1696,29 @@
     return out;
   };
 
+  /* The Studio videos, the way the course is laid out: one group per
+   * module, in the modules' order, each video where students first meet
+   * it, with the module's own tally. Videos posted outside any module come
+   * next; then, folded away and left out of every count, videos Studio
+   * lists for the course but nobody posted, and recordings students made
+   * for their own work (Studio copies those into the course's list). */
+  var VSTATUS_CHIPS = [['all', 'All'], ['none', 'Not watched'], ['partial', 'Partly watched'], ['watched', 'Watched'], ['unknown', 'No data']];
+
+  /* A row of segments for watched / partly / not watched / no data. */
+  function vstack(c) {
+    var total = c.watched + c.partial + c.none + c.unknown;
+    if (!total) return '';
+    var seg = function (k, n, label) {
+      return n ? '<span class="cgp-si__vseg cgp-si__vseg--' + k + '" style="flex-grow:' + n + '" data-tip="' + esc(n + ' ' + label) + '"></span>' : '';
+    };
+    return '<span class="cgp-si__vstack" role="img" aria-label="' + esc(c.watched + ' watched, ' + c.partial + ' partly watched, ' + c.none + ' not watched' + (c.unknown ? ', ' + c.unknown + ' no data' : '')) + '">' +
+      seg('watched', c.watched, 'watched') + seg('partial', c.partial, 'partly watched') + seg('none', c.none, 'not watched') + seg('unknown', c.unknown, 'no data') + '</span>';
+  }
+
   P.studioPanel = function (r) {
     var s = r.studio;
     if (!s) return '';
+    var self = this;
     var title = 'Studio videos';
     if (s.loading) {
       return '<div class="cgp-si__card"><div class="cgp-si__card-head"><h3>' + title + '</h3></div>' +
@@ -1638,77 +1732,153 @@
     var names = (this._courseNames || [this._courseName]).map(function (n) { return '“' + esc(n) + '”'; }).join(' or ');
     if (s.none) return section(title, '<p class="cgp-si__note">Studio has no course named ' + names + ', so there are no Studio videos to show.</p>');
     if (!s.rows.length) return section(title, '<p class="cgp-si__note">No Studio videos have been added to this course.</p>');
-    var c = s.counts;
-    var ASSIGNED = { Assignment: 1, Quiz: 1, Discussion: 1 };
-    var placeTags = function (v) {
-      if (!r.indexKnown && (!v.places || !v.places.length)) return ['pending'];
-      var tags = [];
-      (v.places || []).forEach(function (p) {
-        var t = ASSIGNED[p.kind] ? 'assigned' : 'module';
-        if (tags.indexOf(t) < 0) tags.push(t);
-      });
-      return tags.length ? tags : ['unposted'];
+
+    var moduleOrder = s.moduleOrder || [];
+    var rank = function (m) { var i = moduleOrder.indexOf(m); return i < 0 ? 1e6 : i; };
+    var orderOf = function (v) {
+      var o = Infinity;
+      (v.places || []).forEach(function (p) { if (p.order !== undefined && p.order < o) o = p.order; });
+      return o;
     };
-    var placeHtml = function (v) {
-      if ((!v.places || !v.places.length) && !r.indexKnown) return '<span class="cgp-si__muted">Looking…</span>';
-      if (!v.places || !v.places.length) return '<span class="cgp-si__muted" title="In Studio’s list for this course, but not embedded in any assignment, quiz, discussion, page or module">Not posted in Canvas</span>';
-      return v.places.slice(0, 4).map(function (p) {
+    var modulesOf = function (v) {
+      var out = [];
+      (v.places || []).forEach(function (p) { (p.modules || []).forEach(function (m) { if (m && out.indexOf(m) < 0) out.push(m); }); });
+      return out.sort(function (a, b) { return rank(a) - rank(b); });
+    };
+
+    // Each video to one group.
+    var groups = [], byKey = {};
+    var groupFor = function (key, label, kind, sortKey) {
+      if (!byKey[key]) {
+        byKey[key] = { key: key, label: label, kind: kind, sortKey: sortKey, rows: [], counts: { watched: 0, partial: 0, none: 0, unknown: 0 } };
+        groups.push(byKey[key]);
+      }
+      return byKey[key];
+    };
+    s.rows.forEach(function (v) {
+      var g;
+      var origin = v.origin || (v.places && v.places.length ? 'posted' : 'unposted');
+      if (origin === 'posted') {
+        var mods = modulesOf(v);
+        g = mods.length ? groupFor('m:' + mods[0], mods[0], 'module', rank(mods[0])) : groupFor('loose', 'Posted outside any module', 'loose', 1e7);
+        v._also = mods.slice(1);
+      } else if (!r.indexKnown) {
+        g = groupFor('pending', 'Looking for where these are posted…', 'pending', 1e7 + 1);
+      } else if (origin === 'student') {
+        g = groupFor('student', 'Students’ own recordings', 'student', 1e7 + 3);
+      } else {
+        g = groupFor('unposted', 'Not posted in Canvas', 'unposted', 1e7 + 2);
+      }
+      g.rows.push(v);
+      g.counts[v.status]++;
+    });
+    groups.sort(function (a, b) { return a.sortKey - b.sortKey || a.label.localeCompare(b.label); });
+    groups.forEach(function (g) {
+      g.rows.sort(function (a, b) {
+        return (orderOf(a) - orderOf(b)) || String(a.title || '').localeCompare(String(b.title || ''), undefined, { numeric: true });
+      });
+    });
+
+    var counted = function (g) { return g.kind === 'module' || g.kind === 'loose'; };
+    var pc = s.postedCounts || s.counts;
+    var tallyAll = { all: 0, none: 0, partial: 0, watched: 0, unknown: 0 };
+    groups.forEach(function (g) { if (!counted(g)) return; g.rows.forEach(function (v) { tallyAll.all++; tallyAll[v.status]++; }); });
+    var vstatus = this._videoStatus || 'all';
+    if (vstatus !== 'all' && !tallyAll[vstatus]) vstatus = this._videoStatus = 'all';
+    var openState = this._vgroups || (this._vgroups = {});
+
+    var placeHtml = function (v, g) {
+      if (g.kind === 'student') {
+        var who = v.submittedByName ? esc(v.submittedByName) : v.submittedBy ? 'a student' : null;
+        if (who) return '<span class="cgp-si__vplace">Submitted by ' + who + (v.submittedIn ? ' <span class="cgp-si__where">' + esc(v.submittedIn) + '</span>' : '') + '</span>';
+        return '<span class="cgp-si__muted" title="Studio’s default title for a recording made in the browser">Quick recording, not posted</span>';
+      }
+      if (!v.places || !v.places.length) {
+        return g.kind === 'pending' ? '<span class="cgp-si__muted">Looking…</span>'
+          : '<span class="cgp-si__muted" title="In Studio’s list for this course, but not embedded in any assignment, quiz, discussion, page or module">Not posted in Canvas</span>';
+      }
+      var inGroup = g.kind === 'module' ? g.label : null;
+      return v.places.slice(0, 3).map(function (p) {
         var name = esc(p.name || p.kind);
+        var other = (p.modules || []).filter(function (m) { return m !== inGroup; });
         return '<span class="cgp-si__vplace"><span class="cgp-si__vkind">' + esc(p.kind) + '</span> ' +
           (p.url ? '<a href="' + esc(p.url) + '" target="_blank" rel="noopener">' + name + '</a>' : name) +
-          (p.modules && p.modules.length && !(p.kind === 'Module' && p.modules.join(', ') === p.name) ? '<span class="cgp-si__where">' + esc(p.modules.join(', ')) + '</span>' : '') +
+          (other.length && !(p.kind === 'Module' && other.join(', ') === p.name) ? '<span class="cgp-si__where">Also in ' + esc(other.join(', ')) + '</span>' : '') +
           '</span>';
-      }).join('') + (v.places.length > 4 ? '<span class="cgp-si__muted">+' + (v.places.length - 4) + ' more</span>' : '');
+      }).join('') + (v.places.length > 3 ? '<span class="cgp-si__muted">+' + (v.places.length - 3) + ' more</span>' : '');
     };
-    var searchOf = function (v) {
-      var bits = [v.title, 'video', 'studio', videoLabel(v)];
+    var searchOf = function (v, g) {
+      var bits = [v.title, 'video', 'studio', videoLabel(v), g.label];
       (v.places || []).forEach(function (p) { bits.push(p.kind, p.name, (p.modules || []).join(' | ')); });
-      if (!v.places || !v.places.length) bits.push('not posted');
+      if (g.kind === 'unposted') bits.push('not posted');
+      if (g.kind === 'student') bits.push('student recording', v.submittedByName || '');
       return esc(bits.join(' | ').toLowerCase());
     };
-    var tally = { all: s.rows.length, assigned: 0, module: 0, unposted: 0, pending: 0 };
-    var tagsOf = s.rows.map(function (v) { var t = placeTags(v); t.forEach(function (x) { tally[x]++; }); return t; });
-    var chips = [['all', 'All'], ['assigned', 'In assignments'], ['module', 'In modules & pages'], ['unposted', 'Not posted']].filter(function (ch) {
-      return ch[0] === 'all' || tally[ch[0]];
-    });
-    var showChips = chips.length > 2 || (chips.length === 2 && tally[chips[1][0]] !== tally.all);
-    // The last filter, unless its chip isn't shown here (nothing of that kind).
-    var vfilter = this._videoPlace || 'all';
-    if (!showChips || !chips.some(function (ch) { return ch[0] === vfilter; })) vfilter = this._videoPlace = 'all';
-    var rows = s.rows.map(function (v, n) {
-      var tags = tagsOf[n];
-      var on = vfilter === 'all' || tags.indexOf(vfilter) >= 0;
-      var open = '<tr data-vplace="' + tags.join(' ') + '" data-search="' + searchOf(v) + '"' + (on ? '' : ' hidden') + '>';
-      var where = '<td class="cgp-si__vplaces">' + placeHtml(v) + '</td>';
+    var rowHtml = function (v, g) {
+      // The status chips count posted videos only; the rest show under All.
+      var st = counted(g) ? v.status : 'other';
+      var on = vstatus === 'all' || vstatus === st;
+      var open = '<tr data-vstatus="' + st + '" data-search="' + searchOf(v, g) + '"' + (on ? '' : ' hidden') + '>';
+      var name = '<td class="cgp-si__name-cell">' + esc(v.title) + (v.duration ? ' <span class="cgp-si__muted">' + esc(SI().duration(v.duration)) + '</span>' : '') + '</td>';
+      var where = '<td class="cgp-si__vplaces">' + placeHtml(v, g) + '</td>';
+      var cls = v.classWatched === null || v.classWatched === undefined ? '<td class="cgp-si__muted">–</td>'
+        : '<td class="cgp-si__muted" title="Students in the class who watched any of it">' + v.classWatched + ' in class</td>';
+      if (g.kind === 'student') {
+        var own = v.submittedBy && v.submittedBy === String(self._uid);
+        return open + name + where + '<td>' + (own ? '<span class="cgp-si__vstatus cgp-si__vstatus--own">Their recording</span>' : '<span class="cgp-si__muted">–</span>') + '</td><td class="cgp-si__muted">–</td>' + cls + '</tr>';
+      }
       if (v.status === 'unknown') {
-        return open + '<td class="cgp-si__name-cell">' + esc(v.title) + '</td>' + where +
+        return open + name + where +
           '<td><span class="cgp-si__vstatus cgp-si__vstatus--unknown" title="' + esc(UNKNOWN_WHY[v.unknownReason] || UNKNOWN_WHY.error) + (v.errorStatus ? ' (Studio answered ' + esc(v.errorStatus) + ')' : '') + '">' + esc(videoLabel(v)) + '</span></td>' +
-          '<td class="cgp-si__muted">–</td><td class="cgp-si__muted"' + (v.classWatched === null || v.classWatched === undefined ? '>–' : ' title="Students in the class who watched any of it">' + v.classWatched + ' in class') + '</td></tr>';
+          '<td class="cgp-si__muted">–</td>' + cls + '</tr>';
       }
       var pct = v.completion === null ? 0 : Math.round(v.completion * 100);
-      return open +
-        '<td class="cgp-si__name-cell">' + esc(v.title) + (v.duration ? ' <span class="cgp-si__muted">' + esc(SI().duration(v.duration)) + '</span>' : '') + '</td>' + where +
+      return open + name + where +
         '<td><span class="cgp-si__vstatus cgp-si__vstatus--' + v.status + '">' + esc(videoLabel(v)) + '</span></td>' +
         '<td><div class="cgp-si__vmeter"><div class="cgp-si__track"><span class="cgp-si__fill" style="width:' + pct + '%"></span></div><b>' + pct + '%</b></div></td>' +
-        '<td class="cgp-si__muted" title="Students in the class who watched any of it">' + v.classWatched + ' in class</td>' +
-        '</tr>';
-    }).join('');
-    var chipHtml = showChips
-      ? '<div class="cgp-si__chips cgp-si__chips--content" role="group" aria-label="Show videos by where they’re posted">' + chips.map(function (ch) {
-        return '<button type="button" class="cgp-si__chip" data-si-vplace="' + ch[0] + '" aria-pressed="' + (vfilter === ch[0]) + '">' + esc(ch[1]) + ' <b>' + tally[ch[0]] + '</b></button>';
-      }).join('') + '</div>'
-      : '';
-    var table = chipHtml + '<div class="cgp-si__table-wrap cgp-si__table-wrap--content"><table class="cgp-si__table cgp-si__table--content"><thead><tr>' +
-      '<th>Video</th><th>Posted in</th><th>Status</th><th>Watched</th><th>Class</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+        cls + '</tr>';
+    };
+    var NOTES = {
+      unposted: 'In Studio’s list for this course but not embedded anywhere students would find it. Not counted above.',
+      student: 'Studio copies a video into the course’s list when a student embeds it in a submission or discussion reply, or records one in the browser (“Untitled” and a date). These aren’t videos assigned to the class, so they aren’t counted above.',
+      pending: 'Still reading the course’s assignments, pages and modules.'
+    };
+    var groupHtml = function (g) {
+      var c = g.counts;
+      var n = g.rows.length;
+      var isOpen = openState[g.key] !== undefined ? openState[g.key]
+        : counted(g) ? (c.none + c.partial > 0 || groups.filter(counted).length <= 2) : g.kind === 'pending';
+      var summary = counted(g)
+        ? '<span class="cgp-si__vgroup-tally">' + vstack(c) + '<span><b>' + c.watched + '</b> of ' + n + ' watched' +
+          (c.none ? ' · <span class="cgp-si__vgroup-gap">' + c.none + ' not watched</span>' : '') + (c.partial ? ' · ' + c.partial + ' partly' : '') + '</span></span>'
+        : '<span class="cgp-si__vgroup-tally cgp-si__muted">' + n + (n === 1 ? ' video' : ' videos') + ' · not counted</span>';
+      var head = g.kind === 'student' ? '<th>Recording</th><th>From</th><th></th><th></th><th>Class</th>'
+        : '<th>Video</th><th>Posted in</th><th>Status</th><th>Watched</th><th>Class</th>';
+      return '<details class="cgp-si__vgroup cgp-si__vgroup--' + g.kind + '" data-si-vgroup-box' + (isOpen ? ' open' : '') + '>' +
+        '<summary data-si-vgroup="' + esc(g.key) + '"><span class="cgp-si__vgroup-name">' + esc(g.label) + '</span>' + summary + '</summary>' +
+        (NOTES[g.kind] ? '<p class="cgp-si__note cgp-si__vgroup-note">' + esc(NOTES[g.kind]) + '</p>' : '') +
+        '<table class="cgp-si__table cgp-si__table--content cgp-si__table--videos"><thead><tr>' + head + '</tr></thead><tbody>' +
+        g.rows.map(function (v) { return rowHtml(v, g); }).join('') + '</tbody></table></details>';
+    };
+
+    var chips = VSTATUS_CHIPS.filter(function (ch) { return ch[0] === 'all' || tallyAll[ch[0]]; });
+    var chipHtml = '<div class="cgp-si__vtools"><div class="cgp-si__chips cgp-si__chips--content" role="group" aria-label="Show videos by whether this student watched them">' + chips.map(function (ch) {
+      return '<button type="button" class="cgp-si__chip" data-si-vstatus="' + ch[0] + '" aria-pressed="' + (vstatus === ch[0]) + '">' + esc(ch[1]) + ' <b>' + tallyAll[ch[0]] + '</b></button>';
+    }).join('') + '</div>' +
+      (groups.length > 1 ? '<span class="cgp-si__vall"><button type="button" class="cgp-si__linkbtn" data-si-vall="open">Expand all</button> · <button type="button" class="cgp-si__linkbtn" data-si-vall="close">Collapse all</button></span>' : '') + '</div>';
+    var overall = pc.total ? '<div class="cgp-si__voverall">' + vstack(pc) + '<span><b>' + pc.watched + '</b> of ' + pc.total + ' posted videos watched' +
+      (pc.partial ? ' · ' + pc.partial + ' partly' : '') + (pc.none ? ' · ' + pc.none + ' not watched' : '') + (pc.unknown ? ' · ' + pc.unknown + ' no data' : '') + '</span></div>' : '';
+    var body = overall + chipHtml + '<div class="cgp-si__vgroups">' + groups.map(groupHtml).join('') +
       '<p class="cgp-si__table-empty cgp-si__note" hidden>No videos match.</p></div>';
-    var aside = c.watched + ' watched · ' + c.partial + ' partly · ' + c.none + ' not watched' + (c.unknown ? ' · ' + c.unknown + ' unknown' : '');
+
+    var aside = pc.total ? pc.watched + ' of ' + pc.total + ' watched' : s.rows.length + ' videos, none posted';
     var embedded = s.rows.filter(function (v) { return v.embeddedOnly; }).length;
+    var noData = s.rows.some(function (v) { return v.status === 'unknown' && v.places && v.places.length; });
     var indexNote = !r.indexKnown ? ' Looking for videos embedded in assignments and pages…' : '';
-    return searchableSection(title, table + '<p class="cgp-si__note">From Studio’s Insights for each video in this course' +
-      ', including videos embedded in its assignments, quizzes, discussions, pages and modules' +
-      (embedded ? ' (' + embedded + (embedded === 1 ? ' isn’t' : ' aren’t') + ' in Studio’s list for this course, e.g. copied from another class)' : '') +
-      '. “Watched” is at least ' + Math.round(CGP.studioClass.WATCHED_AT * 100) + '% of the video.' +
-      (c.unknown ? ' “Unavailable”: Studio didn’t give that video’s viewers. “Completion unavailable”: Studio listed this student without a share. “Match unclear”: a name another student shares. None of these counts as not watched.' : '') +
+    return searchableSection(title, body + '<p class="cgp-si__note">From Studio’s Insights for each video, grouped by the module students find it in. ' +
+      '“Watched” is at least ' + Math.round(CGP.studioClass.WATCHED_AT * 100) + '% of the video.' +
+      (embedded ? ' ' + embedded + (embedded === 1 ? ' video is' : ' videos are') + ' embedded from outside this course’s Studio list (copied from another class, say).' : '') +
+      (noData ? ' “No access in Studio”: the embed belongs to another Studio course or someone else’s library, so Studio shares its viewers only with them; re-embedding the video from this course’s Studio makes its watching visible here. “No data” never counts as not watched.' : '') +
       (s.noCollection ? ' Studio has no course named ' + names + ', so only the embedded videos are listed.' : '') +
       esc(indexNote) + '</p>', esc(aside));
   };

@@ -130,6 +130,46 @@ suite('Studio videos for one student', (test) => {
     a.deep(r.counts, { total: 2, watched: 0, partial: 1, none: 1, unknown: 0 });
   });
 
+  test('why Studio gave no viewers: no access (403) or gone (404), each said plainly', () => {
+    const videos = [
+      { uuid: 'x1', title: 'A', viewers: [], error: 'no insights', errorStatus: 403, places: [{ kind: 'Page', name: 'P' }] },
+      { uuid: 'x2', title: 'B', viewers: [], error: 'unavailable', errorStatus: 404, places: [{ kind: 'Page', name: 'P' }] },
+      { uuid: 'x3', title: 'C', viewers: [], error: 'unavailable', places: [{ kind: 'Page', name: 'P' }] }
+    ];
+    const r = sc().studentVideos(videos, { name: 'Avery Adams', email: 'aadams@x.org' });
+    const by = Object.fromEntries(r.rows.map((x) => [x.uuid, x]));
+    a.eq(by.x1.label, 'No access in Studio');
+    a.eq(by.x2.label, 'Not found in Studio');
+    a.eq(by.x3.label, 'Unavailable');
+    a.ok(r.rows.every((x) => x.status === 'unknown'));
+  });
+
+  test('students’ own recordings are told apart from the teacher’s videos, and not counted', () => {
+    const submitted = sc().studentEmbeds(
+      [{ user_id: 7, url: 'https://s.instructuremedia.com/lti/launch?custom_arc_media_id=SUBMIT-uuid-1' },
+        { user_id: 8, body: '<p><iframe src="/courses/1/external_tools/retrieve?url=https%3A%2F%2Fs.instructuremedia.com%2Flti%2Flaunch%3Fcustom_arc_media_id%3DTEXT-uuid-2"></iframe></p>' }],
+      [{ user_id: 9, message: '<iframe title="My project" src="https://s.instructuremedia.com/embed/REPLY-uuid-3"></iframe>' }]);
+    a.deep(Object.keys(submitted).sort(), ['REPLY-uuid-3', 'SUBMIT-uuid-1', 'TEXT-uuid-2']);
+    a.eq(submitted['REPLY-uuid-3'].userId, '9');
+    a.eq(submitted['REPLY-uuid-3'].kind, 'Discussion reply');
+    const videos = [
+      { uuid: 'POSTED', title: 'Cells', viewers: [], places: [{ kind: 'Page', name: 'Cells' }] },
+      { uuid: 'REPLY-uuid-3', title: 'AP Bio nucleus project', viewers: [], places: [] },
+      { uuid: 'cap', title: '[Untitled Thu Nov 19 2026 16:42:28 GMT-0500 (Eastern Standard Time)]', viewers: [], places: [] },
+      { uuid: 'spare', title: 'Old lecture', viewers: [], places: [] }
+    ];
+    const r = sc().studentVideos(videos, { name: 'Avery Adams', email: 'aadams@x.org' }, { studentEmbeds: submitted });
+    const by = Object.fromEntries(r.rows.map((x) => [x.uuid, x]));
+    a.eq(by.POSTED.origin, 'posted');
+    a.eq(by['REPLY-uuid-3'].origin, 'student');
+    a.eq(by['REPLY-uuid-3'].submittedBy, '9');
+    a.eq(by.cap.origin, 'student', 'Studio’s default recording title');
+    a.eq(by.spare.origin, 'unposted');
+    a.deep(r.postedCounts, { total: 1, watched: 0, partial: 0, none: 1, unknown: 0 });
+    a.eq(r.counts.total, 4);
+    a.ok(!sc().isCaptureTitle('Untitled video') && !sc().isCaptureTitle('Dehydration synthesis and hydrolysis'));
+  });
+
   test('a video whose viewers Studio didn’t give is unknown, not "not watched"', () => {
     const videos = sc().videosFromTiles(TILES).slice(0, 1);
     videos[0].viewers = [];
