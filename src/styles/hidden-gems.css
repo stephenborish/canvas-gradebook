@@ -39,3 +39,35 @@
 .cgp-gem-piece.is-piled {
   box-shadow: 0 3px 6px -2px rgba(20, 28, 40, 0.3), 0 0 0 1px rgba(20, 28, 40, 0.07) !important;
 }
+
+/* Weather: the light of an overcast day, laid over the page. */
+.cgp-gem-tint {
+  position: fixed;
+  inset: 0;
+  z-index: 9989;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  opacity: 0;
+  transition: opacity 3s ease;
+}
+.cgp-gem-tint.is-snow {
+  background: linear-gradient(180deg, #d9e2ec 0%, #e6ecf2 55%, #eef2f6 100%);
+}
+.cgp-gem-tint.is-rain {
+  background: linear-gradient(180deg, #c9d1da 0%, #d6dde4 60%, #dde3e9 100%);
+}
+.cgp-gem-tint.is-on {
+  opacity: 1;
+}
+.cgp-gem-tint.is-off {
+  opacity: 0;
+  transition-duration: 4s;
+}
+
+/* Lightning, for a thunderstorm. */
+.cgp-gem-flash {
+  position: absolute;
+  inset: 0;
+  background: #f4f7ff;
+  opacity: 0;
+}
