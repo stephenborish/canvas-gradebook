@@ -22,14 +22,6 @@
   pointer-events: none;
 }
 
-/* Rain: a lightning flicker in a storm. */
-.cgp-gem-flash {
-  position: absolute;
-  inset: 0;
-  background: #f4f7ff;
-  opacity: 0;
-}
-
 /* Snow: the light of a snowy day, so white flakes show on a white page. */
 .cgp-gem-overcast {
   position: absolute;
@@ -49,122 +41,6 @@
   image-rendering: auto;
 }
 
-/* Sunshine: late sun through a window across one corner of the page.
- * Multiplied into the page, so it only ever darkens where there is shade. */
-.cgp-gem-sun {
-  position: fixed;
-  inset: 0;
-  z-index: 9989;
-  pointer-events: none;
-  overflow: hidden;
-  mix-blend-mode: multiply;
-  opacity: 0;
-  transition: opacity 2.2s ease;
-  /* Only the corner the light comes in from. */
-  -webkit-mask-image: radial-gradient(ellipse 85% 95% at 100% 0%, #000 40%, rgba(0, 0, 0, 0.5) 70%, transparent 100%);
-  mask-image: radial-gradient(ellipse 85% 95% at 100% 0%, #000 40%, rgba(0, 0, 0, 0.5) 70%, transparent 100%);
-}
-.cgp-gem-sun.is-left {
-  -webkit-mask-image: radial-gradient(ellipse 85% 95% at 0% 0%, #000 40%, rgba(0, 0, 0, 0.5) 70%, transparent 100%);
-  mask-image: radial-gradient(ellipse 85% 95% at 0% 0%, #000 40%, rgba(0, 0, 0, 0.5) 70%, transparent 100%);
-}
-.cgp-gem-sun.is-on {
-  opacity: 1;
-}
-.cgp-gem-sun-svg {
-  position: absolute;
-  width: 0;
-  height: 0;
-}
-/* The warmth of the light itself, very light. */
-.cgp-gem-sun-warm {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(ellipse 70% 80% at 100% 0%, rgba(255, 214, 150, 0.32), rgba(255, 226, 180, 0.12) 60%, rgba(255, 236, 205, 0) 100%);
-}
-.cgp-gem-sun.is-left .cgp-gem-sun-warm {
-  background: radial-gradient(ellipse 70% 80% at 0% 0%, rgba(255, 214, 150, 0.32), rgba(255, 226, 180, 0.12) 60%, rgba(255, 236, 205, 0) 100%);
-}
-/* The shadows, seen in perspective: light comes in at a slant. */
-.cgp-gem-sun-scene {
-  position: absolute;
-  right: -8vw;
-  top: -10vh;
-  width: 78vw;
-  height: 100vh;
-  transform-origin: 100% 0%;
-  transform: perspective(900px) rotateX(18deg) rotateY(-24deg) skewX(-14deg) translateX(var(--cgp-sun-drift, 0px));
-  opacity: 0.34;
-  color: #3a2c1c;
-}
-.cgp-gem-sun.is-left .cgp-gem-sun-scene {
-  right: auto;
-  left: -8vw;
-  transform-origin: 0% 0%;
-  transform: perspective(900px) rotateX(18deg) rotateY(24deg) skewX(14deg) translateX(calc(-1 * var(--cgp-sun-drift, 0px)));
-}
-.cgp-gem-sun-blinds {
-  position: absolute;
-  inset: 0;
-  will-change: transform;
-  background: repeating-linear-gradient(180deg, transparent 0 34px, rgba(42, 30, 18, 0.55) 34px 46px);
-  filter: blur(5px);
-  animation: cgp-gem-sun-blinds 9s ease-in-out infinite;
-}
-.cgp-gem-sun-bar {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 46%;
-  width: 26px;
-  background: rgba(42, 30, 18, 0.75);
-  filter: blur(4px);
-}
-.cgp-gem-sun-branch {
-  position: absolute;
-  will-change: transform;
-  right: 0;
-  top: 0;
-  width: 600px;
-  height: 520px;
-  transform-origin: 100% 0%;
-  transform: scale(1.75);
-}
-.cgp-gem-sun.is-left .cgp-gem-sun-branch {
-  right: auto;
-  left: 0;
-  transform-origin: 0% 0%;
-  transform: scale(-1.75, 1.75);
-}
-.cgp-gem-sun-branch.is-near {
-  filter: blur(1.5px);
-  -webkit-mask-image: linear-gradient(225deg, #000 30%, transparent 70%);
-  mask-image: linear-gradient(225deg, #000 30%, transparent 70%);
-}
-.cgp-gem-sun-branch.is-far {
-  filter: blur(6px);
-  -webkit-mask-image: linear-gradient(225deg, transparent 30%, #000 65%);
-  mask-image: linear-gradient(225deg, transparent 30%, #000 65%);
-}
-.cgp-gem-sun-leaves {
-  position: absolute;
-  inset: 0;
-  background-size: 100% 100%;
-  background-repeat: no-repeat;
-  animation: cgp-gem-sun-billow 8s ease-in-out infinite;
-  transform-origin: 100% 0%;
-}
-@keyframes cgp-gem-sun-billow {
-  0%, 100% { transform: rotate(0deg) scale(1); }
-  30% { transform: rotate(1.2deg) scale(1.015); }
-  55% { transform: rotate(-1.6deg) scale(0.985); }
-  80% { transform: rotate(0.6deg) scale(1.025); }
-}
-@keyframes cgp-gem-sun-blinds {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(3px); }
-}
-
 /* Christmas lights: Snowstorm's bulb sprites on a wire along the top. */
 .cgp-gem-lights-wire {
   position: absolute;
@@ -179,26 +55,4 @@
   top: 0;
   background-repeat: no-repeat;
   transform-origin: 50% 8%;
-}
-/* The far, soft shadows sway as one layer: blurred once, then only moved. */
-.cgp-gem-sun-branch.is-far .cgp-gem-sun-leaves {
-  animation: none;
-}
-.cgp-gem-sun-branch.is-far {
-  animation: cgp-gem-sun-sway 8s ease-in-out infinite;
-}
-.cgp-gem-sun.is-left .cgp-gem-sun-branch.is-far {
-  animation-name: cgp-gem-sun-sway-left;
-}
-@keyframes cgp-gem-sun-sway {
-  0%, 100% { transform: scale(1.75) rotate(0deg); }
-  30% { transform: scale(1.77) rotate(1deg); }
-  55% { transform: scale(1.73) rotate(-1.4deg); }
-  80% { transform: scale(1.79) rotate(0.5deg); }
-}
-@keyframes cgp-gem-sun-sway-left {
-  0%, 100% { transform: scale(-1.75, 1.75) rotate(0deg); }
-  30% { transform: scale(-1.77, 1.77) rotate(-1deg); }
-  55% { transform: scale(-1.73, 1.73) rotate(1.4deg); }
-  80% { transform: scale(-1.79, 1.79) rotate(-0.5deg); }
 }

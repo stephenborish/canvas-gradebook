@@ -1120,9 +1120,9 @@ Student names, grades and comment text are never written to the log — only cou
   if you connect a class-schedule calendar, that calendar's site (e.g. `calendar.google.com`), which
   is used for nothing but fetching that one calendar.
 - One exception, for Hidden Gems (the weather and seasons on Canvas): while it is on, the extension
-  asks Open-Meteo (`api.open-meteo.com`, a free weather service) for the current weather (rain, snow,
-  clear, day or night) at two fixed points, Malvern and Center City Philadelphia, at most once a day
-  and at most every 20 minutes. Nothing about you, your
+  asks Open-Meteo (`api.open-meteo.com`, a free weather service) whether it is snowing at two fixed
+  points, Malvern and Center City Philadelphia, at most once every 20 minutes, and not again on a day
+  it has already snowed on your Canvas page. Nothing about you, your
   classes or Canvas is in the request; like any web request, it comes from your computer's IP
   address. Turn off Hidden Gems in the options to stop it.
 - The class-schedule calendar's address is kept in Chrome sync only — never in the Canvas copy of

@@ -228,8 +228,8 @@
     // reach every computer where the teacher opens Canvas even when Chrome
     // sync is off (core/settings-mirror.js).
     settingsInCanvas: true,
-    // Snow or rain on the Canvas page when it is really snowing or raining
-    // around Philadelphia (core/hidden-gems.js, weather.js).
+    // Snow on the Canvas page when it is really snowing around Philadelphia,
+    // autumn leaves and Christmas lights in season (core/hidden-gems.js).
     hiddenGems: true,
     diagnostics: false
   };
