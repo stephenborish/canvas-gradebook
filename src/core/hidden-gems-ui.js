@@ -1,25 +1,22 @@
 /* Canvas Gradebook+ - Hidden Gems: the stage and the controller.
  *
- * Five rare, short effects over the Canvas page the teacher is on, each
+ * Three rare, short effects over the Canvas page the teacher is on, each
  * adapted from an open-source project (see src/assets/gems/LICENSES.txt):
- *   rain      drops on the glass, refracting the page (src/gems/rain.js)
  *   snow      cinematic three-layer snowfall (src/gems/snow.js)
  *   leaves    real scanned autumn leaves drifting down (src/gems/leaves.js)
- *   sunshine  dappled light through leaves and blinds (src/gems/sunshine.js)
  *   lights    a string of Christmas lights along the top (src/gems/lights.js)
  *
  * Which one, and whether any, is decided by core/hidden-gems.js from the
- * real weather around Philadelphia (weather.js) and the date: at most one a
- * day, and most days none. The effect's code and textures are loaded only
+ * real weather around Philadelphia (weather.js) and the date: snow on a
+ * real snowy day, otherwise the season's effect on some days only. The effect's code and textures are loaded only
  * when one actually plays (the service worker injects src/gems/<id>.js).
  *
  * Rules every effect keeps: the stage never takes a click (pointer-events:
  * none) or focus and never changes the page; any key press, click, scroll
  * or window resize ends it at once (the teacher has started working); it
  * ends by itself after about 25 seconds; and everything it created is
- * removed. Preview on a Canvas course page with #cgp-gem-rain,
- * #cgp-gem-rain-heavy, #cgp-gem-rain-storm, #cgp-gem-snow, #cgp-gem-leaves,
- * #cgp-gem-sunshine or #cgp-gem-lights (typed into the address bar of an
+ * removed. Preview on a Canvas course page with #cgp-gem-snow,
+ * #cgp-gem-snow-heavy, #cgp-gem-leaves or #cgp-gem-lights (typed into the address bar of an
  * open page works too; these are valid element ids, so Canvas's own lookup
  * of the #fragment does not throw). */
 (function () {
@@ -274,7 +271,7 @@
 
   var P = HiddenGemsController.prototype;
 
-  /* Plays one effect now. opts: { heavy, thunder, light }. */
+  /* Plays one effect now. opts: { heavy } for snow. */
   P.play = function (id, opts) {
     var self = this;
     if (!CGP.hiddenGems || CGP.hiddenGems.KINDS.indexOf(id) === -1) return Promise.resolve(null);
@@ -309,10 +306,8 @@
   };
 
   var PREVIEWS = {
-    'rain': ['rain', {}], 'rain-light': ['rain', { light: true }], 'rain-heavy': ['rain', { heavy: true }],
-    'rain-storm': ['rain', { heavy: true, thunder: true }], 'rain-thunder': ['rain', { heavy: true, thunder: true }],
     'snow': ['snow', {}], 'snow-heavy': ['snow', { heavy: true }],
-    'leaves': ['leaves', {}], 'sunshine': ['sunshine', {}], 'lights': ['lights', {}]
+    'leaves': ['leaves', {}], 'lights': ['lights', {}]
   };
 
   /* Preview: #cgp-gem-<name> plays at once, whatever the weather or date.
@@ -334,14 +329,14 @@
   };
 
   /* Asks the service worker what the weather is doing around Philadelphia
-   * (it keeps the answer for 20 minutes). Resolves to { codes, isDay } or null. */
+   * (it keeps the answer for 20 minutes). Resolves to { codes } or null. */
   function currentWeather() {
     return new Promise(function (resolve) {
       try {
         if (!chrome || !chrome.runtime || !chrome.runtime.sendMessage) { resolve(null); return; }
         chrome.runtime.sendMessage({ type: 'cgp.weather.now' }, function (res) {
           void (chrome.runtime && chrome.runtime.lastError);
-          resolve(res && res.ok ? { codes: res.codes, isDay: res.isDay } : null);
+          resolve(res && res.ok ? { codes: res.codes } : null);
         });
       } catch (e) { resolve(null); }
     });
@@ -370,8 +365,8 @@
       return !document.hidden && !!self.settings.values.hiddenGems && !prefersReducedMotion();
     }
 
-    // One roll a day, once made, is final; real rain or snow has its own day,
-    // so it still shows if it starts later. The service worker keeps the
+    // One roll a day, once made, is final; real snow has its own day, so it
+    // still shows if it starts later. The service worker keeps the
     // weather for 20 minutes, so later pages cost no request.
     readState().then(function (state) {
       var now = new Date();

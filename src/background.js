@@ -180,7 +180,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   // Hidden Gems: an effect's code goes into the asking frame only when that
   // effect is about to play, never on every page.
   if (msg && msg.type === 'cgp.gems.load') {
-    const GEMS = ['rain', 'snow', 'leaves', 'sunshine', 'lights'];
+    const GEMS = ['snow', 'leaves', 'lights'];
     if (!sender || !sender.tab || sender.tab.id === undefined || GEMS.indexOf(msg.id) === -1) { respond({ ok: false }); return false; }
     chrome.scripting.executeScript({
       target: { tabId: sender.tab.id, frameIds: [sender.frameId || 0] },

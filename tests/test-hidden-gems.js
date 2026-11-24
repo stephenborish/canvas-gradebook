@@ -1,4 +1,4 @@
-/* Hidden Gems: the daily decision, the weather, and the wiring of the five effects. */
+/* Hidden Gems: the daily decision, the weather, and the wiring of the three effects. */
 'use strict';
 
 const fs = require('fs');
@@ -7,65 +7,67 @@ const vm = require('vm');
 const { suite, assert: { ok, not, eq } } = require('./harness');
 
 const ROOT = path.resolve(__dirname, '..');
-const GEMS = ['rain', 'snow', 'leaves', 'sunshine', 'lights'];
+const GEMS = ['snow', 'leaves', 'lights'];
 
 suite('Hidden Gems: what plays today', (test) => {
   const hg = globalThis.CGP.hiddenGems;
-  const clear = { codes: [0, 1], isDay: [1, 1] };
-  const overcast = { codes: [3, 3], isDay: [1, 1] };
+  const now = new Date(2026, 10, 24, 11, 0);
+  const today = hg.dayKey(now);
 
-  test('exactly the five effects', () => {
+  test('exactly the three effects: no rain, no sunshine', () => {
     eq(hg.KINDS.join(','), GEMS.join(','));
+    for (const gone of ['rain', 'sunshine']) {
+      not(fs.existsSync(path.join(ROOT, 'src/gems', gone + '.js')), gone + '.js is removed');
+    }
   });
 
-  test('WMO codes map to snow and rain; snow anywhere wins', () => {
-    eq(hg.weatherKind([0, 3]), null, 'clear and overcast');
-    eq(hg.weatherKind([45, 48]), null, 'fog');
-    eq(hg.weatherKind([71, 0]).id, 'snow');
-    ok(hg.weatherKind([0, 75]).heavy, 'heavy snow in either place');
-    eq(hg.weatherKind([61, 73]).id, 'snow', 'snow in Malvern beats rain in the city');
-    ok(hg.weatherKind([51]).light, 'drizzle is light rain');
-    const storm = hg.weatherKind([95, 61]);
-    ok(storm.id === 'rain' && storm.thunder && storm.heavy, 'thunderstorm');
-    eq(hg.weatherKind(['junk']), null);
+  test('WMO snow codes are snow; rain, drizzle, storms, fog and clear skies are not', () => {
+    eq(hg.snowKind([0, 3]), null, 'clear and overcast');
+    eq(hg.snowKind([45, 48]), null, 'fog');
+    eq(hg.snowKind([51, 61, 65, 80, 95]), null, 'drizzle, rain, showers and thunderstorms show nothing');
+    eq(hg.snowKind([71, 0]).id, 'snow');
+    ok(hg.snowKind([0, 75]).heavy, 'heavy snow in either place');
+    ok(hg.snowKind([61, 86]).heavy, 'heavy snow showers');
+    not(hg.snowKind([73]).heavy);
+    eq(hg.snowKind(['junk']), null);
   });
 
-  test('real rain or snow always plays, whatever the date or the roll', () => {
-    const july = new Date(2026, 6, 10, 10);
-    eq(hg.chooseGem(july, { codes: [63, 0] }, () => 0.99).id, 'rain');
-    eq(hg.chooseGem(new Date(2026, 11, 10, 10), { codes: [73, 73] }, () => 0.99).id, 'snow', 'snow beats Christmas lights');
-    ok(hg.chooseGem(july, { codes: [95, 0] }, () => 0.5).opts.thunder);
+  test('real snow always plays, whatever the date or the roll', () => {
+    const d = hg.decide({}, new Date(2026, 11, 10, 10), { codes: [73, 73] }, () => 0.99);
+    eq(d.pick.id, 'snow', 'snow beats Christmas lights');
+    ok(hg.decide({}, new Date(2027, 1, 3, 10), { codes: [75, 0] }, () => 0.99).pick.opts.heavy);
+  });
+
+  test('a rainy day is an ordinary day', () => {
+    const d = hg.decide({}, now, { codes: [63, 95] }, () => 0.1);
+    eq(d.pick.id, 'leaves', 'the season, as on a dry day');
+    eq(d.state.weatherDay, null);
+    eq(hg.decide({}, now, { codes: [63, 95] }, () => 0.9).pick, null);
   });
 
   test('Christmas lights from 1 December to 6 January, on some days', () => {
-    eq(hg.chooseGem(new Date(2026, 11, 1, 9), overcast, () => 0.1).id, 'lights');
-    eq(hg.chooseGem(new Date(2027, 0, 6, 9), clear, () => 0.1).id, 'lights');
-    eq(hg.chooseGem(new Date(2026, 11, 15, 9), clear, () => 0.9), null, 'most days nothing');
+    eq(hg.chooseGem(new Date(2026, 11, 1, 9), () => 0.1).id, 'lights');
+    eq(hg.chooseGem(new Date(2027, 0, 6, 9), () => 0.1).id, 'lights');
+    eq(hg.chooseGem(new Date(2026, 11, 15, 9), () => 0.9), null, 'most days nothing');
     not(hg.isChristmasSeason(new Date(2027, 0, 7)));
     not(hg.isChristmasSeason(new Date(2026, 10, 30)));
   });
 
-  test('autumn leaves from 22 September to 30 November; sunshine on a clear autumn day otherwise', () => {
-    eq(hg.chooseGem(new Date(2026, 9, 14, 11), overcast, () => 0.1).id, 'leaves');
-    eq(hg.chooseGem(new Date(2026, 8, 22, 11), overcast, () => 0.1).id, 'leaves');
-    eq(hg.chooseGem(new Date(2026, 9, 14, 11), clear, () => 0.5).id, 'sunshine');
-    eq(hg.chooseGem(new Date(2026, 9, 14, 11), overcast, () => 0.5), null);
+  test('autumn leaves from 22 September to 30 November, on some days', () => {
+    eq(hg.chooseGem(new Date(2026, 9, 14, 11), () => 0.1).id, 'leaves');
+    eq(hg.chooseGem(new Date(2026, 8, 22, 11), () => 0.1).id, 'leaves');
+    eq(hg.chooseGem(new Date(2026, 9, 14, 11), () => 0.5), null);
     not(hg.isAutumn(new Date(2026, 8, 21)));
   });
 
-  test('sunshine only on a clear day, by day, and only some days', () => {
-    const may = new Date(2026, 4, 12, 13);
-    eq(hg.chooseGem(may, clear, () => 0.1).id, 'sunshine');
-    eq(hg.chooseGem(may, clear, () => 0.5), null);
-    eq(hg.chooseGem(may, overcast, () => 0.1), null, 'not when overcast');
-    eq(hg.chooseGem(may, { codes: [0, 0], isDay: [0, 0] }, () => 0.1), null, 'not at night');
-    eq(hg.chooseGem(may, null, () => 0.1), null, 'not when the weather is unknown');
+  test('nothing out of season', () => {
+    eq(hg.chooseGem(new Date(2026, 4, 12, 13), () => 0.01), null, 'May');
+    eq(hg.chooseGem(new Date(2026, 6, 4, 13), () => 0.01), null, 'July');
   });
 
   test('one decision a day', () => {
-    const now = new Date(2026, 10, 24, 9, 30);
     ok(hg.rollDue({}, now));
-    not(hg.rollDue({ rolledDay: hg.dayKey(now) }, now), 'already decided today');
+    not(hg.rollDue({ rolledDay: today }, now), 'already decided today');
     ok(hg.rollDue({ rolledDay: '2026-11-23' }, now), 'a new day');
     not(hg.rollDue({}, now, { enabled: false }));
     not(hg.rollDue({}, now, { reducedMotion: true }));
@@ -73,11 +75,11 @@ suite('Hidden Gems: what plays today', (test) => {
   });
 });
 
-suite('Hidden Gems: rain and snow keep their own day', (test) => {
+suite('Hidden Gems: snow keeps its own day', (test) => {
   const hg = globalThis.CGP.hiddenGems;
   const now = new Date(2026, 10, 24, 11, 0);
   const today = hg.dayKey(now);
-  const snowing = { codes: [73, 3], isDay: [1, 1] };
+  const snowing = { codes: [73, 3] };
 
   test('snow that starts after the day was rolled still shows, once', () => {
     const rolledDry = { rolledDay: today, weatherDay: null };
@@ -88,11 +90,11 @@ suite('Hidden Gems: rain and snow keep their own day', (test) => {
     ok(hg.decide({ rolledDay: today, weatherDay: '2026-11-23' }, now, snowing).pick.id === 'snow', 'snowing again the next day');
   });
 
-  test('a failed weather lookup leaves the weather free to show later', () => {
+  test('a failed weather lookup leaves snow free to show later', () => {
     const d = hg.decide({}, now, null, () => 0.1);
     eq(d.pick.id, 'leaves', 'the roll still happens, from the date alone');
     eq(d.state.rolledDay, today);
-    eq(d.state.weatherDay, null, 'the weather has not had its day');
+    eq(d.state.weatherDay, null, 'snow has not had its day');
     eq(hg.decide(d.state, now, snowing).pick.id, 'snow');
     eq(hg.decide(d.state, now, null), null, 'nothing more to decide without weather');
   });
@@ -112,42 +114,29 @@ suite('Hidden Gems: the weather around Philadelphia', (test) => {
     return { bag, storage: { local: { get: async (k) => ({ [k]: bag[k] }), set: async (o) => Object.assign(bag, o) } } };
   }
 
-  test('asks Open-Meteo for Malvern and Philadelphia in one request, with day or night, and keeps it 20 minutes', async () => {
+  test('asks Open-Meteo for Malvern and Philadelphia in one request, and keeps it 20 minutes', async () => {
     const { createWeather } = await import(WEATHER);
     const calls = [];
     let clock = 1_700_000_000_000;
     const fetch = async (url, init) => {
       calls.push({ url, init });
-      return { ok: true, json: async () => ([{ current: { weather_code: 0, is_day: 1 } }, { current: { weather_code: 61, is_day: 0 } }]) };
+      return { ok: true, json: async () => ([{ current: { weather_code: 0 } }, { current: { weather_code: 73 } }]) };
     };
     const w = createWeather(fakeChrome(), fetch, () => clock);
     const first = await w.now();
-    eq(first.codes.join(','), '0,61');
-    eq(first.isDay.join(','), '1,0');
-    eq(calls[0].url, 'https://api.open-meteo.com/v1/forecast?latitude=40.04,39.95&longitude=-75.51,-75.17&current=weather_code,is_day');
+    eq(first.codes.join(','), '0,73');
+    eq(calls[0].url, 'https://api.open-meteo.com/v1/forecast?latitude=40.04,39.95&longitude=-75.51,-75.17&current=weather_code');
     eq(calls[0].init.credentials, 'omit', 'no cookies');
     clock += 10 * 60 * 1000;
     const again = await w.now();
-    ok(again.cached && again.isDay.join(',') === '1,0', 'from the cache');
+    ok(again.cached && again.codes.join(',') === '0,73', 'from the cache');
     eq(calls.length, 1);
-  });
-
-  test('a cached answer from before day or night was asked for is fetched again', async () => {
-    const { createWeather } = await import(WEATHER);
-    const chrome = fakeChrome();
-    const clock = 1_700_000_000_000;
-    await chrome.storage.local.set({ 'cgp.weather.cache': { at: clock - 60 * 1000, codes: [0, 0] } });
-    let calls = 0;
-    const fetch = async () => { calls++; return { ok: true, json: async () => ([{ current: { weather_code: 0, is_day: 1 } }]) }; };
-    const r = await createWeather(chrome, fetch, () => clock).now();
-    eq(calls, 1);
-    eq(r.isDay.join(','), '1');
   });
 
   test('tabs asking at once share one request; failures play nothing', async () => {
     const { createWeather } = await import(WEATHER);
     let calls = 0;
-    const fetch = async () => { calls++; return { ok: true, json: async () => ([{ current: { weather_code: 3, is_day: 1 } }]) }; };
+    const fetch = async () => { calls++; return { ok: true, json: async () => ([{ current: { weather_code: 3 } }]) }; };
     const w = createWeather(fakeChrome(), fetch, () => 1_700_000_000_000);
     await Promise.all([w.now(), w.now(), w.now()]);
     eq(calls, 1);
@@ -211,6 +200,19 @@ suite('Hidden Gems: starting and stopping an effect', (test) => {
     eq(stages().length, 0, 'no stage was made');
   });
 
+  test('the rain and sunshine preview codes no longer play anything', () => {
+    const { sb, ctl } = sandbox();
+    for (const h of ['#cgp-gem-rain', '#cgp-gem-rain-light', '#cgp-gem-rain-heavy', '#cgp-gem-rain-storm', '#cgp-gem-rain-thunder', '#cgp-gem-sunshine']) {
+      sb.location.hash = h;
+      not(ctl._checkHashPreview(), h);
+    }
+    for (const h of ['#cgp-gem-snow', '#cgp-gem-snow-heavy', '#cgp-gem-leaves', '#cgp-gem-lights']) {
+      sb.location.hash = h;
+      ok(ctl._checkHashPreview(), h);
+    }
+    ctl.stop();
+  });
+
   test('a newer effect wins over one still loading', async () => {
     const { sb, injected, loads, stages, ctl } = sandbox();
     const ran = [];
@@ -238,10 +240,10 @@ suite('Hidden Gems: wiring', (test) => {
     not(/src\/gems\//.test(all), 'effect code is injected only when an effect plays');
   });
 
-  test('the service worker injects only the five effects, into the asking frame', () => {
+  test('the service worker injects only the three effects, into the asking frame', () => {
     const bg = fs.readFileSync(path.join(ROOT, 'src/background.js'), 'utf8');
     ok(bg.includes("msg.type === 'cgp.gems.load'"));
-    ok(bg.includes("const GEMS = ['rain', 'snow', 'leaves', 'sunshine', 'lights'];") && bg.includes('GEMS.indexOf(msg.id) === -1'));
+    ok(bg.includes("const GEMS = ['snow', 'leaves', 'lights'];") && bg.includes('GEMS.indexOf(msg.id) === -1'));
     ok(bg.includes("files: ['src/gems/' + msg.id + '.js']"));
   });
 
@@ -272,6 +274,7 @@ suite('Hidden Gems: wiring', (test) => {
       ok(lic.includes(f), f + ' is credited');
     }
     ok(lic.includes('Software License Agreement (BSD License)'), 'Snowstorm BSD text reproduced');
-    ok(lic.includes('Copyright (c) 2021 SardineFish') && lic.includes('Copyright (c) 2024 phongdh'), 'MIT notices reproduced');
+    ok(lic.includes('Copyright (c) 2024 phongdh'), 'MIT notices reproduced');
+    not(/raindrop|codrops|sunlit/i.test(lic), 'no credits left for removed effects');
   });
 });
