@@ -27,7 +27,7 @@
   left: 0;
   top: 0;
   opacity: 0;
-  transition: opacity 3.5s ease;
+  transition: opacity 1.2s ease;
 }
 .cgp-gem-sky.is-on {
   opacity: 1;

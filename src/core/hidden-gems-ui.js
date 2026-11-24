@@ -13,8 +13,11 @@
  * pointer only matters by hovering), never takes focus, never changes the
  * page, fades away the moment the teacher types, and removes every node,
  * timer and listener when finished. Preview on a Canvas course page with
- * #cgp-gem=snow, #cgp-gem=snow:heavy, #cgp-gem=rain, #cgp-gem=rain:heavy or
- * #cgp-gem=rain:thunder. */
+ * #cgp-gem-snow, #cgp-gem-snow-heavy, #cgp-gem-rain, #cgp-gem-rain-heavy or
+ * #cgp-gem-rain-thunder (typing it into the address bar of an open page
+ * works too). The names are valid element ids on purpose: Canvas looks the
+ * address's #fragment up as a jQuery selector, and anything else (such as
+ * "#cgp-gem=snow:heavy") makes Canvas's own code throw. */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
@@ -331,19 +334,31 @@
     return parts.length < 4 || parseFloat(parts[3]) > 0.5;
   }
 
+  /* Rows of a grid, table or list are never ledges themselves (the shelter
+   * rule below would cover them anyway), and their insides hold none, so
+   * they are not walked at all: on a gradebook that skips thousands of
+   * cells. */
+  function isRow(el) {
+    var t = el.tagName;
+    if (t === 'TR' || t === 'TD' || t === 'TBODY') return true;
+    var role = el.getAttribute && el.getAttribute('role');
+    return role === 'row' || role === 'gridcell' || role === 'rowgroup' || role === 'cell';
+  }
+
   function collectLedges(stage) {
     var W = window.innerWidth, H = window.innerHeight;
     var out = [];
     var visited = 0;
     function walk(el, parentBg) {
       for (var c = el.firstElementChild; c; c = c.nextElementSibling) {
-        if (++visited > 15000) return;
+        if (++visited > 6000) return;
         if (c === stage || SKIP_TAGS[c.tagName] || (c.classList && c.classList.contains('cgp-gem-sky'))) continue;
         var cs = getComputedStyle(c);
         if (cs.display === 'none' || cs.visibility !== 'visible' || parseFloat(cs.opacity) < 0.2) continue;
         var r = c.getBoundingClientRect();
         if (r.width < 1 && r.height < 1) { walk(c, parentBg); continue; }
         if (r.bottom < 0 || r.top > H || r.right < 0 || r.left > W) continue;
+        var row = isRow(c);
         var bg = cs.backgroundColor;
         var ownBg = opaque(bg) && bg !== parentBg;
         var border = parseFloat(cs.borderTopWidth) > 0 && cs.borderTopStyle !== 'none' && opaque(cs.borderTopColor);
@@ -360,14 +375,11 @@
             if (tr) { x0 = Math.max(0, tr.left + 1); x1 = Math.min(W, tr.right - 1); }
           } catch (e) { /* keep the element's own width */ }
         }
-        if ((ownBg || border || LEDGE_TAGS[c.tagName]) && x1 - x0 >= 30 && top > 6 && top < H - 12) {
-          var hit = document.elementFromPoint(clamp((x0 + x1) / 2, 0, W - 1), clamp(top + 2, 0, H - 1));
-          if (hit && (hit === c || c.contains(hit) || hit.contains(c))) {
-            var radius = Math.min(parseFloat(cs.borderTopLeftRadius) || 0, 6);
-            out.push({ x0: x0 + radius * 0.5, x1: x1 - radius * 0.5, y: top });
-          }
+        if (!row && (ownBg || border || LEDGE_TAGS[c.tagName]) && x1 - x0 >= 30 && top > 6 && top < H - 12) {
+          var radius = Math.min(parseFloat(cs.borderTopLeftRadius) || 0, 6);
+          out.push({ x0: x0 + radius * 0.5, x1: x1 - radius * 0.5, y: top, el: c });
         }
-        walk(c, opaque(bg) ? bg : parentBg);
+        if (!row) walk(c, opaque(bg) ? bg : parentBg);
       }
     }
     walk(document.body, getComputedStyle(document.body).backgroundColor);
@@ -379,11 +391,11 @@
       for (var j = 0; j < merged.length; j++) {
         var M = merged[j];
         if (Math.abs(M.y - L.y) < 3 && L.x0 <= M.x1 + 2 && L.x1 >= M.x0 - 2) {
-          M.x0 = Math.min(M.x0, L.x0); M.x1 = Math.max(M.x1, L.x1); used = true; break;
+          M.x0 = Math.min(M.x0, L.x0); M.x1 = Math.max(M.x1, L.x1); M.els.push(L.el); used = true; break;
         }
         if (L.x0 >= M.x0 - 2 && L.x1 <= M.x1 + 2 && L.y > M.y && L.y - M.y < 4) { used = true; break; }
       }
-      if (!used) merged.push({ x0: L.x0, x1: L.x1, y: L.y });
+      if (!used) merged.push({ x0: L.x0, x1: L.x1, y: L.y, els: [L.el] });
     }
     // Sheltered ledges: nothing falls onto a ledge that sits just under
     // another one, so the rows of a table or a list get snow only on top.
@@ -397,7 +409,16 @@
         var overlap = Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0);
         if (overlap > (A.x1 - A.x0) * 0.6) covered = true;
       }
-      if (!covered) open.push(A);
+      if (covered) continue;
+      // Only now, for the few that are left: is the ledge really on top,
+      // not hidden under a menu, a modal or a sticky header?
+      var hit = document.elementFromPoint(clamp((A.x0 + A.x1) / 2, 0, W - 1), clamp(A.y + 2, 0, H - 1));
+      var seen = false;
+      for (var e = 0; e < A.els.length && !seen; e++) {
+        var el = A.els[e];
+        if (hit && (hit === el || el.contains(hit) || hit.contains(el))) seen = true;
+      }
+      if (seen) open.push({ x0: A.x0, x1: A.x1, y: A.y });
       if (open.length >= 70) break;
     }
     return open;
@@ -610,12 +631,23 @@
     var ending = false;
     weatherDismiss(session, function () { ending = true; });
 
+    // It has been snowing outside for a while: snow already lies on the
+    // ledges, a little of it, and keeps building from there.
     var shelves = [];
-    function gather() {
-      shelves = collectLedges(session.stage).map(function (L) { return makeShelf(L.x0, L.x1, L.y, L.x1 - L.x0 > 300 ? 12 : 9); });
+    function lying(sh, amount) {
+      for (var i = 0; i < sh.n; i++) sh.depth[i] = shelfCap(sh, i, noise) * amount * (0.75 + 0.25 * noise(sh.seed + i * 0.05, 2.2));
+      sh.total = sh.n;
+      return sh;
     }
-    gather();
-    var ground = makeShelf(-6, W + 6, H + 2, Math.min(40, H * 0.055), true);
+    function gather() {
+      shelves = collectLedges(session.stage).map(function (L) {
+        return lying(makeShelf(L.x0, L.x1, L.y, L.x1 - L.x0 > 300 ? 12 : 9), 0.4);
+      });
+    }
+    // The page is read just after the first frames, so the snow is already
+    // falling while it is read.
+    session.after(50, gather);
+    var ground = lying(makeShelf(-6, W + 6, H + 2, Math.min(40, H * 0.055), true), 0.35);
     followScroll(session, function () {
       for (var k = 0; k < shelves.length; k++) if (shelves[k].total > 2) knock(shelves[k], shelves[k].x0, shelves[k].x1, 0.5);
       shelves = [];
@@ -644,9 +676,10 @@
       f.dead = false;
       return f;
     }
-    for (var i = 0; i < COUNT; i++) { flakes.push(spawn({}, true)); flakes[i].y -= rng() * H * 1.3; }
+    // Already snowing: flakes fill the screen from the first frame.
+    for (var i = 0; i < COUNT; i++) flakes.push(spawn({}, false));
     var near = [];
-    for (var b = 0; b < (heavy ? 7 : 5); b++) near.push({ x: rng() * W, y: -40 - rng() * H, r: 9 + rng() * 14, vy: 40 + rng() * 30, k: rng() * 100 });
+    for (var b = 0; b < (heavy ? 7 : 5); b++) near.push({ x: rng() * W, y: rng() * H - 60, r: 9 + rng() * 14, vy: 40 + rng() * 30, k: rng() * 100 });
 
     var clumps = [];
     var gusts = [];
@@ -685,7 +718,8 @@
       var live = p.seen && performance.now() - p.at < 100;
       var pv = live ? Math.hypot(p.vx, p.vy) : 0;
       var snowing = !ending && t < DURATION;
-      var density = snowing ? smoothstep(0, 5, t) : 0;
+      var density = snowing ? smoothstep(0, 1, t) : 0;
+      var intro = smoothstep(0, 0.9, t);
       if (!snowing && !sky.ended) { sky.off(); sky.ended = true; }
       var windMid = windAt(W / 2, t);
       sky.draw(t, windMid + drift * 2);
@@ -699,7 +733,7 @@
         var sh = all[k];
         if (melt > 0) {
           for (var m = 0; m < sh.n; m++) sh.depth[m] *= 1 - 2.2 * dt * melt;
-        } else if (t > 1.5) {
+        } else {
           // The steady settling of countless flakes too small to see.
           var rate = (heavy ? 0.9 : 0.6) * density * dt * (sh.ground ? 1.6 : 1);
           for (var gI = 0; gI < sh.n; gI++) {
@@ -720,7 +754,7 @@
         if (live && pv > 380 && !sh.ground && p.x > sh.x0 - 6 && p.x < sh.x1 + 6 && p.y > sh.y - 18 && p.y < sh.y + 8) {
           knock(sh, p.x - 24, p.x + 24, 1);
         }
-        drawCap(ctx, sh, 1 - melt * 0.9);
+        drawCap(ctx, sh, (1 - melt * 0.9) * intro);
       }
 
       // Falling flakes: each rides the eddies of the air on its own.
@@ -758,7 +792,7 @@
         }
         if (fl.y > H + 14 || fl.x < -220 || fl.x > W + 220) fl.dead = true;
         if (fl.dead) continue;
-        ctx.globalAlpha = 0.55 + fl.z * 0.45;
+        ctx.globalAlpha = (0.55 + fl.z * 0.45) * intro;
         ctx.drawImage(fl.sp.c, fl.x - fl.sp.s / 2, fl.y - fl.sp.s / 2, fl.sp.s, fl.sp.s);
       }
       ctx.globalAlpha = 1;
@@ -773,7 +807,7 @@
           N.x = rng() * W; N.y = -N.r * 2 - rng() * 300;
         }
         var bs = N.r / 14;
-        ctx.globalAlpha = 0.75 * smoothstep(0, 6, t) * (snowing ? 1 : 0.5);
+        ctx.globalAlpha = 0.75 * intro * (snowing ? 1 : 0.5);
         ctx.drawImage(bokeh.c, N.x - bokeh.s * bs / 2, N.y - bokeh.s * bs / 2, bokeh.s * bs, bokeh.s * bs);
       }
       ctx.globalAlpha = 1;
@@ -887,13 +921,14 @@
     var ending = false;
     weatherDismiss(session, function () { ending = true; });
 
+    // It has been raining for a while: the ledges are already wet.
     var ledges = [];
     function gather() {
       ledges = collectLedges(session.stage).map(function (L) {
-        return { x0: L.x0, x1: L.x1, y: L.y, beadL: rng() * 0.5, beadR: rng() * 0.5, wet: 0 };
+        return { x0: L.x0, x1: L.x1, y: L.y, beadL: 0.3 + rng() * 0.6, beadR: 0.3 + rng() * 0.6, wet: 0.6 };
       });
     }
-    gather();
+    session.after(50, gather);
     followScroll(session, function () { ledges = []; }, gather);
 
     var COUNT = Math.round(clamp(W * H / (heavy ? 750 : 1100), 450, 1800));
@@ -908,7 +943,8 @@
       d.dead = false;
       return d;
     }
-    for (var i = 0; i < COUNT; i++) { drops.push(spawn({})); drops[i].y -= rng() * H * 1.4; }
+    // Already raining: streaks fill the screen from the first frame.
+    for (var i = 0; i < COUNT; i++) { drops.push(spawn({})); drops[i].y = rng() * (H + 100) - 100; }
 
     var spray = [];
     var spraySprite = softDot(3, 0.2, 0.55);
@@ -953,6 +989,12 @@
       beads.splice(idx, 1);
     }
 
+    // And the glass is already spotted with water.
+    for (var ib = 0; ib < (heavy ? 30 : 20); ib++) {
+      var nb0 = addBead(rng() * W, 20 + rng() * (H - 80), 2.2 + rng() * rng() * 5.5);
+      if (nb0) nb0.life = -rng() * 0.6;   // they appear over the first moment, not all at once
+    }
+
     var strikes = [];
     if (props.thunder) for (var st = 5 + rng() * 4; st < DURATION - 4; st += 9 + rng() * 10) strikes.push(st);
     function flashLevel(t) {
@@ -974,7 +1016,7 @@
 
     session.loop(function (dt, t) {
       var raining = !ending && t < DURATION;
-      var density = raining ? smoothstep(0, 4, t) : 0;
+      var density = raining ? smoothstep(0, 0.8, t) : 0;
       if (!raining && !sky.ended) { sky.off(); sky.ended = true; }
       var slant = dir * (0.09 + 0.06 * (noise(t * 0.07, 2.2) * 0.5 + 0.5) + 0.05 * Math.max(0, noise(t * 0.25, 8.8)));
       sky.draw(t, slant * 500);
@@ -1172,7 +1214,7 @@
           if (B.r < 1.2) { removeBead(bI); continue; }
           sizeBead(B);
         }
-        var pop = Math.min(1, B.life / 0.12);
+        var pop = clamp(B.life / 0.12, 0, 1);
         B.el.style.transform = 'translate3d(' + (B.x - B.r).toFixed(1) + 'px,' + (B.y - B.h / 2).toFixed(1) + 'px,0) scale(' + (0.6 + 0.4 * pop).toFixed(3) + ')';
       }
 
@@ -1222,16 +1264,19 @@
     if (this._active) { this._active.destroy(); this._active = null; }
   };
 
-  /* #cgp-gem=snow, #cgp-gem=snow:heavy, #cgp-gem=rain, #cgp-gem=rain:heavy,
-   * #cgp-gem=rain:thunder: play at once, whatever the weather. */
+  /* Preview: #cgp-gem-snow, #cgp-gem-snow-heavy, #cgp-gem-rain,
+   * #cgp-gem-rain-heavy, #cgp-gem-rain-thunder play at once, whatever the
+   * weather (the older "#cgp-gem=snow:heavy" spelling is still read). Checked
+   * when the page loads and whenever the address's #fragment changes, since
+   * typing a new #fragment into the address bar does not reload the page. */
   P._checkHashPreview = function () {
     try {
-      var m = /^#cgp-gem=(snow|rain)(?::(heavy|thunder))?$/i.exec(String(location.hash || ''));
+      var m = /^#cgp-gem[-=](snow|rain)(?:[-:](heavy|thunder))?$/i.exec(String(location.hash || ''));
       if (!m) return false;
       var id = m[1].toLowerCase();
       var how = (m[2] || '').toLowerCase();
       var self = this;
-      setTimeout(function () { self.play(id, { heavy: !!how, thunder: how === 'thunder' }); }, 600);
+      setTimeout(function () { self.play(id, { heavy: !!how, thunder: how === 'thunder' }); }, 50);
       return true;
     } catch (e) { return false; }
   };
@@ -1265,6 +1310,7 @@
       });
     }
 
+    window.addEventListener('hashchange', function () { self._checkHashPreview(); });
     if (this._checkHashPreview()) return;
     if (!this.settings || !this.settings.values || this.settings.values.hiddenGems === false) return;
     if (prefersReducedMotion() || !CGP.hiddenGems) return;
@@ -1280,7 +1326,8 @@
       return currentWeather();
     }).then(function (kind) {
       if (!kind) return;
-      // Let the page settle first, and play only if the teacher is still here.
+      // A moment for the page to finish drawing, then the weather: soon
+      // enough that a teacher passing through the page still sees it.
       self._timer = setTimeout(function () {
         self._timer = null;
         if (!stillWanted()) return;
@@ -1302,7 +1349,7 @@
             });
           });
         });
-      }, 8000 + Math.random() * 10000);
+      }, 1200 + Math.random() * 1300);
     }, function () { return null; });
   };
 
