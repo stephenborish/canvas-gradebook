@@ -387,50 +387,47 @@
     return open;
   }
 
-  /* ================================================================== SKY
-   * The light of the day, laid over the page: an overcast gradient with soft
-   * cloud shadows drifting across it with the wind. A tiny canvas, scaled up
-   * so it is perfectly soft. It sits outside the stage on purpose: the stage
-   * is its own stacking context, and a blend inside it would only blend with
-   * the empty stage instead of darkening the page. */
+  /* ==================================================================== SKY
+   * The light of the day, laid over the page the way a gloomy day dims a
+   * room: an overcast veil, heavier toward the top and the corners, with very
+   * large, very soft cloud shadows sliding across with the wind. Dimming the
+   * page is what lets white snow and bright rain show against it, as in
+   * life. A tiny canvas scaled up, so it is perfectly smooth; a plain
+   * translucent layer (no blend mode), so it costs next to nothing to show. */
 
   function makeSky(session, kind, rng) {
-    var SC = 10;
+    var SC = 12;
     var el = document.createElement('canvas');
     el.className = 'cgp-gem-sky';
-    el.setAttribute('aria-hidden', 'true');
     var w = Math.ceil(window.innerWidth / SC) + 2, h = Math.ceil(window.innerHeight / SC) + 2;
     el.width = w; el.height = h;
     el.style.width = (w * SC) + 'px';
     el.style.height = (h * SC) + 'px';
-    document.body.appendChild(el);
-    session.onDestroy(function () { if (el.parentNode) el.parentNode.removeChild(el); });
+    session.stage.insertBefore(el, session.stage.firstChild);
     var g = el.getContext('2d');
     var snow = kind === 'snow';
-    var top = snow ? 'rgb(206,216,229)' : 'rgb(178,189,203)';
-    var mid = snow ? 'rgb(226,233,241)' : 'rgb(198,207,218)';
-    var bot = snow ? 'rgb(238,242,247)' : 'rgb(211,218,226)';
-    var shade = snow ? [158, 172, 194] : [128, 140, 158];
+    var ink = snow ? [42, 58, 86] : [26, 38, 56];
+    var aTop = snow ? 0.27 : 0.46, aMid = snow ? 0.21 : 0.39, aBot = snow ? 0.16 : 0.33;
+    var aEdge = snow ? 0.13 : 0.16, aCloud = snow ? 0.08 : 0.11;
     var clouds = [];
     var big = Math.max(w, h);
-    for (var i = 0; i < 7; i++) {
-      clouds.push({ x: rng() * (w + big) - big / 2, y: rng() * h * 0.9, r: big * (0.18 + rng() * 0.3),
-        a: (snow ? 0.16 : 0.15) + rng() * (snow ? 0.16 : 0.12), sp: 0.6 + rng() * 0.8, sq: 0.45 + rng() * 0.3 });
+    for (var i = 0; i < 5; i++) {
+      clouds.push({ x: rng() * (w + big) - big / 2, y: rng() * h, r: big * (0.4 + rng() * 0.35),
+        a: 0.5 + rng() * 0.5, sp: 0.6 + rng() * 0.8, sq: 0.5 + rng() * 0.3 });
     }
     var last = -1;
     return {
       on: function () { el.classList.add('is-on'); },
       off: function () { el.classList.remove('is-on'); el.classList.add('is-off'); },
-      draw: function (t, drift, gloom) {
-        if (t - last < 0.05) return;   // 20 frames a second is plenty for clouds
+      draw: function (t, drift) {
+        if (t - last < 0.05) return;   // 20 frames a second is plenty for light
         var dt = last < 0 ? 0 : t - last;
         last = t;
-        g.globalCompositeOperation = 'source-over';
+        g.clearRect(0, 0, w, h);
         var grd = g.createLinearGradient(0, 0, 0, h);
-        grd.addColorStop(0, top); grd.addColorStop(0.55, mid); grd.addColorStop(1, bot);
+        grd.addColorStop(0, rgba(ink, aTop)); grd.addColorStop(0.55, rgba(ink, aMid)); grd.addColorStop(1, rgba(ink, aBot));
         g.fillStyle = grd;
         g.fillRect(0, 0, w, h);
-        g.globalCompositeOperation = 'multiply';
         for (var k = 0; k < clouds.length; k++) {
           var c = clouds[k];
           c.x += drift * c.sp * dt / SC;
@@ -439,18 +436,18 @@
           g.translate(c.x, c.y);
           g.scale(1, c.sq);
           var rg = g.createRadialGradient(0, 0, 0, 0, 0, c.r);
-          rg.addColorStop(0, rgba(shade, c.a));
-          rg.addColorStop(0.6, rgba(shade, c.a * 0.45));
-          rg.addColorStop(1, rgba(shade, 0));
+          rg.addColorStop(0, rgba(ink, aCloud * c.a));
+          rg.addColorStop(1, rgba(ink, 0));
           g.fillStyle = rg;
           g.beginPath(); g.arc(0, 0, c.r, 0, TAU); g.fill();
           g.restore();
         }
-        if (gloom > 0) {
-          g.fillStyle = 'rgba(150,158,172,' + clamp(gloom, 0, 1).toFixed(3) + ')';
-          g.fillRect(0, 0, w, h);
-        }
-        g.globalCompositeOperation = 'source-over';
+        // The corners of a dim room fall off first.
+        var vg = g.createRadialGradient(w / 2, h * 0.45, Math.min(w, h) * 0.35, w / 2, h * 0.45, Math.max(w, h) * 0.75);
+        vg.addColorStop(0, rgba(ink, 0));
+        vg.addColorStop(1, rgba(ink, aEdge));
+        g.fillStyle = vg;
+        g.fillRect(0, 0, w, h);
       }
     };
   }
@@ -476,21 +473,44 @@
     }, { capture: true, passive: true });
   }
 
+  /* A soft white sprite, drawn once: a flake, a clump, a droplet of spray. */
+  function makeSprite(size, paint) {
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    var c = document.createElement('canvas');
+    c.width = Math.ceil(size * dpr); c.height = Math.ceil(size * dpr);
+    var g = c.getContext('2d');
+    g.scale(dpr, dpr);
+    paint(g, size / 2);
+    return { c: c, s: size };
+  }
+  function softDot(r, hardness, alpha) {
+    return makeSprite(r * 2 + 2, function (g, m) {
+      var f = g.createRadialGradient(m, m, 0, m, m, r);
+      f.addColorStop(0, 'rgba(255,255,255,' + alpha + ')');
+      f.addColorStop(hardness, 'rgba(255,255,255,' + (alpha * 0.85) + ')');
+      f.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = f;
+      g.beginPath(); g.arc(m, m, r, 0, TAU); g.fill();
+    });
+  }
+
   /* =================================================================== SNOW
-   * Snow on a snowy day. The light turns cold and grey and clouds drift over
-   * the page. Flakes fall at every depth: a haze of tiny far ones, crisp
-   * middle ones, the odd six-armed crystal turning as it falls, and a few
-   * big soft out-of-focus ones drifting past close up. Gusts sweep through
-   * and swirl them. Snow settles and piles up on the page's own ledges, in
-   * soft caps that bulge over the ends and glint, and banks up along the
-   * bottom of the window; when a cap is full, a little of it slides off the
-   * end. A quick swipe of the pointer knocks snow off a ledge, and the
-   * pointer pushes the falling flakes aside. */
+   * Snow on a snowy day. The page dims to the flat grey light of a snow
+   * sky. Flakes fall at every depth, soft and white: a fine haze far away,
+   * clearly drawn flakes in the middle, and a few large, out-of-focus ones
+   * drifting past close up. They do not sway in step: each rides the eddies
+   * of the air, and now and then a gust sweeps across the screen and
+   * swirls them. Snow settles on the page's own ledges (buttons, header
+   * bars, the letters of headings, nav icons) in soft, lumpy, unoutlined
+   * caps, bright on top and blue-grey underneath, and banks up along the
+   * bottom of the window. Rows of a table or list are sheltered by the row
+   * above, so only their top collects snow. A swipe of the pointer knocks
+   * snow off a ledge; moving the pointer stirs the falling flakes. */
 
   var SNOW_COL = 2;
   function makeShelf(x0, x1, y, maxDepth, ground) {
     var n = Math.max(2, Math.ceil((x1 - x0) / SNOW_COL) + 1);
-    return { x0: x0, x1: x1, y: y, n: n, depth: new Float32Array(n), max: maxDepth, total: 0, ground: !!ground, slideT: 0 };
+    return { x0: x0, x1: x1, y: y, n: n, depth: new Float32Array(n), max: maxDepth, total: 0, ground: !!ground, slideT: 0, seed: Math.random() * 100 };
   }
   function shelfDepth(sh, x) {
     var i = Math.round((x - sh.x0) / SNOW_COL);
@@ -498,10 +518,10 @@
   }
   function shelfCap(sh, i, noise) {
     var edge = Math.min(i, sh.n - 1 - i) * SNOW_COL;
-    var shape = sh.ground
-      ? 0.55 + 0.45 * (noise(i * 0.012, 3.1) * 0.5 + 0.5) + 0.25 * noise(i * 0.05, 9.4)
-      : 0.72 + 0.28 * noise(sh.y * 0.1 + i * 0.045, 7.7);
-    return sh.max * (sh.ground ? 1 : clamp(0.22 + edge / 16, 0.22, 1)) * clamp(shape, 0.3, 1.2);
+    // Lumpy, the way real snow lies: big undulations and small clumps.
+    var lump = 0.68 + 0.22 * noise(sh.seed + i * 0.02, 1.3) + 0.16 * noise(sh.seed + i * 0.11, 4.7);
+    if (sh.ground) return sh.max * clamp(0.5 + 0.35 * noise(i * 0.008, 3.1) + 0.2 * noise(i * 0.05, 9.4), 0.25, 1.1);
+    return sh.max * clamp(0.18 + edge / 18, 0.18, 1) * clamp(lump, 0.35, 1.15);
   }
   function deposit(sh, x, amount, spread, noise) {
     var ci = (x - sh.x0) / SNOW_COL;
@@ -514,18 +534,15 @@
     }
     sh.total += amount;
   }
-
-  /* A snow cap: smooth, bulging over the ends, cool white, lit from above,
-   * with a soft blue shadow where it meets the ledge. */
   function capProfile(sh) {
     var d = sh.depth, n = sh.n;
     var sm = new Float32Array(n);
     for (var i = 0; i < n; i++) {
       var a = 0, wsum = 0;
-      for (var k = -4; k <= 4; k++) {
+      for (var k = -3; k <= 3; k++) {
         var j = i + k;
         if (j < 0 || j >= n) continue;
-        var w = 5 - Math.abs(k);
+        var w = 4 - Math.abs(k);
         a += d[j] * w; wsum += w;
       }
       sm[i] = a / wsum;
@@ -535,146 +552,34 @@
   function traceCap(ctx, sh, sm, first, last) {
     var y = sh.y;
     var x0 = sh.x0 + first * SNOW_COL, x1 = sh.x0 + last * SNOW_COL;
-    var over = sh.ground ? 0 : Math.min(4.5, sm[first] * 0.75), overR = sh.ground ? 0 : Math.min(4.5, sm[last] * 0.75);
-    ctx.moveTo(x0 - over, y + 1.5);
-    ctx.bezierCurveTo(x0 - over - 1.2, y - sm[first] * 0.3, x0 - over * 0.4, y - sm[first], x0, y - sm[first]);
+    var over = sh.ground ? 0 : Math.min(4, sm[first] * 0.6), overR = sh.ground ? 0 : Math.min(4, sm[last] * 0.6);
+    ctx.moveTo(x0 - over, y + 1.2);
+    ctx.bezierCurveTo(x0 - over - 1, y - sm[first] * 0.25, x0 - over * 0.5, y - sm[first], x0, y - sm[first]);
     for (var p = first + 1; p <= last; p++) ctx.lineTo(sh.x0 + p * SNOW_COL, y - sm[p]);
-    ctx.bezierCurveTo(x1 + overR * 0.4, y - sm[last], x1 + overR + 1.2, y - sm[last] * 0.3, x1 + overR, y + 1.5);
+    ctx.bezierCurveTo(x1 + overR * 0.5, y - sm[last], x1 + overR + 1, y - sm[last] * 0.25, x1 + overR, y + 1.2);
   }
   function drawCap(ctx, sh, alpha) {
-    if (sh.total < 0.4) return null;
+    if (sh.total < 0.4) return;
     var sm = capProfile(sh);
     var first = -1, last = -1, top = 0;
     for (var q = 0; q < sh.n; q++) if (sm[q] > 0.3) { if (first < 0) first = q; last = q; if (sm[q] > top) top = sm[q]; }
-    if (first < 0) return null;
+    if (first < 0) return;
     ctx.save();
     ctx.globalAlpha = alpha;
-    // Body, with a soft shadow beneath it.
+    // The shadow the snow casts on the ledge's face, then the snow itself.
     ctx.beginPath();
     traceCap(ctx, sh, sm, first, last);
     ctx.closePath();
-    ctx.shadowColor = 'rgba(58, 80, 112, 0.30)';
-    ctx.shadowBlur = 4;
+    ctx.shadowColor = 'rgba(40, 58, 86, 0.35)';
+    ctx.shadowBlur = 5;
     ctx.shadowOffsetY = 1.5;
-    var g = ctx.createLinearGradient(0, sh.y - top, 0, sh.y + 1.5);
-    g.addColorStop(0, '#f7fafd');
-    g.addColorStop(0.5, '#eef3f9');
-    g.addColorStop(1, '#d6e1ee');
+    var g = ctx.createLinearGradient(0, sh.y - top, 0, sh.y + 1.2);
+    g.addColorStop(0, '#ffffff');
+    g.addColorStop(0.45, '#f6f9fc');
+    g.addColorStop(1, '#d9e2ee');
     ctx.fillStyle = g;
     ctx.fill();
-    ctx.shadowColor = 'transparent';
-    // Sunlit crest: a brighter band just under the top surface.
-    ctx.save();
-    ctx.clip();
-    ctx.beginPath();
-    traceCap(ctx, sh, sm, first, last);
-    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-    ctx.lineWidth = 2.4;
-    ctx.stroke();
     ctx.restore();
-    // A faint cool outline so it reads on white.
-    ctx.beginPath();
-    traceCap(ctx, sh, sm, first, last);
-    ctx.strokeStyle = 'rgba(112, 138, 172, 0.5)';
-    ctx.lineWidth = 0.7;
-    ctx.stroke();
-    ctx.restore();
-    return sm;
-  }
-
-  /* Flake sprites, drawn once. Soft discs (with a faint cool edge so white
-   * snow shows on a white page), sharper crystals, and big defocused bokeh. */
-  function makeSprite(size, paint) {
-    var dpr = Math.min(2, window.devicePixelRatio || 1);
-    var c = document.createElement('canvas');
-    c.width = Math.ceil(size * dpr); c.height = Math.ceil(size * dpr);
-    var g = c.getContext('2d');
-    g.scale(dpr, dpr);
-    paint(g, size / 2);
-    return { c: c, s: size };
-  }
-  /* A real flake up close is a loose clump of crystals: a few soft lobes. */
-  function fluffSprite(r, soft, rng) {
-    return makeSprite((r + soft + 3) * 2, function (g, m) {
-      var lobes = [[0, 0, 0.75]];
-      for (var i = 0; i < 4; i++) {
-        var a = rng() * TAU, d = r * (0.3 + rng() * 0.35);
-        lobes.push([Math.cos(a) * d, Math.sin(a) * d, 0.45 + rng() * 0.3]);
-      }
-      for (var k = 0; k < lobes.length; k++) {
-        var lx = m + lobes[k][0], ly = m + lobes[k][1], lr = r * lobes[k][2];
-        var sh = g.createRadialGradient(lx, ly + 0.6, lr * 0.4, lx, ly + 0.6, lr + soft + 1);
-        sh.addColorStop(0, 'rgba(56, 80, 114, 0.12)');
-        sh.addColorStop(1, 'rgba(56, 80, 114, 0)');
-        g.fillStyle = sh;
-        g.beginPath(); g.arc(lx, ly + 0.6, lr + soft + 1, 0, TAU); g.fill();
-      }
-      for (var j = 0; j < lobes.length; j++) {
-        var x = m + lobes[j][0], y = m + lobes[j][1], rr = r * lobes[j][2];
-        var f = g.createRadialGradient(x - rr * 0.3, y - rr * 0.3, 0, x, y, rr + soft);
-        f.addColorStop(0, 'rgba(255,255,255,1)');
-        f.addColorStop(0.6, 'rgba(255,255,255,0.9)');
-        f.addColorStop(1, 'rgba(255,255,255,0)');
-        g.fillStyle = f;
-        g.beginPath(); g.arc(x, y, rr + soft, 0, TAU); g.fill();
-      }
-    });
-  }
-
-  function discSprite(r, soft) {
-    return makeSprite((r + soft + 2) * 2, function (g, m) {
-      var sh = g.createRadialGradient(m, m + 0.5, r * 0.5, m, m + 0.5, r + soft + 1);
-      sh.addColorStop(0, 'rgba(56, 80, 114, 0.20)');
-      sh.addColorStop(1, 'rgba(56, 80, 114, 0)');
-      g.fillStyle = sh;
-      g.beginPath(); g.arc(m, m + 0.5, r + soft + 1, 0, TAU); g.fill();
-      var f = g.createRadialGradient(m - r * 0.3, m - r * 0.3, 0, m, m, r + soft);
-      f.addColorStop(0, 'rgba(255,255,255,1)');
-      f.addColorStop(clamp(r / (r + soft), 0.2, 0.95) * 0.75, 'rgba(255,255,255,0.96)');
-      f.addColorStop(1, 'rgba(255,255,255,0)');
-      g.fillStyle = f;
-      g.beginPath(); g.arc(m, m, r + soft, 0, TAU); g.fill();
-    });
-  }
-  function crystalSprite(r, rng) {
-    var twig = 0.45 + rng() * 0.25, twigLen = 0.28 + rng() * 0.12, twig2 = rng() < 0.6;
-    return makeSprite((r + 3) * 2, function (g, m) {
-      function arms(color, width, dy) {
-        g.strokeStyle = color;
-        g.lineWidth = width;
-        g.lineCap = 'round';
-        for (var a = 0; a < 6; a++) {
-          var an = a * Math.PI / 3;
-          var cx = Math.cos(an), sy = Math.sin(an);
-          g.beginPath(); g.moveTo(m, m + dy); g.lineTo(m + cx * r, m + sy * r + dy); g.stroke();
-          var pts = twig2 ? [twig, twig + 0.25] : [twig];
-          for (var p = 0; p < pts.length; p++) {
-            var bx = m + cx * r * pts[p], by = m + sy * r * pts[p] + dy;
-            var L = r * twigLen * (p ? 0.7 : 1);
-            for (var s = -1; s <= 1; s += 2) {
-              g.beginPath(); g.moveTo(bx, by);
-              g.lineTo(bx + Math.cos(an + s * 1.0) * L, by + Math.sin(an + s * 1.0) * L); g.stroke();
-            }
-          }
-        }
-      }
-      arms('rgba(60, 86, 122, 0.32)', Math.max(1.1, r * 0.2), 0.7);
-      arms('#ffffff', Math.max(0.8, r * 0.13), 0);
-      g.fillStyle = '#fff';
-      g.beginPath(); g.arc(m, m, r * 0.2, 0, TAU); g.fill();
-    });
-  }
-  function bokehSprite(r) {
-    return makeSprite(r * 2 + 4, function (g, m) {
-      var f = g.createRadialGradient(m, m, 0, m, m, r);
-      // Far out of focus: a soft glow with no edge at all.
-      f.addColorStop(0, 'rgba(255,255,255,0.5)');
-      f.addColorStop(0.35, 'rgba(255,255,255,0.38)');
-      f.addColorStop(0.7, 'rgba(255,255,255,0.14)');
-      f.addColorStop(1, 'rgba(255,255,255,0)');
-      g.fillStyle = f;
-      g.beginPath(); g.arc(m, m, r, 0, TAU); g.fill();
-    });
   }
 
   PLAYERS.snow = function (session, props) {
@@ -691,63 +596,52 @@
 
     var shelves = [];
     function gather() {
-      shelves = collectLedges(session.stage).map(function (L) { return makeShelf(L.x0, L.x1, L.y, L.x1 - L.x0 > 300 ? 13 : 10); });
+      shelves = collectLedges(session.stage).map(function (L) { return makeShelf(L.x0, L.x1, L.y, L.x1 - L.x0 > 300 ? 12 : 9); });
     }
     gather();
-    var ground = makeShelf(-6, W + 6, H + 2, Math.min(46, H * 0.06), true);
+    var ground = makeShelf(-6, W + 6, H + 2, Math.min(40, H * 0.055), true);
     followScroll(session, function () {
       for (var k = 0; k < shelves.length; k++) if (shelves[k].total > 2) knock(shelves[k], shelves[k].x0, shelves[k].x1, 0.5);
       shelves = [];
     }, gather);
 
-    var discs = [];
-    for (var s = 0; s < 7; s++) discs.push(discSprite(0.7 + s * 0.6, 0.5 + s * 0.35));
-    var fluffs = [];
-    for (var fI = 0; fI < 8; fI++) fluffs.push(fluffSprite(3 + rng() * 2.6, 0.6 + rng() * 0.6, rng));
-    var crystals = [crystalSprite(4.5, rng), crystalSprite(5.5, rng), crystalSprite(6.5, rng)];
-    var bokeh = bokehSprite(26);
+    // Flake sprites by depth: far flakes small and soft, near flakes larger
+    // and crisp-centred, the nearest large and out of focus.
+    var far = [softDot(1.1, 0.3, 0.8), softDot(1.5, 0.35, 0.85)];
+    var midS = [softDot(2.0, 0.5, 0.95), softDot(2.5, 0.55, 0.95), softDot(3.0, 0.55, 1)];
+    var nearS = [softDot(3.6, 0.55, 1), softDot(4.4, 0.5, 1)];
+    var bokeh = softDot(14, 0.25, 0.42);
 
-    var COUNT = Math.round(clamp(W * H / (heavy ? 1100 : 1700), 300, 1300));
+    var COUNT = Math.round(clamp(W * H / (heavy ? 850 : 1300), 400, 1700));
     var flakes = [];
     function spawn(f, top) {
-      var z = Math.pow(rng(), 1.4);                      // most flakes are far and small
+      var z = Math.pow(rng(), 1.5);
       f.z = z;
-      f.r = lerp(0.7, 4.3, z);
-      f.crystal = z > 0.82 && rng() < 0.5;
-      f.fluff = !f.crystal && z > 0.62 && rng() < 0.7;
-      f.sp = f.crystal ? crystals[Math.floor(rng() * crystals.length)]
-        : (f.fluff ? fluffs[Math.floor(rng() * fluffs.length)] : discs[Math.min(6, Math.floor(z * 7))]);
+      f.sp = z < 0.35 ? far[Math.floor(rng() * far.length)] : (z < 0.8 ? midS[Math.floor(rng() * midS.length)] : nearS[Math.floor(rng() * nearS.length)]);
+      f.r = f.sp.s / 2;
       f.x = rng() * (W + 400) - 200;
-      f.y = top ? -12 - rng() * 80 : rng() * H;
-      f.vy = lerp(18, 74, z) * (0.75 + rng() * 0.5) * (f.crystal ? 0.8 : 1);
-      f.ph = rng() * TAU;
-      f.hz = 0.25 + rng() * 0.6;
-      f.amp = lerp(5, 26, z);
-      f.spin = (rng() - 0.5) * 1.6;
-      f.rot = rng() * TAU;
+      f.y = top ? -10 - rng() * 60 : rng() * H;
+      f.vy = lerp(22, 64, z) * (0.7 + rng() * 0.6);   // big flakes fall a little faster, but not much
+      f.vx = 0;
+      f.k = rng() * 100;
       f.py = f.y;
       f.dead = false;
       return f;
     }
     for (var i = 0; i < COUNT; i++) { flakes.push(spawn({}, true)); flakes[i].y -= rng() * H * 1.3; }
     var near = [];
-    for (var b = 0; b < (heavy ? 9 : 6); b++) {
-      near.push({ x: rng() * W, y: -60 - rng() * H, r: 10 + rng() * 16, vy: 34 + rng() * 26, ph: rng() * TAU, a: 0.5 + rng() * 0.4 });
-    }
+    for (var b = 0; b < (heavy ? 7 : 5); b++) near.push({ x: rng() * W, y: -40 - rng() * H, r: 9 + rng() * 14, vy: 40 + rng() * 30, k: rng() * 100 });
 
-    var glints = [];
     var clumps = [];
-    // Gusts: every few seconds a wave of wind sweeps across the screen.
     var gusts = [];
-    for (var gt = 5 + rng() * 4; gt < DURATION; gt += 6 + rng() * 6) gusts.push({ t: gt, a: (rng() < 0.5 ? -1 : 1) * (70 + rng() * 90) });
-    var drift = (rng() < 0.5 ? -1 : 1) * (8 + rng() * 14);
-
+    for (var gt = 6 + rng() * 4; gt < DURATION; gt += 7 + rng() * 7) gusts.push({ t: gt, a: (rng() < 0.5 ? -1 : 1) * (60 + rng() * 80) });
+    var drift = (rng() < 0.5 ? -1 : 1) * (6 + rng() * 12);
     function windAt(x, t) {
-      var w = drift + noise(t * 0.06, 0.5) * 30;
+      var w = drift + noise(t * 0.05, 0.5) * 26;
       for (var k = 0; k < gusts.length; k++) {
         var gg = gusts[k];
-        var lag = (gg.a > 0 ? x / W : 1 - x / W) * 1.1;   // the wave crosses the screen
-        var u = (t - gg.t - lag) / 1.3;
+        var lag = (gg.a > 0 ? x / W : 1 - x / W) * 1.2;   // the gust crosses the screen as a wave
+        var u = (t - gg.t - lag) / 1.4;
         if (u > -3 && u < 3) w += gg.a * Math.exp(-u * u);
       }
       return w;
@@ -759,9 +653,9 @@
       for (var i = i0; i <= i1; i++) {
         var dpt = sh.depth[i];
         if (dpt < 0.6) continue;
-        if (rng() < 0.5) {
+        if (rng() < 0.55) {
           clumps.push({ x: sh.x0 + i * SNOW_COL, y: sh.y - dpt * 0.6, vx: (rng() - 0.5) * 70 + pv * 0.1 * power,
-            vy: -30 * power - rng() * 80 * power, r: 0.7 + Math.min(2.6, dpt * 0.3) * rng() + 0.5, life: 0, puff: rng() < 0.5 });
+            vy: -30 * power - rng() * 80 * power, r: 0.8 + Math.min(2.4, dpt * 0.28) * rng() + 0.6, life: 0, burst: rng() < 0.6 });
         }
         sh.total -= dpt;
         sh.depth[i] = 0;
@@ -778,137 +672,111 @@
       var density = snowing ? smoothstep(0, 5, t) : 0;
       if (!snowing && !sky.ended) { sky.off(); sky.ended = true; }
       var windMid = windAt(W / 2, t);
-      sky.draw(t, windMid * 0.6 + drift * 2, 0);
+      sky.draw(t, windMid + drift * 2);
 
       ctx.clearRect(0, 0, cv.w, cv.h);
 
-      // Snow on the ledges and banked along the bottom.
+      // Snow lying on the ledges and banked along the bottom.
       var melt = snowing ? 0 : smoothstep(0, 5, t - DURATION);
       var all = shelves.concat([ground]);
       for (var k = 0; k < all.length; k++) {
         var sh = all[k];
         if (melt > 0) {
           for (var m = 0; m < sh.n; m++) sh.depth[m] *= 1 - 2.2 * dt * melt;
-        } else if (t > 1.2) {
-          // The steady settling of countless flakes too small to draw.
-          var rate = (heavy ? 1.0 : 0.65) * density * dt * (sh.ground ? 1.7 : 1);
+        } else if (t > 1.5) {
+          // The steady settling of countless flakes too small to see.
+          var rate = (heavy ? 0.9 : 0.6) * density * dt * (sh.ground ? 1.6 : 1);
           for (var gI = 0; gI < sh.n; gI++) {
             var cap = shelfCap(sh, gI, noise);
-            if (sh.depth[gI] < cap) sh.depth[gI] = Math.min(cap, sh.depth[gI] + rate * (0.6 + 0.8 * (noise(gI * 0.08, sh.y * 0.05) * 0.5 + 0.5)));
+            if (sh.depth[gI] < cap) sh.depth[gI] = Math.min(cap, sh.depth[gI] + rate * (0.5 + noise(sh.seed + gI * 0.07, t * 0.1) * 0.5 + 0.5));
           }
           sh.total += rate * sh.n * 0.5;
-          // A full cap lets a little slide off its end now and then.
+          // A full ledge sheds a little powder off its end now and then.
           if (!sh.ground && sh.depth[0] > shelfCap(sh, 0, noise) * 0.9 && t > sh.slideT) {
-            sh.slideT = t + 2 + rng() * 6;
+            sh.slideT = t + 3 + rng() * 7;
             var leftEnd = rng() < 0.5;
-            var ex = leftEnd ? sh.x0 : sh.x1;
-            for (var c2 = 0; c2 < 4; c2++) {
-              clumps.push({ x: ex + (leftEnd ? -2 : 2), y: sh.y - 2, vx: (leftEnd ? -1 : 1) * (8 + rng() * 20), vy: rng() * 20,
-                r: 0.8 + rng() * 1.4, life: 0, puff: true });
+            for (var c2 = 0; c2 < 5; c2++) {
+              clumps.push({ x: (leftEnd ? sh.x0 - 2 : sh.x1 + 2) + (rng() - 0.5) * 3, y: sh.y - 2 - rng() * 3, vx: (leftEnd ? -1 : 1) * (6 + rng() * 16),
+                vy: rng() * 15, r: 0.6 + rng() * 1.2, life: 0, burst: false });
             }
           }
         }
         if (live && pv > 380 && !sh.ground && p.x > sh.x0 - 6 && p.x < sh.x1 + 6 && p.y > sh.y - 18 && p.y < sh.y + 8) {
           knock(sh, p.x - 24, p.x + 24, 1);
         }
-        var prof = drawCap(ctx, sh, 1 - melt * 0.9);
-        // Glints: a crystal on the surface catching the light for an instant.
-        if (prof && snowing && rng() < (sh.x1 - sh.x0) * 0.00035 * (sh.ground ? 3 : 1)) {
-          var gi = Math.floor(rng() * sh.n);
-          if (prof[gi] > 2.5) glints.push({ x: sh.x0 + gi * SNOW_COL, y: sh.y - prof[gi] + 1.2 + rng() * 2, life: 0, max: 0.5 + rng() * 0.5, s: 1.6 + rng() * 2.2 });
-        }
-      }
-      for (var gl = glints.length - 1; gl >= 0; gl--) {
-        var G = glints[gl];
-        G.life += dt;
-        if (G.life > G.max) { glints.splice(gl, 1); continue; }
-        var ga = Math.sin(Math.PI * G.life / G.max);
-        ctx.strokeStyle = 'rgba(255,255,255,' + ga.toFixed(3) + ')';
-        ctx.lineWidth = 0.9;
-        ctx.beginPath();
-        ctx.moveTo(G.x - G.s * ga, G.y); ctx.lineTo(G.x + G.s * ga, G.y);
-        ctx.moveTo(G.x, G.y - G.s * ga); ctx.lineTo(G.x, G.y + G.s * ga);
-        ctx.stroke();
-        ctx.fillStyle = 'rgba(255,255,255,' + ga.toFixed(3) + ')';
-        ctx.beginPath(); ctx.arc(G.x, G.y, 0.9, 0, TAU); ctx.fill();
+        drawCap(ctx, sh, 1 - melt * 0.9);
       }
 
-      // Falling flakes.
+      // Falling flakes: each rides the eddies of the air on its own.
       for (var f = 0; f < flakes.length; f++) {
         var fl = flakes[f];
         if (fl.dead) {
           if (snowing && rng() < density * 0.08) spawn(fl, true);
           else continue;
         }
-        fl.ph += fl.hz * TAU * dt;
-        var wind = windAt(fl.x, t);
-        var tx = noise(fl.x * 0.003, fl.y * 0.003, t * 0.22) * 34;
-        var ty = noise(fl.x * 0.003 + 50, fl.y * 0.003, t * 0.22) * 16;
-        var push = 0, pushY = 0;
+        var e = 0.004;
+        var n0 = noise(fl.x * e, fl.y * e, t * 0.18);
+        var cx = (noise(fl.x * e, (fl.y + 8) * e, t * 0.18) - n0) / 8;
+        var cy = (noise((fl.x + 8) * e, fl.y * e, t * 0.18) - n0) / 8;
+        var curlX = cx * 9000, curlY = -cy * 5000;
+        var wobble = noise(fl.k, t * 0.6) * 18 * (0.3 + fl.z);   // each flake's own flutter
+        var targetVx = windAt(fl.x, t) * (0.35 + 0.65 * fl.z) + curlX * (0.3 + fl.z) + wobble;
         if (live && pv > 100) {
           var dx = fl.x - p.x, dy = fl.y - p.y, d2 = dx * dx + dy * dy;
-          if (d2 < 150 * 150) { var q = 1 - Math.sqrt(d2) / 150; push = p.vx * q * 0.55; pushY = p.vy * q * 0.4; }
+          if (d2 < 150 * 150) targetVx += p.vx * (1 - Math.sqrt(d2) / 150) * 0.6;
         }
-        fl.x += (wind * (0.3 + 0.7 * fl.z) + tx * (0.4 + fl.z) + Math.sin(fl.ph) * fl.amp * 0.6 + push) * dt;
+        fl.vx = lerp(fl.vx, targetVx, clamp(dt * 2.5, 0, 1));
+        fl.x += fl.vx * dt;
         fl.py = fl.y;
-        fl.y += (fl.vy + ty * fl.z + pushY) * dt;
-        fl.rot += fl.spin * dt;
-        if (fl.z > 0.28 && fl.y > fl.py) {
+        fl.y += (fl.vy + curlY * fl.z) * dt;
+        if (fl.z > 0.3 && fl.y > fl.py) {
           for (var s2 = 0; s2 <= shelves.length; s2++) {
             var S2 = s2 < shelves.length ? shelves[s2] : ground;
             if (fl.x < S2.x0 || fl.x > S2.x1) continue;
             var surf = S2.y - shelfDepth(S2, fl.x);
             if (fl.py <= surf && fl.y >= surf) {
-              if (rng() < 0.7 || S2.ground) { deposit(S2, fl.x, fl.r * (heavy ? 0.7 : 0.5), fl.r * 1.6 + 2, noise); fl.dead = true; }
+              if (rng() < 0.7 || S2.ground) { deposit(S2, fl.x, fl.r * (heavy ? 0.6 : 0.45), fl.r * 1.6 + 2, noise); fl.dead = true; }
               break;
             }
           }
         }
         if (fl.y > H + 14 || fl.x < -220 || fl.x > W + 220) fl.dead = true;
         if (fl.dead) continue;
-        var sp = fl.sp;
-        ctx.globalAlpha = 0.5 + fl.z * 0.5;
-        if (fl.crystal || fl.fluff) {
-          ctx.save(); ctx.translate(fl.x, fl.y); ctx.rotate(fl.rot);
-          ctx.drawImage(sp.c, -sp.s / 2, -sp.s / 2, sp.s, sp.s);
-          ctx.restore();
-        } else {
-          ctx.drawImage(sp.c, fl.x - sp.s / 2, fl.y - sp.s / 2, sp.s, sp.s);
-        }
+        ctx.globalAlpha = 0.55 + fl.z * 0.45;
+        ctx.drawImage(fl.sp.c, fl.x - fl.sp.s / 2, fl.y - fl.sp.s / 2, fl.sp.s, fl.sp.s);
       }
       ctx.globalAlpha = 1;
 
-      // Big soft flakes drifting past, close to you and out of focus.
+      // A few big flakes right in front of you, out of focus.
       for (var nb = 0; nb < near.length; nb++) {
         var N = near[nb];
-        N.ph += dt * 0.6;
-        N.x += (windMid * 1.3 + Math.sin(N.ph) * 18) * dt;
+        N.x += (windMid * 1.4 + noise(N.k, t * 0.4) * 30) * dt;
         N.y += N.vy * dt;
         if (N.y - N.r > H || N.x < -80 || N.x > W + 80) {
           if (!snowing) { N.y = H * 3; continue; }
-          N.x = rng() * W; N.y = -N.r * 2 - rng() * 200;
+          N.x = rng() * W; N.y = -N.r * 2 - rng() * 300;
         }
-        var bs = N.r * 2 / 26;
-        ctx.globalAlpha = N.a * 0.8 * (snowing ? 1 : 0.6) * smoothstep(0, 6, t);
+        var bs = N.r / 14;
+        ctx.globalAlpha = 0.75 * smoothstep(0, 6, t) * (snowing ? 1 : 0.5);
         ctx.drawImage(bokeh.c, N.x - bokeh.s * bs / 2, N.y - bokeh.s * bs / 2, bokeh.s * bs, bokeh.s * bs);
       }
       ctx.globalAlpha = 1;
 
-      // Snow knocked or sliding off a ledge: clumps that break into powder.
+      // Snow knocked or shed off a ledge: clumps that break into powder.
       for (var c = clumps.length - 1; c >= 0; c--) {
         var cl = clumps[c];
         cl.life += dt;
-        cl.vy += 700 * dt;
+        cl.vy += 650 * dt;
         cl.vx *= Math.pow(0.4, dt);
         cl.x += cl.vx * dt; cl.y += cl.vy * dt;
-        if (cl.y > H + 10 || cl.life > 2.5) { clumps.splice(c, 1); continue; }
-        if (cl.puff && cl.life > 0.25 && cl.r > 1.2) {
-          // Burst into finer powder.
-          for (var pz = 0; pz < 3; pz++) clumps.push({ x: cl.x, y: cl.y, vx: cl.vx + (rng() - 0.5) * 50, vy: cl.vy * 0.4 - rng() * 30, r: cl.r * 0.45, life: 0, puff: false });
+        if (cl.y > H + 10 || cl.life > 3) { clumps.splice(c, 1); continue; }
+        if (cl.burst && cl.life > 0.22 && cl.r > 1.1) {
+          for (var pz = 0; pz < 4; pz++) clumps.push({ x: cl.x, y: cl.y, vx: cl.vx + (rng() - 0.5) * 60, vy: cl.vy * 0.3 - rng() * 30, r: cl.r * 0.45, life: 0, burst: false });
           clumps.splice(c, 1);
           continue;
         }
-        ctx.drawImage(discs[Math.min(6, Math.round(cl.r))].c, cl.x - cl.r - 2, cl.y - cl.r - 2, cl.r * 2 + 4, cl.r * 2 + 4);
+        var cs = midS[Math.min(2, Math.max(0, Math.round(cl.r) - 1))];
+        ctx.drawImage(cs.c, cl.x - cl.r - 1, cl.y - cl.r - 1, cl.r * 2 + 2, cl.r * 2 + 2);
       }
 
       return t < DURATION + 6;
@@ -916,39 +784,66 @@
   };
 
   /* =================================================================== RAIN
-   * Rain on a rainy day. The light goes slate grey and clouds roll over the
-   * page. Rain falls in fine slanted streaks at three depths, in moving
-   * sheets of heavier and lighter rain, leaning with the wind. Drops burst
-   * on the page's own ledges in tiny crowns and droplets; the ledges shine
-   * wet; water beads at their ends and drips off. Drops spatter the screen
-   * itself: beads of water gather, merge, and when heavy enough run down the
-   * glass in stop-start trickles, leaving trails. Puddle rings spread along
-   * the bottom of the window. A thunderstorm brings lightning. */
+   * Rain on a rainy day. The page dims to the slate light of a rain sky and
+   * clouds slide across. Rain falls in faint, bright, motion-blurred
+   * streaks, the way rain looks against a dark room: a fine mist of distant
+   * rain, clearer streaks in the middle, long fast ones close up, leaning
+   * with the wind and coming in sheets. It splashes into fine spray on the
+   * page's own ledges, which shine wet, and drips off their ends.
+   *
+   * And it runs down the glass: real drops on the screen that bend the page
+   * behind them, the way water on a window shows a tiny upside-down view
+   * of what is behind it (a CSS backdrop filter: an SVG displacement map
+   * shaped like a lens). Drops land, merge, and once heavy enough slide down
+   * in stop-start runs, leaving a trail of tiny droplets. A thunderstorm
+   * brings lightning. */
 
-  function beadSprite(r) {
-    return makeSprite(r * 2 + 6, function (g, m) {
-      // Shadow the drop casts on the page behind the glass.
-      g.fillStyle = 'rgba(22, 34, 52, 0.22)';
-      g.beginPath(); g.ellipse(m + 0.7, m + 1.5, r, r * 0.95, 0, 0, TAU); g.fill();
-      // The drop: clear and bright inside, darker rim (heaviest at the bottom).
-      var body = g.createRadialGradient(m, m - r * 0.25, r * 0.15, m, m, r);
-      body.addColorStop(0, 'rgba(248, 251, 254, 0.75)');
-      body.addColorStop(0.62, 'rgba(214, 226, 238, 0.5)');
-      body.addColorStop(1, 'rgba(46, 66, 92, 0.75)');
-      g.fillStyle = body;
-      g.beginPath(); g.arc(m, m, r, 0, TAU); g.fill();
-      var rim = g.createLinearGradient(0, m - r, 0, m + r);
-      rim.addColorStop(0, 'rgba(60, 82, 110, 0.3)');
-      rim.addColorStop(1, 'rgba(20, 34, 54, 0.75)');
-      g.strokeStyle = rim;
-      g.lineWidth = Math.max(0.6, r * 0.22);
-      g.beginPath(); g.arc(m, m, r * 0.88, 0, TAU); g.stroke();
-      // Highlights: the window's reflection, and light focused through the drop.
-      g.fillStyle = 'rgba(255,255,255,0.95)';
-      g.beginPath(); g.ellipse(m - r * 0.32, m - r * 0.38, r * 0.28, r * 0.18, -0.6, 0, TAU); g.fill();
-      g.fillStyle = 'rgba(255,255,255,0.55)';
-      g.beginPath(); g.ellipse(m + r * 0.2, m + r * 0.48, r * 0.3, r * 0.12, 0.2, 0, TAU); g.fill();
-    });
+  /* The lens: displacement that makes each drop show the page behind it
+   * upside down and smaller, with the squeeze toward the rim a real drop
+   * has. One map, a few filters for a few drop sizes. */
+  var LENS_SIZES = [3, 5, 7, 9, 12];
+  function makeLenses(session) {
+    var S = 96;
+    var c = document.createElement('canvas');
+    c.width = S; c.height = S;
+    var g = c.getContext('2d');
+    var im = g.createImageData(S, S);
+    for (var y = 0; y < S; y++) {
+      for (var x = 0; x < S; x++) {
+        var dx = (x + 0.5) / S * 2 - 1, dy = (y + 0.5) / S * 2 - 1;
+        var r = Math.hypot(dx, dy);
+        // Sample at -m * p: inverted and shrunk; m grows toward the rim.
+        var m = 0.55 + 0.4 * Math.pow(Math.min(1, r), 3);
+        var k = r < 1 ? (1 + m) / 2 : 0;   // displacement = -(1 + m) p, encoded around 0.5
+        var i = (y * S + x) * 4;
+        im.data[i] = clamp(128 - 127 * dx * k, 0, 255);
+        im.data[i + 1] = clamp(128 - 127 * dy * k, 0, 255);
+        im.data[i + 2] = 128;
+        im.data[i + 3] = 255;
+      }
+    }
+    g.putImageData(im, 0, 0);
+    var url = c.toDataURL();
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('class', 'cgp-gem-svg');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('width', '0');
+    svg.setAttribute('height', '0');
+    var html = '';
+    for (var s = 0; s < LENS_SIZES.length; s++) {
+      var R = LENS_SIZES[s];
+      html += '<filter id="cgp-gem-lens-' + R + '" x="0" y="0" width="1" height="1" color-interpolation-filters="sRGB">' +
+        '<feImage href="' + url + '" x="0" y="0" width="100%" height="100%" preserveAspectRatio="none" result="map"/>' +
+        '<feDisplacementMap in="SourceGraphic" in2="map" scale="' + (2 * R * 2) + '" xChannelSelector="R" yChannelSelector="G"/>' +
+        '</filter>';
+    }
+    svg.innerHTML = html;
+    session.stage.appendChild(svg);
+    return function (r) {
+      for (var i = 0; i < LENS_SIZES.length; i++) if (r <= LENS_SIZES[i] * 1.15) return LENS_SIZES[i];
+      return LENS_SIZES[LENS_SIZES.length - 1];
+    };
   }
 
   PLAYERS.rain = function (session, props) {
@@ -964,63 +859,84 @@
       flash.className = 'cgp-gem-flash';
       session.stage.appendChild(flash);
     }
+    // The glass comes before the rain canvas, so each drop bends the page
+    // itself and not the rain streaks, which would make every drop redraw
+    // on every frame.
+    var glass = document.createElement('div');
+    glass.className = 'cgp-gem-glass';
+    session.stage.appendChild(glass);
     var cv = session.canvas();
     var ctx = cv.ctx;
-    var glassCv = session.canvas();
-    var gctx = glassCv.ctx;
+    var lensFor = makeLenses(session);
     var ending = false;
     weatherDismiss(session, function () { ending = true; });
 
     var ledges = [];
     function gather() {
       ledges = collectLedges(session.stage).map(function (L) {
-        return { x0: L.x0, x1: L.x1, y: L.y, beadL: rng() * 0.6, beadR: rng() * 0.6, wet: 0 };
+        return { x0: L.x0, x1: L.x1, y: L.y, beadL: rng() * 0.5, beadR: rng() * 0.5, wet: 0 };
       });
     }
     gather();
     followScroll(session, function () { ledges = []; }, gather);
 
-    var COUNT = Math.round(clamp(W * H / (heavy ? 800 : 1300), 400, 1700));
+    var COUNT = Math.round(clamp(W * H / (heavy ? 750 : 1100), 450, 1800));
     var drops = [];
     function spawn(d) {
-      d.z = Math.pow(rng(), 1.25);
-      d.len = lerp(9, 42, d.z) * (0.8 + rng() * 0.4);
-      d.v = lerp(650, 1400, d.z) * (0.9 + rng() * 0.2);
-      d.x = rng() * (W + 500) - 250;
-      d.y = -d.len - rng() * 120;
+      d.z = Math.pow(rng(), 1.15);
+      d.len = d.z < 0.45 ? 8 + rng() * 10 : (d.z < 0.8 ? 22 + rng() * 22 : 48 + rng() * 46);
+      d.v = lerp(700, 1600, d.z) * (0.9 + rng() * 0.2);
+      d.x = rng() * (W + 600) - 300;
+      d.y = -d.len - rng() * 150;
       d.py = d.y;
       d.dead = false;
       return d;
     }
     for (var i = 0; i < COUNT; i++) { drops.push(spawn({})); drops[i].y -= rng() * H * 1.4; }
 
-    var bits = [], crowns = [], rings = [], falls = [];
-    var beads = [];
-    var sprites = [];
-    for (var s = 0; s <= 16; s++) sprites.push(beadSprite(1 + s * 0.5));
-    function beadSp(r) { return sprites[clamp(Math.round((r - 1) * 2), 0, 16)]; }
+    var spray = [];
+    var spraySprite = softDot(3, 0.2, 0.55);
+    var dotSprite = softDot(1.4, 0.6, 0.95);
+    var falls = [];
 
-    function splash(x, y, power, n) {
-      crowns.push({ x: x, y: y, life: 0, w: 2 + power * 5 });
-      for (var k = 0; k < n; k++) {
-        var side = rng() < 0.5 ? -1 : 1;
-        bits.push({ x: x, y: y - 0.5, vx: side * (30 + rng() * 120) * power, vy: -(80 + rng() * 160) * power, life: 0, r: 0.5 + rng() * 0.9 });
-      }
+    /* Drops on the glass: DOM elements, so each can bend the real page. */
+    var beads = [];
+    function addBead(x, y, r) {
+      if (beads.length >= 70) return null;
+      var el = document.createElement('div');
+      el.className = 'cgp-gem-drop';
+      var b = { el: el, x: x, y: y, r: r, lens: 0, run: false, vy: 0, life: 0, trailAt: y, k: rng() * 50, born: 0 };
+      glass.appendChild(el);
+      beads.push(b);
+      sizeBead(b);
+      return b;
+    }
+    function sizeBead(b) {
+      var lens = lensFor(b.r);
+      if (lens !== b.lens) { b.lens = lens; b.el.style.backdropFilter = 'url(#cgp-gem-lens-' + lens + ') brightness(1.06) contrast(1.08)'; }
+      var w = b.r * 2, h = b.r * 2 * (b.run ? 1.22 : 1.04);
+      b.el.style.width = w.toFixed(1) + 'px';
+      b.el.style.height = h.toFixed(1) + 'px';
+      b.h = h;
+    }
+    function removeBead(idx) {
+      var b = beads[idx];
+      if (b.el.parentNode) b.el.parentNode.removeChild(b.el);
+      beads.splice(idx, 1);
     }
 
-    // Lightning, in a thunderstorm: each strike a quick double flicker.
     var strikes = [];
     if (props.thunder) for (var st = 5 + rng() * 4; st < DURATION - 4; st += 9 + rng() * 10) strikes.push(st);
     function flashLevel(t) {
       for (var k = 0; k < strikes.length; k++) {
         var ft = t - strikes[k];
-        if (ft < 0 || ft > 1.2) continue;
-        if (ft < 0.05) return 0.55;
-        if (ft < 0.11) return 0.12;
-        if (ft < 0.17) return 0.42;
-        if (ft < 0.24) return 0.2;
-        if (ft < 0.3) return 0.3;
-        return Math.max(0, 0.3 - (ft - 0.3) * 0.5);
+        if (ft < 0 || ft > 1.4) continue;
+        if (ft < 0.05) return 0.5;
+        if (ft < 0.11) return 0.08;
+        if (ft < 0.17) return 0.38;
+        if (ft < 0.24) return 0.12;
+        if (ft < 0.3) return 0.26;
+        return Math.max(0, 0.26 - (ft - 0.3) * 0.3);
       }
       return 0;
     }
@@ -1032,115 +948,122 @@
       var raining = !ending && t < DURATION;
       var density = raining ? smoothstep(0, 4, t) : 0;
       if (!raining && !sky.ended) { sky.off(); sky.ended = true; }
-      var slant = dir * (0.1 + 0.07 * (noise(t * 0.07, 2.2) * 0.5 + 0.5) + 0.06 * Math.max(0, noise(t * 0.25, 8.8)));
-      var lvl = flashLevel(t);
-      sky.draw(t, slant * 420, props.thunder ? 0.12 : 0);
-      if (flash) flash.style.opacity = lvl.toFixed(3);
+      var slant = dir * (0.09 + 0.06 * (noise(t * 0.07, 2.2) * 0.5 + 0.5) + 0.05 * Math.max(0, noise(t * 0.25, 8.8)));
+      sky.draw(t, slant * 500);
+      if (flash) flash.style.opacity = flashLevel(t).toFixed(3);
 
       ctx.clearRect(0, 0, cv.w, cv.h);
 
-      // Streaks, by depth: far ones fine and a touch blurred, near ones longer.
+      // Streaks. Far rain is a faint blurred mist; near rain long and bright.
       var LAYERS = [
-        { lo: 0, hi: 0.4, w: 0.7, a: 0.2, blur: 0.7 },
-        { lo: 0.4, hi: 0.75, w: 0.95, a: 0.3, blur: 0 },
-        { lo: 0.75, hi: 1.01, w: 1.3, a: 0.42, blur: 0 }
+        { lo: 0, hi: 0.45, w: 1.1, a: 0.11, blur: 0 },
+        { lo: 0.45, hi: 0.8, w: 1.0, a: 0.24, blur: 0 },
+        { lo: 0.8, hi: 1.01, w: 1.35, a: 0.34, blur: 0 }
       ];
       ctx.lineCap = 'round';
       for (var L = 0; L < 3; L++) {
         var lay = LAYERS[L];
         ctx.beginPath();
+        var heads = [];
         var any = false;
         for (var j = 0; j < drops.length; j++) {
           var d = drops[j];
           if (d.z < lay.lo || d.z >= lay.hi) continue;
           if (d.dead) {
-            // Sheets of rain: heavier and lighter bands that move with the wind.
-            var sheet = 0.45 + 0.55 * (noise(d.x * 0.0022 - t * 0.5 * dir, t * 0.1) * 0.5 + 0.5);
+            // Sheets of rain: heavier and lighter bands moving with the wind.
+            var sheet = 0.4 + 0.6 * (noise(d.x * 0.002 - t * 0.45 * dir, t * 0.1) * 0.5 + 0.5);
             if (raining && rng() < density * sheet * 0.5) spawn(d); else continue;
           }
           d.py = d.y;
           d.y += d.v * dt;
           d.x += d.v * dt * slant;
           var hit = false;
-          if (d.z > 0.45) {
+          if (d.z > 0.5) {
             for (var k = 0; k < ledges.length; k++) {
               var lg = ledges[k];
               if (d.x >= lg.x0 && d.x <= lg.x1 && d.py <= lg.y && d.y >= lg.y) {
                 if (rng() < 0.8) {
-                  splash(d.x, lg.y, lerp(0.5, 1.05, d.z), d.z > 0.8 ? 3 : 2);
+                  var pw = lerp(0.5, 1.1, d.z);
+                  spray.push({ x: d.x, y: lg.y - 1, vx: (rng() - 0.5) * 30, vy: -20 - rng() * 30, life: 0, max: 0.25 + rng() * 0.2, s: 1.6 * pw, mist: true });
+                  for (var sp = 0; sp < (d.z > 0.8 ? 3 : 2); sp++) {
+                    spray.push({ x: d.x, y: lg.y - 1, vx: (rng() < 0.5 ? -1 : 1) * (30 + rng() * 110) * pw, vy: -(90 + rng() * 150) * pw, life: 0, max: 0.4, s: 0.6 + rng() * 0.5, mist: false });
+                  }
                   lg.wet = Math.min(1, lg.wet + 0.02);
-                  if (d.x - lg.x0 < 50) lg.beadL += 0.07; else if (lg.x1 - d.x < 50) lg.beadR += 0.07;
+                  if (d.x - lg.x0 < 50) lg.beadL += 0.06; else if (lg.x1 - d.x < 50) lg.beadR += 0.06;
                   hit = true;
                 }
                 break;
               }
             }
           }
-          // The nearest drops hit the screen itself.
-          if (!hit && d.z > 0.93 && d.y > 8 && d.y < H - 30 && rng() < 0.02 * (heavy ? 1.6 : 1) && beads.length < 240) {
-            // Landing on a bead already there makes one bigger bead.
+          // The nearest drops strike the glass itself.
+          if (!hit && d.z > 0.9 && d.y > 10 && d.y < H - 40 && rng() < 0.05 * (heavy ? 1.5 : 1)) {
             var merged = false;
             for (var mb = 0; mb < beads.length; mb++) {
               var MB = beads[mb];
-              if (!MB.run && Math.abs(MB.x - d.x) < MB.r + 2 && Math.abs(MB.y - d.y) < MB.r + 2) { MB.r = Math.min(7, Math.sqrt(MB.r * MB.r + 2.5)); merged = true; break; }
+              if (!MB.run && Math.abs(MB.x - d.x) < MB.r + 3 && Math.abs(MB.y - d.y) < MB.r + 3) {
+                MB.r = Math.min(10, Math.sqrt(MB.r * MB.r + 6)); sizeBead(MB); merged = true; break;
+              }
             }
-            if (merged) { d.dead = true; continue; }
-            beads.push({ x: d.x, y: d.y, r: 2 + rng() * rng() * 3, vy: 0, run: false, life: 0, trailAt: 0, wob: rng() * 10 });
+            if (!merged) addBead(d.x, d.y, 2.4 + rng() * rng() * 6.5);
             hit = true;
           }
-          if (!hit && d.y > H - 2) {
-            if (d.z > 0.35 && rng() < 0.6) {
-              if (rng() < 0.45) rings.push({ x: d.x, y: H - 2 - rng() * 16, life: 0, r: lerp(5, 15, d.z) });
-              else splash(d.x, H - 1, lerp(0.4, 0.9, d.z), 2);
-            }
+          if (!hit && d.y > H) {
+            if (d.z > 0.45 && rng() < 0.5) spray.push({ x: d.x, y: H - 1 - rng() * 6, vx: (rng() - 0.5) * 40, vy: -30 - rng() * 40, life: 0, max: 0.35, s: 2, mist: true });
             hit = true;
           }
           if (hit) { d.dead = true; continue; }
           ctx.moveTo(d.x, d.y);
           ctx.lineTo(d.x - d.len * slant, d.y - d.len);
+          if (L === 2) heads.push(d);
           any = true;
         }
         if (any) {
           ctx.save();
           if (lay.blur) ctx.filter = 'blur(' + lay.blur + 'px)';
           ctx.lineWidth = lay.w;
-          ctx.strokeStyle = 'rgba(58, 76, 100,' + lay.a + ')';
+          ctx.strokeStyle = 'rgba(236, 242, 250,' + lay.a + ')';
           ctx.stroke();
-          if (L === 2) {
-            // The near drops catch the light along one side.
-            ctx.translate(0.8, 0);
-            ctx.lineWidth = 0.6;
-            ctx.strokeStyle = 'rgba(255,255,255,0.45)';
-            ctx.stroke();
-          }
           ctx.restore();
+        }
+        // The leading part of a near streak is brightest: the drop itself.
+        if (heads.length) {
+          ctx.beginPath();
+          for (var hI = 0; hI < heads.length; hI++) {
+            var hd = heads[hI];
+            ctx.moveTo(hd.x, hd.y);
+            ctx.lineTo(hd.x - hd.len * 0.35 * slant, hd.y - hd.len * 0.35);
+          }
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = 'rgba(248, 251, 255, 0.5)';
+          ctx.stroke();
         }
       }
 
-      // Wet ledges: a thin shine of water along the top, beads at the ends, drips.
+      // Wet ledges shine; water gathers at their ends and drips off.
       for (var g = 0; g < ledges.length; g++) {
         var lg2 = ledges[g];
         if (lg2.wet > 0.05) {
-          ctx.strokeStyle = 'rgba(255,255,255,' + (0.7 * lg2.wet).toFixed(3) + ')';
+          ctx.strokeStyle = 'rgba(255,255,255,' + (0.6 * lg2.wet).toFixed(3) + ')';
           ctx.lineWidth = 1;
           ctx.beginPath(); ctx.moveTo(lg2.x0 + 2, lg2.y + 0.5); ctx.lineTo(lg2.x1 - 2, lg2.y + 0.5); ctx.stroke();
-          ctx.strokeStyle = 'rgba(52, 72, 98,' + (0.22 * lg2.wet).toFixed(3) + ')';
-          ctx.beginPath(); ctx.moveTo(lg2.x0 + 2, lg2.y - 0.6); ctx.lineTo(lg2.x1 - 2, lg2.y - 0.6); ctx.stroke();
         }
-        if (raining) { lg2.beadL += dt * 0.05 * density; lg2.beadR += dt * 0.05 * density; }
-        var ends = [[lg2.x0 + 1, 'beadL'], [lg2.x1 - 1, 'beadR']];
+        if (raining) { lg2.beadL += dt * 0.04 * density; lg2.beadR += dt * 0.04 * density; }
+        var ends = [[lg2.x0 + 1.5, 'beadL'], [lg2.x1 - 1.5, 'beadR']];
         for (var e = 0; e < 2; e++) {
           var bx = ends[e][0], key = ends[e][1];
           var size = Math.min(1, lg2[key]);
-          if (size > 0.15) {
-            var br = 0.8 + size * 2.4;
-            var sp = beadSp(br);
-            ctx.drawImage(sp.c, bx - sp.s / 2, lg2.y + 0.5 + br * 0.9 - sp.s / 2, sp.s, sp.s * (1 + size * 0.25));
+          if (size > 0.2) {
+            var br = 0.8 + size * 2;
+            var by = lg2.y + 0.5 + br;
+            var hb = ctx.createRadialGradient(bx - br * 0.3, by - br * 0.3, 0, bx, by, br);
+            hb.addColorStop(0, 'rgba(255,255,255,0.95)');
+            hb.addColorStop(0.5, 'rgba(220,230,240,0.5)');
+            hb.addColorStop(1, 'rgba(40,58,82,0.55)');
+            ctx.fillStyle = hb;
+            ctx.beginPath(); ctx.ellipse(bx, by, br * 0.85, br * (1 + size * 0.2), 0, 0, TAU); ctx.fill();
           }
-          if (lg2[key] >= 1) {
-            falls.push({ x: bx, y: lg2.y + 3, vy: 0, r: 2.4 });
-            lg2[key] = 0;
-          }
+          if (lg2[key] >= 1) { falls.push({ x: bx, y: lg2.y + 3, vy: 0 }); lg2[key] = 0; }
         }
       }
       for (var f = falls.length - 1; f >= 0; f--) {
@@ -1153,99 +1076,76 @@
           if (fd.x >= lq.x0 && fd.x <= lq.x1 && fd.y < lq.y - 1 && ny >= lq.y) { ny = lq.y; landed = true; }
         }
         fd.y = ny;
-        if (landed) { splash(fd.x, fd.y, 1.1, 5); falls.splice(f, 1); continue; }
-        var fs = beadSp(fd.r);
-        ctx.drawImage(fs.c, fd.x - fs.s / 2, fd.y - fs.s * 0.65, fs.s, fs.s * 1.35);
+        if (landed) {
+          for (var sq = 0; sq < 5; sq++) spray.push({ x: fd.x, y: fd.y - 1, vx: (rng() - 0.5) * 160, vy: -(80 + rng() * 120), life: 0, max: 0.4, s: 0.7, mist: false });
+          falls.splice(f, 1); continue;
+        }
+        ctx.strokeStyle = 'rgba(240,246,252,0.7)';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.moveTo(fd.x, fd.y); ctx.lineTo(fd.x, fd.y - Math.min(12, fd.vy * 0.02)); ctx.stroke();
       }
 
-      // Splash droplets and crowns.
-      ctx.fillStyle = 'rgba(60, 84, 114, 0.6)';
-      for (var b = bits.length - 1; b >= 0; b--) {
-        var bt = bits[b];
-        bt.life += dt;
-        if (bt.life > 0.45) { bits.splice(b, 1); continue; }
-        bt.vy += 1500 * dt;
-        bt.x += bt.vx * dt; bt.y += bt.vy * dt;
-        ctx.globalAlpha = 1 - bt.life / 0.45;
-        ctx.beginPath(); ctx.arc(bt.x, bt.y, bt.r, 0, TAU); ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-      ctx.lineWidth = 0.8;
-      for (var c = crowns.length - 1; c >= 0; c--) {
-        var cr = crowns[c];
-        cr.life += dt;
-        if (cr.life > 0.16) { crowns.splice(c, 1); continue; }
-        var cu = cr.life / 0.16;
-        ctx.globalAlpha = 1 - cu;
-        ctx.strokeStyle = 'rgba(60, 84, 114, 0.55)';
-        ctx.beginPath(); ctx.ellipse(cr.x, cr.y - 0.5, cr.w * (0.5 + cu), 1.2 + cu * 2.2, 0, Math.PI, TAU); ctx.stroke();
-        ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-        ctx.beginPath(); ctx.ellipse(cr.x, cr.y - 1.2, cr.w * (0.4 + cu * 0.8), 1 + cu * 1.6, 0, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
-      // Spray hanging over the ground where the rain hits hardest.
-      var spray = ctx.createLinearGradient(0, H - 46, 0, H);
-      spray.addColorStop(0, 'rgba(255,255,255,0)');
-      spray.addColorStop(1, 'rgba(240,245,250,' + (0.5 * density).toFixed(3) + ')');
-      ctx.fillStyle = spray;
-      ctx.fillRect(0, H - 46, W, 46);
-      // Puddle rings along the bottom: a dark ring and its lit inner edge.
-      for (var r = rings.length - 1; r >= 0; r--) {
-        var rg = rings[r];
-        rg.life += dt;
-        if (rg.life > 1) { rings.splice(r, 1); continue; }
-        var ru = rg.life;
-        var rr = rg.r * (0.3 + ru * 1.5);
-        ctx.globalAlpha = (1 - ru) * 0.7;
-        ctx.strokeStyle = 'rgba(50, 72, 100, 0.6)';
-        ctx.beginPath(); ctx.ellipse(rg.x, rg.y, rr, rr * 0.24, 0, 0, TAU); ctx.stroke();
-        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-        ctx.beginPath(); ctx.ellipse(rg.x, rg.y + 0.8, rr * 0.8, rr * 0.18, 0, 0, Math.PI); ctx.stroke();
+      // Spray: fine bright droplets and a puff of mist at each impact.
+      for (var s = spray.length - 1; s >= 0; s--) {
+        var S = spray[s];
+        S.life += dt;
+        if (S.life > S.max) { spray.splice(s, 1); continue; }
+        var u = S.life / S.max;
+        if (S.mist) {
+          S.x += S.vx * dt; S.y += S.vy * dt;
+          var ms = S.s * (1 + u * 3);
+          ctx.globalAlpha = (1 - u) * 0.6;
+          ctx.drawImage(spraySprite.c, S.x - ms * 2, S.y - ms * 2, ms * 4, ms * 4);
+        } else {
+          S.vy += 1500 * dt;
+          S.x += S.vx * dt; S.y += S.vy * dt;
+          ctx.globalAlpha = 1 - u;
+          ctx.drawImage(dotSprite.c, S.x - S.s * 2, S.y - S.s * 2, S.s * 4, S.s * 4);
+        }
       }
       ctx.globalAlpha = 1;
 
       // Water on the glass.
-      gctx.clearRect(0, 0, glassCv.w, glassCv.h);
       var dry = raining ? 0 : smoothstep(0, 5, t - DURATION);
       for (var bI = beads.length - 1; bI >= 0; bI--) {
         var B = beads[bI];
         B.life += dt;
-        if (!B.run && B.r > 4.2) { B.run = true; B.vy = 0; }
+        if (!B.run && B.r > 6.5) { B.run = true; B.vy = 0; sizeBead(B); }
         if (B.run) {
-          // Stop-start: water snags on the glass, then lets go.
-          var stick = noise(B.wob, t * 1.6) > 0.15 ? 0.15 : 1;
-          B.vy = lerp(B.vy, (40 + B.r * 18) * stick, clamp(dt * 6, 0, 1));
+          // Water on glass moves in fits: it snags, then lets go.
+          var stick = noise(B.k, t * 1.4) > 0.2 ? 0.08 : 1;
+          B.vy = lerp(B.vy, (50 + B.r * 16) * stick, clamp(dt * 6, 0, 1));
           B.y += B.vy * dt;
-          B.x += noise(B.wob + 3, B.y * 0.04) * 14 * dt;
-          if (B.y - B.trailAt > 7 + rng() * 6) {
+          B.x += noise(B.k + 3, B.y * 0.03) * 10 * dt;
+          if (B.y - B.trailAt > 9 + rng() * 8 && B.r > 4) {
             B.trailAt = B.y;
-            var tr = B.r * (0.3 + rng() * 0.15);
-            if (B.r > 2.6 && beads.length < 300) {
-              beads.push({ x: B.x + (rng() - 0.5), y: B.y - B.r * 1.2, r: tr, vy: 0, run: false, life: 0, trailAt: 0, wob: rng() * 10, trail: true });
-              B.r = Math.sqrt(Math.max(1, B.r * B.r - tr * tr * 0.5));
-            }
+            var tr = 1.4 + rng() * 1.2;
+            addBead(B.x + (rng() - 0.5) * 1.5, B.y - B.h * 0.45, tr);
+            B.r = Math.sqrt(Math.max(9, B.r * B.r - tr * tr * 0.6));
+            sizeBead(B);
           }
-          // Gather up the beads in its path.
+          // It sweeps up the drops in its path.
           for (var o = beads.length - 1; o >= 0; o--) {
             var O = beads[o];
-            if (O === B || O.run || O.trail && B.y - O.y < 30) continue;
+            if (O === B || O.run || B.y - O.y < B.r * 2) continue;
             var ox = O.x - B.x, oy = O.y - B.y;
             if (ox * ox + oy * oy < (B.r + O.r) * (B.r + O.r)) {
-              B.r = Math.min(7.5, Math.sqrt(B.r * B.r + O.r * O.r));
-              beads.splice(o, 1);
+              B.r = Math.min(11, Math.sqrt(B.r * B.r + O.r * O.r));
+              removeBead(o);
               if (o < bI) bI--;
+              sizeBead(B);
             }
           }
-          if (B.r < 3.4) B.run = false;
-          if (B.y > H + 10) { beads.splice(bI, 1); continue; }
-        } else if (B.trail || B.life > 25) {
-          B.r -= dt * (B.trail ? 0.05 : 0.08);
+          if (B.r < 5) { B.run = false; sizeBead(B); }
+          if (B.y > H + 20) { removeBead(bI); continue; }
         }
-        if (dry > 0) B.r -= dt * 0.9 * dry;
-        if (B.r < 0.7) { beads.splice(bI, 1); continue; }
-        var spb = beadSp(B.r);
-        var stretch = B.run ? 1 + clamp(B.vy / 220, 0, 0.45) : 1;
-        gctx.drawImage(spb.c, B.x - spb.s / 2, B.y - spb.s * stretch / 2, spb.s, spb.s * stretch);
+        if (dry > 0 || B.life > 30) {
+          B.r -= dt * (dry > 0 ? 1.4 * dry : 0.06);
+          if (B.r < 1.2) { removeBead(bI); continue; }
+          sizeBead(B);
+        }
+        var pop = Math.min(1, B.life / 0.12);
+        B.el.style.transform = 'translate3d(' + (B.x - B.r).toFixed(1) + 'px,' + (B.y - B.h / 2).toFixed(1) + 'px,0) scale(' + (0.6 + 0.4 * pop).toFixed(3) + ')';
       }
 
       return t < DURATION + 6;

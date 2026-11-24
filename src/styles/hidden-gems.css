@@ -19,16 +19,12 @@
   pointer-events: none;
 }
 
-/* The sky: overcast light and drifting cloud shadows that darken the page
- * itself (multiply). It sits outside the stage, just beneath it, because a
- * blend inside the stage would only blend with the empty stage. */
+/* The sky: the dim, overcast light of a snowy or rainy day, a translucent
+ * layer at the bottom of the stage. */
 .cgp-gem-sky {
-  position: fixed;
+  position: absolute;
   left: 0;
   top: 0;
-  z-index: 9989;
-  pointer-events: none;
-  mix-blend-mode: multiply;
   opacity: 0;
   transition: opacity 3.5s ease;
 }
@@ -46,4 +42,50 @@
   inset: 0;
   background: #f2f6ff;
   opacity: 0;
+}
+
+/* Rain on the glass: each drop bends the page behind it (an SVG lens used
+ * as a backdrop filter, set per drop size from the script). The highlight,
+ * the darker rim and the faint shadow are what make it read as water. */
+.cgp-gem-glass {
+  position: absolute;
+  inset: 0;
+}
+.cgp-gem-svg {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+.cgp-gem-drop {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 50% 50% 50% 50% / 44% 44% 56% 56%;
+  will-change: transform;
+  box-shadow:
+    inset 0 -1px 1.5px rgba(6, 14, 28, 0.5),
+    inset 0 1px 1px rgba(255, 255, 255, 0.4),
+    0 1px 1.5px rgba(10, 20, 36, 0.28);
+}
+.cgp-gem-drop::before {
+  content: "";
+  position: absolute;
+  left: 20%;
+  top: 13%;
+  width: 34%;
+  height: 24%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0) 72%);
+  transform: rotate(-28deg);
+}
+.cgp-gem-drop::after {
+  content: "";
+  position: absolute;
+  left: 28%;
+  bottom: 9%;
+  width: 44%;
+  height: 18%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 70%);
 }
