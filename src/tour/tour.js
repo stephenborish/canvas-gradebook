@@ -38,25 +38,83 @@
     try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; }
   }
 
+  /* --------------------------------------------------------------- motion
+   * Every movement in the tour shares one spring, so the spotlight, the card
+   * and its contents travel together and settle together. Movement is
+   * transform, size and opacity on the tour's own few elements, run with the
+   * Web Animations API so a step can be interrupted mid-flight and the next
+   * one starts from wherever things are on screen. With reduced motion,
+   * nothing moves: content cross-fades and everything else is in place. */
+
+  // A slightly under-damped spring (about 2% overshoot), sampled into a
+  // linear() easing; durations below are how long it takes to settle.
+  function springEasing(zeta, omega) {
+    var wd = omega * Math.sqrt(1 - zeta * zeta), pts = [];
+    for (var i = 0; i <= 40; i++) {
+      var t = i / 40;
+      var x = 1 - Math.exp(-zeta * omega * t) * (Math.cos(wd * t) + (zeta * omega / wd) * Math.sin(wd * t));
+      pts.push((i === 40 ? 1 : Math.round(x * 1000) / 1000) + ' ' + (i * 2.5) + '%');
+    }
+    return 'linear(' + pts.join(', ') + ')';
+  }
+  var SPRING = springEasing(0.78, 11);
+  var OUT = 'cubic-bezier(.16,1,.3,1)';
+  var IN = 'cubic-bezier(.5,0,.75,0)';
+  var MOVE_MS = 640;
+
+  function tf(x, y) { return 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px)'; }
+  function spotFrame(g) {
+    return { transform: tf(g.x, g.y), width: Math.max(0, g.w) + 'px', height: Math.max(0, g.h) + 'px', borderRadius: g.r + 'px' };
+  }
+  function grow(g, by) { return { x: g.x - by, y: g.y - by, w: g.w + by * 2, h: g.h + by * 2, r: g.r + by / 2 }; }
+  function dot(g) { return { x: g.x + g.w / 2, y: g.y + g.h / 2, w: 0, h: 0, r: g.r }; }
+  function finished(list) {
+    return Promise.all(list.map(function (a) { return a && a.finished ? a.finished.catch(function () {}) : null; }));
+  }
+
+  /* Smoothly scrolls `el` to the middle of its scroller, resolving once the
+   * scroll has settled: on scrollend, or once scrolling has gone quiet (no
+   * scroll at all when it was already in view). Not the promise newer
+   * Chrome returns from scrollIntoView: when the page itself is what
+   * scrolls, that resolves at once, before the scroll has happened. */
+  function scrollIntoViewAsync(el, smooth) {
+    try { el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: smooth ? 'smooth' : 'auto' }); } catch (e) { /* ignore */ }
+    if (!smooth) return Promise.resolve();
+    return new Promise(function (resolve) {
+      var timer = 0, cap = 0;
+      var done = function () {
+        clearTimeout(timer); clearTimeout(cap);
+        window.removeEventListener('scrollend', done, true);
+        window.removeEventListener('scroll', onScroll, true);
+        resolve();
+      };
+      var onScroll = function () { clearTimeout(timer); timer = setTimeout(done, 120); };
+      window.addEventListener('scrollend', done, true);
+      window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+      timer = setTimeout(done, 120);
+      cap = setTimeout(done, 1200);
+    });
+  }
+
   /* --------------------------------------------------------------- styles */
 
   var CSS = [
     ':host{all:initial}',
     '*,*::before,*::after{box-sizing:border-box}',
-    '.layer{position:fixed;inset:0;z-index:' + Z + ';pointer-events:none;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:#18222b;-webkit-font-smoothing:antialiased;--brand:#0374b5;--brand2:#5b3fd0;--ink:#18222b;--soft:#4a5864;--muted:#7a8792;--line:#e5e9ee;--ease:cubic-bezier(.22,1,.36,1)}',
+    '.layer{position:fixed;inset:0;z-index:' + Z + ';pointer-events:none;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:#18222b;-webkit-font-smoothing:antialiased;--brand:#0374b5;--brand2:#5b3fd0;--ink:#18222b;--soft:#4a5864;--muted:#7a8792;--line:#e5e9ee;--ease:cubic-bezier(.22,1,.36,1);--spring:cubic-bezier(.22,1,.36,1);--spring:' + SPRING + '}',
     '.layer.is-off .spot,.layer.is-off .card,.layer.is-off .block{opacity:0;pointer-events:none!important}',
 
     /* the spotlight */
-    '.spot{position:fixed;left:0;top:0;width:0;height:0;border-radius:12px;box-shadow:0 0 0 9999px rgba(9,16,29,.64);transition:transform .55s var(--ease),width .55s var(--ease),height .55s var(--ease),border-radius .55s var(--ease),opacity .4s ease;opacity:0}',
+    '.spot{position:fixed;left:0;top:0;width:0;height:0;border-radius:12px;box-shadow:0 0 0 9999px rgba(9,16,29,.62);opacity:0;will-change:transform,width,height}',
     '.spot.is-on{opacity:1}',
-    '.spot::before{content:"";position:absolute;inset:-2px;border-radius:inherit;padding:2px;background:linear-gradient(135deg,#5ec2ff,#7a5cff 55%,#ff7ab6);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:.95}',
-    '.spot::after{content:"";position:absolute;inset:-2px;border-radius:inherit;box-shadow:0 0 0 0 rgba(122,92,255,.55);animation:pulse 2.2s ease-out infinite}',
-    '.spot.is-empty::before,.spot.is-empty::after{display:none}',
-    '@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(122,92,255,.5)}70%{box-shadow:0 0 0 14px rgba(122,92,255,0)}100%{box-shadow:0 0 0 0 rgba(122,92,255,0)}}',
+    '.spot::before{content:"";position:absolute;inset:-2px;border-radius:inherit;padding:2px;background:linear-gradient(135deg,#5ec2ff,#7a5cff 55%,#ff7ab6);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:.95;transition:opacity .3s ease}',
+    /* the ripple that marks arrival (a WAAPI animation on ::after, ripple()) */
+    '.spot::after{content:"";position:absolute;inset:-2px;border-radius:inherit;box-shadow:0 0 0 0 rgba(122,92,255,0)}',
+    '.spot.is-empty::before{opacity:0}',
     '.block{position:fixed;pointer-events:auto;background:transparent}',
 
     /* the card */
-    '.card{position:fixed;left:0;top:0;width:380px;max-width:calc(100vw - 24px);pointer-events:auto;background:rgba(255,255,255,.98);border-radius:18px;box-shadow:0 24px 64px -12px rgba(9,16,29,.45),0 4px 14px rgba(9,16,29,.12),inset 0 0 0 1px rgba(255,255,255,.6);transition:transform .55s var(--ease),opacity .35s ease;opacity:0;outline:none;overflow:visible}',
+    '.card{position:fixed;left:0;top:0;width:380px;max-width:calc(100vw - 24px);pointer-events:auto;background:rgba(255,255,255,.98);border-radius:18px;box-shadow:0 24px 64px -12px rgba(9,16,29,.45),0 4px 14px rgba(9,16,29,.12),inset 0 0 0 1px rgba(255,255,255,.6);transition:opacity .3s ease;opacity:0;outline:none;overflow:visible;will-change:transform}',
     '.card.is-on{opacity:1}',
     '.card--center{width:540px}',
     '.card--finale{width:440px;text-align:center}',
@@ -67,10 +125,8 @@
     '.card[data-side="top"] .arrow{display:block;bottom:-7px;box-shadow:2px 2px 6px rgba(9,16,29,.1)}',
     '.card[data-side="right"] .arrow{display:block;left:-7px}',
     '.card[data-side="left"] .arrow{display:block;right:-7px;box-shadow:2px -2px 6px rgba(9,16,29,.08)}',
-    '.body{animation:enter .45s var(--ease) both}',
-    '.body.is-back{animation-name:enterBack}',
-    '@keyframes enter{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}',
-    '@keyframes enterBack{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}',
+    /* the outgoing card content while the new one comes in (morph()) */
+    '.ghost{position:absolute;pointer-events:none}',
 
     '.head{display:flex;align-items:center;gap:10px;margin:2px 0 12px}',
     '.ico{flex:0 0 auto;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:linear-gradient(135deg,#e7f3fb,#efeafe);color:var(--brand)}',
@@ -116,7 +172,8 @@
     '.btn--ghost:hover{background:#f1f4f7;color:var(--ink)}',
     '.btn--primary{color:#fff;background:linear-gradient(135deg,#0374b5,#4f46d8);box-shadow:0 6px 16px -6px rgba(63,70,216,.6),inset 0 1px 0 rgba(255,255,255,.18)}',
     '.btn--primary:hover{transform:translateY(-1px);box-shadow:0 10px 22px -8px rgba(63,70,216,.7),inset 0 1px 0 rgba(255,255,255,.18)}',
-    '.btn--primary:active{transform:translateY(0)}',
+    '.btn--primary:active{transform:translateY(0) scale(.97)}',
+    '.btn--ghost:active,.btn--soft:active{transform:scale(.97)}',
     '.btn--primary:focus-visible{box-shadow:0 0 0 3px rgba(79,70,216,.35),0 6px 16px -6px rgba(63,70,216,.6)}',
     '.btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}',
     '.btn--lg{height:44px;padding:0 22px;font-size:15px;border-radius:13px}',
@@ -131,8 +188,11 @@
     '.foot--intro .btn--primary{flex:1 1 auto}',
     '.choices{display:grid;gap:6px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}',
     '.choices__q{margin:0 0 2px;font-size:12.5px;font-weight:650;color:var(--muted)}',
-    '.choice{all:unset;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:12px;border:1px solid var(--line);background:#fff;transition:background .2s ease,border-color .2s ease}',
+    '.choice{all:unset;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:12px;border:1px solid var(--line);background:#fff;transition:background .2s ease,border-color .2s ease,transform .15s ease}',
     '.choice:hover{background:#f6f8ff;border-color:#d9dcfb}',
+    '.choice:active{transform:scale(.985)}',
+    '.choice>svg{transition:transform .25s var(--ease)}',
+    '.choice:hover>svg{transform:translateX(3px)}',
     '.choice:focus-visible{box-shadow:0 0 0 3px rgba(3,116,181,.3)}',
     '.choice .ico{width:30px;height:30px;border-radius:9px}',
     '.choice .ico svg{width:16px;height:16px}',
@@ -304,18 +364,17 @@
     '@keyframes draw{to{stroke-dashoffset:0}}',
     '.card--finale .foot{justify-content:center}',
     '.confetti{position:fixed;inset:0;pointer-events:none;overflow:hidden}',
-    '.confetti i{position:absolute;top:-16px;width:8px;height:13px;border-radius:2px;opacity:.95;animation:fall var(--d) cubic-bezier(.25,.7,.4,1) var(--delay) forwards}',
-    '@keyframes fall{0%{transform:translate3d(0,0,0) rotate(0)}100%{transform:translate3d(var(--x),105vh,0) rotate(var(--r));opacity:.9}}',
+    '.confetti i{position:absolute;width:8px;height:13px;border-radius:2px;will-change:transform}',
 
     /* the paused pill and the invitation */
-    '.pill{position:fixed;left:50%;bottom:22px;transform:translate(-50%,24px);opacity:0;pointer-events:none;display:flex;align-items:center;gap:6px;padding:6px 6px 6px 14px;border-radius:999px;background:rgba(20,26,40,.94);color:#fff;box-shadow:0 14px 40px -10px rgba(9,16,29,.6);transition:transform .45s var(--ease),opacity .3s ease;font-size:13.5px;font-weight:600;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}',
+    '.pill{position:fixed;left:50%;bottom:22px;transform:translate(-50%,24px);opacity:0;pointer-events:none;display:flex;align-items:center;gap:6px;padding:6px 6px 6px 14px;border-radius:999px;background:rgba(20,26,40,.94);color:#fff;box-shadow:0 14px 40px -10px rgba(9,16,29,.6);transition:transform .7s var(--spring),opacity .25s ease;font-size:13.5px;font-weight:600;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}',
     '.pill.is-on{transform:translate(-50%,0);opacity:1;pointer-events:auto}',
     '.pill__spark{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#5ec2ff,#7a5cff);display:grid;place-items:center;margin-right:2px}',
     '.pill__spark svg{width:13px;height:13px;fill:#fff;stroke:none}',
     '.pill__txt{padding-right:6px;white-space:nowrap}.pill__txt small{color:#a9b4c2;font-weight:500;margin-left:6px}',
     '.pill .btn{height:32px;padding:0 14px;font-size:13px;border-radius:999px}',
     '.pill .btn--ghost{color:#c4ccd6}.pill .btn--ghost:hover{background:rgba(255,255,255,.1);color:#fff}',
-    '.invite{position:fixed;right:22px;bottom:22px;width:350px;max-width:calc(100vw - 32px);pointer-events:auto;background:#fff;border-radius:18px;box-shadow:0 24px 60px -14px rgba(9,16,29,.45),0 3px 10px rgba(9,16,29,.1);overflow:hidden;transform:translateY(30px);opacity:0;transition:transform .6s var(--ease),opacity .4s ease}',
+    '.invite{position:fixed;right:22px;bottom:22px;width:350px;max-width:calc(100vw - 32px);pointer-events:auto;background:#fff;border-radius:18px;box-shadow:0 24px 60px -14px rgba(9,16,29,.45),0 3px 10px rgba(9,16,29,.1);overflow:hidden;transform:translateY(36px) scale(.96);transform-origin:100% 100%;opacity:0;transition:transform .75s var(--spring),opacity .35s ease}',
     '.invite.is-on{transform:none;opacity:1}',
     '.invite .card__in{padding:18px 20px 16px}',
     '.invite h2{font-size:17px}',
@@ -323,7 +382,9 @@
     '.invite .foot{margin-top:14px;justify-content:flex-end}',
 
     '@media (max-width:600px){.card,.card--intro,.card--center,.card--finale{width:calc(100vw - 24px)}.tiles{grid-template-columns:1fr}}',
-    '@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001s!important;animation-iteration-count:1!important;animation-delay:0s!important;transition-duration:.001s!important}.confetti{display:none}.fd-typed::before{content:"new tom"}}'
+    /* Reduced motion: movement goes (tour.js does the same for its own
+     * animations); end states stay, and fades and colour changes remain. */
+    '@media (prefers-reduced-motion:reduce){.try__dot,.xsn__caret{animation:none}.badge{animation:none}.badge svg{animation:none;stroke-dashoffset:0}.prog i{animation:none}.pill,.invite{transition:opacity .2s ease}.invite{transform:none}.pill{transform:translate(-50%,0)}.choice>svg,.choice:active,.btn:active{transition:none;transform:none}}'
   ].join('\n');
 
   var X_ICON = '<svg viewBox="0 0 14 14"><path d="M3 3l8 8M11 3l-8 8"/></svg>';
@@ -487,11 +548,9 @@
     if (where !== 'here') {
       this.active = false;
       this.detach();
-      this.card.classList.remove('is-on');
-      this.spot.classList.remove('is-on');
-      this.blocks.forEach(function (b) { place(b, 0, 0, 0, 0); });
+      this.exit();
       if (where === 'away' && sectionInfo(id).page === 'options') this.flash('Opened in a new tab', sectionInfo(id).title + ' is in Gradebook+ settings');
-      else setTimeout(function () { self.unmount(); }, 400);
+      else setTimeout(function () { self.unmount(); }, 600);
       return;
     }
     this.shown = null;
@@ -547,8 +606,15 @@
       Promise.resolve(this.state.finish(this.section, 'done')).then(function (v) {
         if (v) self.record = v;
         if (self.shown !== s || !self.active || self.nextUp() === before) return;
-        self.cardIn.innerHTML = self.render(s, false, 0);
-        var f = self.cardIn.querySelector('[data-act="section"]') || self.cardIn.querySelector('[data-act="finish"]');
+        // Only the buttons change (a "Next:" appears or goes): swap just them.
+        var tmp = document.createElement('div');
+        tmp.innerHTML = self.render(s, false, 0);
+        var oldFoot = self.cardIn.querySelector(':scope > .body > .foot');
+        var newFoot = tmp.querySelector('.foot');
+        if (!oldFoot || !newFoot) return;
+        oldFoot.replaceWith(newFoot);
+        if (!reducedMotion()) newFoot.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 360, easing: OUT });
+        var f = newFoot.querySelector('[data-act="section"]') || newFoot.querySelector('[data-act="finish"]');
         if (f) { try { f.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }
       });
     }
@@ -558,30 +624,217 @@
     if (!target && s.fallback) { try { target = s.fallback(); usedFallback = !!target; } catch (e) { target = null; } }
     if (s.kind === 'center' || s.kind === 'finale' || s.kind === 'welcome') target = null;
     var first = Array.isArray(target) ? target[0] : target;
-    if (first && first.scrollIntoView) {
-      var r = first.getBoundingClientRect();
-      if (r.top < 0 || r.bottom > window.innerHeight) {
-        try { first.scrollIntoView({ block: 'center', inline: 'nearest' }); } catch (e) { /* ignore */ }
-      }
+    var r = first && first.getBoundingClientRect ? first.getBoundingClientRect() : null;
+    if (r && (r.top < 8 || r.bottom > window.innerHeight - 8)) {
+      // Off screen: glide the page to it first, holding the spotlight and
+      // card still meanwhile, then move them over once the page has settled.
+      var gen = this._gen;
+      this._morph = true;
+      var self = this;
+      scrollIntoViewAsync(first, !reducedMotion()).then(function () {
+        if (gen !== self._gen || !self.active) return;
+        self.paintNow(s, dir, target, usedFallback);
+      });
+      return;
     }
+    this.paintNow(s, dir, target, usedFallback);
+  };
+
+  /* Draws stop `s` and moves everything to it: from the card and spotlight
+   * as they are on screen right now (even mid-way through a move), or, when
+   * nothing is showing yet, with an entrance. */
+  Tour.prototype.paintNow = function (s, dir, target, usedFallback) {
+    var first = Array.isArray(target) ? target[0] : target;
+    var before = this._visible ? this.snapshot() : null;
+    this.cancelMotion();
+    var oldBody = this.cardIn.firstElementChild;
+    if (oldBody) oldBody.remove();
     this.targetEl = target;
     this.targetUsedFallback = usedFallback;
     if (s.onShow && target) { try { s.onShow(this, first); } catch (e) { /* ignore */ } }
 
     var wide = s.kind === 'center' || (!target && s.fallbackArt);
-    this.card.className = 'card' + (s.kind === 'welcome' ? ' card--intro' : '') +
+    this.card.className = 'card is-on' + (s.kind === 'welcome' ? ' card--intro' : '') +
       (wide ? ' card--center' : '') + (s.kind === 'finale' ? ' card--finale' : '');
     this.cardIn.innerHTML = this.render(s, usedFallback, dir);
     this._lastRect = null;
+    this._morph = false;
     this.reflow(true);
-    this.card.classList.add('is-on');
     var focusEl = s.kind === 'welcome' ? this.cardIn.querySelector('[data-act="section"]')
       : (this.cardIn.querySelector('[data-act="primary"], [data-act="next"]') || this.cardIn.querySelector('[data-act="section"]') ||
         this.cardIn.querySelector('[data-act="finish"]'));
     focusEl = focusEl || this.card;
     try { focusEl.focus({ preventScroll: true }); } catch (e) { /* ignore */ }
     this.loop();
+    if (before) this.morph(before, oldBody, dir || 1, s);
+    else this.entrance(s);
+    this._visible = true;
     if (s.kind === 'finale') this.celebrate();
+  };
+
+  /* ---------------------------------------------------- moving between stops */
+
+  /* Where the card and spotlight are on screen at this instant. */
+  Tour.prototype.snapshot = function () {
+    var c = this.card.getBoundingClientRect();
+    var sp = this.spot.getBoundingClientRect();
+    var rad = parseFloat(getComputedStyle(this.spot).borderTopLeftRadius) || 0;
+    return {
+      card: { x: c.left, y: c.top, w: c.width, h: this.cardIn.getBoundingClientRect().height },
+      spot: { x: sp.left, y: sp.top, w: sp.width, h: sp.height, r: rad }
+    };
+  };
+
+  Tour.prototype.cancelMotion = function () {
+    (this._anims || []).forEach(function (a) { try { a.cancel(); } catch (e) { /* ignore */ } });
+    this._anims = [];
+    var ghosts = this.cardIn ? this.cardIn.querySelectorAll('.ghost') : [];
+    Array.prototype.forEach.call(ghosts, function (g) { g.remove(); });
+    if (this._newBody) { this._newBody.style.width = ''; this._newBody = null; }
+  };
+
+  Tour.prototype.track = function (a) { if (a) this._anims.push(a); return a; };
+
+  /* The new card content arriving: each part in turn, from the direction of travel. */
+  Tour.prototype.staggerIn = function (body, dir, delay) {
+    var self = this;
+    var parts = Array.prototype.slice.call(body.querySelectorAll(':scope > *:not(.choices):not(.badge), :scope > .choices > *'));
+    var from = dir ? 'translateX(' + (dir * 22) + 'px)' : 'translateY(10px)';
+    parts.forEach(function (el, i) {
+      self.track(el.animate([{ opacity: 0, transform: from }, { opacity: 1, transform: 'none' }],
+        { duration: 520, delay: delay + Math.min(i, 9) * 34, easing: OUT, fill: 'backwards' }));
+    });
+  };
+
+  /* A soft ring that spreads from the spotlight's edge once it arrives; on a
+   * "try it" stop it keeps coming back, slowly, as an invitation to click. */
+  Tour.prototype.ripple = function (delay) {
+    if (reducedMotion() || !this.targets().length) return;
+    var s = this.shown || {};
+    var invite = s.tryIt && !this.targetUsedFallback;
+    try {
+      this.track(this.spot.animate([
+        { boxShadow: '0 0 0 0 rgba(122,92,255,.55)' },
+        { boxShadow: '0 0 0 16px rgba(122,92,255,0)', offset: invite ? 0.42 : 1 },
+        { boxShadow: '0 0 0 16px rgba(122,92,255,0)' }
+      ], { duration: invite ? 2600 : 1100, delay: delay, easing: 'cubic-bezier(.2,.7,.3,1)', iterations: invite ? Infinity : 1, pseudoElement: '::after' }));
+    } catch (e) { /* pseudo-element animation not supported: no ripple */ }
+  };
+
+  /* From the previous stop to this one: the card glides and resizes while
+   * its old content slides out and the new content follows it in; the
+   * spotlight travels with it. Nothing waits on anything else, so a click
+   * mid-way simply starts the next move from where things are. */
+  Tour.prototype.morph = function (before, oldBody, dir, s) {
+    var card = this.card, inner = this.cardIn, spot = this.spot;
+    var nextCard = this._cardGeo, nextSpot = this._spotGeo;
+    var newBody = inner.firstElementChild;
+    var nw = card.offsetWidth, nh = inner.offsetHeight;
+    var reduced = reducedMotion();
+    this._morph = true;
+
+    if (oldBody) {
+      oldBody.classList.add('ghost');
+      oldBody.setAttribute('aria-hidden', 'true');
+      oldBody.inert = true;
+      oldBody.style.cssText = 'top:22px;left:24px;width:' + Math.max(0, before.card.w - 48) + 'px';
+      inner.appendChild(oldBody);
+      this.track(oldBody.animate(reduced
+        ? [{ opacity: 1 }, { opacity: 0 }]
+        : [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(' + (-dir * 18) + 'px)' }],
+        { duration: reduced ? 140 : 200, easing: IN, fill: 'forwards' }));
+    }
+    if (newBody) {
+      this._newBody = newBody;
+      newBody.style.width = Math.max(0, nw - 48) + 'px'; // no re-wrapping while the card resizes
+      if (reduced) this.track(newBody.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, delay: 60, easing: 'ease', fill: 'backwards' }));
+      else this.staggerIn(newBody, dir, 120);
+    }
+    if (!reduced) {
+      this.track(card.animate([
+        { transform: tf(before.card.x, before.card.y), width: before.card.w + 'px' },
+        { transform: tf(nextCard.x, nextCard.y), width: nw + 'px' }
+      ], { duration: MOVE_MS, easing: SPRING }));
+      this.track(inner.animate([{ height: before.card.h + 'px' }, { height: nh + 'px' }], { duration: MOVE_MS, easing: SPRING }));
+      this.track(this.arrow.animate([{ opacity: 0 }, { opacity: 0, offset: 0.55 }, { opacity: 1 }], { duration: MOVE_MS, easing: 'linear' }));
+      var from = before.spot, to = nextSpot;
+      // Opening from nothing: an iris at the target. Closing to nothing: an
+      // iris shut where the hole was.
+      if (from.w < 1 && to.w >= 1) from = dot(to);
+      if (to.w < 1 && from.w >= 1) to = dot(from);
+      this.track(spot.animate([spotFrame(from), spotFrame(to)], { duration: MOVE_MS, easing: SPRING }));
+      this.ripple(MOVE_MS * 0.55);
+    } else {
+      this.ripple(0);
+    }
+    this.settle();
+  };
+
+  /* Nothing on screen yet: the page dims while the spotlight closes in on
+   * its element, then the card rises into place beside it. */
+  Tour.prototype.entrance = function (s) {
+    var card = this.card, spot = this.spot, body = this.cardIn.firstElementChild;
+    var g = this._spotGeo, c = this._cardGeo;
+    this._morph = true;
+    if (reducedMotion()) {
+      this.track(spot.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: 'ease' }));
+      this.track(card.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220, delay: 60, easing: 'ease', fill: 'backwards' }));
+      this.ripple(0);
+      this.settle();
+      return;
+    }
+    this.track(spot.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 420, easing: 'ease-out' }));
+    if (g.w >= 1) this.track(spot.animate([spotFrame(grow(g, 90)), spotFrame(g)], { duration: 900, easing: SPRING }));
+    var side = card.getAttribute('data-side');
+    card.style.transformOrigin = { bottom: '50% 0', top: '50% 100%', right: '0 50%', left: '100% 50%' }[side] || '50% 50%';
+    var lift = { bottom: [0, -14], top: [0, 14], right: [-14, 0], left: [14, 0] }[side] || [0, 16];
+    this.track(card.animate([
+      { opacity: 0, transform: tf(c.x + lift[0], c.y + lift[1]) + ' scale(.94)' },
+      { opacity: 1, transform: tf(c.x, c.y) }
+    ], { duration: 760, delay: g.w >= 1 ? 90 : 40, easing: SPRING, fill: 'backwards' }));
+    if (body) this.staggerIn(body, 0, g.w >= 1 ? 150 : 100);
+    this.ripple(700);
+    this.settle();
+  };
+
+  /* Once every move has finished: back to following the page as it scrolls. */
+  Tour.prototype.settle = function () {
+    var self = this, list = this._anims.filter(function (a) { return a.effect && a.effect.getTiming().iterations !== Infinity; });
+    var token = this._settleToken = (this._settleToken || 0) + 1;
+    finished(list).then(function () {
+      if (token !== self._settleToken || !self.active) return;
+      self.cardIn.querySelectorAll('.ghost').forEach(function (g) { g.remove(); });
+      if (self._newBody) { self._newBody.style.width = ''; self._newBody = null; }
+      self.card.style.transformOrigin = '';
+      self._morph = false;
+      self.reflow(true);
+    });
+  };
+
+  /* Leaving: the card sinks away, and the spotlight opens out until the page
+   * is clear. `toPill` folds the card down towards the pill instead. */
+  Tour.prototype.exit = function (toPill) {
+    var card = this.card, spot = this.spot, g = this._spotGeo || { x: 0, y: 0, w: 0, h: 0, r: 12 };
+    this.cancelMotion();
+    this._settleToken = (this._settleToken || 0) + 1;
+    this._morph = true;
+    this._visible = false;
+    var reduced = reducedMotion(), list = [];
+    var c = this._cardGeo || { x: 0, y: 0 };
+    var endCard = reduced ? { opacity: 0 } : toPill
+      ? { opacity: 0, transform: tf(window.innerWidth / 2 - card.offsetWidth / 2, window.innerHeight - 60) + ' scale(.35)' }
+      : { opacity: 0, transform: tf(c.x, c.y + 10) + ' scale(.96)' };
+    list.push(this.track(card.animate([{ opacity: 1, transform: tf(c.x, c.y) }, endCard],
+      { duration: reduced ? 160 : (toPill ? 380 : 240), easing: toPill ? 'cubic-bezier(.4,0,.2,1)' : IN, fill: 'forwards' })));
+    var spotEnd = reduced || g.w < 1 ? { opacity: 0 } : Object.assign(spotFrame(grow(g, 18)), { opacity: 0 });
+    var spotStart = reduced || g.w < 1 ? { opacity: 1 } : Object.assign(spotFrame(g), { opacity: 1 });
+    list.push(this.track(spot.animate([spotStart, spotEnd], { duration: reduced ? 180 : 340, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' })));
+    this.blocks.forEach(function (b) { place(b, 0, 0, 0, 0); });
+    var self = this;
+    return finished(list).then(function () {
+      self.card.classList.remove('is-on');
+      self.spot.classList.remove('is-on');
+    });
   };
 
   Tour.prototype.remember = function (stopId) {
@@ -742,6 +995,9 @@
 
   Tour.prototype.reflow = function (force) {
     if (!this.active || this.minimized) return;
+    // While a move is running the animation owns the spotlight and card;
+    // settle() catches up with the page once it has finished.
+    if (this._morph && !force) return;
     var rect = this.targetRect();
     var last = this._lastRect;
     var same = last && rect && Math.abs(last.x - rect.x) < 1 && Math.abs(last.y - rect.y) < 1 &&
@@ -754,18 +1010,17 @@
     // The spotlight (or, with nothing to point at, a dim page and no hole).
     var spot = this.spot;
     spot.classList.add('is-on');
-    if (rect) {
-      spot.classList.remove('is-empty');
-      spot.style.transform = 'translate(' + rect.x + 'px,' + rect.y + 'px)';
-      spot.style.width = rect.w + 'px';
-      spot.style.height = rect.h + 'px';
-      spot.style.borderRadius = Math.min(12, rect.h / 2) + 'px';
-    } else {
-      spot.classList.add('is-empty');
-      spot.style.transform = 'translate(' + (vw / 2) + 'px,' + (vh / 2) + 'px)';
-      spot.style.width = '0px';
-      spot.style.height = '0px';
-    }
+    var prevSpot = this._spotGeo;
+    var g = rect ? { x: rect.x, y: rect.y, w: rect.w, h: rect.h, r: Math.min(12, rect.h / 2) }
+      // No hole: closed to a point where the last one was (or mid-screen).
+      : (prevSpot && prevSpot.w >= 1 ? dot(prevSpot) : (prevSpot || { x: vw / 2, y: vh / 2, w: 0, h: 0, r: 12 }));
+    this._spotGeo = g;
+    spot.classList.toggle('is-empty', !rect);
+    var f = spotFrame(g);
+    spot.style.transform = f.transform;
+    spot.style.width = f.width;
+    spot.style.height = f.height;
+    spot.style.borderRadius = f.borderRadius;
 
     // Click shields around the hole - and over it, unless this stop invites a click.
     var h = rect || { x: vw / 2, y: vh / 2, w: 0, h: 0 };
@@ -822,18 +1077,8 @@
       else if (side) this.arrow.style.cssText = 'top:' + Math.max(18, Math.min(ch - 34, cy - y - 8)) + 'px';
     }
     card.setAttribute('data-side', side);
-    var tf = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px)';
-    if (!this._placed) {
-      // The very first placement appears in place rather than sliding in
-      // from the corner.
-      card.style.transition = 'none';
-      card.style.transform = tf;
-      void card.offsetWidth;
-      card.style.transition = '';
-      this._placed = true;
-      return;
-    }
-    card.style.transform = tf;
+    this._cardGeo = { x: Math.round(x), y: Math.round(y) };
+    card.style.transform = tf(x, y);
   };
 
   /* ---------------------------------------------------------- interaction */
@@ -923,37 +1168,48 @@
     // course from the switcher): the tutorial carries on from the next stop.
     var after = this.stops[this.index + 1];
     if (after && after.kind !== 'finale') this.remember(after.id);
-    this.layer.classList.add('is-off');
-    this.card.classList.remove('is-on');
-    this.spot.classList.remove('is-on');
-    this.blocks.forEach(function (b) { place(b, 0, 0, 0, 0); });
+    var self = this;
+    this.exit(true).then(function () { if (self.minimized) self.layer.classList.add('is-off'); });
     var counted = countedStops(this.stops);
     var pos = counted.indexOf(this.stop()) + 1;
     this.pill.innerHTML = '<span class="pill__spark">' + ((CGP.tourIcons || {}).sparkle || '') + '</span>' +
       '<span class="pill__txt">Try it out<small>' + pos + ' of ' + counted.length + '</small></span>' +
       '<button class="btn btn--ghost" type="button" data-act="skip">Skip tutorial</button>' +
       '<button class="btn btn--primary" type="button" data-act="resume">Next ' + NEXT_ICON + '</button>';
-    this.pill.classList.add('is-on');
+    setTimeout(function () { if (self.minimized) self.pill.classList.add('is-on'); }, reducedMotion() ? 0 : 160);
   };
 
+  /* Confetti bursting up out of the check mark and falling away. */
   Tour.prototype.celebrate = function () {
     if (reducedMotion()) return;
+    var badge = this.cardIn.querySelector('.badge');
+    var r = badge ? badge.getBoundingClientRect() : null;
+    var ox = r ? r.left + r.width / 2 : window.innerWidth / 2;
+    var oy = r ? r.top + r.height / 2 : window.innerHeight / 3;
     var box = el('div', 'confetti');
     var colors = ['#0374b5', '#5b3fd0', '#e2589c', '#5ec2ff', '#f2b829', '#2f9e6a'];
-    for (var i = 0; i < 40; i++) {
+    this.layer.insertBefore(box, this.card);
+    for (var i = 0; i < 56; i++) {
       var p = el('i');
-      p.style.left = (Math.random() * 100) + 'vw';
+      p.style.left = ox + 'px';
+      p.style.top = oy + 'px';
       p.style.background = colors[i % colors.length];
-      p.style.setProperty('--x', ((Math.random() - 0.5) * 220) + 'px');
-      p.style.setProperty('--r', ((Math.random() - 0.5) * 900) + 'deg');
-      p.style.setProperty('--d', (2.2 + Math.random() * 1.8) + 's');
-      p.style.setProperty('--delay', (Math.random() * 0.5) + 's');
       if (i % 3 === 0) { p.style.width = '7px'; p.style.height = '7px'; p.style.borderRadius = '50%'; }
       box.appendChild(p);
+      var ang = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.1;
+      var v = 160 + Math.random() * 220;
+      var dx = Math.cos(ang) * v, up = Math.sin(ang) * v;
+      var spin = (Math.random() - 0.5) * 1080;
+      var fall = window.innerHeight - oy + 40;
+      p.animate([
+        { transform: 'translate(-50%,-50%) translate(0,0) rotate(0deg)', opacity: 1, easing: 'cubic-bezier(.15,.6,.35,1)' },
+        { transform: 'translate(-50%,-50%) translate(' + (dx * 0.7) + 'px,' + up + 'px) rotate(' + (spin * 0.4) + 'deg)', opacity: 1, offset: 0.3, easing: 'cubic-bezier(.45,0,.9,.55)' },
+        { transform: 'translate(-50%,-50%) translate(' + dx + 'px,' + fall + 'px) rotate(' + spin + 'deg)', opacity: 0.85 }
+      ], { duration: 1900 + Math.random() * 900, delay: 140 + Math.random() * 120, fill: 'both' });
     }
-    this.layer.insertBefore(box, this.card);
-    setTimeout(function () { if (box.parentNode) box.parentNode.removeChild(box); }, 4800);
+    setTimeout(function () { if (box.parentNode) box.parentNode.removeChild(box); }, 3400);
   };
+
 
   Tour.prototype.detach = function () {
     this.unwatch();
@@ -970,7 +1226,7 @@
     var self = this;
     this.pill.innerHTML = '<span class="pill__spark">' + ((CGP.tourIcons || {}).sparkle || '') + '</span>' +
       '<span class="pill__txt">' + head + (small ? '<small>' + small + '</small>' : '') + '</span>';
-    this.pill.classList.add('is-on');
+    setTimeout(function () { self.pill.classList.add('is-on'); }, reducedMotion() ? 0 : 180);
     setTimeout(function () { self.pill.classList.remove('is-on'); }, 4200);
     setTimeout(function () { self.unmount(); }, 4800);
   };
@@ -987,14 +1243,12 @@
     if (this.welcome) { if (this.state.welcomeSeen) this.state.welcomeSeen(); }
     else if (this.section && this.state.finish) this.state.finish(this.section, how === 'done' ? 'done' : 'skipped');
     var self = this;
-    this.card.classList.remove('is-on');
-    this.spot.classList.remove('is-on');
-    this.blocks.forEach(function (b) { place(b, 0, 0, 0, 0); });
+    this.exit();
     if (this.welcome) this.flash('Tutorials are in Gradebook+ settings', 'Click the Gradebook+ icon in Chrome’s toolbar');
     else if (how === 'skipped') this.flash('Skipped “' + sectionInfo(this.section).title + '”', 'Your other tutorials are still available');
     else {
       this.pill.classList.remove('is-on');
-      setTimeout(function () { self.unmount(); }, 1200);
+      setTimeout(function () { self.unmount(); }, 900);
     }
   };
 

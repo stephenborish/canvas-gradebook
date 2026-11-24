@@ -280,6 +280,18 @@ suite('Tutorials: each part on its own', (test) => {
     a.ok(read('src/sections/sync-dialog.js').includes('Link your classes'));
   });
 
+  test('motion: one spring for everything, interruptible, and still with reduced motion', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src/tour/tour.js'), 'utf8');
+    a.ok(/var SPRING = springEasing\(/.test(src), 'a shared spring easing');
+    a.not(/'\.spot\{[^']*transition:transform/.test(src), 'the spotlight follows the page directly, never trailing behind it');
+    a.not(/'\.card\{[^']*transition:transform/.test(src), 'nor does the card');
+    a.ok(/Tour\.prototype\.snapshot = function/.test(src) && /this\.snapshot\(\)/.test(src), 'a move starts from where things are on screen');
+    a.ok(/if \(this\._morph && !force\) return;/.test(src), 'nothing fights a running move');
+    a.ok(/reducedMotion\(\)/.test(src.slice(src.indexOf('Tour.prototype.morph'), src.indexOf('Tour.prototype.settle'))), 'reduced motion cross-fades instead of moving');
+    a.not(/\*,\*::before,\*::after\{animation-duration/.test(src), 'no blanket animation kill-switch');
+    a.not(/scrollIntoView\(\{[^}]*\}\);\s*if \(res/.test(src), 'does not trust the early-resolving scrollIntoView promise');
+  });
+
   test('every student-overview stop that opens the overview also closes it', () => {
     C().tourStops.filter((x) => x.group === 'si').forEach((x) => a.ok(typeof x.enter === 'function' && typeof x.leave === 'function', x.id));
   });
