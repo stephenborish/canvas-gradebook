@@ -1675,7 +1675,7 @@
     var guided = /-tour$/.test(wanted);
     if (guided) wanted = wanted.replace(/-tour$/, '');
     if (wanted && activate(wanted, { silent: true })) {
-      if (guided && wanted === 'schedule') startScheduleTour();
+      if (guided) startOptionsTour(wanted);
       return;
     }
     var stored = null;
@@ -1875,29 +1875,93 @@
     if (e.key === 'Enter') { e.preventDefault(); grantDomain(); }
   });
 
-  /* The welcome tour's guided calendar setup, on the Class Schedule tab. It
-   * is not the once-per-install tour itself, so it records nothing. */
-  function startScheduleTour() {
-    if (!CGP.Tour || !CGP.tourScheduleStops) return;
-    try { history.replaceState(null, '', location.pathname + '#schedule'); } catch (e) { /* ignore */ }
+  /* A tutorial that runs here (Class schedule, Comment snippets), on its tab
+   * of the same name: from a Canvas page's "#<id>-tour" link or the
+   * Tutorials list. */
+  function startOptionsTour(id) {
+    var sec = CGP.TourState && CGP.TourState.section(id);
+    if (!sec || sec.page !== 'options' || !CGP.Tour || !CGP.tourPaths || !CGP.tourPaths[id] || CGP.tourInstance) return;
+    try { history.replaceState(null, '', location.pathname + '#' + id); } catch (e) { /* ignore */ }
+    var state = new CGP.TourState();
     setTimeout(function () {
-      var tour = new CGP.Tour({
-        stops: CGP.tourScheduleStops,
-        state: { markDone: function () { return Promise.resolve(); } },
-        holdKeys: false,
-        finishLabel: 'Done'
+      state.load().then(function (v) {
+        var tour = new CGP.Tour({ section: id, state: state, record: v, holdKeys: false });
+        tour.start();
       });
-      tour.start();
     }, 400);
   }
 
-  /* The welcome tour (src/tour/) is offered once per install; this marks it
-   * due again on this computer, and the next gradebook opened shows it. */
-  $('replayTour').addEventListener('click', function () {
-    new CGP.TourState().request().then(function () {
-      status('Done. The tour starts next time you open a Canvas gradebook.');
+  /* Tutorials: every part of the tour, each started on its own. Tutorials
+   * that run in Canvas start on the next page of that kind the teacher opens. */
+  var WHERE = { gradebook: 'a Canvas gradebook', home: 'a Canvas course home page', people: 'a Canvas course’s People page' };
+
+  function tutorialsStatus(msg, isError) {
+    var el = $('tutorialsStatus');
+    el.textContent = msg;
+    el.classList.toggle('status--error', !!isError);
+  }
+
+  function renderTutorials() {
+    var TS = CGP.TourState;
+    return new TS().load().then(function (v) {
+      var list = $('tutorialsList');
+      list.textContent = '';
+      TS.SECTIONS.forEach(function (sec) {
+        var li = document.createElement('li');
+        li.className = 'tutorials__item';
+        var text = document.createElement('span');
+        text.className = 'tutorials__text';
+        var b = document.createElement('b');
+        b.textContent = sec.title;
+        var small = document.createElement('small');
+        small.textContent = sec.blurb;
+        if (TS.statusOf(v, sec.id) === 'done') {
+          var seen = document.createElement('span');
+          seen.className = 'tutorials__seen';
+          seen.textContent = ' · Seen';
+          small.appendChild(seen);
+        }
+        text.appendChild(b);
+        text.appendChild(small);
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn';
+        btn.textContent = 'Show me';
+        btn.setAttribute('aria-label', 'Show me: ' + sec.title);
+        btn.addEventListener('click', function () { startTutorial(sec); });
+        li.appendChild(text);
+        li.appendChild(btn);
+        list.appendChild(li);
+      });
+    });
+  }
+
+  function startTutorial(sec) {
+    if (sec.page === 'options') {
+      $('tutorials').close();
+      var tab = $('tab-' + sec.id);
+      if (tab) tab.click();
+      startOptionsTour(sec.id);
+      return;
+    }
+    new CGP.TourState().request(sec.id).then(function () {
+      tutorialsStatus('Ready. “' + sec.title + '” starts the next time you open ' + WHERE[sec.page] + '.');
     }, function () {
-      status('Could not schedule the tour.', { error: true });
+      tutorialsStatus('Could not set up that tutorial. Try again.', true);
+    });
+  }
+
+  $('replayTour').addEventListener('click', function () {
+    tutorialsStatus('');
+    renderTutorials().then(function () { $('tutorials').showModal(); });
+  });
+
+  $('tutorialsAll').addEventListener('click', function () {
+    new CGP.TourState().request().then(function () {
+      tutorialsStatus('Ready. The welcome card appears the next time you open a Canvas gradebook.');
+      renderTutorials();
+    }, function () {
+      tutorialsStatus('Could not set that up. Try again.', true);
     });
   });
 
@@ -1968,7 +2032,7 @@
   function initVersion() {
     var el = $('extensionVersion');
     if (!el) return;
-    var ver = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest && chrome.runtime.getManifest().version) || CGP.VERSION || '1.32.3';
+    var ver = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest && chrome.runtime.getManifest().version) || CGP.VERSION || '1.33.0';
     el.textContent = ver;
   }
 

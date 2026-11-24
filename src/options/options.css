@@ -304,7 +304,24 @@ input.switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2p
 .btn--quiet { background: transparent; border-color: transparent; color: var(--muted); }
 .btn--quiet:hover { color: var(--ink); background: var(--bg); }
 .btn--tour { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
-.btn--tour svg { width: 14px; height: 14px; fill: currentColor; flex: 0 0 auto; }
+.btn--tour svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; flex: 0 0 auto; }
+
+/* Tutorials (the sidebar's Tutorials button): each part of the tour on its own. */
+.tutorials { width: min(460px, calc(100vw - 32px)); padding: 0; border: 0; border-radius: 14px; background: var(--surface); color: var(--ink-soft); box-shadow: 0 24px 60px -16px rgba(23, 43, 58, 0.45); }
+.tutorials::backdrop { background: rgba(9, 16, 29, 0.45); }
+.tutorials__in { margin: 0; padding: 20px 22px 16px; }
+.tutorials__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.tutorials__head h2 { margin: 0; font-size: 18px; color: var(--ink); }
+.tutorials__x { font-size: 20px; line-height: 1; padding: 4px 10px; }
+.tutorials__lead { margin: 6px 0 14px; color: var(--muted); font-size: 13px; }
+.tutorials__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.tutorials__item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.tutorials__text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.tutorials__text b { color: var(--ink); font-size: 14px; }
+.tutorials__text small { color: var(--muted); font-size: 12.5px; }
+.tutorials__seen { color: #0b7a45; font-weight: 600; }
+.tutorials__status { min-height: 18px; margin: 10px 0 0; font-size: 12.5px; color: var(--ink-soft); }
+.tutorials__foot { display: flex; justify-content: flex-end; margin-top: 6px; }
 
 .action-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
 
