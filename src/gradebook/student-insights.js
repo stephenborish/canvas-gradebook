@@ -519,9 +519,6 @@
   P.loadStudio = function (o) {
     if (!CGP.studioBridge || !CGP.studioClass) { o.parts.studio = { off: true }; return; }
     var self = this;
-    // Students' own recordings are a slower, separate read: Studio's answer
-    // is shown as soon as it comes, and they're sorted out when they arrive.
-    var studentRead = this.studentEmbeds();
     Promise.all([this.courseInfo(), this.rosterEmails(), this.courseIndex()]).then(function (r) {
       if (!self._courseName) throw new Error('Couldn’t read this course’s name');
       var embeds = r[2] ? r[2].embeds : [];
@@ -540,7 +537,11 @@
       });
     }).then(function (res) {
       o.parts.studio = res;
-      studentRead.then(function (found) {
+      // Students' own recordings are a slower, separate read, made only when
+      // some video isn't posted anywhere: Studio's answer is shown at once,
+      // and they're sorted out when that read arrives.
+      if (!res.videos.some(function (v) { return !v.places || !v.places.length; })) { res.studentPending = false; return; }
+      self.studentEmbeds().then(function (found) {
         if (o.parts.studio !== res) return;
         res.studentEmbeds = found || {};
         res.studentPending = false;
@@ -1482,7 +1483,7 @@
         (videos[String(i.id)] || []).map(function (v) {
           var pct = v.completion === null || v.completion === undefined ? null : Math.round(v.completion * 100);
           var text = v.status === 'watched' ? 'Video watched' : v.status === 'partial' ? 'Video ' + pct + '% watched'
-            : v.status === 'none' ? 'Video not watched' : 'Video: ' + videoLabel(v).toLowerCase();
+            : v.status === 'none' ? 'Video not watched' : 'Video: ' + videoLabel(v).replace(/^./, function (ch) { return ch.toLowerCase(); });
           return '<span class="cgp-si__vstatus cgp-si__vstatus--' + v.status + ' cgp-si__vstatus--sm" title="' +
             esc('Studio video “' + v.title + '”: ' + videoLabel(v) + (pct !== null && v.status !== 'unknown' ? ' (' + pct + '%)' : '')) + '">' + esc(text) + '</span>';
         }).join('');
@@ -1667,7 +1668,7 @@
       }) : []);
     var out = CGP.studioClass.studentVideos(s.videos, {
       id: uid, name: student.name || student.fullName || '', sortable_name: student.sortableName || '', email: email
-    }, { classEmails: classEmails, roster: roster, studentEmbeds: s.studentEmbeds || {} });
+    }, { classEmails: classEmails, roster: roster, studentEmbeds: this.fromStudents(s.studentEmbeds, roster) });
     out.noCollection = !s.collection;
     out.moduleOrder = s.moduleOrder || [];
     out.studentPending = !!s.studentPending;
@@ -1675,6 +1676,19 @@
     var names = {};
     roster.forEach(function (x) { if (x && x.id !== undefined && x.id !== null) names[String(x.id)] = x.name || ''; });
     out.rows.forEach(function (v) { if (v.submittedBy && names[v.submittedBy]) v.submittedByName = names[v.submittedBy]; });
+    return out;
+  };
+
+  /* Only what students on the roster put in their work: a video the
+   * teacher (or a TA) embeds in a discussion reply is the teacher's. With
+   * no roster to check against, nothing is dropped. */
+  P.fromStudents = function (found, roster) {
+    found = found || {};
+    var ids = {};
+    (roster || []).forEach(function (x) { if (x && x.id !== undefined && x.id !== null) ids[String(x.id)] = true; });
+    if (!Object.keys(ids).length) return found;
+    var out = {};
+    Object.keys(found).forEach(function (k) { if (found[k] && ids[String(found[k].userId)]) out[k] = found[k]; });
     return out;
   };
 
@@ -1771,7 +1785,6 @@
       if (origin === 'posted') {
         var mods = modulesOf(v);
         g = mods.length ? groupFor('m:' + mods[0], mods[0], 'module', rank(mods[0])) : groupFor('loose', 'Posted outside any module', 'loose', 1e7);
-        v._also = mods.slice(1);
       } else if (!r.indexKnown) {
         g = groupFor('pending', 'Looking for where these are posted…', 'pending', 1e7 + 1);
       } else if (origin === 'student') {
@@ -1882,7 +1895,8 @@
     var body = overall + chipHtml + '<div class="cgp-si__vgroups">' + groups.map(groupHtml).join('') +
       '<p class="cgp-si__table-empty cgp-si__note" hidden>No videos match.</p></div>';
 
-    var aside = pc.total ? pc.watched + ' of ' + pc.total + ' watched' : s.rows.length + ' videos, none posted';
+    var aside = pc.total ? pc.watched + ' of ' + pc.total + ' watched'
+      : !r.indexKnown ? 'Looking for where videos are posted…' : s.rows.length + ' videos, none posted';
     var embedded = s.rows.filter(function (v) { return v.embeddedOnly; }).length;
     var noData = s.rows.some(function (v) { return v.status === 'unknown' && v.places && v.places.length; });
     var indexNote = !r.indexKnown ? ' Looking for videos embedded in assignments and pages…' : '';

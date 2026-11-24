@@ -665,6 +665,28 @@ suite('student overview: profile tab', (test) => {
     }
   });
 
+  test('the students’ scan runs only when some video isn’t posted, and keeps only students’ work', async () => {
+    const Ctl = C();
+    const c = new Ctl({ model: {}, api: {}, adapter: {}, settings: { values: {} }, courseId: 9 });
+    let scans = 0;
+    c.courseInfo = () => { c._courseName = 'X'; c._courseNames = ['X']; return Promise.resolve({}); };
+    c.rosterEmails = () => Promise.resolve({});
+    c.courseIndex = () => Promise.resolve({ embeds: [{ uuid: 'P', title: 'Cells', place: { kind: 'Page', name: 'Cells', url: '/p', modules: [] } }], moduleOrder: [] });
+    c.studentEmbeds = () => { scans++; return Promise.resolve({}); };
+    const had = globalThis.CGP.studioBridge;
+    globalThis.CGP.studioBridge = { courseVideos: () => Promise.resolve({ collection: { id: 1 }, videos: [{ uuid: 'P', title: 'Cells', viewers: [] }] }) };
+    try {
+      const o = { parts: {}, draw: () => {} };
+      c.loadStudio(o);
+      await new Promise((r) => setTimeout(r, 0)); await new Promise((r) => setTimeout(r, 0));
+      a.eq(scans, 0, 'every video posted: no scan');
+      a.eq(o.parts.studio.studentPending, false);
+    } finally { globalThis.CGP.studioBridge = had; }
+    const kept = c.fromStudents({ A: { userId: '7' }, T: { userId: '1' } }, [{ id: '7', name: 'Avery' }]);
+    a.deep(Object.keys(kept), ['A'], 'a teacher’s reply embed is not a student recording');
+    a.deep(Object.keys(c.fromStudents({ T: { userId: '1' } }, [])), ['T'], 'no roster: nothing dropped');
+  });
+
   test('Studio videos: grouped by module, status chips, and each assignment’s video status', () => {
     const Ctl = C();
     const c = new Ctl({ model: {}, api: {}, adapter: {}, settings: { values: {} }, courseId: 9 });
