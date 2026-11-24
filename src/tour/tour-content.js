@@ -475,8 +475,8 @@
     {
       id: 'classes-link',
       icon: 'link',
-      title: 'Link the classes that share this course',
-      body: 'If you teach this course to more than one class, such as Periods 2, 4 and 6, each class has its own Canvas course. Click <b>Copy to other classes</b> and choose your other classes. You only need to do this once.',
+      title: 'Teach the same course to more than one class?',
+      body: 'If you teach this course to several classes, such as Periods 2, 4 and 6, each one is a separate Canvas course. Gradebook+ can copy your work between them. Start by clicking <b>Copy to other classes</b> and choosing your other classes; you only do this once.',
       fallbackNote: 'The <b>Copy to other classes</b> button is in the sidebar on the course home page, and next to <b>+ Module</b> on the Modules page. If you don’t see it, turn it on in Gradebook+ settings.',
       target: function () { return pick('.cgp-copyto--home, .cgp-copyto'); },
       tryIt: true,
@@ -496,11 +496,11 @@
       id: 'classes-copy',
       kind: 'center',
       icon: 'swap',
-      title: 'Copy work to your other classes',
-      body: 'In <b>Copy to other classes</b>, choose which classes should get it, make sure each due date is right, and click <b>Copy</b>.',
+      title: 'Copy assignments, pages and modules to your other classes',
+      body: 'Click <b>Copy to other classes</b> here to pick items from this course, or use the copy button next to <b>Edit</b> on an assignment’s page to copy just that one. Choose the classes, set each class’s due dates, and click <b>Copy</b>.',
       bullets: [
-        'Each class is labeled <i>Not there yet</i>, <i>Same</i> or <i>Different</i>, so you can see what it already has.',
-        'To copy a single assignment or page, open it and click the copy icon next to <b>Edit</b>.',
+        'Each copy goes into the matching module in that class.',
+        'Each class is labeled <i>Not there yet</i>, <i>Same</i> or <i>Different</i>, so you can see whether it already has the item.',
         'If you’ve changed an item in one class, that version is only replaced if you choose to replace it.'
       ],
       art: function () {
@@ -518,7 +518,7 @@
       kind: 'center',
       icon: 'grid',
       title: 'Check that your classes match',
-      body: '<b>Compare classes</b> lists every item in this course and shows whether each of your other classes has it. If an item is marked Different, click <b>Pick a version…</b> to see both versions side by side and choose one.',
+      body: 'In the <b>Copy to other classes</b> window, <b>Compare classes</b> lists every item in this course and whether your other classes have the same version. If one is marked Different, click <b>Pick a version…</b> to see both side by side and choose which to keep.',
       bullets: ['You can also copy as you work: when you create or edit an assignment, quiz, discussion or page, choose classes under <b>Also copy to your linked courses</b> before you save.'],
       art: function () {
         var rows = [
@@ -559,7 +559,7 @@
       id: 'groups-steps',
       kind: 'center',
       icon: 'people',
-      title: 'Answer three questions, then click Make',
+      title: 'Answer three questions, then click the Make button',
       steps: [
         { n: '1', t: 'How many groups?', d: 'Choose a number of groups, or how many students should be in each one.' },
         { n: '2', t: 'What should they be called?', d: 'Numbers, letters, colors, or names you type in.' },
@@ -573,7 +573,7 @@
       title: 'Rearrange or copy groups later',
       bullets: [
         'To move students, open the <b>Your group sets</b> tab, click <b>Arrange students</b>, and drag names between groups. Click <b>Save changes</b> when you’re done.',
-        'To make the same groups in another class, click <b>Copy to…</b>.'
+        'To make the same groups in another class, click <b>Copy to…</b> next to the group set.'
       ],
     }
   ];
@@ -620,9 +620,12 @@
       id: 'schedule',
       kind: 'center',
       icon: 'calendar',
-      title: 'Set due times by class period',
-      body: 'Once your class calendar is connected, clicking a Due, Available from or Until date in Canvas shows that day’s classes. Click one of your classes, and its start time is filled in for you.',
-      bullets: ['Works for assignments, quizzes, discussions and modules.'],
+      title: 'See when your classes meet while you set due dates',
+      body: 'Gradebook+ reads your class meetings from your Google Calendar. When you click a Due, Available from or Until box on an assignment, quiz, discussion or module, a panel opens beside it with that day’s classes, their times and rooms.',
+      bullets: [
+        'Click a class to fill in its start time, or click <b>End</b> beside it for its end time.',
+        'The class you’re editing is marked <b>This course</b>. Use the arrows to see other days.'
+      ],
       art: function () {
         return '<div class="assign-demo" aria-hidden="true">' +
           '<div class="ad-field"><span class="ad-lab">Due date</span><span class="ad-in">Tue, Oct 14</span><span class="ad-in ad-in--time"><span class="ad-t"></span></span></div>' +
@@ -636,8 +639,8 @@
     {
       id: 'opt-copy',
       icon: 'link',
-      title: 'Step 1: Connect your calendar',
-      body: 'Click <b>Find my calendar link</b>. Gradebook+ opens Google Calendar, finds your All Classes calendar, and connects it for you. If Chrome asks for permission, click <b>Allow</b>.',
+      title: 'Step 1: Connect your Google Calendar',
+      body: 'Click <b>Find my calendar link</b>. Gradebook+ opens Google Calendar, finds your <b>All Classes</b> calendar (the one with your class meetings) and connects it. If Chrome asks for permission, click <b>Allow</b>.',
       bullets: ['Make sure you’re signed in to Google with your school account first.'],
       target: function () { return document.getElementById('calendarFind'); },
       tryIt: true, padding: 8
@@ -645,16 +648,16 @@
     {
       id: 'opt-paste',
       icon: 'check',
-      title: 'Or paste a calendar link yourself',
-      body: 'If you already have a link to your class calendar, click <b>I already have a calendar link</b>, paste it in, and click <b>Connect calendar</b>. Links from Outlook, Apple Calendar and other calendar apps work too.',
+      title: 'Or paste your calendar’s link',
+      body: 'If you already have a link to your class calendar, click <b>I already have a calendar link</b>, paste it, and click <b>Connect calendar</b>. Links from Outlook and Apple Calendar work too.',
       target: function () { var m = document.getElementById('calendarManual'); return m && m.open ? m : (m && m.querySelector('summary')) || document.querySelector('.schedule-connect'); },
       tryIt: true, padding: 8
     },
     {
       id: 'opt-check',
       icon: 'sparkle',
-      title: 'Step 2: Make sure it worked',
-      body: 'When the connection works, a green box appears showing your next class. You don’t need to save anything.',
+      title: 'Step 2: Check that your classes appear',
+      body: 'Once it’s connected, a green box shows your next class with its day and time. If that looks right, you’re done. There’s nothing to save.',
       target: function () { var st = document.getElementById('calendarStatus'); return st && st.textContent ? st : document.querySelector('.schedule-connect'); },
       tryIt: true, padding: 6
     }
@@ -675,7 +678,7 @@
   /* The last card of each tutorial: just "Done", unless there is one more
    * thing the teacher has to do. */
   var finales = {
-    schedule: { body: 'Next time you set a due date in Canvas, click the date and choose a class.' }
+    schedule: { body: 'Try it: open any assignment in Canvas and click its Due date. That day’s classes appear beside it.' }
   };
 
 
