@@ -370,9 +370,12 @@
       return !document.hidden && !!self.settings.values.hiddenGems && !prefersReducedMotion();
     }
 
-    // One decision a day: today's roll, once made, is final.
+    // One roll a day, once made, is final; real rain or snow has its own day,
+    // so it still shows if it starts later. The service worker keeps the
+    // weather for 20 minutes, so later pages cost no request.
     readState().then(function (state) {
-      if (!CGP.hiddenGems.rollDue(state, new Date())) return null;
+      var now = new Date();
+      if (!CGP.hiddenGems.rollDue(state, now) && !CGP.hiddenGems.weatherDue(state, now)) return null;
       return currentWeather().then(function (weather) { return { weather: weather }; });
     }).then(function (r) {
       if (!r) return;
@@ -385,10 +388,14 @@
           return readState().then(function (fresh) {
             if (!stillWanted()) return null;
             var now = new Date();
-            if (!CGP.hiddenGems.rollDue(fresh, now)) return null;
-            var pick = CGP.hiddenGems.chooseGem(now, r.weather);
+            var decision = CGP.hiddenGems.decide(fresh, now, r.weather);
+            if (!decision) return null;
+            var pick = decision.pick;
             var claimId = now.getTime() + ':' + Math.random().toString(36).slice(2, 8);
-            return writeState({ rolledDay: CGP.hiddenGems.dayKey(now), lastGem: pick ? pick.id : null, claimId: claimId }).then(function (okWrite) {
+            return writeState({
+              rolledDay: decision.state.rolledDay, weatherDay: decision.state.weatherDay,
+              lastGem: pick ? pick.id : null, claimId: claimId
+            }).then(function (okWrite) {
               if (!okWrite || !pick || !stillWanted()) return null;
               var go = function () { return stillWanted() ? self.play(pick.id, pick.opts) : null; };
               if (hasLock) return go();

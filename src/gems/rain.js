@@ -420,10 +420,13 @@
     g.fillStyle = opaque(bodyBg) ? bodyBg : '#fff';
     g.fillRect(0, 0, w, h);
     var visited = 0;
+    // Read the page in at most ~25 ms (a big gradebook has thousands of
+    // cells): whatever is not reached stays the page's background colour.
+    var until = performance.now() + 25;
     var range = document.createRange();
     (function walk(el) {
       for (var ch = el.firstChild; ch; ch = ch.nextSibling) {
-        if (++visited > 8000) return;
+        if (++visited > 4000 || (visited % 64 === 0 && performance.now() > until)) { visited = Infinity; return; }
         if (ch.nodeType === 3) {
           if (!/\S/.test(ch.nodeValue)) continue;
           range.selectNodeContents(ch);
@@ -456,6 +459,17 @@
         }
         if (parseFloat(cs.borderTopWidth) > 0 && opaque(cs.borderTopColor)) {
           g.fillStyle = cs.borderTopColor; g.fillRect(r.left, r.top, r.width, 1);
+        }
+        // A grid or table cell is drawn as its box and one run of its text;
+        // its insides are not walked.
+        if (tag === 'TD' || tag === 'TH' || ch.getAttribute('role') === 'gridcell') {
+          if (/\S/.test(ch.textContent || '')) {
+            g.fillStyle = cs.color; g.globalAlpha = 0.55;
+            var lh = Math.min(r.height, parseFloat(cs.fontSize) || 14);
+            g.fillRect(r.left + 4, r.top + (r.height - lh) / 2 + lh * 0.28, Math.max(0, Math.min(r.width - 8, (ch.textContent.trim().length) * lh * 0.5)), lh * 0.44);
+            g.globalAlpha = 1;
+          }
+          continue;
         }
         walk(ch);
       }

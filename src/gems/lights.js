@@ -57,6 +57,7 @@
       // XLSF Light(): one sprite per bulb, lit or unlit by background offset.
       var lights = [];
       var count = Math.floor((W - 16) / spacing);
+      if (count < 1) { session.end(0); return; }   // too narrow for a single bulb
       var offsetX = (W - (count - 1) * spacing) / 2;
       for (var j = 0; j < count; j++) {
         var x = offsetX + j * spacing;

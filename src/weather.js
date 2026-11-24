@@ -36,7 +36,8 @@ export function createWeather(chrome, fetchImpl, nowFn) {
     const box = (await chrome.storage.local.get(CACHE_KEY))[CACHE_KEY];
     // An answer from the future (the clock was set back) is not fresh.
     const age = box ? clock() - box.at : NaN;
-    if (box && Array.isArray(box.codes) && age >= 0 && age < FRESH_MS) return { ok: true, codes: box.codes, isDay: box.isDay || [], cached: true };
+    // An answer saved before day/night was asked for is fetched again.
+    if (box && Array.isArray(box.codes) && Array.isArray(box.isDay) && age >= 0 && age < FRESH_MS) return { ok: true, codes: box.codes, isDay: box.isDay, cached: true };
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 8000);
     try {

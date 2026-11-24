@@ -309,14 +309,15 @@
       front: session.canvas({ dpr: 0.34, className: 'is-snow is-near' })
     };
     var gl = {};
+    // Registered first, so contexts made before a failed one are released too.
+    session.onDestroy(function () {
+      ['back', 'mid', 'front'].forEach(function (k) {
+        try { var e = gl[k] && gl[k].gl.getExtension('WEBGL_lose_context'); if (e) e.loseContext(); } catch (er) { /* ignore */ }
+      });
+    });
     ['back', 'mid', 'front'].forEach(function (k) {
       gl[k] = initWebGL(canvases[k].el);
       if (!gl[k]) throw new Error('no webgl');
-    });
-    session.onDestroy(function () {
-      ['back', 'mid', 'front'].forEach(function (k) {
-        try { var e = gl[k].gl.getExtension('WEBGL_lose_context'); if (e) e.loseContext(); } catch (er) { /* ignore */ }
-      });
     });
 
     var wind = makeWind();

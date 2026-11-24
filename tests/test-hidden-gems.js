@@ -73,6 +73,37 @@ suite('Hidden Gems: what plays today', (test) => {
   });
 });
 
+suite('Hidden Gems: rain and snow keep their own day', (test) => {
+  const hg = globalThis.CGP.hiddenGems;
+  const now = new Date(2026, 10, 24, 11, 0);
+  const today = hg.dayKey(now);
+  const snowing = { codes: [73, 3], isDay: [1, 1] };
+
+  test('snow that starts after the day was rolled still shows, once', () => {
+    const rolledDry = { rolledDay: today, weatherDay: null };
+    const d = hg.decide(rolledDry, now, snowing, () => 0.99);
+    eq(d.pick.id, 'snow');
+    eq(d.state.weatherDay, today);
+    eq(hg.decide(d.state, now, snowing, () => 0.99), null, 'not twice the same day');
+    ok(hg.decide({ rolledDay: today, weatherDay: '2026-11-23' }, now, snowing).pick.id === 'snow', 'snowing again the next day');
+  });
+
+  test('a failed weather lookup leaves the weather free to show later', () => {
+    const d = hg.decide({}, now, null, () => 0.1);
+    eq(d.pick.id, 'leaves', 'the roll still happens, from the date alone');
+    eq(d.state.rolledDay, today);
+    eq(d.state.weatherDay, null, 'the weather has not had its day');
+    eq(hg.decide(d.state, now, snowing).pick.id, 'snow');
+    eq(hg.decide(d.state, now, null), null, 'nothing more to decide without weather');
+  });
+
+  test('no request is needed once both have had their day', () => {
+    not(hg.rollDue({ rolledDay: today, weatherDay: today }, now));
+    not(hg.weatherDue({ rolledDay: today, weatherDay: today }, now));
+    ok(hg.weatherDue({ rolledDay: today }, now));
+  });
+});
+
 suite('Hidden Gems: the weather around Philadelphia', (test) => {
   const { pathToFileURL } = require('url');
   const WEATHER = pathToFileURL(path.join(ROOT, 'src', 'weather.js')).href;
@@ -99,6 +130,18 @@ suite('Hidden Gems: the weather around Philadelphia', (test) => {
     const again = await w.now();
     ok(again.cached && again.isDay.join(',') === '1,0', 'from the cache');
     eq(calls.length, 1);
+  });
+
+  test('a cached answer from before day or night was asked for is fetched again', async () => {
+    const { createWeather } = await import(WEATHER);
+    const chrome = fakeChrome();
+    const clock = 1_700_000_000_000;
+    await chrome.storage.local.set({ 'cgp.weather.cache': { at: clock - 60 * 1000, codes: [0, 0] } });
+    let calls = 0;
+    const fetch = async () => { calls++; return { ok: true, json: async () => ([{ current: { weather_code: 0, is_day: 1 } }]) }; };
+    const r = await createWeather(chrome, fetch, () => clock).now();
+    eq(calls, 1);
+    eq(r.isDay.join(','), '1');
   });
 
   test('tabs asking at once share one request; failures play nothing', async () => {

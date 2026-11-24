@@ -96,8 +96,35 @@
     return sunny && r < SUNSHINE_CHANCE ? { id: 'sunshine', opts: {} } : null;
   }
 
+  /* Has real rain or snow not shown yet today? Weather keeps its own day
+   * apart from the roll, so rain that starts after the day's first page
+   * still shows, and a failed weather lookup costs nothing. */
+  function weatherDue(state, now) {
+    return !state || state.weatherDay !== dayKey(now || new Date());
+  }
+
+  /* What to play now, given the saved state and the weather (null when it
+   * could not be read): { pick: { id, opts } | null, state } to save, or
+   * null when there is nothing to decide. Real rain or snow plays once a
+   * day whenever it is falling; otherwise the day's one roll. */
+  function decide(state, now, weather, rng) {
+    var d = now instanceof Date ? now : new Date(now || Date.now());
+    var today = dayKey(d);
+    var falling = weather ? weatherKind(weather.codes) : null;
+    var weatherDay = (state && state.weatherDay) || null;
+    if (falling && weatherDue(state, d)) {
+      return { pick: { id: falling.id, opts: { heavy: falling.heavy, thunder: falling.thunder, light: falling.light } },
+        state: { rolledDay: today, weatherDay: today } };
+    }
+    if (!rollDue(state, d)) return null;
+    // Rain or snow that already showed today is not rolled for again.
+    return { pick: falling ? null : chooseGem(d, weather, rng), state: { rolledDay: today, weatherDay: weatherDay } };
+  }
+
   CGP.hiddenGems = {
     KINDS: KINDS,
+    weatherDue: weatherDue,
+    decide: decide,
     SEASON_CHANCE: SEASON_CHANCE,
     SUNSHINE_CHANCE: SUNSHINE_CHANCE,
     weatherKind: weatherKind,
