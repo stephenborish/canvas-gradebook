@@ -2,7 +2,7 @@
  *
  * Used only by Hidden Gems: on a day it really snows or rains in the
  * Philadelphia / Malvern area, it snows or rains on the teacher's Canvas
- * pages. Asks Open-Meteo (free, no account, no key) for the current weather
+ * pages, and on a clear day the sun may come through. Asks Open-Meteo (free, no account, no key) for the current weather
  * at two fixed points, Malvern and Center City Philadelphia, in one request.
  * Nothing about the teacher, their classes or Canvas is sent, and the
  * teacher sets nothing. Open-Meteo allows requests from any site, so no
@@ -15,7 +15,7 @@ export const PLACES = [
   { name: 'Philadelphia', lat: 39.95, lon: -75.17 }
 ];
 export const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast?latitude=' +
-  PLACES.map((p) => p.lat).join(',') + '&longitude=' + PLACES.map((p) => p.lon).join(',') + '&current=weather_code';
+  PLACES.map((p) => p.lat).join(',') + '&longitude=' + PLACES.map((p) => p.lon).join(',') + '&current=weather_code,is_day';
 const CACHE_KEY = 'cgp.weather.cache';
 const FRESH_MS = 20 * 60 * 1000;
 
@@ -36,7 +36,7 @@ export function createWeather(chrome, fetchImpl, nowFn) {
     const box = (await chrome.storage.local.get(CACHE_KEY))[CACHE_KEY];
     // An answer from the future (the clock was set back) is not fresh.
     const age = box ? clock() - box.at : NaN;
-    if (box && Array.isArray(box.codes) && age >= 0 && age < FRESH_MS) return { ok: true, codes: box.codes, cached: true };
+    if (box && Array.isArray(box.codes) && age >= 0 && age < FRESH_MS) return { ok: true, codes: box.codes, isDay: box.isDay || [], cached: true };
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 8000);
     try {
@@ -44,10 +44,12 @@ export function createWeather(chrome, fetchImpl, nowFn) {
       if (!res.ok) return { ok: false, code: 'http', status: res.status };
       const body = await res.json();
       const list = Array.isArray(body) ? body : [body];
-      const codes = list.map((b) => Number(b && b.current && b.current.weather_code)).filter((c) => isFinite(c));
-      if (!codes.length) return { ok: false, code: 'shape' };
-      await chrome.storage.local.set({ [CACHE_KEY]: { at: clock(), codes } });
-      return { ok: true, codes };
+      const good = list.filter((b) => b && b.current && isFinite(Number(b.current.weather_code)));
+      if (!good.length) return { ok: false, code: 'shape' };
+      const codes = good.map((b) => Number(b.current.weather_code));
+      const isDay = good.map((b) => (Number(b.current.is_day) === 0 ? 0 : 1));
+      await chrome.storage.local.set({ [CACHE_KEY]: { at: clock(), codes, isDay } });
+      return { ok: true, codes, isDay };
     } catch (e) {
       return { ok: false, code: 'network' };
     } finally {

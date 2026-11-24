@@ -191,5 +191,16 @@
       "run_at": "document_start",
       "all_frames": true
     }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/assets/gems/*"
+      ],
+      "matches": [
+        "*://*/*"
+      ],
+      "use_dynamic_url": true
+    }
   ]
 }
