@@ -1,0 +1,197 @@
+Canvas Gradebook+ - Hidden Gems: third-party code and assets
+=============================================================
+
+The five Hidden Gems effects (src/gems/*.js) are adapted from the open-source
+projects below, and use the textures in this folder. Each entry says what was
+used, where it lives here, and under what terms. Full licence texts follow.
+
+RAIN (src/gems/rain.js)
+  - "Rain & Water Effect Experiments", Lucas Bebber for Codrops,
+    https://github.com/codrops/RainEffect
+    Used: the drop simulation (src/raindrops.js), the water shader
+    (src/shaders/water.frag), and the drop textures rain-drop-alpha.png,
+    rain-drop-color.png, rain-drop-shine.png (demo/img/drop-*.png).
+    Terms: Codrops licence (https://tympanus.net/codrops/licensing/):
+    "Integrate or build upon it for free in your personal or commercial
+    projects. Don't republish, redistribute or sell 'as-is'." Here it is
+    integrated and adapted (ported to ES5, rendered transparently over a live
+    page, refracting a sketch of that page), not republished as-is.
+  - raindrop-fx, SardineFish, https://github.com/SardineFish/raindrop-fx
+    Used: the lighting model of src/shader/compose.glsl (normal-mapped diffuse
+    light, Blinn-Phong highlight, smoothstep drop mask). MIT licence, below.
+
+SNOW (src/gems/snow.js)
+  - react-cinematic-snow, Khoa Ma, https://github.com/khoama/react-cinematic-snow
+    Used: components/WebGLRenderer.ts (shaders) and components/Snowfall.tsx
+    (layers, particle model, dynamic wind), ported from React/TypeScript.
+    MIT licence, below.
+  - snowfall-canvas, Maxim (ux-ui-pro), https://github.com/ux-ui-pro/snowfall-canvas
+    Used: performance techniques of src/index.ts (typed-array particles,
+    capped pixel density, density by area, adaptive particle reduction).
+    MIT licence, below.
+
+AUTUMN LEAVES (src/gems/leaves.js, leaves.webp)
+  - falling-animation, phongdh, https://github.com/phong-baruby/falling-package
+    Used: src/Particle.ts, src/animations/index.ts, the spawn loop of
+    src/FallingAnimation.ts and drawParticle of src/CanvasRenderer.ts.
+    MIT licence, below.
+  - leaves.webp: individual leaves cut from ambientCG's LeafSet006/007/011/
+    012/015/021/027/028/030 atlases, https://ambientcg.com. CC0 1.0 (public
+    domain dedication): "All assets on ambientCG are provided under the
+    Creative Commons CC0 1.0 Universal License."
+  - Idea only, no code: the pointer pushing leaves aside, as in Autumn
+    Playground by YiYue (Joanna) Qiao, https://github.com/YIYUE-Joanna/autumn-playground
+    (that repository has no licence, so none of its code is used).
+
+SUNSHINE (src/gems/sunshine.js, foliage.webp)
+  - Technique only, no code or images: sunlit by Jacky Zhao,
+    https://github.com/jackyzha0/sunlit (no licence; its leaf picture is an
+    Adobe Stock photo). Its approach, described in its README, of shadows seen
+    in perspective, an animated feTurbulence/feDisplacementMap wind filter,
+    a billowing sway and progressive blur, is implemented independently here.
+  - foliage.webp: our own branch silhouette, composed from the outlines of the
+    CC0 ambientCG leaf scans above.
+
+CHRISTMAS LIGHTS (src/gems/lights.js, lights-bulbs-96.png)
+  - "Christmas Light Smashfest" (XLSF), part of Snowstorm by Scott Schiller,
+    https://github.com/scottschiller/Snowstorm (lights/)
+    Used: lights/christmaslights.js (layout, sprite offsets, rotateLights and
+    randomLights sequences) and lights/image/bulbs-96x96-top.png
+    (here lights-bulbs-96.png). BSD licence, below.
+
+
+------------------------------------------------------------------------------
+BSD licence - Snowstorm / XLSF
+------------------------------------------------------------------------------
+Software License Agreement (BSD License)
+
+Copyright (c) 2003, Scott Schiller (schillmania.com)
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this 
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice, this
+  list of conditions and the following disclaimer in the documentation and/or
+  other materials provided with the distribution.
+
+* Neither the name of schillmania.com nor the names of its contributors may be
+  used to endorse or promote products derived from this software without
+  specific prior written permission from schillmania.com.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+------------------------------------------------------------------------------
+MIT licence - raindrop-fx
+------------------------------------------------------------------------------
+MIT License
+
+Copyright (c) 2021 SardineFish
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+------------------------------------------------------------------------------
+MIT licence - falling-animation
+------------------------------------------------------------------------------
+MIT License
+
+Copyright (c) 2024 phongdh
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+------------------------------------------------------------------------------
+MIT licence - snowfall-canvas
+------------------------------------------------------------------------------
+MIT License
+
+Copyright (c) 2024 Maxim
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+------------------------------------------------------------------------------
+MIT licence - react-cinematic-snow (declared "MIT (c) 2024" in its README and
+package.json; the repository has no LICENSE file, so the standard MIT text is
+reproduced with that notice)
+------------------------------------------------------------------------------
+MIT License
+
+Copyright (c) 2024 Khoa Ma
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

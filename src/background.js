@@ -177,6 +177,17 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     calendarSync.adopt(msg.rec).then(respond, () => respond({ ok: false, code: 'store' }));
     return true;
   }
+  // Hidden Gems: an effect's code goes into the asking frame only when that
+  // effect is about to play, never on every page.
+  if (msg && msg.type === 'cgp.gems.load') {
+    const GEMS = ['rain', 'snow', 'leaves', 'sunshine', 'lights'];
+    if (!sender || !sender.tab || sender.tab.id === undefined || GEMS.indexOf(msg.id) === -1) { respond({ ok: false }); return false; }
+    chrome.scripting.executeScript({
+      target: { tabId: sender.tab.id, frameIds: [sender.frameId || 0] },
+      files: ['src/gems/' + msg.id + '.js']
+    }).then(() => respond({ ok: true }), (e) => respond({ ok: false, error: String(e && e.message) }));
+    return true;
+  }
   // Hidden Gems on a course page: is it snowing or raining around Philadelphia?
   if (msg && msg.type === WEATHER_NOW) {
     weather.now().then(respond, () => respond({ ok: false, code: 'error' }));
