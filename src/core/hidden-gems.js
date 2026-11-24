@@ -151,6 +151,42 @@
     return base;
   }
 
+  /* ---------------------------------------------------------------- weather */
+
+  /* What is falling, from the WMO weather codes Open-Meteo reports for the
+   * Philadelphia / Malvern area (one code per place). Snow anywhere wins over
+   * rain anywhere. Returns { id: 'snow' | 'rain', heavy, thunder } or null. */
+  var WEATHER_EVERY_MS = 3 * 60 * 60 * 1000;
+  function kindOf(c) {
+    if ((c >= 71 && c <= 77) || c === 85 || c === 86) return { id: 'snow', heavy: c === 75 || c === 86, thunder: false };
+    if ((c >= 51 && c <= 67) || (c >= 80 && c <= 82) || (c >= 95 && c <= 99)) {
+      return { id: 'rain', heavy: c === 65 || c === 67 || c === 82 || c >= 95, thunder: c >= 95 };
+    }
+    return null;
+  }
+  function weatherKind(codes) {
+    var list = Array.isArray(codes) ? codes : [codes];
+    var best = null;
+    for (var i = 0; i < list.length; i++) {
+      var c = Number(list[i]);
+      if (!isFinite(c)) continue;
+      var k = kindOf(c);
+      if (!k) continue;
+      if (!best || (k.id === 'snow' && best.id !== 'snow') || (k.id === best.id && (k.heavy && !best.heavy || k.thunder && !best.thunder))) best = k;
+    }
+    return best;
+  }
+
+  /* While the weather lasts, it shows at most once every three hours, and
+   * never while the teacher has turned the surprises off. */
+  function weatherDue(state, now, opts) {
+    var o = opts || {};
+    if (o.enabled === false || o.reducedMotion) return false;
+    var ts = typeof now === 'number' ? now : Date.now();
+    var last = state && typeof state.weatherShownAt === 'number' ? state.weatherShownAt : 0;
+    return !last || ts - last >= WEATHER_EVERY_MS;
+  }
+
   /* Check whether the shared cooldown window is currently clear (used both on
    * initial roll and immediately before playback after the settle delay). */
   function isCooldownClear(state, now, opts) {
@@ -228,6 +264,9 @@
     isCooldownClear: isCooldownClear,
     shouldTrigger: shouldTrigger,
     pickGem: pickGem,
+    WEATHER_EVERY_MS: WEATHER_EVERY_MS,
+    weatherKind: weatherKind,
+    weatherDue: weatherDue,
     nextDelayMs: nextDelayMs
   };
 })();

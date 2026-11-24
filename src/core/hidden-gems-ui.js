@@ -2,6 +2,10 @@
  *
  *   gravity  the page on screen breaks into tiles that fall, pile up at the
  *            bottom of the window and fly back into place
+ *   snow     on a real snowy day around Philadelphia: snow falls and piles up
+ *            on the page's own buttons, header bars and headings
+ *   rain     on a real rainy day there: rain splashes off those same ledges
+ *            and drips from their ends (with lightning in a thunderstorm)
  *
  * Rules every piece keeps: the stage never takes a click (pointer-events:
  * none; the pointer only matters by hovering), never takes focus, ends at
@@ -1473,7 +1477,58 @@
     if (!this.settings || !this.settings.values || this.settings.values.hiddenGems === false) return;
     if (prefersReducedMotion()) return;
 
-    this._rollForGem();
+    // A real snowy or rainy day around Philadelphia comes first.
+    this._weatherFirst().then(function (played) {
+      if (!played) self._rollForGem();
+    });
+  };
+
+  /* Asks the service worker what is falling around Philadelphia (it keeps
+   * the answer for 20 minutes). Resolves to the weather kind or null. */
+  function currentWeather() {
+    return new Promise(function (resolve) {
+      try {
+        if (!chrome || !chrome.runtime || !chrome.runtime.sendMessage) { resolve(null); return; }
+        chrome.runtime.sendMessage({ type: 'cgp.weather.now' }, function (res) {
+          void (chrome.runtime && chrome.runtime.lastError);
+          resolve(res && res.ok ? CGP.hiddenGems.weatherKind(res.codes) : null);
+        });
+      } catch (e) { resolve(null); }
+    });
+  }
+
+  /* Resolves true when it is snowing or raining and this page will show it
+   * (at most once every three hours, across all tabs and windows). */
+  P._weatherFirst = function () {
+    var self = this;
+    return Promise.all([currentWeather(), readState()]).then(function (r) {
+      var kind = r[0], state = r[1];
+      if (!kind || !CGP.hiddenGems.weatherDue(state, Date.now(), { enabled: true, reducedMotion: prefersReducedMotion() })) return false;
+      // Let the page settle first, and play only if the teacher is still here.
+      self._timer = setTimeout(function () {
+        self._timer = null;
+        if (document.hidden || !self.settings.values.hiddenGems || prefersReducedMotion()) return;
+        withClaimLock(function (hasLock) {
+          return readState().then(function (fresh) {
+            var claimNow = Date.now();
+            if (!CGP.hiddenGems.weatherDue(fresh, claimNow, { enabled: true })) return null;
+            var claimId = claimNow + ':' + Math.random().toString(36).slice(2, 8);
+            return writeState(Object.assign({}, fresh, { weatherShownAt: claimNow, weatherClaimId: claimId })).then(function (okWrite) {
+              if (!okWrite || document.hidden) return null;
+              var go = function () {
+                var props = Object.assign(CGP.hiddenGems.contentFor(kind.id, 'general'), { heavy: kind.heavy, thunder: kind.thunder });
+                return self._render(kind.id, { id: 'general', source: 'weather' }, props);
+              };
+              if (hasLock) return go();
+              return readState().then(function (verify) {
+                return verify && verify.weatherClaimId === claimId ? go() : null;
+              });
+            });
+          });
+        });
+      }, 8000 + Math.random() * 10000);
+      return true;
+    }, function () { return false; });
   };
 
   P._rollForGem = function () {

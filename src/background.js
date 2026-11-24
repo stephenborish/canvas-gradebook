@@ -6,7 +6,8 @@
  * (self-update.js), relays "this submission changed" announcements
  * between the open tabs of one course (live-sync.js) - ids only, never
  * stored - checks this computer in through Chrome sync (settings-times.js),
- * and fetches the teacher's class-schedule calendar (calendar-sync.js). It
+ * fetches the teacher's class-schedule calendar (calendar-sync.js), and asks
+ * whether it is snowing or raining around Philadelphia (weather.js). It
  * never reads or stores Canvas data itself. */
 
 import { CONTENT_JS, CONTENT_CSS, FRAME_JS, isCustomCanvasOrigin } from './script-manifest.js';
@@ -14,6 +15,7 @@ import { createSelfUpdater, CHECK_NOW } from './self-update.js';
 import { createLiveRelay, LIVE_SYNC_TYPE } from './live-relay.js';
 import { createSettingsTimes } from './settings-times.js';
 import { createCalendarSync, CALENDAR_REFRESH, CALENDAR_ADOPT } from './calendar-sync.js';
+import { createWeather, WEATHER_NOW } from './weather.js';
 // The welcome tour's record (a plain script that adds CGP.TourState to
 // globalThis), so its shape is defined in one place.
 import './tour/tour-state.js';
@@ -152,6 +154,7 @@ const settingsTimes = createSettingsTimes(chrome);
 settingsTimes.start();
 const liveRelay = createLiveRelay(chrome);
 const calendarSync = createCalendarSync(chrome);
+const weather = createWeather(chrome);
 
 chrome.action.onClicked.addListener(() => {
   chrome.runtime.openOptionsPage();
@@ -172,6 +175,11 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     const fromOptions = sender && sender.id === chrome.runtime.id && String(sender.url || '').indexOf(chrome.runtime.getURL('src/options/')) === 0;
     if (!fromOptions) { respond({ ok: false, code: 'refused' }); return false; }
     calendarSync.adopt(msg.rec).then(respond, () => respond({ ok: false, code: 'store' }));
+    return true;
+  }
+  // Hidden Gems on a course page: is it snowing or raining around Philadelphia?
+  if (msg && msg.type === WEATHER_NOW) {
+    weather.now().then(respond, () => respond({ ok: false, code: 'error' }));
     return true;
   }
   if (msg && msg.type === 'cgp.openOptions') {
