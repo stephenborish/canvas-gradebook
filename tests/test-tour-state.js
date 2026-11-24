@@ -30,11 +30,11 @@ suite('Tutorials: each part on its own', (test) => {
   const ids = TourState.SECTIONS.map((s) => s.id);
 
   test('there is a tutorial for each part, and each has stops and a last card', () => {
-    a.deep(ids, ['grading', 'student', 'tools', 'classes', 'schedule']);
+    a.deep(ids, ['grading', 'student', 'tools', 'snippets', 'classes', 'groups', 'schedule']);
     const stopIds = C().tourStops.map((x) => x.id);
     ids.forEach((id) => {
       const p = C().tourPaths[id];
-      a.ok(p && p.length >= 3 && p.length <= 5, id + ' is short');
+      a.ok(p && p.length >= 3 && p.length <= 6, id + ' is short');
       p.forEach((s) => a.ok(stopIds.includes(s), id + ': ' + s));
       a.ok(C().tourFinales[id] && C().tourFinales[id].title, id + ' has a last card');
     });
@@ -103,13 +103,16 @@ suite('Tutorials: each part on its own', (test) => {
     await s.finish('grading', 'skipped');
     const v = rec(store);
     a.eq(TourState.statusOf(v, 'grading'), 'skipped');
-    ['student', 'tools', 'classes', 'schedule'].forEach((id) => a.eq(TourState.statusOf(v, id), 'new', id));
+    ['student', 'tools', 'snippets', 'classes', 'groups', 'schedule'].forEach((id) => a.eq(TourState.statusOf(v, id), 'new', id));
     a.eq(v.active, null);
     a.deep(TourState.decide(v, 'gradebook', null, []), { kind: 'offer', section: 'student' }, 'the next one is offered');
     await s.finish('student', 'skipped');
     await s.finish('tools', 'done');
     a.deep(TourState.decide(rec(store), 'home', null, []), { kind: 'offer', section: 'classes' }, 'course page tutorials are untouched');
+    a.deep(TourState.decide(rec(store), 'gradebook', null, []), { kind: 'offer', section: 'snippets' }, 'snippets are offered on the gradebook');
+    await s.finish('snippets', 'skipped');
     a.eq(TourState.decide(rec(store), 'gradebook', null, []), null, 'nothing left for the gradebook');
+    a.deep(TourState.decide(rec(store), 'people', null, []), { kind: 'offer', section: 'groups' }, 'Make groups is still offered');
   });
 
   test('closing an offer with X hides only that offer, only in this tab', () => {
@@ -153,6 +156,8 @@ suite('Tutorials: each part on its own', (test) => {
     a.eq(TourState.pageKind('/courses/5/gradebook'), 'gradebook');
     a.eq(TourState.pageKind('/courses/5'), 'home');
     a.eq(TourState.pageKind('/courses/5/modules'), 'other');
+    a.eq(TourState.pageKind('/courses/5/users'), 'people');
+    a.eq(TourState.pageKind('/courses/5/groups'), 'people');
   });
 
   test('"Show me" in the options page starts one tutorial, even one seen before', async () => {
@@ -177,8 +182,9 @@ suite('Tutorials: each part on its own', (test) => {
   test('the next tutorial suggested is the next one not yet seen', () => {
     const v = { flow: 3, sections: { grading: 'done', student: 'skipped' } };
     a.eq(TourState.nextNew(v, 'grading'), 'tools');
-    a.eq(TourState.nextNew({ flow: 3, sections: { grading: 'done', student: 'done', tools: 'done', classes: 'done' } }, 'classes'), 'schedule');
-    a.eq(TourState.nextNew({ flow: 3, sections: { grading: 'done', student: 'done', tools: 'done', classes: 'done', schedule: 'done' } }, 'schedule'), null);
+    const allBut = (id) => { const o = {}; ids.forEach((x) => { if (x !== id) o[x] = 'done'; }); return { flow: 3, sections: o }; };
+    a.eq(TourState.nextNew(allBut('schedule'), 'classes'), 'schedule');
+    a.eq(TourState.nextNew(allBut('nothing'), 'schedule'), null);
   });
 
   test('records from the old single tour: what was finished stays finished, the rest is offered', () => {
@@ -189,7 +195,8 @@ suite('Tutorials: each part on its own', (test) => {
     a.eq(TourState.statusOf(grade, 'grading'), 'done');
     a.eq(TourState.statusOf(grade, 'student'), 'new');
     const all = TourState.normalize({ pending: false, chapter: 'classes', outcome: 'completed', lastStep: 'done' });
-    ids.forEach((id) => a.eq(TourState.statusOf(all, id), 'done'));
+    ['grading', 'student', 'tools', 'classes', 'schedule'].forEach((id) => a.eq(TourState.statusOf(all, id), 'done'));
+    ['snippets', 'groups'].forEach((id) => a.eq(TourState.statusOf(all, id), 'new', id + ' was never in the old tour'));
     const partway = TourState.normalize({ pending: true, chapter: 'gradebook', stop: 'statuses' });
     a.deep(partway.active, { section: 'grading', stop: 'statuses' });
     const freshOld = TourState.normalize({ pending: true, flow: 2, chapter: 'gradebook', path: null, stop: null });
@@ -235,6 +242,25 @@ suite('Tutorials: each part on its own', (test) => {
     a.ok(failed);
   });
 
+  test('the new tutorials point at what the extension draws', () => {
+    const src = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
+    const gb = src('src/groups/group-builder.js');
+    ['cgp-groups-btn', 'Make groups', 'Shuffle them in', 'I’ll choose', 'Students sign up', 'Arrange students', 'Shuffle everyone', 'Copy to…', 'Save to my styles']
+      .forEach((t) => a.ok(gb.includes(t), 'Make groups shows ' + t));
+    const si = src('src/gradebook/student-insights.js');
+    ['Parents & guardians', 'Copy all', "'profile', 'Profile'"].forEach((t) => a.ok(si.includes(t), 'Profile tab: ' + t));
+    a.ok(src('src/speedgrader/content.js').includes('Unsent draft restored'));
+    const html = src('src/options/options.html');
+    ['snippets-manager', 'snippets-test-box', '+ Add Snippet'].forEach((t) => a.ok(html.includes(t), 'Snippets tab: ' + t));
+  });
+
+  test('every kind of card content a stop uses is drawn', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src/tour/tour.js'), 'utf8');
+    const used = new Set();
+    C().tourStops.forEach((x) => ['body', 'bullets', 'steps', 'tiles', 'try', 'art'].forEach((k) => { if (x[k]) used.add(k); }));
+    used.forEach((k) => a.ok(new RegExp('s\\.' + k + '\\b').test(src), 'render() draws s.' + k));
+  });
+
   test('every student-overview stop that opens the overview also closes it', () => {
     C().tourStops.filter((x) => x.group === 'si').forEach((x) => a.ok(typeof x.enter === 'function' && typeof x.leave === 'function', x.id));
   });
@@ -259,8 +285,12 @@ suite('Tutorials: each part on its own', (test) => {
   test('the options page lists every tutorial and starts the schedule one in place', () => {
     const opts = fs.readFileSync(path.join(ROOT, 'src/options/options.js'), 'utf8');
     const html = fs.readFileSync(path.join(ROOT, 'src/options/options.html'), 'utf8');
-    a.ok(/guided && wanted === 'schedule'\) startScheduleTour\(\)/.test(opts));
-    a.ok(opts.includes("new CGP.Tour({ section: 'schedule'"));
+    a.ok(/if \(guided\) startOptionsTour\(wanted\)/.test(opts));
+    a.ok(opts.includes('new CGP.Tour({ section: id'));
+    TourState.SECTIONS.filter((x) => x.page === 'options').forEach((x) => {
+      a.ok(html.includes('data-tab="' + x.id + '"'), x.id + ' has an options tab of the same name');
+      a.ok(x.offerOn, x.id + ' is offered on a Canvas page');
+    });
     a.ok(opts.includes('TS.SECTIONS.forEach'));
     a.ok(opts.includes('.request(sec.id)'));
     a.ok(html.includes('id="tutorials"') && html.includes('id="tutorialsList"'));

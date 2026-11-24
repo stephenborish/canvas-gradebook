@@ -124,7 +124,10 @@
     '.btn--soft:hover{background:#e3e6ff}',
 
     /* the introduction */
-    '.card--intro{width:400px}',
+    '.card--intro{width:420px}',
+    '.card--intro .card__in{max-height:calc(100vh - 24px);overflow:auto}',
+    '.card--intro .choice{padding:6px 10px}',
+    '.fd-snip{font:600 13.5px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink);margin-right:auto}',
     '.foot--intro{margin-top:16px}',
     '.foot--intro .btn--primary{flex:1 1 auto}',
     '.choices{display:grid;gap:6px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}',
@@ -349,7 +352,7 @@
   var NEXT_ICON = '<svg viewBox="0 0 16 16"><path d="M6 3.5 10.5 8 6 12.5"/></svg>';
   var DONE_ICON = '<svg viewBox="0 0 16 16"><path d="M3.5 8.4l3 2.9 6-6.6"/></svg>';
   var MARK = '<svg viewBox="0 0 20 20"><rect x="3" y="3.5" width="14" height="13" rx="2.2"/><path d="M3 8h14M8 8v8.5"/><path d="M11 11.6l1.6 1.6 2.8-3"/></svg>';
-  var SECTION_ICON = { grading: 'keys', student: 'person', tools: 'gear', classes: 'swap', schedule: 'calendar' };
+  var SECTION_ICON = { grading: 'keys', student: 'person', tools: 'gear', snippets: 'bubble', classes: 'swap', groups: 'people', schedule: 'calendar' };
 
   function S() { return CGP.TourState; }
   function sectionInfo(id) { return S().section(id) || { id: id, title: id, page: 'gradebook' }; }
@@ -369,13 +372,15 @@
   function openSection(id, courseId) {
     var info = sectionInfo(id);
     if (info.page === 'options') {
-      try { chrome.runtime.sendMessage({ type: 'cgp.openOptions', hash: 'schedule-tour' }); } catch (e) { /* ignore */ }
+      // The options page's tab of the same name, with the tutorial on top.
+      try { chrome.runtime.sendMessage({ type: 'cgp.openOptions', hash: id + '-tour' }); } catch (e) { /* ignore */ }
       return 'away';
     }
     if (info.page === pageHere()) return 'here';
     courseId = courseId || courseIdHere();
     if (!courseId) return 'none';
-    location.href = '/courses/' + courseId + (info.page === 'home' ? '' : '/gradebook') + '#cgp-tour=' + id;
+    var where = { home: '', gradebook: '/gradebook', people: '/users' }[info.page];
+    location.href = '/courses/' + courseId + (where || '') + '#cgp-tour=' + id;
     return 'away';
   }
 
@@ -507,7 +512,7 @@
       this.card.classList.remove('is-on');
       this.spot.classList.remove('is-on');
       this.blocks.forEach(function (b) { place(b, 0, 0, 0, 0); });
-      if (where === 'away' && sectionInfo(id).page === 'options') this.flash('Opened in a new tab', 'Class schedule setup is in Gradebook+ settings');
+      if (where === 'away' && sectionInfo(id).page === 'options') this.flash('Opened in a new tab', sectionInfo(id).title + ' is in Gradebook+ settings');
       else setTimeout(function () { self.unmount(); }, 400);
       return;
     }
@@ -674,6 +679,11 @@
     html += '<h2 id="cgp-tour-title">' + s.title + '</h2>';
     if (s.body) html += '<p>' + s.body + '</p>';
     if (s.bullets) html += '<ul>' + s.bullets.map(function (b) { return '<li>' + b + '</li>'; }).join('') + '</ul>';
+    if (s.steps) {
+      html += '<ol class="steps">' + s.steps.map(function (st) {
+        return '<li><span class="steps__n" aria-hidden="true">' + st.n + '</span><span><span class="steps__t">' + st.t + '</span>' + st.d + '</span></li>';
+      }).join('') + '</ol>';
+    }
     if ((usedFallback || (s.fallbackArt && !live)) && s.fallbackNote) html += '<div class="note">' + s.fallbackNote + '</div>';
     else if (s.try && live) html += '<div class="try"><span class="try__dot"></span><span><b>Try it:</b> ' + s.try + '</span></div>';
 
@@ -1127,6 +1137,8 @@
         return ok && waitFor(function () { return !!document.querySelector('.cgp-sub, .cgp-cmt'); }, 6000).then(function () { return true; });
       });
     }
+    // The People page: Make groups, drawn once Canvas has drawn "+ Group Set".
+    if (page === 'people') return waitFor(function () { return !!document.querySelector('.cgp-groups-btn'); }, 8000).then(function () { return true; });
     // The course home: its Copy to other classes button, if it is on.
     return waitFor(function () { return !!document.querySelector('.cgp-copyto'); }, 5000).then(function () { return true; });
   }

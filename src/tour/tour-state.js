@@ -40,13 +40,17 @@
   var SNOOZE_KEY = 'cgp.tour.snooze';
 
   /* The tutorials, in the order they are suggested. `page` is where one runs:
-   * the gradebook, the course home page, or the options page. */
+   * the gradebook, the course home page, the People page, or the options
+   * page (on its tab of the same name as the tutorial). One that runs on the
+   * options page is offered on the Canvas page named by `offerOn`. */
   var SECTIONS = [
     { id: 'grading', page: 'gradebook', title: 'Grading basics', blurb: 'Status keys, badges and pasting grades', mins: 1 },
-    { id: 'student', page: 'gradebook', title: 'Student overview', blurb: 'One student’s grades, missing work and activity', mins: 1 },
+    { id: 'student', page: 'gradebook', title: 'Student overview', blurb: 'Grades, missing work, activity and parent emails', mins: 1 },
     { id: 'tools', page: 'gradebook', title: 'Gradebook tools', blurb: 'Total column, score stats, finding students', mins: 1 },
+    { id: 'snippets', page: 'options', offerOn: 'gradebook', title: 'Comment snippets', blurb: 'Saved comments and SpeedGrader drafts', mins: 1 },
     { id: 'classes', page: 'home', title: 'Copy between classes', blurb: 'Post work to all your sections at once', mins: 1 },
-    { id: 'schedule', page: 'options', title: 'Class schedule', blurb: 'Set due times by clicking a class period', mins: 2 }
+    { id: 'groups', page: 'people', title: 'Make groups', blurb: 'A whole group set in one step', mins: 1 },
+    { id: 'schedule', page: 'options', offerOn: 'home', title: 'Class schedule', blurb: 'Set due times by clicking a class period', mins: 2 }
   ];
   var IDS = SECTIONS.map(function (s) { return s.id; });
 
@@ -239,11 +243,13 @@
 
   /* ----------------------------------------------------- what to show here */
 
-  /* Which kind of course page this is: 'gradebook', 'home' or 'other'. */
+  /* Which kind of course page this is: 'gradebook', 'home', 'people' (People
+   * or Groups, where Make groups lives) or 'other'. */
   TourState.pageKind = function (pathname) {
     var p = String(pathname || '');
     if (/\/courses\/\d+\/gradebook\/?$/i.test(p)) return 'gradebook';
     if (/^\/courses\/\d+\/?$/.test(p)) return 'home';
+    if (/^\/courses\/\d+\/(users|groups)\/?$/.test(p)) return 'people';
     return 'other';
   };
 
@@ -261,9 +267,9 @@
   };
 
   function runsOn(sec, page) {
-    // The class schedule is set up on the options page; its offer sits on the
-    // course home page, beside Copy between classes.
-    return sec.page === page || (sec.page === 'options' && page === 'home');
+    // A tutorial on the options page is offered on the Canvas page it is
+    // about (snippets on the gradebook, the class schedule on the course home).
+    return sec.page === page || (sec.page === 'options' && sec.offerOn === page);
   }
 
   /* What this page shows, if anything:

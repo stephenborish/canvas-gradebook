@@ -593,23 +593,27 @@ it.
 
 ### Tutorials, one per part
 
-Gradebook+ teaches itself in five short tutorials, each run live on the teacher's own pages (a
+Gradebook+ teaches itself in seven short tutorials, each run live on the teacher's own pages (a
 spotlight on the real element, a card beside it) and each tracked **on its own**: finishing or
 skipping one never hides another.
 
 | Tutorial | Runs on | Covers |
 |---|---|---|
 | Grading basics | gradebook | comment bubbles, submission badges, `M`/`L`/`E`, spreadsheet entry and paste, the column **Post** button |
-| Student overview | gradebook | opens a real overview: the tiles, *What stands out*, *Copy List of Missing/Late Work*, the Activity tab |
+| Student overview | gradebook | opens a real overview: the tiles, *What stands out*, *Copy List of Missing/Late Work*, the Activity tab, Profile's *Parents & guardians* |
 | Gradebook tools | gradebook | the frozen Total, **Analyze Scores** and **Copy Roster**, **Switch course**, Find student, the breadcrumb gear |
+| Comment snippets | options page (Comment Snippets tab) | `/name` + `Tab`, adding a snippet, the test box, SpeedGrader draft protection |
 | Copy between classes | course home | linking classes with **Copy to other classes**, copying, **Compare classes** |
-| Class schedule | options page | what it does in Assign To, then a guided calendar connection |
+| Make groups | People page | the **Make groups** button, its three steps, **Arrange students** and **Copy to…** |
+| Class schedule | options page (Class Schedule tab) | what it does in Assign To, then a guided calendar connection |
 
-- **After a fresh install** the first gradebook shows a welcome card listing all five; the teacher
+- **After a fresh install** the first gradebook shows a welcome card listing all seven; the teacher
   picks one or closes it. Closing it hides nothing.
 - **Each tutorial still unseen** is then offered with a small card in the corner of the page it runs
   on, one at a time: **Show me**, **Skip this one** (that tutorial only), or `×` (not again in this
-  tab). The class schedule is offered on the course home page.
+  tab). The two that run on the options page are offered on the Canvas page they are about:
+  Comment snippets on the gradebook, Class schedule on the course home page. SpeedGrader itself never
+  shows a tutorial, since the teacher is mid-grading there.
 - The last card of each tutorial offers **Next:** the next unseen one.
 - In a tutorial, `←` / `→` move, and `Esc` or `×` skips **that tutorial only**. Stops marked
   **Try it** let the click through; the card folds into a small pill until **Next**.

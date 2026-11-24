@@ -159,6 +159,7 @@
     sparkle: '<svg viewBox="0 0 20 20"><path d="M10 2.5l1.7 4.6 4.8 1.7-4.8 1.8L10 15.2 8.3 10.6 3.5 8.8l4.8-1.7z"/><path d="M15.5 13.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/></svg>',
     flag: '<svg viewBox="0 0 20 20"><path d="M5 17.5V3M5 3.5h9.5l-2 3.4 2 3.4H5"/></svg>',
     link: '<svg viewBox="0 0 20 20"><path d="M8.5 11.5a3.2 3.2 0 0 0 4.6 0l2.6-2.6a3.2 3.2 0 0 0-4.6-4.6l-1 1"/><path d="M11.5 8.5a3.2 3.2 0 0 0-4.6 0l-2.6 2.6a3.2 3.2 0 0 0 4.6 4.6l1-1"/></svg>',
+    people: '<svg viewBox="0 0 20 20"><circle cx="7" cy="6.5" r="2.8"/><circle cx="14" cy="7.3" r="2.3"/><path d="M2 16.5c.4-3 2.4-4.7 5-4.7s4.6 1.7 5 4.7M12.2 12.2c.6-.3 1.2-.5 1.9-.5 2.1 0 3.6 1.5 3.9 4.1"/></svg>',
     calendar: '<svg viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="13.5" rx="2"/><path d="M2.5 8.25h15M6.5 2.5v3M13.5 2.5v3M10 10.5v2.5l1.75 1"/></svg>'
   };
 
@@ -374,7 +375,6 @@
       eyebrow: 'Activity tab',
       title: 'How they use your course',
       body: 'Page views compared with the class, a 16-week activity calendar, how much of each Studio video they watched, and which pages they opened.',
-      bullets: ['The <b>Profile</b> tab lists their parents’ and guardians’ emails'],
       enter: openTab('activity', '#cgp-si-panel-activity .cgp-si__card', 6000),
       target: function () {
         var heat = pick('#cgp-si-panel-activity .cgp-si__heat-cell');
@@ -388,6 +388,31 @@
         var seed = [0, 1, 2, 3, 1, 0, 0, 2, 3, 4, 2, 1, 0, 1, 3, 4, 4, 2, 1, 0, 0, 1, 2, 3, 2, 3, 1, 0, 2, 4, 3, 2, 1, 1, 0, 3, 4, 4, 3, 2, 0, 0, 1, 2, 4, 3, 2, 1, 0];
         for (var i = 0; i < 49; i++) html += '<span class="h' + seed[i] + '" style="--i:' + i + '"></span>';
         return html + '</div><div class="heat-cap"><span>16 weeks of daily page views</span></div>';
+      }
+    },
+    {
+      id: 'si-profile',
+      group: 'si',
+      icon: 'person',
+      eyebrow: 'Profile tab',
+      title: 'Parents’ emails, in one place',
+      body: '<b>Parents &amp; guardians</b> lists everyone paired with the student in Canvas, with their emails. <b>Copy all</b> copies every address at once.',
+      bullets: ['Also here: the student’s email, section and pronouns, and their grade in your other classes'],
+      enter: openTab('profile', '#cgp-si-panel-profile .cgp-si__card', 6000),
+      target: function () {
+        var cards = Array.prototype.slice.call(document.querySelectorAll('#cgp-si-panel-profile .cgp-si__card'));
+        var hit = cards.filter(function (c) {
+          var h = c.querySelector('h3');
+          return h && /parents/i.test(h.textContent || '') && onScreen(c);
+        })[0];
+        return hit || pick('#cgp-si-panel-profile .cgp-si__card') || null;
+      },
+      leave: closeOverview,
+      fallbackArt: true,
+      art: function () {
+        return '<div class="mail-demo" aria-hidden="true"><div class="md-head"><span>Parents &amp; guardians</span><span class="md-btn">Copy all</span></div>' +
+          '<div class="md-row"><b>Dana Parker</b><span>dana.parker@example.com</span></div>' +
+          '<div class="md-row"><b>Sam Parker</b><span>sam.parker@example.com</span></div></div>';
       }
     },
 
@@ -536,6 +561,97 @@
     }
   ];
 
+  /* Make groups, on the People page. */
+  var groupStops = [
+    {
+      id: 'groups-button',
+      icon: 'people',
+      eyebrow: 'Make groups',
+      title: 'A whole group set in one step',
+      body: '<b>Make groups</b>, beside Canvas’s <b>+ Group Set</b>, builds the set, names the groups and puts students in them.',
+      try: 'Click <b>Make groups</b> to open it.',
+      target: function () { return pick('.cgp-groups-btn'); },
+      tryIt: true,
+      padding: 6,
+      fallbackArt: true,
+      fallbackNote: '<b>Make groups</b> appears beside <b>+ Group Set</b> on the People page. Don’t see it? It may be turned off in Gradebook+ settings.',
+      art: function () {
+        return '<div class="board-demo" aria-hidden="true"><div class="bd-row bd-head"><span>Group 1</span><span>Group 2</span><span>Group 3</span></div>' +
+          '<div class="bd-row" style="--i:0"><span>Ava</span><span>Ben</span><span>Cleo</span></div>' +
+          '<div class="bd-row" style="--i:1"><span>Dev</span><span>Eli</span><span>Fay</span></div></div>';
+      }
+    },
+    {
+      id: 'groups-steps',
+      kind: 'center',
+      icon: 'people',
+      eyebrow: 'New group set',
+      title: 'Three choices, then Make',
+      steps: [
+        { n: '1', t: 'How many', d: 'A number of groups, or students per group.' },
+        { n: '2', t: 'Group names', d: 'Numbers, letters, colors, or your own list. <b>Save to my styles</b> keeps one for next time.' },
+        { n: '3', t: 'How students join', d: '<b>Shuffle them in</b>, <b>I’ll choose</b>, or <b>Students sign up</b> in Canvas.' }
+      ]
+    },
+    {
+      id: 'groups-arrange',
+      kind: 'center',
+      icon: 'swap',
+      eyebrow: 'Your group sets',
+      title: 'Rearrange, then copy to other classes',
+      bullets: [
+        '<b>Arrange students</b>: drag anyone to another group, or <b>Shuffle everyone</b>. Nothing saves until <b>Save changes</b>.',
+        '<b>Copy to…</b> makes the same groups in another class or section'
+      ]
+    }
+  ];
+
+  /* Comment snippets and SpeedGrader drafts, on the options page's Comment
+   * Snippets tab (SpeedGrader itself never shows a tutorial: the teacher is
+   * in the middle of grading there). */
+  var snippetStops = [
+    {
+      id: 'snip-what',
+      kind: 'center',
+      icon: 'bubble',
+      eyebrow: 'Comment snippets',
+      title: 'Type a short code, get your whole comment',
+      body: 'Type <b>/</b> and a snippet’s name, then press ' + key('Tab') + '. The full comment replaces it.',
+      bullets: ['Works in SpeedGrader, the Grade Detail Tray and Gradebook+ comment boxes'],
+      art: function () {
+        return '<div class="find-demo" aria-hidden="true"><div class="fd-box"><span class="fd-snip">/nice</span>' + key('Tab') + '</div>' +
+          '<div class="fd-hit"><b>Nicely done. Your reasoning here is clear and well supported.</b></div></div>';
+      }
+    },
+    {
+      id: 'snip-list',
+      icon: 'keys',
+      eyebrow: 'Your snippets',
+      title: 'Add your own',
+      body: 'Click <b>+ Add Snippet</b>, give it a short name and write the comment. Then press <b>Save changes</b> in the sidebar.',
+      target: function () { var m = document.querySelector('.snippets-manager'); return m && onScreen(m) ? m : null; },
+      tryIt: true, padding: 8
+    },
+    {
+      id: 'snip-test',
+      icon: 'sparkle',
+      eyebrow: 'Try one',
+      title: 'Test a snippet here',
+      body: 'Click a shortcut, or type one in the box and press ' + key('Tab') + '.',
+      target: function () { var t = document.querySelector('.snippets-test-box'); return t && onScreen(t) ? t : null; },
+      tryIt: true, padding: 8
+    },
+    {
+      id: 'snip-drafts',
+      kind: 'center',
+      icon: 'check',
+      eyebrow: 'SpeedGrader drafts',
+      title: 'Unsent comments are kept',
+      body: 'A SpeedGrader comment you haven’t sent is saved as you type. Come back to that student and it returns, marked <b>Unsent draft restored</b>.',
+      bullets: ['It stays on this computer and is deleted once Canvas has your comment']
+    }
+  ];
+
   /* The Class schedule tutorial, on the options page's Class Schedule tab.
    * The teacher types and clicks here, so the tour never holds keys back and
    * every stop lets clicks through. */
@@ -601,9 +717,11 @@
    * card that ends it. */
   var paths = {
     grading: ['comments', 'submissions', 'statuses', 'spreadsheet', 'post'],
-    student: ['student', 'si-overview', 'si-standout', 'si-work', 'si-activity'],
+    student: ['student', 'si-overview', 'si-standout', 'si-work', 'si-activity', 'si-profile'],
     tools: ['total', 'menus', 'switcher', 'find', 'gear'],
+    snippets: ['snip-what', 'snip-list', 'snip-test', 'snip-drafts'],
     classes: ['classes-link', 'classes-copy', 'classes-compare'],
+    groups: ['groups-button', 'groups-steps', 'groups-arrange'],
     schedule: ['schedule', 'opt-on', 'opt-copy', 'opt-paste', 'opt-check']
   };
 
@@ -611,11 +729,13 @@
     grading: { title: 'You’re ready to grade', body: 'Statuses, badges and pasting all work on every gradebook.' },
     student: { title: 'That’s the student overview', body: 'Click any student’s name to open it.' },
     tools: { title: 'That’s the toolkit', body: 'Click the Gradebook+ icon in Chrome’s toolbar to change how these work.' },
+    snippets: { title: 'Your snippets are ready', body: 'Type <b>/</b>, a name and Tab in any comment box.' },
+    groups: { title: 'Ready to make groups', body: 'Find <b>Make groups</b> on any class’s People page.' },
     classes: { title: 'Ready to copy', body: 'Link your classes once with <b>Copy to other classes</b>, then copy from any of them.' },
     schedule: { title: 'Your schedule is set up', body: 'In Canvas, click a Due, Available from or Until date to pick a class. The calendar updates when it’s over six hours old, or click <b>Refresh</b> there.' }
   };
 
-  CGP.tourStops = stops.concat(scheduleStops);
+  CGP.tourStops = stops.concat(groupStops, snippetStops, scheduleStops);
   CGP.tourPaths = paths;
   CGP.tourFinales = finales;
   CGP.tourScheduleStops = scheduleStops;

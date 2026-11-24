@@ -1675,7 +1675,7 @@
     var guided = /-tour$/.test(wanted);
     if (guided) wanted = wanted.replace(/-tour$/, '');
     if (wanted && activate(wanted, { silent: true })) {
-      if (guided && wanted === 'schedule') startScheduleTour();
+      if (guided) startOptionsTour(wanted);
       return;
     }
     var stored = null;
@@ -1875,15 +1875,17 @@
     if (e.key === 'Enter') { e.preventDefault(); grantDomain(); }
   });
 
-  /* The Class schedule tutorial, on the Class Schedule tab (from the
-   * gradebook's welcome card, or the Tutorials list here). */
-  function startScheduleTour() {
-    if (!CGP.Tour || !CGP.tourPaths || !CGP.tourPaths.schedule || CGP.tourInstance) return;
-    try { history.replaceState(null, '', location.pathname + '#schedule'); } catch (e) { /* ignore */ }
+  /* A tutorial that runs here (Class schedule, Comment snippets), on its tab
+   * of the same name: from a Canvas page's "#<id>-tour" link or the
+   * Tutorials list. */
+  function startOptionsTour(id) {
+    var sec = CGP.TourState && CGP.TourState.section(id);
+    if (!sec || sec.page !== 'options' || !CGP.Tour || !CGP.tourPaths || !CGP.tourPaths[id] || CGP.tourInstance) return;
+    try { history.replaceState(null, '', location.pathname + '#' + id); } catch (e) { /* ignore */ }
     var state = new CGP.TourState();
     setTimeout(function () {
       state.load().then(function (v) {
-        var tour = new CGP.Tour({ section: 'schedule', state: state, record: v, holdKeys: false });
+        var tour = new CGP.Tour({ section: id, state: state, record: v, holdKeys: false });
         tour.start();
       });
     }, 400);
@@ -1891,7 +1893,7 @@
 
   /* Tutorials: every part of the tour, each started on its own. Tutorials
    * that run in Canvas start on the next page of that kind the teacher opens. */
-  var WHERE = { gradebook: 'a Canvas gradebook', home: 'a Canvas course home page' };
+  var WHERE = { gradebook: 'a Canvas gradebook', home: 'a Canvas course home page', people: 'a Canvas course’s People page' };
 
   function tutorialsStatus(msg, isError) {
     var el = $('tutorialsStatus');
@@ -1937,9 +1939,9 @@
   function startTutorial(sec) {
     if (sec.page === 'options') {
       $('tutorials').close();
-      var tab = $('tab-schedule');
+      var tab = $('tab-' + sec.id);
       if (tab) tab.click();
-      startScheduleTour();
+      startOptionsTour(sec.id);
       return;
     }
     new CGP.TourState().request(sec.id).then(function () {
