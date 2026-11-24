@@ -1,35 +1,34 @@
-/* Canvas Gradebook+ - whether the welcome tour is due, and remembering that it
- * was seen.
+/* Canvas Gradebook+ - which tutorials a teacher has seen, and which to offer.
  *
- * The tour is offered once per install of the extension: background.js writes
- * { pending: true } into chrome.storage.local when Chrome reports a fresh
- * install (never on an update, so teachers who already use the extension are
- * not interrupted), and the first gradebook page that shows it clears it again
- * - whether the teacher finished it or skipped it. chrome.storage.local, not
- * .sync: an install on a second computer is a new install, but Chrome sync
- * would otherwise carry "already seen" over from the first, or carry "pending"
- * to a computer that has long had the extension.
+ * The welcome tour is a set of short tutorials, one per part of the
+ * extension (SECTIONS below). Each one is tracked on its own: finishing or
+ * skipping one never hides the others. A teacher who closes "Grading basics"
+ * part-way is still offered "Student overview" and "Copy between classes".
  *
- * The options page's "Replay tour" sets pending again.
+ * A fresh install (background.js; never an update) writes a record with the
+ * welcome card due and every tutorial new. The welcome card lists them all on
+ * the first gradebook visit. After that each tutorial still new is offered
+ * with a small card in the corner of the page it runs on, one at a time,
+ * until the teacher watches it or presses Skip on it. Closing that card with
+ * its X only hides it for the rest of this browser tab's visit.
  *
- * What a teacher sees first is a short introduction on their gradebook: one
- * feature shown on a real cell, then a choice - start grading, or a short
- * path: 'grade' (grade faster), 'copy' (copy to another class), or the
- * calendar setup on the options page. The record remembers the path, so a
- * reload carries on with the same one.
+ * chrome.storage.local, not .sync: an install on a second computer is a new
+ * install, but Chrome sync would carry "already seen" over from the first.
  *
- * Records written before the introduction existed have no `flow`. One left
- * part-way through then carries on through the whole tour it started
- * ('full', or 'classes' for part 2) rather than starting over. One already
- * finished or skipped stays that way: an update never touches the record.
+ * The options page's Tutorials list can start any tutorial again.
+ *
+ * Older records (one tour with a single pending flag) are read through
+ * normalize(): what the teacher had finished stays finished; everything else
+ * is offered again, one tutorial at a time - the old tour hid every part as
+ * soon as any card was closed. An install from before the tour existed (no
+ * record) is never offered anything on its own.
  *
  * This file is the one definition of that record. background.js imports it
  * (it is safe to run as a module: it only adds CGP.TourState to globalThis),
  * the options page loads it with a script tag, and the content scripts run it
- * on every course page. There it also decides whether the tour is wanted at
- * all, and only then asks background.js to inject the tour itself
- * (tour-content.js, tour.js) into this tab: some 1,700 lines a teacher needs
- * once are not parsed on every page for the life of the install.
+ * on every course page. There it also decides whether anything is wanted on
+ * this page, and only then asks background.js to inject the tour itself
+ * (tour-content.js, tour.js) into this tab.
  *
  * No DOM and no chrome.* at load time, so tests load it as-is. */
 (function () {
@@ -38,6 +37,18 @@
   if (CGP.TourState) return;
 
   var KEY = 'cgp.tour';
+  var SNOOZE_KEY = 'cgp.tour.snooze';
+
+  /* The tutorials, in the order they are suggested. `page` is where one runs:
+   * the gradebook, the course home page, or the options page. */
+  var SECTIONS = [
+    { id: 'grading', page: 'gradebook', title: 'Grading basics', blurb: 'Status keys, badges and pasting grades', mins: 1 },
+    { id: 'student', page: 'gradebook', title: 'Student overview', blurb: 'One student’s grades, missing work and activity', mins: 1 },
+    { id: 'tools', page: 'gradebook', title: 'Gradebook tools', blurb: 'Total column, score stats, finding students', mins: 1 },
+    { id: 'classes', page: 'home', title: 'Copy between classes', blurb: 'Post work to all your sections at once', mins: 1 },
+    { id: 'schedule', page: 'options', title: 'Class schedule', blurb: 'Set due times by clicking a class period', mins: 2 }
+  ];
+  var IDS = SECTIONS.map(function (s) { return s.id; });
 
   function defaultStorage() {
     var local = typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
@@ -49,17 +60,79 @@
   }
 
   TourState.KEY = KEY;
+  TourState.SNOOZE_KEY = SNOOZE_KEY;
+  TourState.SECTIONS = SECTIONS;
+  TourState.FLOW = 3;
+
+  TourState.section = function (id) {
+    return SECTIONS.filter(function (s) { return s.id === id; })[0] || null;
+  };
 
   /* A fresh install's record. */
-  TourState.FLOW = 2;
-
   TourState.installed = function (now) {
-    return { pending: true, flow: TourState.FLOW, chapter: 'gradebook', path: null, stop: null, installedAt: now || Date.now() };
+    return { flow: TourState.FLOW, welcome: 'due', sections: {}, active: null, requested: null, installedAt: now || Date.now() };
   };
 
   /* The message a course page sends to have the tour injected. */
   TourState.INJECT = 'cgp.tourInject';
   TourState.FILES = ['src/tour/tour-content.js', 'src/tour/tour.js'];
+
+  /* ------------------------------------------------------------ the record */
+
+  // Where each stop of the old single tour now lives: a tour left part-way
+  // before this version carries on in the tutorial that holds its stop.
+  var OLD_STOPS = {
+    comments: 'grading', submissions: 'grading', statuses: 'grading', spreadsheet: 'grading', post: 'grading',
+    student: 'student', 'si-overview': 'student', 'si-standout': 'student', 'si-work': 'student', 'si-activity': 'student',
+    total: 'tools', menus: 'tools', switcher: 'tools', find: 'tools', gear: 'tools',
+    'classes-link': 'classes', 'classes-copy': 'classes', 'classes-compare': 'classes',
+    schedule: 'schedule', 'schedule-connect': 'schedule'
+  };
+  // Which tutorials an old, finished path had shown in full.
+  var OLD_PATHS = {
+    grade: ['grading'], more: ['student', 'tools'], full: ['grading', 'student', 'tools'],
+    copy: ['classes'], classes: ['classes', 'schedule']
+  };
+
+  /* The record as this version reads it, whatever version wrote it. Pure:
+   * nothing is written back until the teacher does something. */
+  TourState.normalize = function (raw) {
+    var v = raw && typeof raw === 'object' ? raw : {};
+    if (v.flow === TourState.FLOW) {
+      return {
+        flow: TourState.FLOW,
+        welcome: v.welcome === 'due' ? 'due' : 'seen',
+        sections: v.sections && typeof v.sections === 'object' ? v.sections : {},
+        active: v.active && TourState.section(v.active.section) ? v.active : null,
+        requested: TourState.section(v.requested) ? v.requested : null,
+        installedAt: v.installedAt
+      };
+    }
+    var out = { flow: TourState.FLOW, welcome: 'seen', sections: {}, active: null, requested: null, installedAt: v.installedAt };
+    // No record at all: installed before the tour existed. Nothing is offered
+    // on its own; the options page's Tutorials list still has every one.
+    if (!Object.keys(v).length) {
+      IDS.forEach(function (id) { out.sections[id] = 'skipped'; });
+      return out;
+    }
+    // The old tour's record. Whatever it shows was finished stays finished.
+    var done = [];
+    if (v.outcome === 'completed' && OLD_PATHS[v.path]) done = OLD_PATHS[v.path];
+    else if (v.outcome === 'completed' && !v.path && v.chapter === 'classes') done = ['grading', 'student', 'tools', 'classes', 'schedule'];
+    done.forEach(function (id) { out.sections[id] = 'done'; });
+    if (v.pending === true) {
+      var sec = OLD_STOPS[v.stop];
+      if (sec) out.active = { section: sec, stop: v.stop };
+      else if (!v.stop && !(v.chapter === 'classes')) out.welcome = 'due';
+      else if (v.chapter === 'classes') out.requested = 'classes';
+    }
+    return out;
+  };
+
+  TourState.statusOf = function (v, id) {
+    var s = v && v.sections && v.sections[id];
+    return s === 'done' || s === 'skipped' ? s : 'new';
+  };
 
   TourState.prototype.read = function () {
     var s = this.storage;
@@ -73,18 +146,26 @@
     }, function () { return {}; });
   };
 
-  /* Merges `patch` into the record. Storage failures are swallowed (the tour
-   * is a nicety) unless opts.strict, for a caller that reports them. */
-  TourState.prototype.write = function (patch, opts) {
+  /* The record, normalized. */
+  TourState.prototype.load = function () {
+    return this.read().then(TourState.normalize);
+  };
+
+  /* Applies `fn` to the normalized record and stores the result. Storage
+   * failures are swallowed (the tour is a nicety) unless opts.strict, for a
+   * caller that reports them. */
+  TourState.prototype.update = function (fn, opts) {
     var s = this.storage;
-    if (!s) return Promise.resolve(patch);
     var self = this;
     // One write at a time, each reading what the last one wrote: a "this
     // stop" save still in flight can never land after "finished" and bring
-    // the tour back.
+    // the tutorial back.
     var run = function () {
       return self.read().then(function (cur) {
-        var next = opts && opts.replace ? Object.assign({}, patch) : Object.assign({}, cur, patch);
+        var v = TourState.normalize(cur);
+        v.sections = Object.assign({}, v.sections);
+        var next = fn(v) || v;
+        if (!s) return next;
         var o = {};
         o[KEY] = next;
         return new Promise(function (resolve) { resolve(s.set(o)); }).then(function () { return next; });
@@ -92,104 +173,167 @@
     };
     var done = (this._queue || Promise.resolve()).then(run);
     this._queue = done.catch(function () { /* the next write still runs */ });
-    if (!(opts && opts.strict)) done = done.catch(function () { return patch; });
+    if (!(opts && opts.strict)) done = done.catch(function () { return null; });
     return done.then(function (v) { self.last = v; return v; });
   };
 
   /* A fresh install (background.js): the whole record, not a merge. */
   TourState.prototype.markInstalled = function () {
-    return this.write(TourState.installed(), { replace: true });
+    var s = this.storage;
+    if (!s) return Promise.resolve(null);
+    var o = {};
+    o[KEY] = TourState.installed();
+    return Promise.resolve().then(function () { return s.set(o); }).then(function () { return o[KEY]; }, function () { return null; });
   };
 
   /* chrome.runtime.onInstalled (background.js). Only a fresh install makes
-   * the tour due. An update leaves the record exactly as it was: finished
-   * and skipped stay finished and skipped, a replay already asked for stays
-   * asked for, and a tour part-way carries on (pathFor). */
+   * anything due. An update leaves the record exactly as it was. */
   TourState.prototype.handleInstalled = function (reason) {
     if (reason === 'install') return this.markInstalled();
     return this.read();
   };
 
-  /* Where the teacher is, so a reload or a trip to another course carries on
-   * from there instead of starting over. */
-  TourState.prototype.saveStop = function (stopId) {
-    return this.write({ stop: stopId || null });
+  /* The welcome card was shown and closed (or a tutorial was picked from it). */
+  TourState.prototype.welcomeSeen = function () {
+    return this.update(function (v) { v.welcome = 'seen'; });
   };
 
-  /* Due: never seen since this install (or asked for again). */
-  TourState.prototype.isPending = function () {
-    return this.read().then(function (v) { return v.pending === true; });
+  /* A tutorial started (from the welcome card, its offer, or the options page). */
+  TourState.prototype.begin = function (id, stop) {
+    return this.update(function (v) {
+      v.active = { section: id, stop: stop || null };
+      if (v.requested === id) v.requested = null;
+    });
   };
 
-  /* Finished or skipped: either way, not offered again on its own. `path`
-   * records how it ended ('intro' for Start grading, 'schedule', ...). */
-  TourState.prototype.markDone = function (how, stepId, path) {
-    var patch = {
-      pending: false,
-      outcome: how === 'completed' ? 'completed' : 'skipped',
-      lastStep: stepId || null,
-      doneAt: Date.now()
-    };
-    if (path) patch.path = path;
-    return this.write(patch);
+  /* Where the teacher is, so a reload carries on from there. */
+  TourState.prototype.saveStop = function (stop) {
+    return this.update(function (v) { if (v.active) v.active = { section: v.active.section, stop: stop || null }; });
   };
 
-  /* "Replay tour" on the options page: the introduction again, from the top. */
-  TourState.prototype.request = function () {
-    return this.write({ pending: true, flow: TourState.FLOW, chapter: 'gradebook', path: null, stop: null, requestedAt: Date.now() }, { strict: true });
+  /* Finished ('done') or skipped: that tutorial only. */
+  TourState.prototype.finish = function (id, how) {
+    return this.update(function (v) {
+      v.sections[id] = how === 'done' ? 'done' : 'skipped';
+      if (v.active && v.active.section === id) v.active = null;
+      if (v.requested === id) v.requested = null;
+    });
   };
 
-  /* The teacher picked a path from the introduction (or "More tips"). */
-  TourState.prototype.setPath = function (path) {
-    return this.write({ path: path, stop: null });
+  /* The options page: one tutorial again (`id`), or all of them. Strict, so
+   * the page can say when it failed. */
+  TourState.prototype.request = function (id) {
+    return this.update(function (v) {
+      if (id) {
+        v.sections[id] = 'new';
+        v.requested = id;
+        if (v.active && v.active.section !== id) v.active = null;
+      } else {
+        v.sections = {};
+        v.welcome = 'due';
+        v.active = null;
+        v.requested = null;
+      }
+    }, { strict: true });
   };
 
-  /* The paths. Each is a list of stop ids in tour-content.js (CGP.tourPaths). */
-  TourState.PATHS = ['intro', 'grade', 'more', 'full', 'copy', 'classes'];
+  /* ----------------------------------------------------- what to show here */
 
-  /* Which path to show for this record on this chapter's page. */
-  TourState.pathFor = function (v, chapter) {
-    v = v || {};
-    var p = TourState.PATHS.indexOf(v.path) >= 0 ? v.path : null;
-    if (chapter === 'classes') return p === 'copy' ? 'copy' : 'classes';
-    if (p && p !== 'copy' && p !== 'classes') return p;
-    // Left part-way by a version from before the introduction.
-    if (v.flow !== TourState.FLOW && v.pending === true && v.stop) return 'full';
-    return 'intro';
+  /* Which kind of course page this is: 'gradebook', 'home' or 'other'. */
+  TourState.pageKind = function (pathname) {
+    var p = String(pathname || '');
+    if (/\/courses\/\d+\/gradebook\/?$/i.test(p)) return 'gradebook';
+    if (/^\/courses\/\d+\/?$/.test(p)) return 'home';
+    return 'other';
   };
 
-  /* The tour has two chapters, on two pages: 'gradebook' (the grid and the
-   * student overview) and 'classes' (the course home: linking classes,
-   * Compare classes, the class schedule). Finishing the first records
-   * chapter: 'classes', so the second is picked up wherever the teacher
-   * goes next. */
-  TourState.CHAPTERS = ['gradebook', 'classes'];
-
-  TourState.prototype.setChapter = function (chapter, path) {
-    var patch = { chapter: chapter, stop: null };
-    if (path) patch.path = path;
-    return this.write(patch);
-  };
-
-  /* The page asked for the tour in its address - #cgp-tour (the first
-   * chapter) or #cgp-tour=classes - which is how the invitation on other
-   * course pages and the end of the first chapter hand over. */
-  TourState.chapterFromHash = function (hash) {
+  /* #cgp-tour (the welcome card) or #cgp-tour=<tutorial>: how an offer on
+   * one page hands over to the page its tutorial runs on. */
+  TourState.sectionFromHash = function (hash) {
     var m = /(?:^#|&)cgp-tour(?:=([a-z]+))?(?:&|$)/.exec(String(hash || ''));
     if (!m) return null;
-    return TourState.CHAPTERS.indexOf(m[1]) >= 0 ? m[1] : 'gradebook';
+    if (m[1] && IDS.indexOf(m[1]) >= 0) return m[1];
+    return 'welcome';
   };
 
   TourState.wantsTourFromHash = function (hash) {
-    return TourState.chapterFromHash(hash) !== null;
+    return TourState.sectionFromHash(hash) !== null;
   };
 
-  /* Is the tour wanted on this page? The top frame of a course page (not
-   * SpeedGrader) with the tour due, or #cgp-tour in the address. */
-  TourState.wantedHere = function (loc, record) {
+  function runsOn(sec, page) {
+    // The class schedule is set up on the options page; its offer sits on the
+    // course home page, beside Copy between classes.
+    return sec.page === page || (sec.page === 'options' && page === 'home');
+  }
+
+  /* What this page shows, if anything:
+   *   { kind: 'welcome' }                       the welcome card (gradebook)
+   *   { kind: 'tour', section, stop }           a tutorial, running here
+   *   { kind: 'offer', section, resume }        a small card offering one
+   *   null                                      nothing
+   * `forced`: from the address (sectionFromHash). `snoozed`: tutorials whose
+   * offer the teacher closed in this tab. Pure, so it is tested directly. */
+  TourState.decide = function (v, page, forced, snoozed) {
+    v = TourState.normalize(v);
+    snoozed = snoozed || [];
+    var asleep = function (id) { return snoozed.indexOf(id) >= 0; };
+    var here = function (id) { var s = TourState.section(id); return s && s.page === page; };
+
+    if (forced === 'welcome' && page === 'gradebook') return { kind: 'welcome' };
+    if (forced && forced !== 'welcome' && here(forced)) {
+      return { kind: 'tour', section: forced, stop: v.active && v.active.section === forced ? v.active.stop : null };
+    }
+    if (v.requested) {
+      if (here(v.requested)) return { kind: 'tour', section: v.requested, stop: null };
+      if (!asleep(v.requested) && page !== 'other') return { kind: 'offer', section: v.requested };
+    }
+    if (v.active) {
+      if (here(v.active.section)) return { kind: 'tour', section: v.active.section, stop: v.active.stop };
+      if (!asleep(v.active.section)) return { kind: 'offer', section: v.active.section, resume: true };
+    }
+    if (v.welcome === 'due') {
+      if (page === 'gradebook') return { kind: 'welcome' };
+      if (!asleep('welcome')) return { kind: 'offer', section: 'welcome' };
+      return null;
+    }
+    for (var i = 0; i < SECTIONS.length; i++) {
+      var sec = SECTIONS[i];
+      if (TourState.statusOf(v, sec.id) !== 'new' || asleep(sec.id) || !runsOn(sec, page)) continue;
+      return { kind: 'offer', section: sec.id };
+    }
+    return null;
+  };
+
+  /* The next tutorial still new after `id`, for "Next: ..." at the end of one. */
+  TourState.nextNew = function (v, id) {
+    v = TourState.normalize(v);
+    var from = IDS.indexOf(id);
+    for (var k = 1; k <= IDS.length; k++) {
+      var cand = IDS[(from + k) % IDS.length];
+      if (cand !== id && TourState.statusOf(v, cand) === 'new') return cand;
+    }
+    return null;
+  };
+
+  /* Tutorials whose offer was closed in this tab (sessionStorage). */
+  TourState.snoozed = function () {
+    try { return JSON.parse(sessionStorage.getItem(SNOOZE_KEY) || '[]') || []; } catch (e) { return []; }
+  };
+  TourState.snooze = function (id) {
+    try {
+      var list = TourState.snoozed();
+      if (list.indexOf(id) < 0) list.push(id);
+      sessionStorage.setItem(SNOOZE_KEY, JSON.stringify(list));
+    } catch (e) { /* private mode: it just comes back next page */ }
+  };
+
+  /* Is anything wanted on this page? The top frame of a course page (not
+   * SpeedGrader) with something to show, or #cgp-tour in the address. */
+  TourState.wantedHere = function (loc, record, snoozed) {
     var path = String(loc.pathname || '');
     if (!/\/courses\/\d+/.test(path) || /\/gradebook\/speed_grader/i.test(path)) return false;
-    return (record && record.pending === true) || TourState.wantsTourFromHash(loc.hash);
+    if (TourState.wantsTourFromHash(loc.hash)) return true;
+    return !!TourState.decide(record, TourState.pageKind(path), null, snoozed);
   };
 
   CGP.TourState = TourState;
@@ -199,7 +343,7 @@
       typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage &&
       /\/courses\/\d+/.test(location.pathname)) {
     new TourState().read().then(function (v) {
-      if (!TourState.wantedHere(location, v) || CGP.Tour) return;
+      if (!TourState.wantedHere(location, v, TourState.snoozed()) || CGP.Tour) return;
       try { chrome.runtime.sendMessage({ type: TourState.INJECT }); } catch (e) { /* extension reloaded */ }
     });
   }

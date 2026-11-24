@@ -138,6 +138,10 @@
     '.choice__t b{font-size:14px;color:var(--ink)}',
     '.choice__t small{font-size:12px;line-height:1.4;color:var(--muted)}',
     '.choice>svg{flex:0 0 auto;width:15px;height:15px;fill:none;stroke:var(--muted);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}',
+    '.choice.is-seen .choice__t b{color:var(--soft)}',
+    '.choice__done{flex:0 0 auto;display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:650;color:#0b7a45}',
+    '.choice__done svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}',
+    '.hint{margin-top:12px;font-size:12.5px;line-height:1.5;color:var(--muted)}',
     '.brand__mark{width:36px;height:36px;border-radius:11px;background:linear-gradient(135deg,#0374b5,#5b3fd0);display:grid;place-items:center;box-shadow:0 8px 18px -8px rgba(63,70,216,.7)}',
     '.brand__mark svg{width:20px;height:20px;fill:none;stroke:#fff;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}',
     '@keyframes pop{from{opacity:0;transform:scale(.3)}to{opacity:1;transform:none}}',
@@ -146,8 +150,9 @@
     '.mk-cmt{position:absolute;right:3px;bottom:2px;width:13px;height:13px;color:#0a72a8}',
     '.mk-cmt svg{width:100%;height:100%;fill:currentColor}',
     '.mk-cmt--reply{color:#6b3fa0}.mk-cmt--reply svg{fill:none;stroke:currentColor;stroke-width:1.6}',
-    '.mk-cnt{position:absolute;right:16px;bottom:2px;font-size:9px;font-weight:700;color:#0a72a8;line-height:13px}',
-    '.mk-sub{position:absolute;right:3px;top:3px;width:9px;height:9px;border-radius:50%}',
+    '.mk-cnt{position:absolute;inset:0 0 2px;display:grid;place-items:center;font-size:7.5px;font-weight:800;color:#fff;line-height:1}',
+    '.mk-cmt{right:5px;bottom:auto;top:50%;width:15px;height:15px;transform:translateY(-50%)}',
+    '.mk-sub{position:absolute;right:5px;top:50%;width:12px;height:12px;margin-top:-6px;border-radius:3px}',
     '.mk-sub--in{background:#0b7a45}',
     '.mk-sub--out{border:1.5px solid #98a3ab}',
     '.mk-m,.mk-l{position:absolute;left:3px;top:3px;width:13px;height:13px;border-radius:50%;font-size:8.5px;font-weight:800;line-height:13px;text-align:center;color:#fff;background:#d23b3f}',
@@ -186,8 +191,8 @@
 
     '.post-demo{display:grid;grid-template-columns:1fr;max-width:200px;border:1px solid #e1e6eb;border-radius:10px;overflow:hidden;background:#fff}',
     '.pd-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;background:linear-gradient(#fdfefe,#eef2f5);font-size:12px;font-weight:650;color:#4a5864}',
-    '.pd-btn{font-size:11px;font-weight:700;color:#fff;background:#b3701a;border-radius:6px;padding:3px 8px;box-shadow:0 0 0 0 rgba(179,112,26,.5);animation:postGlow 2.2s ease-out infinite}',
-    '@keyframes postGlow{0%{box-shadow:0 0 0 0 rgba(179,112,26,.5)}70%,100%{box-shadow:0 0 0 8px rgba(179,112,26,0)}}',
+    '.pd-btn{font-size:11px;font-weight:700;color:#fff;background:#0374b5;border-radius:6px;padding:3px 8px;box-shadow:0 0 0 0 rgba(3,116,181,.5);animation:postGlow 2.2s ease-out infinite}',
+    '@keyframes postGlow{0%{box-shadow:0 0 0 0 rgba(3,116,181,.45)}70%,100%{box-shadow:0 0 0 8px rgba(3,116,181,0)}}',
     '.pd-cell{position:relative;padding:7px 10px;text-align:center;border-top:1px solid #eef1f4;font-size:12.5px;font-weight:600;color:#2d3b45}',
     '.pd-cell--hid::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:#d9932f}',
 
@@ -342,22 +347,50 @@
 
   var X_ICON = '<svg viewBox="0 0 14 14"><path d="M3 3l8 8M11 3l-8 8"/></svg>';
   var NEXT_ICON = '<svg viewBox="0 0 16 16"><path d="M6 3.5 10.5 8 6 12.5"/></svg>';
+  var DONE_ICON = '<svg viewBox="0 0 16 16"><path d="M3.5 8.4l3 2.9 6-6.6"/></svg>';
   var MARK = '<svg viewBox="0 0 20 20"><rect x="3" y="3.5" width="14" height="13" rx="2.2"/><path d="M3 8h14M8 8v8.5"/><path d="M11 11.6l1.6 1.6 2.8-3"/></svg>';
+  var SECTION_ICON = { grading: 'keys', student: 'person', tools: 'gear', classes: 'swap', schedule: 'calendar' };
+
+  function S() { return CGP.TourState; }
+  function sectionInfo(id) { return S().section(id) || { id: id, title: id, page: 'gradebook' }; }
+
+  /* Where this page is: 'gradebook', 'home', 'options' or 'other'. */
+  function pageHere() {
+    if (typeof location === 'undefined') return 'other';
+    if (/\/src\/options\//.test(location.pathname)) return 'options';
+    return S().pageKind(location.pathname);
+  }
+
+  function courseIdHere() {
+    return (/\/courses\/(\d+)/.exec(typeof location !== 'undefined' ? location.pathname : '') || [])[1] || null;
+  }
+
+  /* Opens tutorial `id` where it runs: here, or by going to its page. */
+  function openSection(id, courseId) {
+    var info = sectionInfo(id);
+    if (info.page === 'options') {
+      try { chrome.runtime.sendMessage({ type: 'cgp.openOptions', hash: 'schedule-tour' }); } catch (e) { /* ignore */ }
+      return 'away';
+    }
+    if (info.page === pageHere()) return 'here';
+    courseId = courseId || courseIdHere();
+    if (!courseId) return 'none';
+    location.href = '/courses/' + courseId + (info.page === 'home' ? '' : '/gradebook') + '#cgp-tour=' + id;
+    return 'away';
+  }
 
   /* ---------------------------------------------------------- the tour */
 
+  /* One tutorial (opts.section), or the welcome card (opts.welcome). */
   function Tour(opts) {
     opts = opts || {};
     this.state = opts.state || new CGP.TourState();
-    this.chapter = opts.chapter || 'gradebook';
     this.courseId = opts.courseId || null;
     // On the options page the teacher types into the page, so keys are not held back.
     this.holdKeys = opts.holdKeys !== false;
-    this.finishLabel = opts.finishLabel || 'Start grading';
-    // Which stops, in which order: a path's ids (CGP.tourPaths), or every
-    // stop given (the options page's calendar setup).
-    this.path = opts.stops ? null : (opts.path || (this.chapter === 'classes' ? 'classes' : 'intro'));
-    this.allStops = opts.stops || CGP.tourStops || [];
+    this.welcome = !!opts.welcome;
+    this.section = opts.section || null;
+    this.record = opts.record || {};
     this.stops = [];
     this.index = 0;
     this.active = false;
@@ -412,36 +445,25 @@
     this.pill.addEventListener('click', function (e) { self.onCardClick(e); });
   };
 
-  /* Which stops this gradebook can show: a stop for a feature that is
-   * switched off (no course switcher, no gear) is left out. */
+  /* The stops this page can show: the tutorial's own (a stop for a feature
+   * switched off, with nothing to point at, is left out), then its last card.
+   * The welcome card is one stop of its own. */
   Tour.prototype.plan = function () {
-    var all = this.allStops;
-    var ids = this.path && CGP.tourPaths && CGP.tourPaths[this.path];
-    var list = ids
-      ? ids.map(function (id) { return all.filter(function (s) { return s.id === id; })[0]; }).filter(Boolean)
-      : all;
-    this.stops = list.filter(function (s) {
+    if (this.welcome) { this.stops = [{ id: 'welcome', kind: 'welcome' }]; return; }
+    var all = CGP.tourStops || [];
+    var ids = (CGP.tourPaths && CGP.tourPaths[this.section]) || [];
+    var list = ids.map(function (id) { return all.filter(function (s) { return s.id === id; })[0]; }).filter(Boolean);
+    list = list.filter(function (s) {
       if (!s.optional || !s.target) return true;
       try { return !!s.target(); } catch (e) { return false; }
     });
-  };
-
-  /* A path picked from the introduction (or "More tips"): recorded, so a
-   * reload carries on with it, and started from its first stop. */
-  Tour.prototype.choose = function (path) {
-    if (!CGP.tourPaths || !CGP.tourPaths[path]) return;
-    var prev = this.shown;
-    if (prev && prev.leave) { try { prev.leave(this); } catch (e) { /* ignore */ } }
-    this.shown = null;
-    this.path = path;
-    this.chosen = true;   // under way: never dismissed as untouched
-    if (this.state && this.state.setPath) this.state.setPath(path);
-    this.plan();
-    this.show(0, 1);
+    var fin = (CGP.tourFinales && CGP.tourFinales[this.section]) || { title: 'All done', body: '' };
+    list.push({ id: this.section + '-done', kind: 'finale', eyebrow: sectionInfo(this.section).title, title: fin.title, body: fin.body });
+    this.stops = list;
   };
 
   function countedStops(stops) {
-    return stops.filter(function (x) { return x.kind !== 'intro' && x.kind !== 'finale'; });
+    return stops.filter(function (x) { return x.kind !== 'welcome' && x.kind !== 'finale'; });
   }
 
   Tour.prototype.start = function (opts) {
@@ -450,12 +472,13 @@
     this.mount();
     this.plan();
     this.active = true;
-    // Picking up a tour left part-way (a reload, a trip to another course).
+    // Picking up a tutorial left part-way (a reload, a trip to another course).
     var at = 0;
     if (opts.startAt) {
       for (var k = 0; k < this.stops.length; k++) if (this.stops[k].id === opts.startAt) at = k;
     }
     this.index = at;
+    if (this.section && this.state.begin) this.state.begin(this.section, this.stops[at] && this.stops[at].id);
     window.addEventListener('keydown', this._onKey, true);
     window.addEventListener('keyup', this._onKey, true);
     window.addEventListener('keypress', this._onKey, true);
@@ -469,6 +492,31 @@
       self.show(at, 1);
     });
     CGP.tourInstance = this;
+  };
+
+  /* From the welcome card (or "Next: ..." on a last card): another tutorial.
+   * One that runs on this page starts right here. */
+  Tour.prototype.switchTo = function (id) {
+    var self = this;
+    var prev = this.shown;
+    if (prev && prev.leave) { try { prev.leave(this); } catch (e) { /* ignore */ } }
+    var where = openSection(id, this.courseId);
+    if (where !== 'here') {
+      this.active = false;
+      this.detach();
+      this.card.classList.remove('is-on');
+      this.spot.classList.remove('is-on');
+      this.blocks.forEach(function (b) { place(b, 0, 0, 0, 0); });
+      if (where === 'away' && sectionInfo(id).page === 'options') this.flash('Opened in a new tab', 'Class schedule setup is in Gradebook+ settings');
+      else setTimeout(function () { self.unmount(); }, 400);
+      return;
+    }
+    this.shown = null;
+    this.welcome = false;
+    this.section = id;
+    this.plan();
+    if (this.state.begin) this.state.begin(id, this.stops[0] && this.stops[0].id);
+    this.show(0, 1);
   };
 
   Tour.prototype.stop = function () { return this.stops[this.index]; };
@@ -491,7 +539,7 @@
     // Something to open first (a student's overview): the card says so meanwhile.
     this.card.classList.add('is-busy');
     var busy = this.cardIn.querySelector('[data-act="next"], [data-act="primary"]');
-    if (busy) busy.innerHTML = '<span class="spin"></span>Opening\u2026';
+    if (busy) busy.innerHTML = '<span class="spin"></span>Opening…';
     var done = false;
     var go = function () {
       if (done || gen !== self._gen || !self.active) return;
@@ -507,13 +555,25 @@
 
   Tour.prototype.paint = function (s, dir) {
     this.shown = s;
-    // The introduction is not a place to come back to: a reload shows it again.
-    if (s.kind !== 'intro' && s.kind !== 'finale') this.remember(s.id);
+    // Only real stops are places to come back to.
+    if (s.kind !== 'welcome' && s.kind !== 'finale') this.remember(s.id);
+    if (s.kind === 'finale' && this.section && this.state.finish) {
+      // Reaching the last card is finishing it, whether or not Done is pressed.
+      var self = this;
+      var before = this.nextUp();
+      Promise.resolve(this.state.finish(this.section, 'done')).then(function (v) {
+        if (v) self.record = v;
+        if (self.shown !== s || !self.active || self.nextUp() === before) return;
+        self.cardIn.innerHTML = self.render(s, false, 0);
+        var f = self.cardIn.querySelector('[data-act="section"]') || self.cardIn.querySelector('[data-act="finish"]');
+        if (f) { try { f.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }
+      });
+    }
     // Resolve the element(s) to point at.
     var target = null, usedFallback = false;
     if (s.target) { try { target = s.target(); } catch (e) { target = null; } }
     if (!target && s.fallback) { try { target = s.fallback(); usedFallback = !!target; } catch (e) { target = null; } }
-    if (s.kind === 'center' || s.kind === 'finale') target = null;
+    if (s.kind === 'center' || s.kind === 'finale' || s.kind === 'welcome') target = null;
     var first = Array.isArray(target) ? target[0] : target;
     if (first && first.scrollIntoView) {
       var r = first.getBoundingClientRect();
@@ -526,26 +586,57 @@
     if (s.onShow && target) { try { s.onShow(this, first); } catch (e) { /* ignore */ } }
 
     var wide = s.kind === 'center' || (!target && s.fallbackArt);
-    this.card.className = 'card' + (s.kind === 'intro' ? ' card--intro' : '') +
+    this.card.className = 'card' + (s.kind === 'welcome' ? ' card--intro' : '') +
       (wide ? ' card--center' : '') + (s.kind === 'finale' ? ' card--finale' : '');
     this.cardIn.innerHTML = this.render(s, usedFallback, dir);
     this._lastRect = null;
     this.reflow(true);
     this.card.classList.add('is-on');
-    var focusEl = this.cardIn.querySelector('[data-act="primary"], [data-act="next"], [data-act="finish"]') || this.card;
+    var focusEl = s.kind === 'welcome' ? this.cardIn.querySelector('[data-act="section"]')
+      : (this.cardIn.querySelector('[data-act="primary"], [data-act="next"]') || this.cardIn.querySelector('[data-act="section"]') ||
+        this.cardIn.querySelector('[data-act="finish"]'));
+    focusEl = focusEl || this.card;
     try { focusEl.focus({ preventScroll: true }); } catch (e) { /* ignore */ }
     this.loop();
     if (s.kind === 'finale') this.celebrate();
   };
 
   Tour.prototype.remember = function (stopId) {
-    if (this.state && this.state.saveStop) this.state.saveStop(stopId);
+    if (this.section && this.state && this.state.saveStop) this.state.saveStop(stopId);
+  };
+
+  /* The tutorial to suggest at the end of this one, if it can be opened from
+   * here (the options page has no course to go to). */
+  Tour.prototype.nextUp = function () {
+    if (pageHere() === 'options') return null;
+    return S().nextNew(this.record, this.section);
   };
 
   /* The stop's element(s), as one list. */
   Tour.prototype.targets = function () {
     var t = this.targetEl;
     return !t ? [] : (Array.isArray(t) ? t : [t]);
+  };
+
+  /* The welcome card: every tutorial, with a tick on the ones seen. */
+  Tour.prototype.renderWelcome = function () {
+    var ICON = CGP.tourIcons || {};
+    var v = this.record;
+    var html = '<div class="head"><span class="brand__mark">' + MARK + '</span>' +
+      '<span class="eyebrow">Welcome to Gradebook+</span>' +
+      '<button class="x" type="button" data-act="finish" aria-label="Close">' + X_ICON + '</button></div>' +
+      '<h2 id="cgp-tour-title">Pick a 1-minute tutorial</h2>' +
+      '<p>Each one shows a single part of Gradebook+. Skipping one doesn’t hide the others.</p>' +
+      '<div class="choices" role="list">';
+    S().SECTIONS.forEach(function (sec) {
+      var seen = S().statusOf(v, sec.id) === 'done';
+      html += '<button class="choice' + (seen ? ' is-seen' : '') + '" type="button" role="listitem" data-act="section" data-id="' + sec.id + '">' +
+        '<span class="ico">' + (ICON[SECTION_ICON[sec.id]] || '') + '</span>' +
+        '<span class="choice__t"><b>' + sec.title + '</b><small>' + sec.blurb + '</small></span>' +
+        (seen ? '<span class="choice__done">' + DONE_ICON + 'Seen</span>' : NEXT_ICON) + '</button>';
+    });
+    html += '</div><p class="hint">Not now? Close this. We’ll offer each one later, and they’re always under <b>Tutorials</b> in Gradebook+ settings.</p>';
+    return html;
   };
 
   Tour.prototype.render = function (s, usedFallback, dir) {
@@ -556,66 +647,40 @@
     var html = '<div class="body' + (dir < 0 ? ' is-back' : '') + '">';
     var live = this.targets().length > 0;
 
-    if (s.kind === 'intro') {
-      html += '<div class="head">' + (s.icon && ICON[s.icon] ? '<span class="ico">' + ICON[s.icon] + '</span>' : '') +
-        '<span class="eyebrow">' + s.eyebrow + '</span>' +
-        '<button class="x" type="button" data-act="skip" aria-label="Close the introduction">' + X_ICON + '</button></div>';
-      // On a real cell the page speaks for itself; otherwise the legend shows it.
-      if (s.art && !live) html += '<div class="art">' + s.art() + '</div>';
-      html += '<h2 id="cgp-tour-title">' + s.title + '</h2><p>' + s.body + '</p>';
-      if (!live && s.fallbackNote) html += '<div class="note">' + s.fallbackNote + '</div>';
-      html += '<div class="foot foot--intro"><button class="btn btn--primary btn--lg" type="button" data-act="finish">' +
-        this.finishLabel + '</button></div>';
-      if (s.choices) {
-        html += '<div class="choices" role="group" aria-labelledby="cgp-tour-q"><p class="choices__q" id="cgp-tour-q">' + s.question + '</p>' +
-          s.choices.map(function (c, k) {
-            return '<button class="choice" type="button" data-act="choice" data-i="' + k + '">' +
-              '<span class="ico">' + (ICON[c.icon] || '') + '</span>' +
-              '<span class="choice__t"><b>' + c.label + '</b><small>' + c.help + '</small></span>' + NEXT_ICON + '</button>';
-          }).join('') + '</div>';
-      }
-      return html + '</div>';
-    }
+    if (s.kind === 'welcome') return html + this.renderWelcome() + '</div>';
 
     if (s.kind === 'finale') {
+      var nxt = this.nextUp();
       html += '<div class="badge"><svg viewBox="0 0 24 24"><path d="M5.5 12.5l4.2 4.2 8.8-9.4"/></svg></div>';
       html += '<span class="eyebrow">' + s.eyebrow + '</span>';
       html += '<h2 id="cgp-tour-title" style="margin-top:6px">' + s.title + '</h2><p>' + s.body + '</p>';
-      html += '<div class="foot"><button class="btn btn--ghost" type="button" data-act="back">Back</button>' +
-        (s.secondary ? '<button class="btn btn--soft" type="button" data-act="secondary">' + s.secondary.label + '</button>' : '') +
-        '<button class="btn btn--primary btn--lg" type="button" data-act="finish">' + this.finishLabel + '</button></div>';
-      return html + '</div>';
+      html += '<div class="foot">' + (i > 0 ? '<button class="btn btn--ghost" type="button" data-act="back">Back</button>' : '');
+      if (nxt) {
+        html += '<button class="btn btn--soft" type="button" data-act="finish">Done</button>' +
+          '<button class="btn btn--primary" type="button" data-act="section" data-id="' + nxt + '">Next: ' + sectionInfo(nxt).title + ' ' + NEXT_ICON + '</button>';
+      } else {
+        html += '<button class="btn btn--primary btn--lg" type="button" data-act="finish">Done</button>';
+      }
+      return html + '</div></div>';
     }
 
     html += '<div class="head">' + (s.icon && ICON[s.icon] ? '<span class="ico">' + ICON[s.icon] + '</span>' : '') +
       '<span class="eyebrow">' + s.eyebrow + '</span>' +
       '<span class="count">' + pos + ' of ' + counted.length + '</span>' +
-      '<button class="x" type="button" data-act="skip" aria-label="End the tour">' + X_ICON + '</button></div>';
+      '<button class="x" type="button" data-act="skip" aria-label="Skip this tutorial">' + X_ICON + '</button></div>';
     // A stop shown live (the real overview on screen) lets the page speak for
     // itself; its illustration is for when there is nothing live to show.
     if (s.art && !(s.fallbackArt && live)) html += '<div class="art">' + s.art() + '</div>';
     html += '<h2 id="cgp-tour-title">' + s.title + '</h2>';
     if (s.body) html += '<p>' + s.body + '</p>';
     if (s.bullets) html += '<ul>' + s.bullets.map(function (b) { return '<li>' + b + '</li>'; }).join('') + '</ul>';
-    if (s.tiles) {
-      html += '<div class="tiles">' + s.tiles.map(function (t) {
-        return '<div class="tile"><span class="ico">' + (ICON[t.icon] || '') + '</span><b>' + t.t + '</b><span>' + t.d + '</span></div>';
-      }).join('') + '</div>';
-    }
-    if (s.steps) {
-      html += '<ol class="steps">' + s.steps.map(function (st) {
-        return '<li><span class="steps__n">' + st.n + '</span><span><span class="steps__t">' + st.t + '</span>' + st.d + '</span></li>';
-      }).join('') + '</ol>';
-    }
     if ((usedFallback || (s.fallbackArt && !live)) && s.fallbackNote) html += '<div class="note">' + s.fallbackNote + '</div>';
     else if (s.try && live) html += '<div class="try"><span class="try__dot"></span><span><b>Try it:</b> ' + s.try + '</span></div>';
 
-    // Progress as one slim bar: a dot per stop no longer fits sixteen stops.
     var pct = counted.length ? Math.round(pos / counted.length * 100) : 0;
     var was = counted.length ? Math.round(Math.max(0, pos - dir) / counted.length * 100) : 0;
     html += '<div class="foot"><span class="prog" aria-hidden="true"><i style="--from:' + was + '%;--to:' + pct + '%"></i></span>';
-    if (s.secondary) html += '<button class="btn btn--ghost" type="button" data-act="secondary">' + s.secondary.label + '</button>';
-    else if (i > 0) html += '<button class="btn btn--ghost" type="button" data-act="back">Back</button>';
+    if (i > 0) html += '<button class="btn btn--ghost" type="button" data-act="back">Back</button>';
     html += s.primary
       ? '<button class="btn btn--primary" type="button" data-act="primary">' + s.primary.label + ' ' + NEXT_ICON + '</button></div>'
       : '<button class="btn btn--primary" type="button" data-act="next">Next ' + NEXT_ICON + '</button></div>';
@@ -783,6 +848,7 @@
   };
 
   /* ---------------------------------------------------------- interaction */
+  /* ---------------------------------------------------------- interaction */
 
   Tour.prototype.onCardClick = function (e) {
     var b = e.target && e.target.closest ? e.target.closest('[data-act]') : null;
@@ -791,45 +857,26 @@
     if (act === 'next') this.next();
     else if (act === 'back') this.back();
     else if (act === 'skip') this.end('skipped');
-    else if (act === 'finish') this.end('completed');
+    else if (act === 'finish') this.end('done');
     else if (act === 'resume') this.next();
-    else if (act === 'choice') {
-      var c = (this.stop().choices || [])[Number(b.getAttribute('data-i'))];
-      if (c && c.run) c.run(this);
+    else if (act === 'section') {
+      var id = b.getAttribute('data-id');
+      if (!S().section(id)) return;
+      var self = this;
+      this.chosen = true;   // under way: never dismissed as untouched
+      // Recorded before switchTo, which may leave the page.
+      Promise.resolve(this.welcome && this.state.welcomeSeen ? this.state.welcomeSeen() : null)
+        .then(function () { self.switchTo(id); });
     }
-    else if (act === 'primary' || act === 'secondary') {
+    else if (act === 'primary') {
       var s = this.stop();
-      var h = s && s[act];
-      if (h && h.run && !this.card.classList.contains('is-busy')) h.run(this);
+      if (s && s.primary && s.primary.run && !this.card.classList.contains('is-busy')) s.primary.run(this);
     }
-  };
-
-  /* The settings page, at one tab (a "-tour" suffix starts its guided setup). */
-  Tour.prototype.openOptions = function (hash) {
-    try { chrome.runtime.sendMessage({ type: 'cgp.openOptions', hash: hash }); } catch (err) { /* ignore */ }
-  };
-
-  /* On to the next chapter, on its own page: recorded first, so it is picked
-   * up there even if this navigation is interrupted. `path`: which of its
-   * paths ('copy' for just copying, 'classes' for all of part 2). */
-  Tour.prototype.goChapter = function (chapter, path) {
-    var self = this;
-    var courseId = this.courseId || ((/\/courses\/(\d+)/.exec(location.pathname) || [])[1]);
-    var prev = this.shown;
-    if (prev && prev.leave) { try { prev.leave(this); } catch (e) { /* ignore */ } }
-    this.active = false;
-    this.detach();
-    this.card.classList.remove('is-on');
-    this.spot.classList.remove('is-on');
-    Promise.resolve(this.state.setChapter ? this.state.setChapter(chapter, path) : null).then(function () {
-      if (courseId) location.href = '/courses/' + courseId + '#cgp-tour=' + chapter;
-      else self.unmount();
-    });
   };
 
   Tour.prototype.next = function () {
     if (this.card && this.card.classList.contains('is-busy')) return;
-    if (this.index >= this.stops.length - 1) { this.end('completed'); return; }
+    if (this.index >= this.stops.length - 1) { this.end('done'); return; }
     this.show(this.index + 1, 1);
   };
 
@@ -844,18 +891,19 @@
     c.animate([{ transform: t }, { transform: t + ' scale(1.025)' }, { transform: t }], { duration: 260, easing: 'ease-out' });
   };
 
-  // While a card is up, keys belong to the tour: arrows move, Escape ends,
+  // While a card is up, keys belong to the tour: arrows move, Escape closes,
   // and nothing reaches Canvas's grid (or keyboard.js) behind it.
   Tour.prototype.onKey = function (e) {
     if (!this.active || this.minimized) return;
     var inside = e.composedPath && e.composedPath().indexOf(this.host) >= 0;
     var typing = !inside && e.target && e.target.closest && e.target.closest('input, textarea, select, [contenteditable="true"]');
     if (e.type === 'keydown' && !typing) {
-      // The introduction is a choice, not a step: arrows never pick for the teacher.
-      var picking = this.stop() && this.stop().kind === 'intro';
+      var s = this.stop();
+      // The welcome card is a choice, not a step: arrows never pick for the teacher.
+      var picking = s && s.kind === 'welcome';
       if (e.key === 'ArrowRight') { if (!picking) this.next(); swallow(e); return; }
       if (e.key === 'ArrowLeft') { if (!picking) this.back(); swallow(e); return; }
-      if (e.key === 'Escape') { this.end(this.stop().kind === 'finale' ? 'completed' : 'skipped'); swallow(e); return; }
+      if (e.key === 'Escape') { this.end(s && (s.kind === 'finale' || s.kind === 'welcome') ? 'done' : 'skipped'); swallow(e); return; }
     }
     if (!this.holdKeys && !inside) return;
     if (inside && (e.key === 'Enter' || e.key === ' ' || e.key === 'Tab')) {
@@ -883,9 +931,9 @@
     this.minimized = true;
     this.unwatch();
     // The teacher is trying it out - which may take them to another page (a
-    // course from the switcher): the tour carries on from the next stop there.
+    // course from the switcher): the tutorial carries on from the next stop.
     var after = this.stops[this.index + 1];
-    if (after) this.remember(after.id);
+    if (after && after.kind !== 'finale') this.remember(after.id);
     this.layer.classList.add('is-off');
     this.card.classList.remove('is-on');
     this.spot.classList.remove('is-on');
@@ -893,9 +941,9 @@
     var counted = countedStops(this.stops);
     var pos = counted.indexOf(this.stop()) + 1;
     this.pill.innerHTML = '<span class="pill__spark">' + ((CGP.tourIcons || {}).sparkle || '') + '</span>' +
-      '<span class="pill__txt">Take a look around<small>Stop ' + pos + ' of ' + counted.length + '</small></span>' +
-      '<button class="btn btn--ghost" type="button" data-act="skip">End tour</button>' +
-      '<button class="btn btn--primary" type="button" data-act="resume">Next stop ' + NEXT_ICON + '</button>';
+      '<span class="pill__txt">Try it out<small>' + pos + ' of ' + counted.length + '</small></span>' +
+      '<button class="btn btn--ghost" type="button" data-act="skip">Skip tutorial</button>' +
+      '<button class="btn btn--primary" type="button" data-act="resume">Next ' + NEXT_ICON + '</button>';
     this.pill.classList.add('is-on');
   };
 
@@ -903,7 +951,7 @@
     if (reducedMotion()) return;
     var box = el('div', 'confetti');
     var colors = ['#0374b5', '#5b3fd0', '#e2589c', '#5ec2ff', '#f2b829', '#2f9e6a'];
-    for (var i = 0; i < 70; i++) {
+    for (var i = 0; i < 40; i++) {
       var p = el('i');
       p.style.left = (Math.random() * 100) + 'vw';
       p.style.background = colors[i % colors.length];
@@ -928,34 +976,36 @@
     window.removeEventListener('resize', this._onResize);
   };
 
-  /* opts.path: how it ended, when that is not the path shown (a choice that
-   * leaves the page). opts.note: what the closing pill says. */
-  Tour.prototype.end = function (how, opts) {
+  /* A one-line note at the bottom of the page, then gone. */
+  Tour.prototype.flash = function (head, small) {
+    var self = this;
+    this.pill.innerHTML = '<span class="pill__spark">' + ((CGP.tourIcons || {}).sparkle || '') + '</span>' +
+      '<span class="pill__txt">' + head + (small ? '<small>' + small + '</small>' : '') + '</span>';
+    this.pill.classList.add('is-on');
+    setTimeout(function () { self.pill.classList.remove('is-on'); }, 4200);
+    setTimeout(function () { self.unmount(); }, 4800);
+  };
+
+  /* how: 'done' (finished, or the welcome card closed) or 'skipped' (this
+   * tutorial only: the others are still offered). */
+  Tour.prototype.end = function (how) {
     if (!this.active) return;
-    opts = opts || {};
-    var s = this.stop();
     var shown = this.shown;
     this.active = false;
     this.endedHere = true;
     this.detach();
     if (shown && shown.leave) { try { shown.leave(this); } catch (e) { /* ignore */ } }
-    this.state.markDone(how, s && s.id, opts.path || this.path);
+    if (this.welcome) { if (this.state.welcomeSeen) this.state.welcomeSeen(); }
+    else if (this.section && this.state.finish) this.state.finish(this.section, how === 'done' ? 'done' : 'skipped');
     var self = this;
     this.card.classList.remove('is-on');
     this.spot.classList.remove('is-on');
     this.blocks.forEach(function (b) { place(b, 0, 0, 0, 0); });
-    // Closed, or left from the introduction: one line on where to find it again.
-    var fromIntro = s && s.kind === 'intro';
-    if (how === 'skipped' || fromIntro || opts.note) {
-      var head = opts.note || (how === 'skipped' ? 'Tour closed' : 'Happy grading');
-      this.pill.innerHTML = '<span class="pill__spark">' + ((CGP.tourIcons || {}).sparkle || '') + '</span>' +
-        '<span class="pill__txt">' + head + '<small>Replay tour in Gradebook+ settings</small></span>';
-      this.pill.classList.add('is-on');
-      setTimeout(function () { self.pill.classList.remove('is-on'); }, 3800);
-      setTimeout(function () { self.unmount(); }, 4400);
-    } else {
+    if (this.welcome) this.flash('Tutorials are in Gradebook+ settings', 'Click the Gradebook+ icon in Chrome’s toolbar');
+    else if (how === 'skipped') this.flash('Skipped ' + sectionInfo(this.section).title, 'Other tutorials are still available');
+    else {
       this.pill.classList.remove('is-on');
-      setTimeout(function () { self.unmount(); }, 5000);
+      setTimeout(function () { self.unmount(); }, 1200);
     }
   };
 
@@ -973,38 +1023,22 @@
     if (CGP.tourInstance === this) CGP.tourInstance = null;
   };
 
-  /* ---------------------------------------------------- the invitation */
+  /* ---------------------------------------------------------- the offer */
 
-  var INVITES = {
-    gradebook: {
-      eyebrow: 'Gradebook+ is on',
-      title: 'See it on your gradebook?',
-      body: 'One quick tip on your own grades, then you choose what\u2019s next. Under a minute.',
-      go: function (id) { return '/courses/' + id + '/gradebook#cgp-tour'; }
-    },
-    resume: {
-      eyebrow: 'Tour in progress',
-      title: 'Pick up where you left off?',
-      body: 'Your tour is waiting on your gradebook, right at the stop you reached.',
-      go: function (id) { return '/courses/' + id + '/gradebook#cgp-tour'; }
-    },
-    classes: {
-      eyebrow: 'Tour · Part 2',
-      title: 'Ready for part 2?',
-      body: 'Link your classes, copy work to all of them, and connect your class schedule. About a minute.',
-      go: function (id) { return '/courses/' + id + '#cgp-tour=classes'; }
-    },
-    copy: {
-      eyebrow: 'Copy to another class',
-      title: 'Link your classes?',
-      body: 'On your course page: pick the classes that share this course, then copy work to all of them.',
-      go: function (id) { return '/courses/' + id + '#cgp-tour=classes'; }
+  /* The small card in the corner offering one tutorial (or, before the
+   * welcome card has been seen, the welcome card on the gradebook). Its X
+   * hides it for this tab's visit; Skip hides that tutorial only. */
+  function offerCopy(d) {
+    if (d.section === 'welcome') {
+      return { eyebrow: 'Gradebook+ is on', title: 'Take a 1-minute tutorial?', body: 'Short walkthroughs on your own gradebook, one feature at a time.' };
     }
-  };
+    var info = sectionInfo(d.section);
+    if (d.resume) return { eyebrow: 'Tutorial in progress', title: 'Finish “' + info.title + '”?', body: 'Pick up where you left off.' };
+    return { eyebrow: 'Tutorial · ' + info.mins + ' min', title: info.title, body: info.blurb + '.' };
+  }
 
-  function showInvite(state, courseId, chapter, resuming, path) {
-    var copy = resuming && chapter === 'gradebook' ? INVITES.resume
-      : (chapter === 'classes' && path === 'copy' ? INVITES.copy : (INVITES[chapter] || INVITES.gradebook));
+  function showOffer(state, courseId, d) {
+    var copy = offerCopy(d);
     var host = el('div', 'cgp-tour-host');
     var root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
     var style = el('style');
@@ -1020,13 +1054,17 @@
       '<button class="x" type="button" data-act="later" aria-label="Not now">' + X_ICON + '</button></div>' +
       '<h2 id="cgp-invite-title">' + copy.title + '</h2>' +
       '<p>' + copy.body + '</p>' +
-      '<div class="foot"><button class="btn btn--ghost" type="button" data-act="skip">Skip tour</button>' +
+      '<div class="foot"><button class="btn btn--ghost" type="button" data-act="skip">' + (d.section === 'welcome' ? 'No thanks' : 'Skip this one') + '</button>' +
       '<button class="btn btn--primary" type="button" data-act="go">Show me ' + NEXT_ICON + '</button></div></div>';
     layer.appendChild(card);
     root.appendChild(layer);
     (document.body || document.documentElement).appendChild(host);
     requestAnimationFrame(function () { requestAnimationFrame(function () { card.classList.add('is-on'); }); });
-    var unlisten = listenForDone(function () { close(); });
+    // Skipped or finished in another tab: this offer goes too.
+    var unlisten = listenForChange(function (v) {
+      var now = S().decide(v, S().pageKind(location.pathname), null, S().snoozed());
+      if (!now || now.section !== d.section) close();
+    });
     function close() {
       if (unlisten) { unlisten(); unlisten = null; }
       card.classList.remove('is-on');
@@ -1036,9 +1074,29 @@
       var b = e.target.closest && e.target.closest('[data-act]');
       if (!b) return;
       var act = b.getAttribute('data-act');
-      if (act === 'go') location.href = copy.go(courseId);
-      else if (act === 'skip') { state.markDone('skipped', 'invite-' + chapter); close(); }
-      else close();
+      if (act === 'go') {
+        close();
+        if (d.section === 'welcome') { location.href = '/courses/' + courseId + '/gradebook#cgp-tour'; return; }
+        if (openSection(d.section, courseId) === 'here') {
+          state.load().then(function (v) {
+            var t = new Tour({ state: state, section: d.section, courseId: courseId, record: v });
+            t.start({ startAt: v.active && v.active.section === d.section ? v.active.stop : null });
+          });
+        }
+      } else if (act === 'skip') {
+        if (d.section === 'welcome') {
+          // "No thanks" to the welcome card: it is not shown again, and each
+          // tutorial is still offered on its own page later.
+          state.welcomeSeen();
+          S().snooze('welcome');
+        } else {
+          state.finish(d.section, 'skipped');
+        }
+        close();
+      } else {
+        S().snooze(d.section);
+        close();
+      }
     });
     return { close: close };
   }
@@ -1059,6 +1117,20 @@
     });
   }
 
+  /* What a page needs before a tutorial can point at it. */
+  function pageReady(page) {
+    if (page === 'gradebook') {
+      // Canvas's grid, our first paint of it, and the bubbles and badges for the screenful.
+      return waitFor(function () {
+        return document.querySelector('.grid-canvas .slick-row') && document.documentElement.classList.contains('cgp-gradebook');
+      }, 45000).then(function (ok) {
+        return ok && waitFor(function () { return !!document.querySelector('.cgp-sub, .cgp-cmt'); }, 6000).then(function () { return true; });
+      });
+    }
+    // The course home: its Copy to other classes button, if it is on.
+    return waitFor(function () { return !!document.querySelector('.cgp-copyto'); }, 5000).then(function () { return true; });
+  }
+
   function boot() {
     if (window.self !== window.top) return;
     if (!CGP.TourState) return;
@@ -1067,78 +1139,59 @@
     if (!m) return;
     var courseId = m[1];
     if (/\/gradebook\/speed_grader/i.test(path)) return;
-    var isGradebook = /\/courses\/\d+\/gradebook\/?$/i.test(path);
-    var isHome = /^\/courses\/\d+\/?$/.test(path);
+    var page = S().pageKind(path);
     var state = new CGP.TourState();
-    var forced = CGP.TourState.chapterFromHash(location.hash);
+    var forced = S().sectionFromHash(location.hash);
     if (forced) {
       try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
     }
 
-    state.read().then(function (v) {
-      if (v.pending !== true && !forced) return;
-      var chapter = forced || (CGP.TourState.CHAPTERS.indexOf(v.chapter) >= 0 ? v.chapter : 'gradebook');
-      var path = CGP.TourState.pathFor(v, chapter);
-      var here = chapter === 'gradebook' ? isGradebook : isHome;
-      if (!here) {
+    state.load().then(function (v) {
+      var d = S().decide(v, page, forced, forced ? [] : S().snoozed());
+      if (!d) return;
+      if (d.kind === 'offer') {
         // A little later than the page itself, so it never competes with it.
         setTimeout(function () {
-          whenVisible().then(function () {
-            state.isPending().then(function (still) {
-              if (!still) return;
-              showInvite(state, courseId, chapter, !!v.stop, path);
-            });
+          whenVisible().then(function () { return state.load(); }).then(function (now) {
+            var again = S().decide(now, page, null, S().snoozed());
+            if (again && again.kind === 'offer' && again.section === d.section && !CGP.tourInstance) showOffer(state, courseId, d);
           });
-        }, 1800);
+        }, 2500);
         return;
       }
-      var ready = chapter === 'gradebook'
-        // The gradebook: Canvas's grid, our first paint of it, and the
-        // bubbles and badges for the screenful.
-        ? waitFor(function () {
-          return document.querySelector('.grid-canvas .slick-row') && document.documentElement.classList.contains('cgp-gradebook');
-        }, 45000).then(function (ok) {
-          return ok && waitFor(function () { return !!document.querySelector('.cgp-sub, .cgp-cmt'); }, 6000).then(function () { return true; });
-        })
-        // The course home: its Copy to other classes button, if it is on.
-        : waitFor(function () { return !!document.querySelector('.cgp-copyto'); }, 5000).then(function () { return true; });
-      ready.then(function (ok) {
+      pageReady(page).then(function (ok) {
         if (!ok) return;
         return new Promise(function (r) { setTimeout(r, 900); })
           .then(whenVisible)
-          .then(function () { return forced ? true : state.isPending(); })
-          .then(function (go) {
-            if (!go || CGP.tourInstance) return;
-            var tour = new Tour({ state: state, chapter: chapter, path: path, courseId: courseId });
-            tour.start({ startAt: v.stop });
-            tour._unlisten = listenForDone(function () { if (!tour.endedHere && !tour.chosen && tour.index === 0) tour.dismissQuietly(); });
+          .then(function () { return state.load(); })
+          .then(function (now) {
+            if (CGP.tourInstance) return;
+            var tour = new Tour({ state: state, welcome: d.kind === 'welcome', section: d.section, courseId: courseId, record: now });
+            tour.start({ startAt: d.stop });
+            // Closed in another tab: an untouched welcome card here goes too.
+            tour._unlisten = listenForChange(function (nv) {
+              if (tour.welcome && !tour.chosen && !tour.endedHere && S().normalize(nv).welcome !== 'due') tour.dismissQuietly();
+            });
           });
       });
     });
   }
 
-  // Finished or skipped in another tab: an untouched welcome card here goes
-  // too. Returns the function that stops listening.
-  function listenForDone(fn) {
+  // The record changed (in this tab or another). Returns the function that
+  // stops listening.
+  function listenForChange(fn) {
     if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.onChanged) return null;
     var on = function (changes, area) {
       if (area !== 'local' || !changes[CGP.TourState.KEY]) return;
-      var v = changes[CGP.TourState.KEY].newValue;
-      if (v && v.pending === false) fn();
+      fn(changes[CGP.TourState.KEY].newValue || {});
     };
     chrome.storage.onChanged.addListener(on);
     return function () { try { chrome.storage.onChanged.removeListener(on); } catch (e) { /* ignore */ } };
   }
 
   CGP.Tour = Tour;
-  CGP.startTour = function () {
-    if (CGP.tourInstance) return CGP.tourInstance;
-    var t = new Tour();
-    t.start();
-    return t;
-  };
 
-  if (typeof document !== 'undefined' && typeof window !== 'undefined') {
+  if (typeof document !== 'undefined' && typeof window !== 'undefined' && !/\/src\/options\//.test(location.pathname)) {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
     else boot();
   }

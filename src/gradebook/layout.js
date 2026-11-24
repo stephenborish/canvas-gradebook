@@ -545,8 +545,10 @@
   P.bindShortcut = function () {
     var self = this;
     document.addEventListener('keydown', function (e) {
-      // Alt+Shift+H: bring Canvas's utility controls back for one page visit.
-      if (e.altKey && e.shiftKey && String(e.key).toLowerCase() === 'h') {
+      // Alt+Shift+H (Option+Shift+H on a Mac): show or hide Canvas's utility
+      // controls for this page visit. e.code, because on a Mac Option+Shift+H
+      // types "Ó" and e.key never reads "h".
+      if (e.altKey && e.shiftKey && (e.code === 'KeyH' || String(e.key).toLowerCase() === 'h')) {
         e.preventDefault();
         self.toggleControls();
       }
