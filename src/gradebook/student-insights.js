@@ -1912,6 +1912,7 @@
     if (studioRows && studioRows.some(function (v) { return v.unknownReason === 'notfound' || v.unknownReason === 'noaccess'; })) {
       foot.push('“Not found in Studio” or “No access in Studio”: the page’s embed points to a Studio video this course can’t read (usually one copied from another class), and the course has no copy with the same title and length to read instead. Check that it plays on the page; re-embedding it from this course’s Studio makes watching visible.');
     }
+    if (r.content && r.content.notOpenedKnown === false) foot.push('This student’s Access Report is too long to read in full, so an item missing from it shows “–” rather than “Not opened”.');
     if (M.hiddenImages) foot.push(M.hiddenImages + (M.hiddenImages === 1 ? ' picture' : ' pictures') + ' shown inside pages (a banner or button on the course home, say) aren’t listed: Canvas logs one each time the page opens.');
     if (r.content) {
       foot.push(hasTime

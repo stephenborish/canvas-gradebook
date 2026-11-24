@@ -481,6 +481,15 @@ suite('student overview: course content opened', (test) => {
     a.eq(M.hiddenImages, 1);
     a.deep(M.areas.map((x) => x.name), ['Course home']);
     a.deep(M.totals, { items: 3, opened: 2, videos: 2, watched: 0, partial: 1, none: 1, unknown: 0 }, 'items: the modules; videos: every posted one');
+    // Two videos in one page outside every module: both kept.
+    const two = si().courseMaterial({ index: idx, content, videos: videos.concat([vid('VID-E', 'Second extra', 'wiki_page_30', 'watched')]) });
+    const extra = two.groups.find((g) => g.kind === 'loose').entries.find((e) => e.key === 'wiki_page_30');
+    a.deep(extra.videos.map((v) => v.uuid), ['VID-B', 'VID-E'], 'every video in an item outside modules');
+    a.eq(two.totals.videos, 3);
+    // A cut-short Access Report: what it shows was opened; the rest is unknown.
+    const cut = si().courseMaterial({ index: idx, content: Object.assign({}, content, { notOpenedKnown: false }), videos: [] });
+    a.eq(cut.groups[0].entries[1].opened, true);
+    a.eq(cut.groups.find((g) => g.label === 'Topic 1').entries[0].opened, null, 'not in a partial report: unknown, not "not opened"');
     const blind = si().courseMaterial({ index: idx, content: null, videos: [] });
     a.eq(blind.groups[0].entries[1].opened, null, 'no Access Report: opened unknown, not "not opened"');
     a.eq(blind.totals.opened, null);

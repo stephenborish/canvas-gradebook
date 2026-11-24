@@ -1145,12 +1145,14 @@
     // tool in a module it doesn't tie to that module item, so whether it
     // was opened is unknown, never "not opened".
     var TRACKED = { page: 1, assignment: 1, quiz: 1, discussion: 1, file: 1 };
+    var partial = !!(content && content.notOpenedKnown === false);
     function item(key, kind, title, url, indent) {
       var access = key ? accessOf(key) : null;
       var vids = key ? videosOf(key) : [];
       vids.forEach(function (v) { usedVideos.add(v); });
       mark(key);
-      var opened = !accessKnown ? null : access && access.views > 0 ? true : TRACKED[kind] ? false : null;
+      // A cut-short Access Report proves what was opened, not what wasn't.
+      var opened = !accessKnown ? null : access && access.views > 0 ? true : TRACKED[kind] && !partial ? false : null;
       return { type: 'item', key: key, kind: kind, title: title, url: url, indent: indent || 0, access: access,
         opened: opened, videos: vids };
     }
@@ -1197,8 +1199,8 @@
         if (usedKeys[k]) return;
         if (!looseAt[k]) {
           var kind = { Assignment: 'assignment', Quiz: 'quiz', Discussion: 'discussion', Page: 'page', Module: 'link' }[p.kind] || 'other';
+          // Every video embedded in that item comes along with it.
           looseAt[k] = item(p.key || null, kind, p.name || p.kind, p.url || null, 0);
-          looseAt[k].videos = [];
           loose.push(looseAt[k]);
         }
         if (looseAt[k].videos.indexOf(v) < 0) looseAt[k].videos.push(v);
