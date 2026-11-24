@@ -44,13 +44,13 @@
    * page (on its tab of the same name as the tutorial). One that runs on the
    * options page is offered on the Canvas page named by `offerOn`. */
   var SECTIONS = [
-    { id: 'grading', page: 'gradebook', title: 'Grading basics', blurb: 'Status keys, badges and pasting grades', mins: 1 },
-    { id: 'student', page: 'gradebook', title: 'Student overview', blurb: 'Grades, missing work, activity and parent emails', mins: 1 },
-    { id: 'tools', page: 'gradebook', title: 'Gradebook tools', blurb: 'Total column, score stats, finding students', mins: 1 },
-    { id: 'snippets', page: 'options', offerOn: 'gradebook', title: 'Comment snippets', blurb: 'Saved comments and SpeedGrader drafts', mins: 1 },
-    { id: 'classes', page: 'home', title: 'Copy between classes', blurb: 'Post work to all your sections at once', mins: 1 },
-    { id: 'groups', page: 'people', title: 'Make groups', blurb: 'A whole group set in one step', mins: 1 },
-    { id: 'schedule', page: 'options', offerOn: 'home', title: 'Class schedule', blurb: 'Set due times by clicking a class period', mins: 2 }
+    { id: 'grading', page: 'gradebook', title: 'Grading basics', blurb: 'Feedback bubbles, status keys, pasting grades', mins: 1 },
+    { id: 'student', page: 'gradebook', title: 'Student overview', blurb: 'One student’s grades, missing work and parent emails', mins: 1 },
+    { id: 'tools', page: 'gradebook', title: 'Gradebook tools', blurb: 'Total column, score stats, finding a student', mins: 1 },
+    { id: 'snippets', page: 'options', offerOn: 'gradebook', title: 'Comment snippets', blurb: 'Reuse comments you type often', mins: 1 },
+    { id: 'classes', page: 'home', title: 'Copy between classes', blurb: 'Copy work to your other sections', mins: 1 },
+    { id: 'groups', page: 'people', title: 'Make groups', blurb: 'Build a group set in one step', mins: 1 },
+    { id: 'schedule', page: 'options', offerOn: 'home', title: 'Class schedule', blurb: 'Pick due times from your class periods', mins: 2 }
   ];
   var IDS = SECTIONS.map(function (s) { return s.id; });
 

@@ -36,7 +36,8 @@ suite('Tutorials: each part on its own', (test) => {
       const p = C().tourPaths[id];
       a.ok(p && p.length >= 3 && p.length <= 6, id + ' is short');
       p.forEach((s) => a.ok(stopIds.includes(s), id + ': ' + s));
-      a.ok(C().tourFinales[id] && C().tourFinales[id].title, id + ' has a last card');
+      const fin = C().tourFinales[id];
+      a.ok(!fin || !fin.body || fin.body.replace(/<[^>]+>/g, '').length <= 120, id + ': a last card says at most one thing');
     });
   });
 
@@ -47,6 +48,7 @@ suite('Tutorials: each part on its own', (test) => {
       a.ok((text.match(/[.!?](\s|$)/g) || []).length <= 2, s.id + ' body has at most two sentences');
       a.ok(!s.bullets || s.bullets.length <= 3, s.id + ' bullets');
       a.ok(s.title && s.title.length <= 60, s.id + ' title');
+      a.not('eyebrow' in s, s.id + ': cards are labelled with their tutorial’s name, not their own');
     });
   });
 

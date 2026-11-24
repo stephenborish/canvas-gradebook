@@ -625,8 +625,9 @@ skipping one never hides another.
   An install from before the tour existed is offered nothing on its own.
 - While a card is up on a Canvas page, keystrokes outside it are held back, so an `M` or a digit
   can never land in a grade cell behind it. SpeedGrader never shows any of it.
-- The words live in `src/tour/tour-content.js`. Keep each card to one idea: a title, at most two
-  short sentences or three bullets, and button names exactly as they read on screen
+- The words live in `src/tour/tour-content.js`, whose header has the writing rules: a plain title,
+  instructions in the order the teacher does them, button names exactly as on screen, nothing the
+  teacher can already see, and at most two sentences or three bullets
   (`tests/test-tour-state.js` checks the length and a list of labels).
 
 The tour is drawn in a shadow root, so Canvas's stylesheet and the extension's own never reach it.

@@ -462,8 +462,8 @@
       if (!s.optional || !s.target) return true;
       try { return !!s.target(); } catch (e) { return false; }
     });
-    var fin = (CGP.tourFinales && CGP.tourFinales[this.section]) || { title: 'All done', body: '' };
-    list.push({ id: this.section + '-done', kind: 'finale', eyebrow: sectionInfo(this.section).title, title: fin.title, body: fin.body });
+    var fin = (CGP.tourFinales && CGP.tourFinales[this.section]) || {};
+    list.push({ id: this.section + '-done', kind: 'finale', title: fin.title || 'Finished', body: fin.body || '' });
     this.stops = list;
   };
 
@@ -630,8 +630,8 @@
     var html = '<div class="head"><span class="brand__mark">' + MARK + '</span>' +
       '<span class="eyebrow">Welcome to Gradebook+</span>' +
       '<button class="x" type="button" data-act="finish" aria-label="Close">' + X_ICON + '</button></div>' +
-      '<h2 id="cgp-tour-title">Pick a 1-minute tutorial</h2>' +
-      '<p>Each one shows a single part of Gradebook+. Skipping one doesn’t hide the others.</p>' +
+      '<h2 id="cgp-tour-title">Learn Gradebook+ one part at a time</h2>' +
+      '<p>Pick a tutorial. Each takes about a minute.</p>' +
       '<div class="choices" role="list">';
     S().SECTIONS.forEach(function (sec) {
       var seen = S().statusOf(v, sec.id) === 'done';
@@ -640,7 +640,7 @@
         '<span class="choice__t"><b>' + sec.title + '</b><small>' + sec.blurb + '</small></span>' +
         (seen ? '<span class="choice__done">' + DONE_ICON + 'Seen</span>' : NEXT_ICON) + '</button>';
     });
-    html += '</div><p class="hint">Not now? Close this. We’ll offer each one later, and they’re always under <b>Tutorials</b> in Gradebook+ settings.</p>';
+    html += '</div><p class="hint">Not now? Close this. You’ll find them later in Gradebook+ settings, under <b>Tutorials</b>.</p>';
     return html;
   };
 
@@ -657,11 +657,11 @@
     if (s.kind === 'finale') {
       var nxt = this.nextUp();
       html += '<div class="badge"><svg viewBox="0 0 24 24"><path d="M5.5 12.5l4.2 4.2 8.8-9.4"/></svg></div>';
-      html += '<span class="eyebrow">' + s.eyebrow + '</span>';
-      html += '<h2 id="cgp-tour-title" style="margin-top:6px">' + s.title + '</h2><p>' + s.body + '</p>';
+      html += '<span class="eyebrow">' + sectionInfo(this.section).title + '</span>';
+      html += '<h2 id="cgp-tour-title" style="margin-top:6px">' + s.title + '</h2>' + (s.body ? '<p>' + s.body + '</p>' : '');
       html += '<div class="foot">' + (i > 0 ? '<button class="btn btn--ghost" type="button" data-act="back">Back</button>' : '');
       if (nxt) {
-        html += '<button class="btn btn--soft" type="button" data-act="finish">Done</button>' +
+        html += '<button class="btn btn--soft" type="button" data-act="finish">Close</button>' +
           '<button class="btn btn--primary" type="button" data-act="section" data-id="' + nxt + '">Next: ' + sectionInfo(nxt).title + ' ' + NEXT_ICON + '</button>';
       } else {
         html += '<button class="btn btn--primary btn--lg" type="button" data-act="finish">Done</button>';
@@ -670,7 +670,7 @@
     }
 
     html += '<div class="head">' + (s.icon && ICON[s.icon] ? '<span class="ico">' + ICON[s.icon] + '</span>' : '') +
-      '<span class="eyebrow">' + s.eyebrow + '</span>' +
+      '<span class="eyebrow">' + sectionInfo(this.section).title + '</span>' +
       '<span class="count">' + pos + ' of ' + counted.length + '</span>' +
       '<button class="x" type="button" data-act="skip" aria-label="Skip this tutorial">' + X_ICON + '</button></div>';
     // A stop shown live (the real overview on screen) lets the page speak for
@@ -1012,7 +1012,7 @@
     this.spot.classList.remove('is-on');
     this.blocks.forEach(function (b) { place(b, 0, 0, 0, 0); });
     if (this.welcome) this.flash('Tutorials are in Gradebook+ settings', 'Click the Gradebook+ icon in Chrome’s toolbar');
-    else if (how === 'skipped') this.flash('Skipped ' + sectionInfo(this.section).title, 'Other tutorials are still available');
+    else if (how === 'skipped') this.flash('Skipped “' + sectionInfo(this.section).title + '”', 'You’ll still be offered the others');
     else {
       this.pill.classList.remove('is-on');
       setTimeout(function () { self.unmount(); }, 1200);
@@ -1040,10 +1040,10 @@
    * hides it for this tab's visit; Skip hides that tutorial only. */
   function offerCopy(d) {
     if (d.section === 'welcome') {
-      return { eyebrow: 'Gradebook+ is on', title: 'Take a 1-minute tutorial?', body: 'Short walkthroughs on your own gradebook, one feature at a time.' };
+      return { eyebrow: 'Gradebook+', title: 'New to Gradebook+?', body: 'Short tutorials on your own gradebook, about a minute each.' };
     }
     var info = sectionInfo(d.section);
-    if (d.resume) return { eyebrow: 'Tutorial in progress', title: 'Finish “' + info.title + '”?', body: 'Pick up where you left off.' };
+    if (d.resume) return { eyebrow: 'Tutorial', title: 'Finish “' + info.title + '”?', body: 'Pick up where you left off.' };
     return { eyebrow: 'Tutorial · ' + info.mins + ' min', title: info.title, body: info.blurb + '.' };
   }
 
