@@ -673,9 +673,10 @@
       '<span class="eyebrow">' + sectionInfo(this.section).title + '</span>' +
       '<span class="count">' + pos + ' of ' + counted.length + '</span>' +
       '<button class="x" type="button" data-act="skip" aria-label="Skip this tutorial">' + X_ICON + '</button></div>';
-    // A stop shown live (the real overview on screen) lets the page speak for
-    // itself; its illustration is for when there is nothing live to show.
-    if (s.art && !(s.fallbackArt && live)) html += '<div class="art">' + s.art() + '</div>';
+    // With the real thing spotlighted, the page speaks for itself. The
+    // illustration is only for when the stop's own element is not on screen
+    // (or a fallback stands in for it), or the card points at nothing.
+    if (s.art && (!live || usedFallback)) html += '<div class="art">' + s.art() + '</div>';
     html += '<h2 id="cgp-tour-title">' + s.title + '</h2>';
     if (s.body) html += '<p>' + s.body + '</p>';
     if (s.bullets) html += '<ul>' + s.bullets.map(function (b) { return '<li>' + b + '</li>'; }).join('') + '</ul>';
