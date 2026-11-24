@@ -1,4 +1,4 @@
-/* Hidden Gems: subject detection, tailored content, rarity & manifest parity. */
+/* Hidden Gems: subject detection, per-subject touches, rarity & manifest parity. */
 'use strict';
 
 const fs = require('fs');
@@ -61,56 +61,44 @@ suite('Hidden Gems: subject detection', (test) => {
   });
 });
 
-suite('Hidden Gems: tailored content for all 6 gems', (test) => {
+suite('Hidden Gems: the three pieces and their per-subject touches', (test) => {
   const hg = globalThis.CGP.hiddenGems;
 
-  test('every gem produces valid subject-aware props across all subjects', () => {
+  test('exactly three pieces are registered', () => {
+    eq(hg.GEMS.join(','), 'murmuration,crane,blossom');
+  });
+
+  test('every piece produces valid, seeded props for every subject', () => {
     const subjects = Object.keys(hg.SUBJECT_LABELS);
     ok(subjects.length >= 22, 'at least 22 subjects');
-    eq(hg.GEMS.length, 6, 'all 6 gems registered');
-    ok(hg.GEMS.includes('harmonograph'), 'harmonograph registered');
-    ok(hg.GEMS.includes('prism'), 'prism registered');
-
     for (const subj of subjects) {
+      ok(hg.SUBJECT_STYLE[subj], `crane paper defined for ${subj}`);
       for (const gem of hg.GEMS) {
-        const props = hg.contentFor(gem, subj, () => 0.1, { now: new Date(2026, 2, 10, 14, 0) });
+        const props = hg.contentFor(gem, subj, () => 0.1);
         eq(props.subjectId, subj, `${gem} for ${subj}`);
-        if (gem === 'boat') {
-          ok(props.card && props.card.front && props.card.id, `boat card front/id for ${subj}`);
-          ok(props.watermark, `boat watermark for ${subj}`);
-        } else if (gem === 'washer') {
-          ok(props.mark && props.capColor, `washer mark/cap for ${subj}`);
-        } else if (gem === 'peel') {
-          ok(props.scene && props.caption, `peel scene/caption for ${subj}`);
-        } else if (gem === 'harmonograph') {
-          ok(props.f1 > 0 && props.f2 > 0 && props.ink, `harmonograph params for ${subj}`);
-        } else if (gem === 'prism') {
-          ok(props.crystal && Array.isArray(props.palette) && props.palette.length >= 3, `prism params for ${subj}`);
-        } else if (gem === 'pencil') {
-          ok(props.variant, `pencil variant for ${subj}`);
+        ok(Number.isInteger(props.seed) && props.seed >= 0, `${gem} seed for ${subj}`);
+        if (gem === 'crane') {
+          ok(/^#[0-9a-f]{6}$/i.test(props.paper.color) && /^#[0-9a-f]{6}$/i.test(props.paper.print), `crane paper colours for ${subj}`);
+          ok(['seigaiha', 'shippo', 'asanoha', 'hex', 'grid', 'stars', 'staff', 'dots', 'lines'].includes(props.paper.pattern), `crane print for ${subj}`);
         }
+        if (gem !== 'blossom') ok(props.direction === 1 || props.direction === -1, `${gem} direction for ${subj}`);
       }
     }
   });
 
-  test('harmonograph and prism vary across iterations', () => {
-    const h1 = hg.contentFor('harmonograph', 'calculus', () => 0.12);
-    const h2 = hg.contentFor('harmonograph', 'calculus', () => 0.78);
-    ok(h1.f1 !== h2.f1 || h1.p1 !== h2.p1 || h1.corner !== h2.corner, 'harmonograph varies per run');
-
-    const p1 = hg.contentFor('prism', 'physics', () => 0.1);
-    const p2 = hg.contentFor('prism', 'physics', () => 0.85);
-    ok(p1.crystal !== p2.crystal || p1.corner !== p2.corner || p1.spreadDeg !== p2.spreadDeg, 'prism varies per run');
-    eq(p1.absorption, true, 'physics prism includes Fraunhofer absorption lines');
-    eq(hg.contentFor('prism', 'literature', () => 0.1).absorption, false, 'literature prism has no absorption lines');
+  test('unknown subjects fall back to the general sheet', () => {
+    eq(hg.contentFor('crane', 'underwater-basket-weaving', () => 0.5).subjectId, 'general');
   });
 
-  test('subject-specific touches match expected flavors', () => {
-    eq(hg.contentFor('washer', 'chemistry').mark, 'benzene');
-    eq(hg.contentFor('pencil', 'chemistry').variant, 'test-tube');
-    eq(hg.contentFor('pencil', 'chinese').variant, 'brush');
-    eq(hg.contentFor('peel', 'theology', () => 0.9, { now: new Date(2026, 2, 10, 14, 0) }).scene, 'stainedglass');
-    eq(hg.contentFor('peel', 'history', () => 0.9, { now: new Date(2026, 2, 10, 14, 0) }).scene, 'parchment');
+  test('the seed changes from one sighting to the next', () => {
+    ok(hg.contentFor('blossom', 'general', () => 0.12).seed !== hg.contentFor('blossom', 'general', () => 0.78).seed);
+  });
+
+  test('subject-specific paper matches the subject', () => {
+    eq(hg.contentFor('crane', 'chemistry').paper.pattern, 'hex');
+    eq(hg.contentFor('crane', 'music').paper.pattern, 'staff');
+    eq(hg.contentFor('crane', 'math').paper.pattern, 'grid');
+    eq(hg.contentFor('crane', 'general').paper.pattern, 'seigaiha');
   });
 });
 
@@ -132,11 +120,15 @@ suite('Hidden Gems: rarity, cooldown & non-repeat', (test) => {
     not(hg.shouldTrigger({ lastShownAt: now - hg.DEFAULT_COOLDOWN_MS - 1 }, now, { enabled: true }, () => 0.2));
   });
 
-  test('pickGem avoids recently seen gems (up to 4)', () => {
-    const recent = ['washer', 'boat', 'peel', 'harmonograph'];
+  test('pickGem never repeats the last piece and ignores retired ids', () => {
     for (let step = 0; step < 10; step++) {
-      const picked = hg.pickGem(recent, () => step / 10);
-      ok(picked === 'prism' || picked === 'pencil', `picked fresh gem, got ${picked}`);
+      const picked = hg.pickGem(['washer', 'crane'], () => step / 10);
+      ok(picked === 'murmuration' || picked === 'blossom', `picked a fresh piece, got ${picked}`);
+    }
+    const all = hg.pickGem(['murmuration', 'crane', 'blossom'], () => 0);
+    ok(all !== 'blossom' && hg.GEMS.includes(all), 'when all were seen recently, still not the last one');
+    for (let step = 0; step < 10; step++) {
+      ok(hg.GEMS.includes(hg.pickGem(['boat', 'peel', 'prism', 'pencil'], () => step / 10)), 'old ids in stored history are harmless');
     }
   });
 
