@@ -519,15 +519,14 @@
   P.loadStudio = function (o) {
     if (!CGP.studioBridge || !CGP.studioClass) { o.parts.studio = { off: true }; return; }
     var self = this;
+    // Students' own recordings are a slower, separate read: Studio's answer
+    // is shown as soon as it comes, and they're sorted out when they arrive.
+    var studentRead = this.studentEmbeds();
     Promise.all([this.courseInfo(), this.rosterEmails(), this.courseIndex()]).then(function (r) {
       if (!self._courseName) throw new Error('Couldn’t read this course’s name');
       var embeds = r[2] ? r[2].embeds : [];
       var moduleOrder = r[2] ? r[2].moduleOrder || [] : [];
-      return Promise.all([
-        CGP.studioBridge.courseVideos(self.api, self.courseId, self._courseNames, embeds),
-        self.studentEmbeds()
-      ]).then(function (both) {
-        var res = both[0];
+      return CGP.studioBridge.courseVideos(self.api, self.courseId, self._courseNames, embeds).then(function (res) {
         // Where each video sits in Canvas, and the embedded ones Studio's
         // course list doesn't have.
         var joined = CGP.studioClass.joinEmbeds(res.videos || [], embeds);
@@ -537,10 +536,20 @@
           var m = byId[v.uuid];
           if (m && (!v.title || v.title === 'Studio video') && m.title) v.title = m.title;
         });
-        return { collection: res.collection, videos: joined.videos, studentEmbeds: both[1] || {}, moduleOrder: moduleOrder };
+        return { collection: res.collection, videos: joined.videos, studentEmbeds: {}, studentPending: true, moduleOrder: moduleOrder };
       });
     }).then(function (res) {
       o.parts.studio = res;
+      studentRead.then(function (found) {
+        if (o.parts.studio !== res) return;
+        res.studentEmbeds = found || {};
+        res.studentPending = false;
+        o.draw();
+      }, function () {
+        if (o.parts.studio !== res) return;
+        res.studentPending = false;
+        o.draw();
+      });
     }, function (err) {
       o.parts.studio = { error: (err && err.message) || 'Studio didn’t answer', code: err && err.code };
     }).then(function () { o.draw(); });
@@ -1661,6 +1670,7 @@
     }, { classEmails: classEmails, roster: roster, studentEmbeds: s.studentEmbeds || {} });
     out.noCollection = !s.collection;
     out.moduleOrder = s.moduleOrder || [];
+    out.studentPending = !!s.studentPending;
     // Who submitted each student recording, by name.
     var names = {};
     roster.forEach(function (x) { if (x && x.id !== undefined && x.id !== null) names[String(x.id)] = x.name || ''; });
@@ -1839,7 +1849,8 @@
         cls + '</tr>';
     };
     var NOTES = {
-      unposted: 'In Studio’s list for this course but not embedded anywhere students would find it. Not counted above.',
+      unposted: 'In Studio’s list for this course but not embedded anywhere students would find it. Not counted above.' +
+        (s.studentPending ? ' Still checking students’ submissions and replies for their own recordings…' : ''),
       student: 'Studio copies a video into the course’s list when a student embeds it in a submission or discussion reply, or records one in the browser (“Untitled” and a date). These aren’t videos assigned to the class, so they aren’t counted above.',
       pending: 'Still reading the course’s assignments, pages and modules.'
     };

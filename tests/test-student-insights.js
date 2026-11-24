@@ -635,6 +635,36 @@ suite('student overview: profile tab', (test) => {
     a.deep(order, ['quiz b', 'lab a', 'hw c'], 'no sort: the usual order');
   });
 
+  test('Studio’s answer shows at once; students’ recordings are sorted out when their slower read arrives', async () => {
+    const Ctl = C();
+    const c = new Ctl({ model: {}, api: {}, adapter: {}, settings: { values: {} }, courseId: 9 });
+    let finishStudents;
+    c.courseInfo = () => { c._courseName = 'AP Biology - 1'; c._courseNames = ['AP Biology - 1']; return Promise.resolve({}); };
+    c.rosterEmails = () => Promise.resolve({});
+    c.courseIndex = () => Promise.resolve({ embeds: [], moduleOrder: [] });
+    c.studentEmbeds = () => new Promise((res) => { finishStudents = res; });
+    const had = globalThis.CGP.studioBridge;
+    globalThis.CGP.studioBridge = { courseVideos: () => Promise.resolve({ collection: { id: 1 }, videos: [{ uuid: 'REC', title: 'Project', viewers: [] }] }) };
+    try {
+      let draws = 0;
+      const o = { parts: {}, draw: () => { draws++; } };
+      c.loadStudio(o);
+      const tick = () => new Promise((r) => setTimeout(r, 0));
+      await tick(); await tick();
+      a.ok(o.parts.studio && o.parts.studio.videos.length === 1, 'Studio’s videos are in before the students’ read ends');
+      a.eq(o.parts.studio.studentPending, true);
+      const before = draws;
+      a.ok(before >= 1, 'drawn once Studio answered');
+      finishStudents({ REC: { userId: '7', kind: 'Submission' } });
+      await tick(); await tick();
+      a.eq(o.parts.studio.studentPending, false);
+      a.deep(Object.keys(o.parts.studio.studentEmbeds), ['REC']);
+      a.ok(draws > before, 'drawn again with the recordings sorted out');
+    } finally {
+      globalThis.CGP.studioBridge = had;
+    }
+  });
+
   test('Studio videos: grouped by module, status chips, and each assignment’s video status', () => {
     const Ctl = C();
     const c = new Ctl({ model: {}, api: {}, adapter: {}, settings: { values: {} }, courseId: 9 });
