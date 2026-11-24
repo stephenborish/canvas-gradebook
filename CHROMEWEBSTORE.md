@@ -82,7 +82,7 @@ HOW TO USE
 5. Optional: on a course's People page, click Make groups to build a group set.
 
 PRIVACY
-• Gradebook+ talks only to your school's Canvas and Canvas Studio, using the sign-in you already have, plus your calendar if you connect one. No API key, no account, no outside servers.
+• Gradebook+ talks only to your school's Canvas and Canvas Studio, using the sign-in you already have, plus your calendar if you connect one, and, for the snow and rain on snowy and rainy days, Open-Meteo (a free weather service), asked only for the weather in Malvern and Philadelphia. No API key, no account, no other outside servers.
 • No analytics, tracking or advertising.
 • Student names and grades are never saved: they are shown on screen from Canvas and nothing more. Unsent SpeedGrader comment drafts are kept only on your computer, until they post.
 • If you connect a calendar, the extension reads that one calendar, only to show your class times. Your calendar's address is never copied into your Canvas account.

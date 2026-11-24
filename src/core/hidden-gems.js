@@ -52,7 +52,8 @@
     if (o.enabled === false || o.reducedMotion) return false;
     var ts = typeof now === 'number' ? now : Date.now();
     var last = state && typeof state.weatherShownAt === 'number' ? state.weatherShownAt : 0;
-    return !last || ts - last >= WEATHER_EVERY_MS;
+    // A time in the future means the clock was set back: do not wait for it.
+    return !last || ts < last || ts - last >= WEATHER_EVERY_MS;
   }
 
   CGP.hiddenGems = {

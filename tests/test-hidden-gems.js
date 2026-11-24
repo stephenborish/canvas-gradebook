@@ -32,6 +32,7 @@ suite('Hidden Gems: snow and rain on real snowy and rainy days', (test) => {
     ok(hg.weatherDue({ weatherShownAt: now - hg.WEATHER_EVERY_MS }, now, { enabled: true }));
     not(hg.weatherDue({}, now, { enabled: false }));
     not(hg.weatherDue({}, now, { enabled: true, reducedMotion: true }));
+    ok(hg.weatherDue({ weatherShownAt: now + 24 * 60 * 60 * 1000 }, now, { enabled: true }), 'a record from the future (clock set back) does not block it');
   });
 
   const { pathToFileURL } = require('url');
@@ -62,6 +63,32 @@ suite('Hidden Gems: snow and rain on real snowy and rainy days', (test) => {
     clock += 15 * 60 * 1000;
     await w.now();
     eq(calls.length, 2, 'after 20 minutes: asked again');
+  });
+
+  test('tabs asking at the same moment share one request', async () => {
+    const { createWeather } = await import(WEATHER);
+    let calls = 0;
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    const fetch = async () => { calls++; await gate; return { ok: true, json: async () => ([{ current: { weather_code: 61 } }, { current: { weather_code: 0 } }]) }; };
+    const w = createWeather(fakeChrome(), fetch, () => 1_700_000_000_000);
+    const asks = [w.now(), w.now(), w.now()];
+    await new Promise((r) => setTimeout(r, 0));
+    release();
+    const answers = await Promise.all(asks);
+    eq(calls, 1, 'one request for three tabs');
+    ok(answers.every((x) => x.ok && x.codes.join(',') === '61,0'), 'all three get the answer');
+  });
+
+  test('a cached answer dated in the future (clock set back) is asked again', async () => {
+    const { createWeather } = await import(WEATHER);
+    const chrome = fakeChrome();
+    chrome.bag['cgp.weather.cache'] = { at: 1_700_000_000_000 + 86_400_000, codes: [0, 0] };
+    let calls = 0;
+    const fetch = async () => { calls++; return { ok: true, json: async () => ([{ current: { weather_code: 73 } }]) }; };
+    const res = await createWeather(chrome, fetch, () => 1_700_000_000_000).now();
+    eq(calls, 1);
+    eq(res.codes.join(','), '73');
   });
 
   test('a failed or odd answer plays nothing', async () => {

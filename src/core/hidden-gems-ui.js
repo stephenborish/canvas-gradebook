@@ -70,9 +70,6 @@
 
   /* ------------------------------------------------------------ math helpers */
 
-
-  /* ------------------------------------------------------------ math helpers */
-
   /* Small, fast seeded generator (mulberry32): one seed, one picture. */
   function makeRng(seed) {
     var a = (seed >>> 0) || 0x9e3779b9;
@@ -276,15 +273,29 @@
       }
     }, { passive: true });
 
-    /* The teacher always wins: a key press, a click, or scrolling ends the
-     * piece at once. A piece that has borrowed the real page replaces
-     * api.dismiss so it can hand the page back first. The event itself is
-     * never stopped: the key, click or scroll still does what it would. */
+    /* The teacher always wins: by default a key press, a click, or scrolling
+     * ends the piece at once; a piece may replace api.dismiss to choose
+     * (snow and rain keep falling through clicks and scrolling, and end on a
+     * key press). The event itself is never stopped: the key, click or
+     * scroll still does what it would. */
     api.dismiss = function () { api.end(450); };
-    on(document, 'keydown', function (e) {
+    function onKey(e) {
       if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') return;
       api.dismiss('key');
-    }, true);
+    }
+    on(document, 'keydown', onKey, true);
+    // Typing in an editor frame (Canvas's rich content editor) never reaches
+    // this document: when focus moves into a frame of this site, listen there.
+    on(window, 'blur', function () {
+      api.after(0, function () {
+        var f = document.activeElement;
+        if (!f || f.tagName !== 'IFRAME') return;
+        try {
+          var fd = f.contentDocument;
+          if (fd) on(fd, 'keydown', onKey, true);
+        } catch (e) { /* another site's frame: its keys cannot be seen */ }
+      });
+    });
     on(window, 'pointerdown', function () { api.dismiss('click'); }, true);
     on(window, 'wheel', function () { api.dismiss('scroll'); }, { capture: true, passive: true });
     on(document, 'scroll', function () { api.dismiss('scroll'); }, { capture: true, passive: true });
@@ -899,16 +910,26 @@
     var dotSprite = softDot(1.4, 0.6, 0.95);
     var falls = [];
 
-    /* Drops on the glass: DOM elements, so each can bend the real page. */
+    /* Drops on the glass: DOM elements, so each can bend the real page.
+     * Elements are kept and reused (hidden while spare) rather than added and
+     * removed, so drops coming and going never wake the page's own
+     * childList MutationObservers (SpeedGrader's layout scans and others). */
     var beads = [];
+    var spareEls = [];
     function addBead(x, y, r) {
       if (beads.length >= 70) return null;
-      var el = document.createElement('div');
-      el.className = 'cgp-gem-drop';
+      var el = spareEls.pop();
+      if (el) {
+        el.style.display = '';
+      } else {
+        el = document.createElement('div');
+        el.className = 'cgp-gem-drop';
+        glass.appendChild(el);
+      }
       var b = { el: el, x: x, y: y, r: r, lens: 0, run: false, vy: 0, life: 0, trailAt: y, k: rng() * 50, born: 0 };
-      glass.appendChild(el);
       beads.push(b);
       sizeBead(b);
+      el.style.transform = 'translate3d(' + (x - r).toFixed(1) + 'px,' + (y - b.h / 2).toFixed(1) + 'px,0) scale(0.6)';
       return b;
     }
     function sizeBead(b) {
@@ -921,7 +942,9 @@
     }
     function removeBead(idx) {
       var b = beads[idx];
-      if (b.el.parentNode) b.el.parentNode.removeChild(b.el);
+      b.el.style.display = 'none';
+      b.el.style.backdropFilter = '';
+      spareEls.push(b.el);
       beads.splice(idx, 1);
     }
 
@@ -1127,7 +1150,7 @@
           // It sweeps up the drops in its path.
           for (var o = beads.length - 1; o >= 0; o--) {
             var O = beads[o];
-            if (O === B || O.run || B.y - O.y < B.r * 2) continue;
+            if (O === B || O.run || O.y < B.y) continue;   // only drops below, in its path
             var ox = O.x - B.x, oy = O.y - B.y;
             if (ox * ox + oy * oy < (B.r + O.r) * (B.r + O.r)) {
               B.r = Math.min(11, Math.sqrt(B.r * B.r + O.r * O.r));
@@ -1241,21 +1264,31 @@
     if (!this.settings || !this.settings.values || this.settings.values.hiddenGems === false) return;
     if (prefersReducedMotion() || !CGP.hiddenGems) return;
 
-    Promise.all([currentWeather(), readState()]).then(function (r) {
-      var kind = r[0], state = r[1];
-      if (!kind || !CGP.hiddenGems.weatherDue(state, Date.now(), { enabled: true, reducedMotion: prefersReducedMotion() })) return;
+    function stillWanted() {
+      return !document.hidden && !!self.settings.values.hiddenGems && !prefersReducedMotion();
+    }
+
+    // Ask about the weather only when it could show: a page load within three
+    // hours of the last weather costs no request at all.
+    readState().then(function (state) {
+      if (!CGP.hiddenGems.weatherDue(state, Date.now(), { enabled: true, reducedMotion: prefersReducedMotion() })) return null;
+      return currentWeather();
+    }).then(function (kind) {
+      if (!kind) return;
       // Let the page settle first, and play only if the teacher is still here.
       self._timer = setTimeout(function () {
         self._timer = null;
-        if (document.hidden || !self.settings.values.hiddenGems || prefersReducedMotion()) return;
+        if (!stillWanted()) return;
         withClaimLock(function (hasLock) {
           return readState().then(function (fresh) {
+            if (!stillWanted()) return null;
             var claimNow = Date.now();
             if (!CGP.hiddenGems.weatherDue(fresh, claimNow, { enabled: true })) return null;
             var claimId = claimNow + ':' + Math.random().toString(36).slice(2, 8);
-            return writeState(Object.assign({}, fresh, { weatherShownAt: claimNow, weatherClaimId: claimId })).then(function (okWrite) {
-              if (!okWrite || document.hidden) return null;
-              var go = function () { return self._render(kind.id, { heavy: kind.heavy, thunder: kind.thunder }); };
+            // Only the weather's own record: the earlier pieces' keys are left behind.
+            return writeState({ weatherShownAt: claimNow, weatherClaimId: claimId }).then(function (okWrite) {
+              if (!okWrite || !stillWanted()) return null;
+              var go = function () { return stillWanted() ? self._render(kind.id, { heavy: kind.heavy, thunder: kind.thunder }) : null; };
               if (hasLock) return go();
               // Without Web Locks: play only if this window's claim won.
               return readState().then(function (verify) {

@@ -1,6 +1,7 @@
 /* Canvas Gradebook+ - Hidden Gems: snow and rain on real snowy and rainy days.
  * The weather is drawn on canvases inside one fixed stage that never takes a
- * click. Every class is prefixed .cgp-gem- so MutationObservers ignore them. */
+ * click. Every class is prefixed .cgp-gem-. Drops on the glass are reused,
+ * not added and removed, so the page's own MutationObservers stay quiet. */
 
 .cgp-gem-stage {
   position: fixed;

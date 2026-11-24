@@ -23,10 +23,20 @@ export function createWeather(chrome, fetchImpl, nowFn) {
   const doFetch = fetchImpl || ((...a) => fetch(...a));
   const clock = nowFn || (() => Date.now());
 
-  /* Resolves { ok: true, codes: [code per place] } or { ok: false, code }. */
-  async function now() {
+  /* Resolves { ok: true, codes: [code per place] } or { ok: false, code }.
+   * Tabs that ask at the same moment (a restored window of Canvas tabs)
+   * share one answer, and so one request. */
+  let pending = null;
+  function now() {
+    if (!pending) pending = ask().finally(() => { pending = null; });
+    return pending;
+  }
+
+  async function ask() {
     const box = (await chrome.storage.local.get(CACHE_KEY))[CACHE_KEY];
-    if (box && Array.isArray(box.codes) && clock() - box.at < FRESH_MS) return { ok: true, codes: box.codes, cached: true };
+    // An answer from the future (the clock was set back) is not fresh.
+    const age = box ? clock() - box.at : NaN;
+    if (box && Array.isArray(box.codes) && age >= 0 && age < FRESH_MS) return { ok: true, codes: box.codes, cached: true };
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 8000);
     try {
