@@ -228,8 +228,8 @@
     // reach every computer where the teacher opens Canvas even when Chrome
     // sync is off (core/settings-mirror.js).
     settingsInCanvas: true,
-    // Infrequent, unobtrusive miniature surprises in the margins of Canvas
-    // pages, tailored to the subject the teacher teaches (core/hidden-gems.js).
+    // Snow or rain on the Canvas page when it is really snowing or raining
+    // around Philadelphia (core/hidden-gems.js, weather.js).
     hiddenGems: true,
     diagnostics: false
   };
