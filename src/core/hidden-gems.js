@@ -1,10 +1,9 @@
-/* Canvas Gradebook+ - Hidden Gems (pure logic, subject detection & styling).
+/* Canvas Gradebook+ - Hidden Gems (pure logic: when, which, and subject).
  *
- * Rare, short moving pictures at the edge of a Canvas course page: a flock of
- * starlings, a folded paper crane, an ink plum branch. Each one is drawn on a
- * canvas by core/hidden-gems-ui.js; this module only decides when one may
- * play, which one, and the one per-subject touch (the paper the crane is
- * folded from). The subject comes from the current course name or the
+ * Rare moments when the Canvas page on screen comes to life for a few
+ * seconds and then puts itself back exactly as it was. The pieces are drawn
+ * by core/hidden-gems-ui.js; this module only decides when one may play and
+ * which one. The subject comes from the current course name or the
  * teacher's cached course list, with zero extra API calls. Nothing is saved
  * except the cooldown record.
  *
@@ -15,7 +14,7 @@
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.hiddenGems) return;
 
-  var GEMS = ['murmuration', 'crane', 'blossom'];
+  var GEMS = ['gravity'];
 
   // Infrequent but discoverable: at most once every 24 hours, ~12% roll on an
   // eligible page visit, after settling on the page for 25–90s (averages roughly

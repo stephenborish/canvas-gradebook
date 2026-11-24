@@ -61,44 +61,25 @@ suite('Hidden Gems: subject detection', (test) => {
   });
 });
 
-suite('Hidden Gems: the three pieces and their per-subject touches', (test) => {
+suite('Hidden Gems: the pieces', (test) => {
   const hg = globalThis.CGP.hiddenGems;
 
-  test('exactly three pieces are registered', () => {
-    eq(hg.GEMS.join(','), 'murmuration,crane,blossom');
+  test('gravity is the registered piece', () => {
+    eq(hg.GEMS.join(','), 'gravity');
   });
 
-  test('every piece produces valid, seeded props for every subject', () => {
-    const subjects = Object.keys(hg.SUBJECT_LABELS);
-    ok(subjects.length >= 22, 'at least 22 subjects');
-    for (const subj of subjects) {
-      ok(hg.SUBJECT_STYLE[subj], `crane paper defined for ${subj}`);
+  test('every piece gets a seed for every subject', () => {
+    for (const subj of Object.keys(hg.SUBJECT_LABELS)) {
       for (const gem of hg.GEMS) {
         const props = hg.contentFor(gem, subj, () => 0.1);
         eq(props.subjectId, subj, `${gem} for ${subj}`);
         ok(Number.isInteger(props.seed) && props.seed >= 0, `${gem} seed for ${subj}`);
-        if (gem === 'crane') {
-          ok(/^#[0-9a-f]{6}$/i.test(props.paper.color) && /^#[0-9a-f]{6}$/i.test(props.paper.print), `crane paper colours for ${subj}`);
-          ok(['seigaiha', 'shippo', 'asanoha', 'hex', 'grid', 'stars', 'staff', 'dots', 'lines'].includes(props.paper.pattern), `crane print for ${subj}`);
-        }
-        if (gem !== 'blossom') ok(props.direction === 1 || props.direction === -1, `${gem} direction for ${subj}`);
       }
     }
   });
 
-  test('unknown subjects fall back to the general sheet', () => {
-    eq(hg.contentFor('crane', 'underwater-basket-weaving', () => 0.5).subjectId, 'general');
-  });
-
   test('the seed changes from one sighting to the next', () => {
-    ok(hg.contentFor('blossom', 'general', () => 0.12).seed !== hg.contentFor('blossom', 'general', () => 0.78).seed);
-  });
-
-  test('subject-specific paper matches the subject', () => {
-    eq(hg.contentFor('crane', 'chemistry').paper.pattern, 'hex');
-    eq(hg.contentFor('crane', 'music').paper.pattern, 'staff');
-    eq(hg.contentFor('crane', 'math').paper.pattern, 'grid');
-    eq(hg.contentFor('crane', 'general').paper.pattern, 'seigaiha');
+    ok(hg.contentFor('gravity', 'general', () => 0.12).seed !== hg.contentFor('gravity', 'general', () => 0.78).seed);
   });
 });
 
@@ -120,15 +101,10 @@ suite('Hidden Gems: rarity, cooldown & non-repeat', (test) => {
     not(hg.shouldTrigger({ lastShownAt: now - hg.DEFAULT_COOLDOWN_MS - 1 }, now, { enabled: true }, () => 0.2));
   });
 
-  test('pickGem never repeats the last piece and ignores retired ids', () => {
+  test('pickGem always returns a registered piece, even from an old stored history', () => {
     for (let step = 0; step < 10; step++) {
-      const picked = hg.pickGem(['washer', 'crane'], () => step / 10);
-      ok(picked === 'murmuration' || picked === 'blossom', `picked a fresh piece, got ${picked}`);
-    }
-    const all = hg.pickGem(['murmuration', 'crane', 'blossom'], () => 0);
-    ok(all !== 'blossom' && hg.GEMS.includes(all), 'when all were seen recently, still not the last one');
-    for (let step = 0; step < 10; step++) {
-      ok(hg.GEMS.includes(hg.pickGem(['boat', 'peel', 'prism', 'pencil'], () => step / 10)), 'old ids in stored history are harmless');
+      ok(hg.GEMS.includes(hg.pickGem(['washer', 'boat', 'crane', 'gravity'], () => step / 10)), 'registered piece');
+      ok(hg.GEMS.includes(hg.pickGem(null, () => step / 10)), 'registered piece with no history');
     }
   });
 
