@@ -631,7 +631,7 @@
       '<span class="eyebrow">Welcome to Gradebook+</span>' +
       '<button class="x" type="button" data-act="finish" aria-label="Close">' + X_ICON + '</button></div>' +
       '<h2 id="cgp-tour-title">Learn Gradebook+ one part at a time</h2>' +
-      '<p>Pick a tutorial. Each takes about a minute.</p>' +
+      '<p>Pick a topic to see a short walkthrough on your own pages. Each one takes about a minute.</p>' +
       '<div class="choices" role="list">';
     S().SECTIONS.forEach(function (sec) {
       var seen = S().statusOf(v, sec.id) === 'done';
@@ -640,7 +640,7 @@
         '<span class="choice__t"><b>' + sec.title + '</b><small>' + sec.blurb + '</small></span>' +
         (seen ? '<span class="choice__done">' + DONE_ICON + 'Seen</span>' : NEXT_ICON) + '</button>';
     });
-    html += '</div><p class="hint">Not now? Close this. You’ll find them later in Gradebook+ settings, under <b>Tutorials</b>.</p>';
+    html += '</div><p class="hint">Not now? Close this. You can come back to these anytime from Gradebook+ settings, under <b>Tutorials</b>.</p>';
     return html;
   };
 
@@ -1012,7 +1012,7 @@
     this.spot.classList.remove('is-on');
     this.blocks.forEach(function (b) { place(b, 0, 0, 0, 0); });
     if (this.welcome) this.flash('Tutorials are in Gradebook+ settings', 'Click the Gradebook+ icon in Chrome’s toolbar');
-    else if (how === 'skipped') this.flash('Skipped “' + sectionInfo(this.section).title + '”', 'You’ll still be offered the others');
+    else if (how === 'skipped') this.flash('Skipped “' + sectionInfo(this.section).title + '”', 'Your other tutorials are still available');
     else {
       this.pill.classList.remove('is-on');
       setTimeout(function () { self.unmount(); }, 1200);
@@ -1040,7 +1040,7 @@
    * hides it for this tab's visit; Skip hides that tutorial only. */
   function offerCopy(d) {
     if (d.section === 'welcome') {
-      return { eyebrow: 'Gradebook+', title: 'New to Gradebook+?', body: 'Short tutorials on your own gradebook, about a minute each.' };
+      return { eyebrow: 'Gradebook+', title: 'New to Gradebook+?', body: 'Take a one-minute walkthrough on your own gradebook.' };
     }
     var info = sectionInfo(d.section);
     if (d.resume) return { eyebrow: 'Tutorial', title: 'Finish “' + info.title + '”?', body: 'Pick up where you left off.' };

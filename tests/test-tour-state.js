@@ -41,11 +41,13 @@ suite('Tutorials: each part on its own', (test) => {
     });
   });
 
-  test('cards stay short: a title, at most two sentences, at most three bullets', () => {
+  test('cards stay short: a title, at most three sentences, at most three bullets', () => {
     C().tourStops.forEach((s) => {
       const text = (s.body || '').replace(/<[^>]+>/g, '');
-      a.ok(text.length <= 190, s.id + ' body is ' + text.length + ' characters');
-      a.ok((text.match(/[.!?](\s|$)/g) || []).length <= 2, s.id + ' body has at most two sentences');
+      a.ok(text.length <= 300, s.id + ' body is ' + text.length + ' characters');
+      a.ok((text.match(/[.!?](\s|$)/g) || []).length <= 3, s.id + ' body has at most three sentences');
+      // One word for one thing: a teacher's classes are never "sections".
+      a.not(/\bsections\b/i.test(text + JSON.stringify(s.bullets || []) + (s.title || '')), s.id + ' says "classes", not "sections"');
       a.ok(!s.bullets || s.bullets.length <= 3, s.id + ' bullets');
       a.ok(s.title && s.title.length <= 60, s.id + ' title');
       a.not('eyebrow' in s, s.id + ': cards are labelled with their tutorial’s name, not their own');
