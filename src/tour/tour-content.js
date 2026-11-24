@@ -169,19 +169,187 @@
 
   function key(k, tone) { return '<kbd class="kc' + (tone ? ' kc--' + tone : '') + '">' + k + '</kbd>'; }
 
-  function miniCell(value, marks) {
-    return '<span class="mc"><span class="mc__v">' + value + '</span>' + (marks || '') + '</span>';
-  }
-  var BUBBLE = '<span class="mk-cmt"><svg viewBox="0 0 16 16"><path d="M2.5 4.2A1.7 1.7 0 0 1 4.2 2.5h7.6a1.7 1.7 0 0 1 1.7 1.7v4.9a1.7 1.7 0 0 1-1.7 1.7H7.6l-3 2.6v-2.6h-.4a1.7 1.7 0 0 1-1.7-1.7z"/></svg></span>';
+  /* ---------------------------------------------------------- illustrations
+   * Small drawings of the real thing, for when it is not on screen to point
+   * at. Each one copies the real component's labels, shapes, colours and
+   * layout (the source is named beside it), so what the teacher sees here is
+   * what they will find on the page. Change the drawing with the feature. */
 
-  /* The feedback-bubble legend. Every bubble is the same blue: a student's
-   * reply shows in the hover preview, not as a colour. */
-  function commentLegend() {
-    return '<div class="legend">' +
-      '<div class="lg">' + miniCell('92', BUBBLE) + '<span>You left feedback</span></div>' +
-      '<div class="lg">' + miniCell('88', BUBBLE.replace('</span>', '<span class="mk-cnt">3</span></span>')) + '<span>3 comments from you</span></div>' +
-      '</div>';
+  // indicators.js BUBBLE and SUB_GLYPHS; util.js TOTAL_ICONS; student-insights.js ICONS and COPY_ICON.
+  var SVG_BUBBLE = '<svg viewBox="0 0 16 16"><path d="M2.2 2.9c0-.9.7-1.6 1.6-1.6h8.4c.9 0 1.6.7 1.6 1.6v5.6c0 .9-.7 1.6-1.6 1.6H7.5L4.3 13v-2.9h-.5c-.9 0-1.6-.7-1.6-1.6V2.9z"/></svg>';
+  var SVG_PAGE = '<svg viewBox="0 0 16 16"><path d="M4.2 2.2h4.6l3 3v8.6H4.2z"/><path d="M8.6 2.4v3.1h3"/></svg>';
+  var SVG_ALERT = '<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="currentColor"/><path fill="#fff" d="M8.85 4.6h2.3l-.45 7.1H9.3zM10 13.3a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8z"/></svg>';
+  var SVG_FLAG = '<svg viewBox="0 0 20 20"><path fill="currentColor" d="M4 1.8a1 1 0 0 1 1 1V3h10.3c.8 0 1.2.9.7 1.5l-2.6 3.3 2.6 3.3c.5.6.1 1.5-.7 1.5H5v5.6a1 1 0 1 1-2 0V2.8a1 1 0 0 1 1-1z"/></svg>';
+  var SI_ICON = {
+    risk: '<svg viewBox="0 0 20 20"><path fill="currentColor" d="M10 1.5 19 17.5H1zM9 7v5h2V7zm0 6.5v2h2v-2z"/></svg>',
+    warn: '<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8.5" fill="currentColor"/><path fill="#fff" d="M9 5h2v6H9zm0 7.5h2v2H9z"/></svg>',
+    good: '<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8.5" fill="currentColor"/><path fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="m6 10.2 2.7 2.7L14.2 7"/></svg>'
+  };
+  var SVG_COPY = '<svg viewBox="0 0 20 20"><rect x="6.5" y="6.5" width="10" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M13.5 4.5V4a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 4v9A1.5 1.5 0 0 0 5 14.5h.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
+
+  /* One gradebook cell. marks: { cmt, count, sub: 'in'|'out', resub, status: 'M'|'L', sel, active } */
+  function cell(value, m) {
+    m = m || {};
+    var cls = 'xc' + (m.sel ? ' xc--sel' : '') + (m.active ? ' xc--active' : '');
+    var h = '<span class="' + cls + '"><span class="xc__v">' + value + '</span>';
+    if (m.status) h += '<span class="xc__st xc__st--' + (m.status === 'M' ? 'm' : 'l') + '">' + m.status + '</span>';
+    if (m.cmt) h += '<span class="xc__cmt' + (m.sub ? ' xc__cmt--shift' : '') + '">' + SVG_BUBBLE + (m.count ? '<b>' + m.count + '</b>' : '') + '</span>';
+    if (m.sub) h += '<span class="xc__sub xc__sub--' + m.sub + '">' + SVG_PAGE + '</span>';
+    if (m.resub) h += '<span class="xc__resub"></span>';
+    return h + '</span>';
   }
+  function legend(rows) {
+    return '<div class="xl">' + rows.map(function (r) { return '<div class="xl__row">' + r[0] + '<span>' + r[1] + '</span></div>'; }).join('') + '</div>';
+  }
+
+  var ART = {
+    comments: function () {
+      return legend([[cell('92', { cmt: true }), 'One comment from you'], [cell('88', { cmt: true, count: 3 }), 'Three comments from you']]);
+    },
+    submissions: function () {
+      return legend([[cell('94', { sub: 'in' }), 'Turned in'], [cell('', { sub: 'out' }), 'Not turned in yet'], [cell('81', { sub: 'in', resub: true }), 'Turned in again after you graded it']]);
+    },
+    statuses: function () {
+      return legend([[cell('', { status: 'M', active: true }), 'After pressing ' + key('M')], [cell('8', { status: 'L' }), 'After pressing ' + key('L')]]);
+    },
+    spreadsheet: function () {
+      var rows = [['Ava', '9', '10'], ['Ben', '7', ''], ['Cleo', '8', ''], ['Dev', '10', '']];
+      var h = '<div class="xg"><div class="xg__head"><span>Student</span><span>Lab 3</span><span>Lab 4</span></div>';
+      rows.forEach(function (r, i) {
+        h += '<div class="xg__row"><span class="xg__name">' + r[0] + '</span>' + cell(r[1]) + cell(r[2], { sel: i > 0 }) + '</div>';
+      });
+      return h + '</div><p class="xcap">Three cells selected. Type a grade and press Enter to fill all three.</p>';
+    },
+    post: function () {
+      return '<div class="xh"><div class="xh__label"><b>Unit 2 Test</b><span class="xh__pts">50 pts</span><span class="xh__due">Due Oct 14</span></div>' +
+        '<span class="xh__post">Post 12</span></div>';
+    },
+    total: function () {
+      return legend([
+        [cell('93.5%'), 'No flag'],
+        [cell('74.2%', {}).replace('<span class="xc__v">', '<span class="xc__flag" style="color:#e0b800">' + SVG_FLAG + '</span><span class="xc__v">'), '77% or below: yellow flag'],
+        [cell('66.9%', {}).replace('<span class="xc__v">', '<span class="xc__flag" style="color:#d1453b">' + SVG_ALERT + '</span><span class="xc__v">'), '70% or below: red alert']
+      ]);
+    },
+    menus: function () {
+      var bars = [['F', 1], ['D', 1], ['C-', 0], ['C', 2], ['C+', 3], ['B-', 4], ['B', 6], ['B+', 5], ['A-', 4], ['A', 3], ['A+', 1]];
+      var max = 6;
+      var h = '<div class="xp"><div class="xp__eyebrow">Score analysis</div><div class="xp__title">Lab 4</div>' +
+        '<div class="xs">' + [['Mean', '41.2', '82.4%'], ['Median', '42', '84.0%'], ['Std. deviation', '5.1', ''], ['Range', '28–50', 'of 50 pts']].map(function (t) {
+          return '<span class="xs__t"><small>' + t[0] + '</small><b>' + t[1] + '</b>' + (t[2] ? '<em>' + t[2] + '</em>' : '') + '</span>';
+        }).join('') + '</div><div class="xp__sub">Distribution by letter grade</div><div class="xhist">';
+      bars.forEach(function (b) {
+        h += '<span class="xhist__col"><i>' + (b[1] || '') + '</i><span class="xhist__bar" style="height:' + Math.round(b[1] / max * 100) + '%"></span><em>' + b[0] + '</em></span>';
+      });
+      return h + '</div></div>';
+    },
+    find: function () {
+      return '<div class="xm"><div class="xm__input">new tom</div>' +
+        '<div class="xm__row is-on"><b>Tommy Newnam</b><span>Biology P3 · 2026–27 · this gradebook</span></div>' +
+        '<div class="xm__row"><b>Tomas Newton</b><span>Chemistry P5 · 2026–27</span></div></div>';
+    },
+    student: function () { return siHead() + siTiles(3); },
+    'si-overview': function () { return siHead() + siTiles(6); },
+    'si-standout': function () {
+      var rows = [
+        ['risk', '3 missing assignments on record', '45 points not yet earned'],
+        ['warn', 'Turns in 40% of work late', '4 of 10 submissions · typically 1 d 3 h late'],
+        ['good', 'Scores trending up 9 points', 'Last 3 graded avg 88% vs 79% before']
+      ];
+      return '<div class="xcard"><h4>What stands out</h4>' + rows.map(function (r) {
+        return '<div class="xso xso--' + r[0] + '"><span class="xso__i">' + SI_ICON[r[0]] + '</span><span><b>' + r[1] + '</b><small>' + r[2] + '</small></span></div>';
+      }).join('') + '</div>';
+    },
+    'si-work': function () {
+      return '<div class="xshare"><span class="xshare__i">' + SVG_COPY + '</span><span class="xshare__t"><b>Copy List of Missing/Late Work</b>' +
+        '<small>2 missing · 1 late · for a parent, counselor or the student</small></span><span class="xshare__chev">›</span></div>' +
+        '<pre class="xpre">Missing (2)\n• Lab 4 — due Mon, Oct 12, 11:59 PM — not turned in · 9 days overdue — worth 20 pts\n• Essay 2 — due Sun, Oct 18, 11:59 PM — not turned in · 3 days overdue — worth 25 pts</pre>';
+    },
+    'si-activity': function () {
+      var seed = '0102310023421013442100123231024321103443200124321001234321012343210012343'.split('');
+      var h = '<div class="xcard"><h4>Daily page views</h4><div class="xheat"><span class="xheat__days"><i></i><i>Mon</i><i></i><i>Wed</i><i></i><i>Fri</i><i></i></span><span class="xheat__grid">';
+      for (var i = 0; i < 112; i++) h += '<i class="h' + (seed[(i * 7 + (i >> 3)) % seed.length] || 0) + '"></i>';
+      return h + '</span></div><div class="xheat__key">Less <i class="h0"></i><i class="h1"></i><i class="h2"></i><i class="h3"></i><i class="h4"></i> More</div></div>';
+    },
+    'si-profile': function () {
+      var row = function (n, e, login) {
+        return '<div class="xpg"><b>' + n + '</b><span>' + e + ' <em class="xpill">Copy</em></span><small>Last Canvas login: ' + login + '</small></div>';
+      };
+      return '<div class="xcard"><h4>Parents &amp; guardians <em class="xpill">Copy all</em></h4>' +
+        row('Dana Parker', 'dana.parker@example.com', 'yesterday at 6:02 PM') + row('Sam Parker', 'sam.parker@example.com', 'Oct 30 at 8:15 AM') + '</div>';
+    }
+  };
+
+  /* student-insights.js head and tiles, with the tones it gives these values. */
+  function siHead() {
+    return '<div class="xsi"><span class="xsi__av">JP</span><span class="xsi__nm"><small>Student overview</small><b>Jordan Parker</b>' +
+      '<em>Last active today at 7:50 PM · 4.2 h in the course · Student 3 of 24</em></span><span class="xsi__gr"><b>87.3%</b><small>B+</small></span></div>';
+  }
+  function siTiles(n) {
+    var t = [
+      ['Missing', '2', '35 pts outstanding', 'warn'],
+      ['Late', '1', '10% of submitted work', ''],
+      ['On-time rate', '80%', '8 of 10 due so far', ''],
+      ['Average score', '84.2%', '+3 vs class median', ''],
+      ['Needs grading', '3', 'Submitted, not graded', ''],
+      ['Last active', 'Today', 'Nov 20, 7:50 PM', '']
+    ].slice(0, n);
+    return '<div class="xtiles">' + t.map(function (x) {
+      return '<span class="xtile' + (x[3] ? ' xtile--' + x[3] : '') + '"><small>' + x[0] + '</small><b>' + x[1] + '</b><em>' + x[2] + '</em></span>';
+    }).join('') + '</div>';
+  }
+
+  // sync-dialog.js, sync-board.js, group-builder.js, course-schedule.js.
+  var SVG_PEOPLE = '<svg viewBox="0 0 16 16"><circle cx="5.5" cy="5" r="2.3"/><circle cx="11.2" cy="5.6" r="1.9"/><path d="M1.6 13.6c.3-2.4 1.9-3.8 3.9-3.8s3.6 1.4 3.9 3.8M9.6 10.1c.5-.3 1-.4 1.6-.4 1.7 0 3 1.2 3.2 3.3"/></svg>';
+  function dlgHead(eyebrow, title) {
+    return '<div class="xp__eyebrow">' + eyebrow + '</div><div class="xp__title">' + title + '<span class="xp__x">×</span></div>';
+  }
+  function pill(kind, text) { return '<span class="xpl xpl--' + kind + '">' + text + '</span>'; }
+
+  ART['classes-link'] = function () {
+    var row = function (name, term, on, sug) {
+      return '<div class="xlk"><span class="xbox' + (on ? ' is-on' : '') + '"></span><b>' + name + '</b>' + (sug ? '<span class="xsug">suggested</span>' : '') + '<small>' + term + '</small></div>';
+    };
+    return '<div class="xp">' + dlgHead('Your classes', 'Link your classes') +
+      '<div class="xp__sub">Which of your classes are the same course as this one?</div>' +
+      row('Biology P4', '2026–27', true, true) + row('Biology P6', '2026–27', true, true) + row('Chemistry P3', '2026–27', false, false) +
+      '<div class="xp__foot"><span class="xbtn">Use these 2 classes</span></div></div>';
+  };
+  ART['classes-copy'] = function () {
+    var card = function (name, state, kind, due, on) {
+      return '<div class="xdest' + (on ? ' is-on' : '') + '"><div class="xdest__h"><span class="xbox' + (on ? ' is-on' : '') + '"></span><b>' + name + '</b>' + pill(kind, state) + '</div>' +
+        (due ? '<label class="xdate"><small>Due</small><span>' + due + '</span></label>' : '') + '</div>';
+    };
+    return '<div class="xp">' + dlgHead('Copy from Biology P2', 'Lab 5: Photosynthesis') +
+      card('Biology P4', 'Not there yet', 'new', '10/14/2026, 09:50 AM', true) + card('Biology P6', 'Same', 'same', '', false) +
+      '<div class="xp__foot"><span class="xbtn">Copy to Biology P4</span><span class="xp__cancel">Cancel</span></div></div>';
+  };
+  ART['classes-compare'] = function () {
+    var chip = function (k) {
+      return k === 'same' ? pill('same', '✓ Same') : k === 'miss' ? pill('miss', '+ Not there') : pill('diff', '≠ Different') + '<span class="xact">Open · <u>Pick a version…</u></span>';
+    };
+    var rows = [['Lab 5: Photosynthesis', 'same', 'same'], ['Unit 3 Quiz', 'same', 'miss'], ['Essay 2', 'diff', 'same']];
+    return '<div class="xp">' + dlgHead('Compare classes', 'Biology P2 vs. your other classes') +
+      '<div class="xtbl"><div class="xtbl__r xtbl__h"><span>In Biology P2</span><span>Biology P4</span><span>Biology P6</span></div>' +
+      rows.map(function (r) { return '<div class="xtbl__r"><span><u>' + r[0] + '</u></span><span>' + chip(r[1]) + '</span><span>' + chip(r[2]) + '</span></div>'; }).join('') +
+      '</div></div>';
+  };
+  ART['groups-button'] = function () {
+    return '<div class="xbar"><span class="xcopyto">' + SVG_PEOPLE + 'Make groups</span><span class="xcanvasbtn">+ Group Set</span></div>';
+  };
+  ART.schedule = function () {
+    var row = function (t, time, match) {
+      return '<div class="xsc__row' + (match ? ' is-match' : '') + '"><span class="xsc__pick"><b>' + t + (match ? ' <span class="xsc__badge">This course</span>' : '') + '</b><small>' + time + '</small></span><span class="xsc__alt">End</span></div>';
+    };
+    return '<div class="xsc"><div class="xsc__head"><span class="xsc__nav">‹</span><b>Tue, Oct 14</b><span class="xsc__nav">›</span><span class="xsc__today">Today</span><span class="xsc__x">×</span></div>' +
+      '<div class="xsc__tags"><span>A Day</span></div>' +
+      row('AP Biology P1', '8:55 – 9:50 AM · Room 204') + row('Biology P3', '10:45 – 11:40 AM · Room 204', true) + row('Biology P6', '1:45 – 2:40 PM · Room 204') +
+      '<div class="xsc__foot"><span>Click a class to put its start time in “Due”.</span><u>Refresh</u></div></div>';
+  };
+  ART['snip-what'] = function () {
+    return '<div class="xsn"><span class="xsn__box">/nice<i class="xsn__caret"></i></span><span class="xsn__arrow">' + key('Tab') + '</span>' +
+      '<span class="xsn__box">Nicely done. Your reasoning here is clear and well supported.</span></div>';
+  };
 
   /* ----------------------------------------------------------------- stops */
 
@@ -196,8 +364,7 @@
       fallbackNote: 'There’s no feedback on this screen yet. Once you comment on a student’s work, a bubble will appear in their grade cell.',
       target: function () { return cellOf(pick('.cgp-cmt')); },
       fallback: assignmentCell,
-      tryIt: true,
-      art: commentLegend
+      tryIt: true
     },
     {
       id: 'submissions',
@@ -208,14 +375,7 @@
       fallbackNote: 'Badges only appear on assignments that students turn in online.',
       target: function () { return cellOf(pick('.cgp-sub')); },
       fallback: assignmentCell,
-      tryIt: true,
-      art: function () {
-        return '<div class="legend">' +
-          '<div class="lg">' + miniCell('94', '<span class="mk-sub mk-sub--in"></span>') + '<span>Turned in</span></div>' +
-          '<div class="lg">' + miniCell('–', '<span class="mk-sub mk-sub--out"></span>') + '<span>Not yet</span></div>' +
-          '<div class="lg">' + miniCell('81', '<span class="mk-sub mk-sub--in"></span><span class="mk-resub"></span>') + '<span>Resubmitted after grading</span></div>' +
-          '</div>';
-      }
+      tryIt: true
     },
     {
       id: 'statuses',
@@ -223,13 +383,7 @@
       title: 'Mark work Missing, Late or Excused with one key',
       body: 'Click a student’s grade cell, then press ' + key('M', 'red') + ' for Missing, ' + key('L', 'amber') + ' for Late or ' + key('E', 'green') + ' for Excused. It’s saved in Canvas right away, so students see it too.',
       bullets: ['Pressing ' + key('M') + ' or ' + key('L') + ' again removes the status.'],
-      target: assignmentCell,
-      art: function () {
-        return '<div class="status-demo" aria-hidden="true">' +
-          '<span class="sd-cell"><span class="sd-v">–</span><span class="sd-m">M</span><span class="sd-cursor"></span></span>' +
-          '<span class="sd-press">' + key('M', 'red') + '</span>' +
-          '</div>';
-      }
+      target: assignmentCell
     },
     {
       id: 'spreadsheet',
@@ -242,13 +396,7 @@
       ],
       target: gridArea,
       fallback: assignmentCell,
-      padding: 0,
-      art: function () {
-        var html = '<div class="sel-demo" aria-hidden="true">';
-        var v = ['8', '9', '7', '10', '6', '9', '10', '8', '9', '7', '8', '10'];
-        for (var i = 0; i < 12; i++) html += '<span class="sdc" style="--i:' + i + '"><span>' + v[i] + '</span></span>';
-        return html + '<span class="sel-rect"></span></div>';
-      }
+      padding: 0
     },
     {
       id: 'post',
@@ -258,13 +406,7 @@
       fallbackNote: 'Every grade on this screen is already visible to students. When some are hidden, a Post button will appear at the top of their column.',
       target: function () { return headerOf('.cgp-post'); },
       fallback: assignmentHeader,
-      tryIt: false,
-      art: function () {
-        return '<div class="post-demo" aria-hidden="true">' +
-          '<div class="pd-head"><span>Unit 2 Test</span><span class="pd-btn">Post 12</span></div>' +
-          '<div class="pd-cell">88</div><div class="pd-cell">93</div><div class="pd-cell">76</div>' +
-          '</div>';
-      }
+      tryIt: false
     },
 
     /* ---------------------------------------- Student overview (gradebook) */
@@ -276,13 +418,7 @@
       target: studentName,
       tryIt: true,
       primary: { label: 'Open overview', run: function (tour) { tour.next(); } },
-      onShow: function (tour, el) { tour.siCell = el; },
-      art: function () {
-        return '<div class="si-demo" aria-hidden="true">' +
-          '<div class="si-top"><span class="si-av">JP</span><span class="si-nm">Jordan P.<small>Active today, 7:50 PM</small></span><span class="si-gr">B+<small>87.4%</small></span></div>' +
-          '<div class="si-tiles"><span class="si-t si-t--red"><b>2</b>Missing</span><span class="si-t si-t--amber"><b>1</b>Late</span><span class="si-t si-t--green"><b>91%</b>On time</span></div>' +
-          '</div>';
-      }
+      onShow: function (tour, el) { tour.siCell = el; }
     },
     {
       id: 'si-overview',
@@ -299,14 +435,7 @@
         return head && tiles ? [head, tiles] : (tiles || head);
       },
       leave: closeOverview,
-      fallbackArt: true,
-      art: function () {
-        return '<div class="si-demo" aria-hidden="true">' +
-          '<div class="si-top"><span class="si-av">JP</span><span class="si-nm">Jordan P.<small>Last active today at 7:50 PM</small></span><span class="si-gr">B+<small>87.4%</small></span></div>' +
-          '<div class="si-tiles si-tiles--6"><span class="si-t si-t--red"><b>2</b>Missing · 35 pts</span><span class="si-t si-t--amber"><b>1</b>Late</span><span class="si-t si-t--green"><b>91%</b>On time</span>' +
-          '<span class="si-t"><b>88%</b>Avg · class 84%</span><span class="si-t"><b>3</b>Needs grading</span><span class="si-t"><b>Today</b>Last active</span></div>' +
-          '</div>';
-      }
+      fallbackArt: true
     },
     {
       id: 'si-standout',
@@ -324,14 +453,7 @@
         return hit || null;
       },
       leave: closeOverview,
-      fallbackArt: true,
-      art: function () {
-        return '<div class="standout" aria-hidden="true">' +
-          '<div class="so so--red"><b>3 missing assignments</b><span>Lab 4, Essay 2, Quiz 5 · 45 points</span></div>' +
-          '<div class="so so--amber"><b>Usually submits in the last 2 hours</b><span>7 of 11 on-time submissions</span></div>' +
-          '<div class="so so--green"><b>Scores trending up</b><span>+9 points over the last four</span></div>' +
-          '</div>';
-      }
+      fallbackArt: true
     },
     {
       id: 'si-work',
@@ -347,13 +469,7 @@
         return pick('#cgp-si-panel-work .cgp-si__card') || pick('#cgp-si-panel-work');
       },
       leave: closeOverview,
-      fallbackArt: true,
-      art: function () {
-        return '<div class="mail-demo" aria-hidden="true"><div class="md-head"><span>Missing &amp; late work</span><span class="md-btn">Copy</span></div>' +
-          '<div class="md-row"><b>Lab 4: Enzymes</b><span>Due Oct 12 · 9 days overdue · 20 pts</span></div>' +
-          '<div class="md-row"><b>Essay 2</b><span>Due Oct 18 · 3 days overdue · 15 pts</span></div>' +
-          '<div class="md-row md-row--late"><b>Quiz 5</b><span>Turned in Oct 20 · 1 day late</span></div></div>';
-      }
+      fallbackArt: true
     },
     {
       id: 'si-activity',
@@ -368,13 +484,7 @@
         return pick('#cgp-si-panel-activity .cgp-si__card') || pick('#cgp-si-panel-activity');
       },
       leave: closeOverview,
-      fallbackArt: true,
-      art: function () {
-        var html = '<div class="heat" aria-hidden="true">';
-        var seed = [0, 1, 2, 3, 1, 0, 0, 2, 3, 4, 2, 1, 0, 1, 3, 4, 4, 2, 1, 0, 0, 1, 2, 3, 2, 3, 1, 0, 2, 4, 3, 2, 1, 1, 0, 3, 4, 4, 3, 2, 0, 0, 1, 2, 4, 3, 2, 1, 0];
-        for (var i = 0; i < 49; i++) html += '<span class="h' + seed[i] + '" style="--i:' + i + '"></span>';
-        return html + '</div><div class="heat-cap"><span>16 weeks of daily page views</span></div>';
-      }
+      fallbackArt: true
     },
     {
       id: 'si-profile',
@@ -393,12 +503,7 @@
         return hit || pick('#cgp-si-panel-profile .cgp-si__card') || null;
       },
       leave: closeOverview,
-      fallbackArt: true,
-      art: function () {
-        return '<div class="mail-demo" aria-hidden="true"><div class="md-head"><span>Parents &amp; guardians</span><span class="md-btn">Copy all</span></div>' +
-          '<div class="md-row"><b>Dana Parker</b><span>dana.parker@example.com</span></div>' +
-          '<div class="md-row"><b>Sam Parker</b><span>sam.parker@example.com</span></div></div>';
-      }
+      fallbackArt: true
     },
 
     /* ----------------------------------------- Gradebook tools (gradebook) */
@@ -409,14 +514,7 @@
       body: 'The Total column stays next to the student names, so you can see final grades no matter how far you scroll. Hover over a total to see the letter grade.',
       bullets: ['Totals below a cutoff get a warning flag. You can change the cutoffs in Gradebook+ settings.'],
       target: function () { return headerOf('.cgp-header-total') || headerOf('.slick-header-column[id*="total_grade"]'); },
-      optional: true,
-      art: function () {
-        return '<div class="legend">' +
-          '<div class="lg">' + miniCell('93.5%', '') + '<span>On track</span></div>' +
-          '<div class="lg">' + miniCell('74.2%', '<span class="mk-flag mk-flag--amber">' + ICON.flag + '</span>') + '<span>Worth a look</span></div>' +
-          '<div class="lg">' + miniCell('66.9%', '<span class="mk-flag mk-flag--red">!</span>') + '<span>Needs attention</span></div>' +
-          '</div>';
-      }
+      optional: true
     },
     {
       id: 'menus',
@@ -426,14 +524,7 @@
         'Click the <b>⋮</b> at the top of an assignment column and choose <b>Analyze Scores</b> to see the average, median and spread, with a chart of the scores.',
         'Click the <b>⋮</b> at the top of the Student Name column and choose <b>Copy Roster</b> to copy student or parent emails, or a list of names.'
       ],
-      target: assignmentHeader,
-      art: function () {
-        var bars = [18, 34, 62, 88, 54, 26];
-        var html = '<div class="hist" aria-hidden="true">';
-        bars.forEach(function (h, i) { html += '<span style="--h:' + h + '%;--i:' + i + '"></span>'; });
-        html += '</div><div class="hist-axis"><span>F</span><span>D</span><span>C</span><span>B</span><span>A</span><span>A+</span></div>';
-        return html;
-      }
+      target: assignmentHeader
     },
     {
       id: 'switcher',
@@ -453,11 +544,7 @@
       target: function () { return pick('.cgp-find-student'); },
       optional: true,
       tryIt: true,
-      padding: 6,
-      art: function () {
-        return '<div class="find-demo" aria-hidden="true"><div class="fd-box">' + ICON.search + '<span class="fd-typed"></span></div>' +
-          '<div class="fd-hit"><b>Tommy Newnam</b><span>Biology · Period 3</span></div></div>';
-      }
+      padding: 6
     },
     {
       id: 'gear',
@@ -480,17 +567,7 @@
       fallbackNote: 'The <b>Copy to other classes</b> button is in the sidebar on the course home page, and next to <b>+ Module</b> on the Modules page. If you don’t see it, turn it on in Gradebook+ settings.',
       target: function () { return pick('.cgp-copyto--home, .cgp-copyto'); },
       tryIt: true,
-      fallbackArt: true,
-      art: function () {
-        return '<div class="link-demo" aria-hidden="true">' +
-          '<span class="ld-c ld-c--here">Biology<small>Period 2 · this class</small></span>' +
-          '<span class="ld-line"></span>' +
-          '<div class="ld-list">' +
-          '<label class="ld-opt" style="--i:0"><span class="ld-box ld-box--on"></span>Biology · Period 4<em>suggested</em></label>' +
-          '<label class="ld-opt" style="--i:1"><span class="ld-box ld-box--on"></span>Biology · Period 6<em>suggested</em></label>' +
-          '<label class="ld-opt" style="--i:2"><span class="ld-box"></span>Chemistry · Period 3</label>' +
-          '</div></div>';
-      }
+      fallbackArt: true
     },
     {
       id: 'classes-copy',
@@ -502,16 +579,7 @@
         'Each copy goes into the matching module in that class.',
         'Each class is labeled <i>Not there yet</i>, <i>Same</i> or <i>Different</i>, so you can see whether it already has the item.',
         'If you’ve changed an item in one class, that version is only replaced if you choose to replace it.'
-      ],
-      art: function () {
-        return '<div class="copy-demo" aria-hidden="true">' +
-          '<div class="cd-item">' + ICON.check + '<b>Lab 5: Photosynthesis</b></div>' +
-          '<div class="cd-arrow"></div>' +
-          '<div class="cd-dests">' +
-          '<div class="cd-d" style="--i:0"><b>Period 4</b><span>Due Tue 10/14 · 9:50 AM</span></div>' +
-          '<div class="cd-d" style="--i:1"><b>Period 6</b><span>Due Tue 10/14 · 1:45 PM</span></div>' +
-          '</div></div>';
-      }
+      ]
     },
     {
       id: 'classes-compare',
@@ -519,21 +587,7 @@
       icon: 'grid',
       title: 'Check that your classes match',
       body: 'In the <b>Copy to other classes</b> window, <b>Compare classes</b> lists every item in this course and whether your other classes have the same version. If one is marked Different, click <b>Pick a version…</b> to see both side by side and choose which to keep.',
-      bullets: ['You can also copy as you work: when you create or edit an assignment, quiz, discussion or page, choose classes under <b>Also copy to your linked courses</b> before you save.'],
-      art: function () {
-        var rows = [
-          ['Lab 5: Photosynthesis', ['ok', 'ok']],
-          ['Unit 3 Quiz', ['ok', 'miss']],
-          ['Essay 2 rubric', ['old', 'ok']]
-        ];
-        var lab = { ok: '✓ Same', miss: '+ Not there yet', old: '≠ Different' };
-        var html = '<div class="board-demo" aria-hidden="true"><div class="bd-row bd-head"><span>Item</span><span>Period 4</span><span>Period 6</span></div>';
-        rows.forEach(function (r, i) {
-          html += '<div class="bd-row" style="--i:' + i + '"><span>' + r[0] + '</span>' +
-            r[1].map(function (c) { return '<span class="bd-c bd-c--' + c + '">' + lab[c] + '</span>'; }).join('') + '</div>';
-        });
-        return html + '</div>';
-      }
+      bullets: ['You can also copy as you work: when you create or edit an assignment, quiz, discussion or page, choose classes under <b>Also copy to your linked courses</b> before you save.']
     }
   ];
 
@@ -548,12 +602,7 @@
       target: function () { return pick('.cgp-groups-btn'); },
       tryIt: true,
       padding: 6,
-      fallbackArt: true,
-      art: function () {
-        return '<div class="board-demo" aria-hidden="true"><div class="bd-row bd-head"><span>Group 1</span><span>Group 2</span><span>Group 3</span></div>' +
-          '<div class="bd-row" style="--i:0"><span>Ava</span><span>Ben</span><span>Cleo</span></div>' +
-          '<div class="bd-row" style="--i:1"><span>Dev</span><span>Eli</span><span>Fay</span></div></div>';
-      }
+      fallbackArt: true
     },
     {
       id: 'groups-steps',
@@ -564,7 +613,7 @@
         { n: '1', t: 'How many groups?', d: 'Choose a number of groups, or how many students should be in each one.' },
         { n: '2', t: 'What should they be called?', d: 'Numbers, letters, colors, or names you type in.' },
         { n: '3', t: 'How do students get in?', d: 'Shuffle them in at random, place them yourself, or let students sign up in Canvas.' }
-      ],
+      ]
     },
     {
       id: 'groups-arrange',
@@ -574,7 +623,7 @@
       bullets: [
         'To move students, open the <b>Your group sets</b> tab, click <b>Arrange students</b>, and drag names between groups. Click <b>Save changes</b> when you’re done.',
         'To make the same groups in another class, click <b>Copy to…</b> next to the group set.'
-      ],
+      ]
     }
   ];
 
@@ -588,11 +637,7 @@
       icon: 'bubble',
       title: 'Insert a saved comment by typing a short name',
       body: 'A snippet is a comment you’ve saved under a short name. In a comment box, type a slash and the name, like <b>/nice</b>, then press ' + key('Tab') + ' and the full comment appears.',
-      bullets: ['Works in SpeedGrader and in the gradebook’s comment boxes.'],
-      art: function () {
-        return '<div class="find-demo" aria-hidden="true"><div class="fd-box"><span class="fd-snip">/nice</span>' + key('Tab') + '</div>' +
-          '<div class="fd-hit"><b>Nicely done. Your reasoning here is clear and well supported.</b></div></div>';
-      }
+      bullets: ['Works in SpeedGrader and in the gradebook’s comment boxes.']
     },
     {
       id: 'snip-list',
@@ -608,7 +653,7 @@
       kind: 'center',
       icon: 'check',
       title: 'SpeedGrader keeps comments you haven’t sent',
-      body: 'If you type a comment in SpeedGrader and move to another student before submitting it, Gradebook+ saves it. When you go back to that student, your comment will be waiting.',
+      body: 'If you type a comment in SpeedGrader and move to another student before submitting it, Gradebook+ saves it. When you go back to that student, your comment will be waiting.'
     }
   ];
 
@@ -625,16 +670,7 @@
       bullets: [
         'Click a class to fill in its start time, or click <b>End</b> beside it for its end time.',
         'The class you’re editing is marked <b>This course</b>. Use the arrows to see other days.'
-      ],
-      art: function () {
-        return '<div class="assign-demo" aria-hidden="true">' +
-          '<div class="ad-field"><span class="ad-lab">Due date</span><span class="ad-in">Tue, Oct 14</span><span class="ad-in ad-in--time"><span class="ad-t"></span></span></div>' +
-          '<div class="ad-pop"><div class="ad-day"><span>‹</span><b>Tuesday, Oct 14</b><span>›</span></div>' +
-          '<div class="ad-cls"><b>AP Biology P1</b><span>8:55 – 9:50 AM · Rm 204</span></div>' +
-          '<div class="ad-cls ad-cls--pick"><b>Biology P3</b><em>This course</em><span>10:45 – 11:40 AM · Rm 204</span></div>' +
-          '<div class="ad-cls"><b>Biology P6</b><span>1:45 – 2:40 PM · Rm 204</span></div>' +
-          '</div></div>';
-      }
+      ]
     },
     {
       id: 'opt-copy',
@@ -683,6 +719,7 @@
 
 
   CGP.tourStops = stops.concat(groupStops, snippetStops, scheduleStops);
+  CGP.tourStops.forEach(function (st) { if (ART[st.id]) st.art = ART[st.id]; });
   CGP.tourPaths = paths;
   CGP.tourFinales = finales;
   CGP.tourScheduleStops = scheduleStops;

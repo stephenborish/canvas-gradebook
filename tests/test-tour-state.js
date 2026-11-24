@@ -265,6 +265,21 @@ suite('Tutorials: each part on its own', (test) => {
     used.forEach((k) => a.ok(new RegExp('s\\.' + k + '\\b').test(src), 'render() draws s.' + k));
   });
 
+  test('illustrations are drawn from the real components, and only where a card has nothing live to show', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src/tour/tour.js'), 'utf8');
+    a.ok(/s\.art && \(!live \|\| usedFallback\)/.test(src), 'no drawing beside the real thing');
+    C().tourStops.filter((x) => x.art).forEach((x) => {
+      const html = x.art();
+      a.ok(typeof html === 'string' && html.length > 20, x.id + ' draws');
+      a.not(/class="(mk-|lg|mc|si-demo|status-demo|sel-demo|post-demo|mail-demo|link-demo|copy-demo|board-demo|assign-demo|heat |find-demo)/.test(html), x.id + ' uses the new drawings');
+    });
+    // Labels the drawings borrow from the features.
+    const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
+    a.ok(read('src/assignments/course-schedule.js').includes('Click a class to put its '));
+    a.ok(read('src/gradebook/score-analysis.js').includes('Distribution by letter grade'));
+    a.ok(read('src/sections/sync-dialog.js').includes('Link your classes'));
+  });
+
   test('every student-overview stop that opens the overview also closes it', () => {
     C().tourStops.filter((x) => x.group === 'si').forEach((x) => a.ok(typeof x.enter === 'function' && typeof x.leave === 'function', x.id));
   });
