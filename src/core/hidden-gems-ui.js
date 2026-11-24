@@ -1,92 +1,27 @@
-/* Canvas Gradebook+ - Hidden Gems UI & miniature vignettes.
+/* Canvas Gradebook+ - Hidden Gems: snow and rain on real snowy and rainy days.
  *
- * Renders the 6 unobtrusive, physics-touched margin surprises on any Canvas
- * course page and adapts each one to the teacher's detected subject.
- * Everything lives inside .cgp-gem-stage with pointer-events: none except on
- * the tiny interactive object itself, never steals focus, and cleans up every
- * node, timer and listener when finished. */
+ * When it is really snowing or raining around Philadelphia and Malvern
+ * (core/hidden-gems.js decides, from weather.js in the service worker), the
+ * Canvas page the teacher is on gets the weather too, for about forty
+ * seconds, at most once every three hours:
+ *   snow  flakes at every depth; snow piles up on the page's own buttons,
+ *         header bars and headings, and banks up along the bottom
+ *   rain  sheets of slanted rain splashing off those same ledges, water
+ *         running down the glass, lightning in a thunderstorm
+ *
+ * Rules both keep: the stage never takes a click (pointer-events: none; the
+ * pointer only matters by hovering), never takes focus, never changes the
+ * page, fades away the moment the teacher types, and removes every node,
+ * timer and listener when finished. Preview on a Canvas course page with
+ * #cgp-gem=snow, #cgp-gem=snow:heavy, #cgp-gem=rain, #cgp-gem=rain:heavy or
+ * #cgp-gem=rain:thunder. */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.HiddenGemsController) return;
 
   var STORAGE_KEY = 'cgp.hiddenGems.state';
-  var COURSES_CACHE_KEY = 'cgp.courses';
-
-  /* ---------------------------------------------------------- course lookup */
-
-  function readCurrentCourseName() {
-    var links = document.querySelectorAll('#breadcrumbs a[href*="/courses/"], .ic-app-crumbs a[href*="/courses/"]');
-    for (var i = 0; i < links.length; i++) {
-      var href = (links[i].getAttribute('href') || '').split(/[?#]/)[0];
-      if (/\/courses\/\d+\/?$/.test(href)) {
-        var t = (links[i].textContent || '').trim();
-        if (t) return t;
-      }
-    }
-    var cur = document.querySelector('#breadcrumbs [aria-current="page"], .ic-app-crumbs [aria-current="page"]');
-    if (cur && cur.textContent && cur.textContent.trim()) return cur.textContent.trim();
-    return (document.title || '').trim();
-  }
-
-  var cachedUid = null;
-  var uidInFlight = null;
-  function resolveCurrentUserId() {
-    if (cachedUid) return Promise.resolve(cachedUid);
-    try {
-      var envUid = CGP.diag && CGP.diag.facts && CGP.diag.facts.envUserId ? String(CGP.diag.facts.envUserId) : '';
-      if (envUid) {
-        cachedUid = envUid;
-        return Promise.resolve(envUid);
-      }
-    } catch (e) { /* ignore */ }
-    if (uidInFlight) return uidInFlight;
-    if (CGP.CanvasApi && typeof CGP.CanvasApi.prototype.currentUser === 'function') {
-      uidInFlight = new CGP.CanvasApi().currentUser()
-        .then(function (u) {
-          uidInFlight = null;
-          if (u && u.id) { cachedUid = String(u.id); return cachedUid; }
-          return null;
-        }, function () {
-          uidInFlight = null;
-          return null;
-        });
-      return uidInFlight;
-    }
-    return Promise.resolve(null);
-  }
-
-  function loadCachedCourseNames() {
-    return new Promise(function (resolve) {
-      try {
-        if (!chrome || !chrome.storage || !chrome.storage.local) { resolve([]); return; }
-        chrome.storage.local.get(COURSES_CACHE_KEY, function (res) {
-          if (chrome.runtime && chrome.runtime.lastError) { resolve([]); return; }
-          var box = res && res[COURSES_CACHE_KEY];
-          if (!box || box.origin !== location.origin) { resolve([]); return; }
-          resolveCurrentUserId().then(function (uid) {
-            resolve(CGP.hiddenGems.extractCachedCourseNames(box, location.origin, uid, Date.now()));
-          }, function () { resolve([]); });
-        });
-      } catch (e) { resolve([]); }
-    });
-  }
-
-  function resolveCurrentSubject(override) {
-    if (override && CGP.hiddenGems.SUBJECT_LABELS[override]) {
-      return Promise.resolve({ id: override, label: CGP.hiddenGems.SUBJECT_LABELS[override], source: 'override' });
-    }
-    var curName = readCurrentCourseName();
-    var direct = CGP.hiddenGems.matchSubject(curName);
-    if (direct) {
-      return Promise.resolve({ id: direct, label: CGP.hiddenGems.SUBJECT_LABELS[direct], source: 'course' });
-    }
-    return loadCachedCourseNames().then(function (names) {
-      return CGP.hiddenGems.detectSubject(curName, names);
-    }, function () {
-      return CGP.hiddenGems.detectSubject(curName, []);
-    });
-  }
+  var TAU = Math.PI * 2;
 
   /* --------------------------------------------------------- storage helper */
 
@@ -133,1047 +68,1119 @@
     } catch (e) { return false; }
   }
 
+  /* ------------------------------------------------------------ math helpers */
+
+  /* Small, fast seeded generator (mulberry32): one seed, one picture. */
+  function makeRng(seed) {
+    var a = (seed >>> 0) || 0x9e3779b9;
+    return function () {
+      a = (a + 0x6d2b79f5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function smoothstep(a, b, v) {
+    var t = clamp((v - a) / (b - a), 0, 1);
+    return t * t * (3 - 2 * t);
+  }
+
+  /* Gradient noise in 3D (Perlin's improved noise), seeded. Returns about -1..1. */
+  function makeNoise(rng) {
+    var perm = new Uint8Array(512);
+    var p = [];
+    for (var i = 0; i < 256; i++) p[i] = i;
+    for (var j = 255; j > 0; j--) {
+      var k = Math.floor(rng() * (j + 1));
+      var tmp = p[j]; p[j] = p[k]; p[k] = tmp;
+    }
+    for (var m = 0; m < 512; m++) perm[m] = p[m & 255];
+    function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+    function grad(h, x, y, z) {
+      var hh = h & 15;
+      var u = hh < 8 ? x : y;
+      var v = hh < 4 ? y : (hh === 12 || hh === 14 ? x : z);
+      return ((hh & 1) ? -u : u) + ((hh & 2) ? -v : v);
+    }
+    return function (x, y, z) {
+      z = z || 0;
+      var X = Math.floor(x) & 255, Y = Math.floor(y) & 255, Z = Math.floor(z) & 255;
+      x -= Math.floor(x); y -= Math.floor(y); z -= Math.floor(z);
+      var u = fade(x), v = fade(y), w = fade(z);
+      var A = perm[X] + Y, AA = perm[A] + Z, AB = perm[A + 1] + Z;
+      var B = perm[X + 1] + Y, BA = perm[B] + Z, BB = perm[B + 1] + Z;
+      return lerp(
+        lerp(lerp(grad(perm[AA], x, y, z), grad(perm[BA], x - 1, y, z), u),
+             lerp(grad(perm[AB], x, y - 1, z), grad(perm[BB], x - 1, y - 1, z), u), v),
+        lerp(lerp(grad(perm[AA + 1], x, y, z - 1), grad(perm[BA + 1], x - 1, y, z - 1), u),
+             lerp(grad(perm[AB + 1], x, y - 1, z - 1), grad(perm[BB + 1], x - 1, y - 1, z - 1), u), v),
+        w);
+    };
+  }
+
+  function rgba(rgb, a) {
+    return 'rgba(' + Math.round(rgb[0]) + ',' + Math.round(rgb[1]) + ',' + Math.round(rgb[2]) + ',' + a + ')';
+  }
+
+
   /* -------------------------------------------------------- stage lifecycle */
 
-  function createSession(isInteractive) {
+  /* One session per piece: the stage element, its canvases, its timers and
+   * listeners, the pointer, and a clean teardown. */
+  function createSession(onEnd) {
     var stage = document.createElement('div');
     stage.className = 'cgp-gem-stage';
-    if (!isInteractive) stage.setAttribute('aria-hidden', 'true');
+    stage.setAttribute('aria-hidden', 'true');
     document.body.appendChild(stage);
 
     var timers = [];
-    var rafs = [];
+    var rafId = 0;
     var listeners = [];
+    var canvases = [];
+    var cleanups = [];
     var done = false;
+    var leaving = false;
+
+    var pointer = { x: -9999, y: -9999, vx: 0, vy: 0, speed: 0, at: 0, seen: false };
+
+    function on(target, type, fn, opts) {
+      target.addEventListener(type, fn, opts);
+      listeners.push([target, type, fn, opts]);
+    }
+
+    on(window, 'pointermove', function (e) {
+      var now = performance.now();
+      var dt = Math.max(8, now - (pointer.at || now - 16)) / 1000;
+      if (pointer.seen) {
+        var vx = (e.clientX - pointer.x) / dt;
+        var vy = (e.clientY - pointer.y) / dt;
+        pointer.vx = lerp(pointer.vx, vx, 0.5);
+        pointer.vy = lerp(pointer.vy, vy, 0.5);
+      }
+      pointer.x = e.clientX;
+      pointer.y = e.clientY;
+      pointer.at = now;
+      pointer.seen = true;
+    }, { passive: true });
+    on(document, 'pointerleave', function () { pointer.x = -9999; pointer.y = -9999; pointer.seen = false; }, { passive: true });
 
     var api = {
       stage: stage,
+      pointer: pointer,
       isDone: function () { return done; },
+      /* Runs at teardown, however the session ends: used to hand the real
+       * page back exactly as it was. */
+      onDestroy: function (fn) { cleanups.push(fn); },
+      isLeaving: function () { return leaving; },
+      on: on,
       after: function (ms, fn) {
         if (done) return 0;
         var id = setTimeout(function () { if (!done) fn(); }, ms);
         timers.push(id);
         return id;
       },
-      raf: function (fn) {
-        if (done) return 0;
-        var id = requestAnimationFrame(function (ts) { if (!done) fn(ts); });
-        rafs.push(id);
-        return id;
+      /* A canvas covering the viewport (or a fixed box: {left|right, top|bottom,
+       * width, height}), sized for the screen's pixel density. */
+      canvas: function (box, cls) {
+        var el = document.createElement('canvas');
+        el.className = 'cgp-gem-canvas' + (cls ? ' ' + cls : '');
+        var ctx = el.getContext('2d');
+        var rec = { el: el, ctx: ctx, w: 0, h: 0, dpr: 1, box: box || null };
+        function size() {
+          var w = box ? box.width : window.innerWidth;
+          var h = box ? box.height : window.innerHeight;
+          var dpr = Math.min(2, window.devicePixelRatio || 1);
+          rec.w = w; rec.h = h; rec.dpr = dpr;
+          el.width = Math.max(1, Math.round(w * dpr));
+          el.height = Math.max(1, Math.round(h * dpr));
+          el.style.width = w + 'px';
+          el.style.height = h + 'px';
+          if (box) {
+            el.style.left = box.left != null ? box.left + 'px' : 'auto';
+            el.style.right = box.right != null ? box.right + 'px' : 'auto';
+            el.style.top = box.top != null ? box.top + 'px' : 'auto';
+            el.style.bottom = box.bottom != null ? box.bottom + 'px' : 'auto';
+          } else {
+            el.style.left = '0px';
+            el.style.top = '0px';
+          }
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+        size();
+        rec.resize = size;
+        stage.appendChild(el);
+        canvases.push(rec);
+        return rec;
       },
-      on: function (target, type, fn, opts) {
-        target.addEventListener(type, fn, opts);
-        listeners.push([target, type, fn, opts]);
+      /* Calls fn(dt, t) every frame (dt and t in seconds) until it returns
+       * false, then fades the stage out and ends the session. */
+      loop: function (fn, fadeMs) {
+        var start = performance.now();
+        var last = start;
+        function frame(now) {
+          if (done) return;
+          var dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+          last = now;
+          var keep;
+          try { keep = fn(dt, (now - start) / 1000); } catch (e) {
+            if (CGP.diag) CGP.diag.error('hiddenGems.frameFailed', { message: String(e && e.message) });
+            keep = false;
+            fadeMs = 0;
+          }
+          if (keep === false) { api.end(fadeMs == null ? 0 : fadeMs); return; }
+          rafId = requestAnimationFrame(frame);
+        }
+        rafId = requestAnimationFrame(frame);
+      },
+      /* Fade the whole stage out, then tear everything down. */
+      end: function (fadeMs) {
+        if (done || leaving) return;
+        leaving = true;
+        var ms = Math.max(0, fadeMs || 0);
+        if (!ms) { api.destroy(); return; }
+        stage.style.transition = 'opacity ' + ms + 'ms ease';
+        stage.style.opacity = '0';
+        setTimeout(function () { api.destroy(); }, ms + 40);
       },
       destroy: function () {
         if (done) return;
         done = true;
+        leaving = true;
+        if (rafId) cancelAnimationFrame(rafId);
         for (var i = 0; i < timers.length; i++) clearTimeout(timers[i]);
-        for (var j = 0; j < rafs.length; j++) cancelAnimationFrame(rafs[j]);
         for (var k = 0; k < listeners.length; k++) {
           var l = listeners[k];
           try { l[0].removeEventListener(l[1], l[2], l[3]); } catch (e) { /* ignore */ }
         }
+        for (var u = cleanups.length - 1; u >= 0; u--) {
+          try { cleanups[u](); } catch (e) { /* keep tearing down */ }
+        }
+        for (var c = 0; c < canvases.length; c++) {
+          // Release the backing store right away instead of waiting for GC.
+          try { canvases[c].el.width = 0; canvases[c].el.height = 0; } catch (e) { /* ignore */ }
+        }
         if (stage.parentNode) stage.parentNode.removeChild(stage);
+        if (typeof onEnd === 'function') onEnd(api);
       }
     };
+
+    on(window, 'resize', function () {
+      for (var i = 0; i < canvases.length; i++) {
+        if (!canvases[i].box) canvases[i].resize();
+      }
+    }, { passive: true });
+
+    /* The teacher always wins: by default a key press, a click, or scrolling
+     * ends the piece at once; a piece may replace api.dismiss to choose
+     * (snow and rain keep falling through clicks and scrolling, and end on a
+     * key press). The event itself is never stopped: the key, click or
+     * scroll still does what it would. */
+    api.dismiss = function () { api.end(450); };
+    function onKey(e) {
+      if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') return;
+      api.dismiss('key');
+    }
+    on(document, 'keydown', onKey, true);
+    // Typing in an editor frame (Canvas's rich content editor) never reaches
+    // this document: listen in the frame of this site that has focus, both
+    // one already focused when the piece starts and any focused later.
+    var watchedFrames = [];
+    function watchFocusedFrame() {
+      var f = document.activeElement;
+      if (!f || f.tagName !== 'IFRAME') return;
+      try {
+        var fd = f.contentDocument;
+        if (fd && watchedFrames.indexOf(fd) === -1) {
+          watchedFrames.push(fd);
+          on(fd, 'keydown', onKey, true);
+        }
+      } catch (e) { /* another site's frame: its keys cannot be seen */ }
+    }
+    watchFocusedFrame();
+    on(window, 'blur', function () { api.after(0, watchFocusedFrame); });
+    on(window, 'pointerdown', function () { api.dismiss('click'); }, true);
+    on(window, 'wheel', function () { api.dismiss('scroll'); }, { capture: true, passive: true });
+    on(document, 'scroll', function () { api.dismiss('scroll'); }, { capture: true, passive: true });
+    on(window, 'resize', function () { api.dismiss('resize'); }, { passive: true });
+    on(document, 'visibilitychange', function () {
+      if (document.hidden) api.destroy();
+    });
+
     return api;
   }
 
-  /* ========================================================= 1. WASHER GEM */
+  /* ======================================================== PIECES (PLAYERS) */
 
-  function smudgeSvg(mark) {
-    var ink = 'rgba(72, 82, 94, 0.24)';
-    if (mark === 'benzene') {
-      return '<svg viewBox="0 0 58 58"><g fill="none" stroke="' + ink + '" stroke-width="2">' +
-        '<polygon points="29,9 45,18 45,38 29,47 13,38 13,18"/>' +
-        '<circle cx="29" cy="28" r="10" stroke-dasharray="4 3"/></g></svg>';
-    }
-    if (mark === 'orbit') {
-      return '<svg viewBox="0 0 58 58"><g fill="none" stroke="' + ink + '" stroke-width="1.6">' +
-        '<ellipse cx="29" cy="29" rx="20" ry="8" transform="rotate(-25 29 29)"/>' +
-        '<ellipse cx="29" cy="29" rx="20" ry="8" transform="rotate(35 29 29)"/>' +
-        '<circle cx="29" cy="29" r="3" fill="' + ink + '"/></g></svg>';
-    }
-    if (mark === 'helix') {
-      return '<svg viewBox="0 0 58 58"><g fill="none" stroke="' + ink + '" stroke-width="2" stroke-linecap="round">' +
-        '<path d="M18 8 C38 16, 20 26, 38 34 C20 42, 36 48, 22 52"/>' +
-        '<path d="M38 8 C18 16, 36 26, 18 34 C36 42, 20 48, 34 52"/>' +
-        '<line x1="22" y1="15" x2="34" y2="15"/><line x1="21" y1="29" x2="35" y2="29"/><line x1="23" y1="43" x2="33" y2="43"/></g></svg>';
-    }
-    if (mark === 'integral') {
-      return '<svg viewBox="0 0 58 58"><text x="29" y="42" text-anchor="middle" font-family="Georgia,serif" font-style="italic" font-size="36" fill="' + ink + '">&#8747;dx</text></svg>';
-    }
-    if (mark === 'pi') {
-      return '<svg viewBox="0 0 58 58"><text x="29" y="42" text-anchor="middle" font-family="Georgia,serif" font-size="38" fill="' + ink + '">&#960;</text></svg>';
-    }
-    if (mark === 'hanzi') {
-      return '<svg viewBox="0 0 58 58"><text x="29" y="42" text-anchor="middle" font-family="serif" font-size="34" fill="' + ink + '">&#22909;</text></svg>';
-    }
-    if (mark === 'exclaim') {
-      return '<svg viewBox="0 0 58 58"><text x="29" y="40" text-anchor="middle" font-family="Georgia,serif" font-size="32" fill="' + ink + '">&#161;!</text></svg>';
-    }
-    if (mark === 'alphaomega') {
-      return '<svg viewBox="0 0 58 58"><text x="29" y="39" text-anchor="middle" font-family="Georgia,serif" font-size="24" fill="' + ink + '">&#913;&#937;</text></svg>';
-    }
-    if (mark === 'compass') {
-      return '<svg viewBox="0 0 58 58"><g fill="none" stroke="' + ink + '" stroke-width="1.6">' +
-        '<circle cx="29" cy="29" r="18"/><path d="M29 10 L33 29 L29 48 L25 29 Z" fill="' + ink + '"/>' +
-        '<line x1="11" y1="29" x2="47" y2="29"/></g></svg>';
-    }
-    if (mark === 'clef') {
-      return '<svg viewBox="0 0 58 58"><text x="29" y="44" text-anchor="middle" font-family="Georgia,serif" font-size="38" fill="' + ink + '">&#119070;</text></svg>';
-    }
-    if (mark === 'braces') {
-      return '<svg viewBox="0 0 58 58"><text x="29" y="40" text-anchor="middle" font-family="monospace" font-size="26" fill="' + ink + '">{ ; }</text></svg>';
-    }
-    return '<svg viewBox="0 0 58 58"><g fill="none" stroke="rgba(90,100,112,0.18)" stroke-width="2" stroke-linecap="round">' +
-      '<ellipse cx="29" cy="29" rx="15" ry="20" transform="rotate(-14 29 29)"/>' +
-      '<ellipse cx="29" cy="29" rx="10" ry="14" transform="rotate(-14 29 29)" stroke-dasharray="18 5"/>' +
-      '<ellipse cx="29" cy="29" rx="5" ry="8" transform="rotate(-14 29 29)"/></g></svg>';
+  var PLAYERS = {};
+
+  /* ======================================================== THE PAGE ITSELF
+   * The "ledges" of the page on screen: the top edges real snow would settle
+   * on and real rain would splash off (buttons, header bars, table headers,
+   * headings, panels, images). Read once, never changed. */
+
+  var SKIP_TAGS = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEMPLATE: 1, IFRAME: 1, VIDEO: 1, AUDIO: 1, CANVAS: 1, HEAD: 1, META: 1, LINK: 1, BR: 1, OPTION: 1, OBJECT: 1, EMBED: 1 };
+  var LEDGE_TAGS = { BUTTON: 1, INPUT: 1, SELECT: 1, TEXTAREA: 1, IMG: 1, TH: 1, H1: 1, H2: 1, H3: 1, NAV: 1, HEADER: 1 };
+
+  function opaque(color) {
+    var m = /rgba?\(([^)]+)\)/.exec(color || '');
+    if (!m) return false;
+    var parts = m[1].split(',');
+    return parts.length < 4 || parseFloat(parts[3]) > 0.5;
   }
 
-  function playWasher(session, props) {
-    var isLeft = props.side === 'left';
-    var topPct = typeof props.topPct === 'number' ? props.topPct : 34;
-    var capColor = props.capColor || '#c94a38';
-
-    var smudge = document.createElement('div');
-    smudge.className = 'cgp-gem-smudge';
-    smudge.style.top = topPct + '%';
-    if (isLeft) smudge.style.left = '34px';
-    else smudge.style.right = '34px';
-    smudge.innerHTML = smudgeSvg(props.mark);
-    session.stage.appendChild(smudge);
-
-    var wrap = document.createElement('div');
-    wrap.className = 'cgp-gem-washer-wrap';
-    if (isLeft) wrap.style.left = '16px';
-    else wrap.style.right = '16px';
-
-    var rig = document.createElement('div');
-    rig.className = 'cgp-gem-washer-rig';
-
-    var targetY = Math.max(110, Math.round(window.innerHeight * (topPct / 100)) - 42);
-    var currentY = -120;
-    var theta = 0;
-    var omega = 0;
-    var phase = 'wait';
-    var phaseStart = performance.now();
-    var lastT = phaseStart;
-    var wipePct = 0;
-    var mistAlpha = 0;
-    var squeegeeY = 0;
-    var armTip = 0;
-
-    var cableTop = -(targetY + 300);
-    rig.innerHTML =
-      '<svg viewBox="0 0 96 600" width="96" height="600" style="overflow:visible">' +
-        '<line x1="16" y1="' + cableTop + '" x2="16" y2="56" stroke="#6c7a89" stroke-width="1.4"/>' +
-        '<line x1="80" y1="' + cableTop + '" x2="80" y2="56" stroke="#6c7a89" stroke-width="1.4"/>' +
-        '<g class="cgp-w-mist" opacity="0" fill="#7ec4e8">' +
-          '<circle cx="24" cy="36" r="1.8"/><circle cx="19" cy="32" r="1.4"/><circle cx="21" cy="40" r="1.3"/><circle cx="15" cy="36" r="1.1"/>' +
-        '</g>' +
-        '<g class="cgp-w-person">' +
-          '<rect x="40" y="34" width="16" height="20" rx="4" fill="#2f5d8a"/>' +
-          '<circle cx="48" cy="24" r="7.5" fill="#f2c9a0"/>' +
-          '<g class="cgp-w-cap">' +
-            '<path d="M40 22 Q48 13 56 22 Z" fill="' + capColor + '"/>' +
-            '<rect x="38" y="21" width="14" height="2.4" rx="1.2" fill="' + capColor + '" opacity="0.85"/>' +
-          '</g>' +
-          '<circle cx="45.5" cy="24.5" r="1" fill="#2c2c2c"/>' +
-          '<circle cx="50.5" cy="24.5" r="1" fill="#2c2c2c"/>' +
-          '<g class="cgp-w-arm">' +
-            '<line x1="41" y1="39" x2="26" y2="38" stroke="#f2c9a0" stroke-width="3" stroke-linecap="round"/>' +
-            '<rect x="18" y="34" width="12" height="3.2" rx="1" fill="#2c3e50"/>' +
-            '<rect x="18" y="33" width="12" height="1.4" rx="0.7" fill="#5dade2"/>' +
-          '</g>' +
-          '<path d="M62 45 L72 45 L70 55 L64 55 Z" fill="#d9a441" stroke="#9e7424" stroke-width="1"/>' +
-        '</g>' +
-        '<line x1="12" y1="42" x2="84" y2="42" stroke="#85929e" stroke-width="1.6"/>' +
-        '<rect x="10" y="54" width="76" height="7" rx="2" fill="#b8844c" stroke="#7d562d" stroke-width="1.2"/>' +
-        '<circle cx="16" cy="57.5" r="1.5" fill="#4e5964"/>' +
-        '<circle cx="80" cy="57.5" r="1.5" fill="#4e5964"/>' +
-      '</svg>';
-
-    wrap.appendChild(rig);
-    session.stage.appendChild(wrap);
-
-    var glint = document.createElement('div');
-    glint.className = 'cgp-gem-glint';
-    glint.style.top = 'calc(' + topPct + '% + 14px)';
-    if (isLeft) glint.style.left = '46px';
-    else glint.style.right = '46px';
-    glint.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 1 L14.4 9.6 L23 12 L14.4 14.4 L12 23 L9.6 14.4 L1 12 L9.6 9.6 Z" fill="#f4d03f" stroke="#fff" stroke-width="0.8"/></svg>';
-    session.stage.appendChild(glint);
-
-    var mistEl = rig.querySelector('.cgp-w-mist');
-    var armEl = rig.querySelector('.cgp-w-arm');
-    var capEl = rig.querySelector('.cgp-w-cap');
-
-    var lastMx = null;
-    session.on(window, 'mousemove', function (e) {
-      var nearX = isLeft ? e.clientX < 150 : e.clientX > window.innerWidth - 150;
-      if (lastMx !== null && nearX && Math.abs(e.clientY - (currentY + 40)) < 90) {
-        var dx = e.clientX - lastMx;
-        omega += Math.max(-0.45, Math.min(0.45, dx * 0.008));
-      }
-      lastMx = e.clientX;
-    }, { passive: true });
-
-    session.after(60, function () { smudge.classList.add('is-visible'); });
-    session.after(1200, function () { phase = 'down'; phaseStart = performance.now(); });
-
-    function tick(now) {
-      if (session.isDone()) return;
-      var dt = Math.min(0.05, (now - lastT) / 1000);
-      lastT = now;
-
-      var accel = -14 * theta - 2.6 * omega;
-      omega += accel * dt;
-      theta += omega * dt;
-
-      var elapsed = now - phaseStart;
-      if (phase === 'down') {
-        var p = Math.min(1, elapsed / 1500);
-        var ease = 1 - Math.pow(1 - p, 3);
-        currentY = -120 + (targetY + 120) * ease;
-        if (p >= 1) {
-          phase = 'spray';
-          phaseStart = now;
-          omega += 0.14;
+  function collectLedges(stage) {
+    var W = window.innerWidth, H = window.innerHeight;
+    var out = [];
+    var visited = 0;
+    function walk(el, parentBg) {
+      for (var c = el.firstElementChild; c; c = c.nextElementSibling) {
+        if (++visited > 15000) return;
+        if (c === stage || SKIP_TAGS[c.tagName] || (c.classList && c.classList.contains('cgp-gem-sky'))) continue;
+        var cs = getComputedStyle(c);
+        if (cs.display === 'none' || cs.visibility !== 'visible' || parseFloat(cs.opacity) < 0.2) continue;
+        var r = c.getBoundingClientRect();
+        if (r.width < 1 && r.height < 1) { walk(c, parentBg); continue; }
+        if (r.bottom < 0 || r.top > H || r.right < 0 || r.left > W) continue;
+        var bg = cs.backgroundColor;
+        var ownBg = opaque(bg) && bg !== parentBg;
+        var border = parseFloat(cs.borderTopWidth) > 0 && cs.borderTopStyle !== 'none' && opaque(cs.borderTopColor);
+        var top = r.top;
+        var x0 = Math.max(0, r.left), x1 = Math.min(W, r.right);
+        if (/^H[1-3]$/.test(c.tagName) && !ownBg && !border) {
+          // Snow sits on the letters themselves, not on the empty line around them.
+          var fs = parseFloat(cs.fontSize) || 16, lh = parseFloat(cs.lineHeight) || fs * 1.2;
+          top = r.top + parseFloat(cs.paddingTop || 0) + Math.max(0, (lh - fs) / 2) + fs * 0.14;
+          try {
+            var range = document.createRange();
+            range.selectNodeContents(c);
+            var tr = range.getClientRects()[0];
+            if (tr) { x0 = Math.max(0, tr.left + 1); x1 = Math.min(W, tr.right - 1); }
+          } catch (e) { /* keep the element's own width */ }
         }
-      } else if (phase === 'spray') {
-        var sp = Math.min(1, elapsed / 650);
-        mistAlpha = Math.sin(sp * Math.PI);
-        if (sp >= 1) {
-          mistAlpha = 0;
-          phase = 'wipe';
-          phaseStart = now;
+        if ((ownBg || border || LEDGE_TAGS[c.tagName]) && x1 - x0 >= 30 && top > 6 && top < H - 12) {
+          var hit = document.elementFromPoint(clamp((x0 + x1) / 2, 0, W - 1), clamp(top + 2, 0, H - 1));
+          if (hit && (hit === c || c.contains(hit) || hit.contains(c))) {
+            var radius = Math.min(parseFloat(cs.borderTopLeftRadius) || 0, 6);
+            out.push({ x0: x0 + radius * 0.5, x1: x1 - radius * 0.5, y: top });
+          }
         }
-      } else if (phase === 'wipe') {
-        var wp = Math.min(1, elapsed / 1100);
-        wipePct = Math.round(wp * 100);
-        squeegeeY = wp * 22 - 4;
-        smudge.style.clipPath = 'inset(' + wipePct + '% 0 0 0)';
-        if (wp >= 1) {
-          smudge.style.opacity = '0';
-          glint.classList.add('is-spark');
-          session.after(520, function () { glint.classList.remove('is-spark'); });
-          phase = 'tip';
-          phaseStart = now;
+        walk(c, opaque(bg) ? bg : parentBg);
+      }
+    }
+    walk(document.body, getComputedStyle(document.body).backgroundColor);
+    // Merge ledges on the same line that touch; drop ones hidden just under another.
+    out.sort(function (a, b) { return (b.x1 - b.x0) - (a.x1 - a.x0); });
+    var merged = [];
+    for (var i = 0; i < out.length; i++) {
+      var L = out[i], used = false;
+      for (var j = 0; j < merged.length; j++) {
+        var M = merged[j];
+        if (Math.abs(M.y - L.y) < 3 && L.x0 <= M.x1 + 2 && L.x1 >= M.x0 - 2) {
+          M.x0 = Math.min(M.x0, L.x0); M.x1 = Math.max(M.x1, L.x1); used = true; break;
         }
-      } else if (phase === 'tip') {
-        var tp = Math.min(1, elapsed / 900);
-        squeegeeY = 0;
-        armTip = Math.sin(tp * Math.PI) * 14;
-        if (tp >= 1) {
-          armTip = 0;
-          phase = 'up';
-          phaseStart = now;
-        }
-      } else if (phase === 'up') {
-        var up = Math.min(1, elapsed / 1350);
-        var uEase = up * up;
-        currentY = targetY - (targetY + 140) * uEase;
-        if (up >= 1) {
-          session.destroy();
-          return;
-        }
+        if (L.x0 >= M.x0 - 2 && L.x1 <= M.x1 + 2 && L.y > M.y && L.y - M.y < 4) { used = true; break; }
       }
-
-      rig.style.transform = 'translateY(' + currentY.toFixed(1) + 'px) rotate(' + (theta * 14).toFixed(2) + 'deg)';
-      if (mistEl) mistEl.setAttribute('opacity', mistAlpha.toFixed(2));
-      if (armEl) armEl.setAttribute('transform', 'translate(0,' + squeegeeY.toFixed(1) + ')');
-      if (capEl) capEl.setAttribute('transform', 'rotate(' + (-armTip).toFixed(1) + ' 48 22)');
-
-      session.raf(tick);
+      if (!used) merged.push({ x0: L.x0, x1: L.x1, y: L.y });
     }
-
-    session.raf(tick);
+    // Sheltered ledges: nothing falls onto a ledge that sits just under
+    // another one, so the rows of a table or a list get snow only on top.
+    merged.sort(function (a, b) { return a.y - b.y; });
+    var open = [];
+    for (var s = 0; s < merged.length; s++) {
+      var A = merged[s], covered = false;
+      for (var o = 0; o < merged.length && !covered; o++) {
+        var B = merged[o];
+        if (B === A || B.y >= A.y || A.y - B.y > 36) continue;
+        var overlap = Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0);
+        if (overlap > (A.x1 - A.x0) * 0.6) covered = true;
+      }
+      if (!covered) open.push(A);
+      if (open.length >= 70) break;
+    }
+    return open;
   }
 
-  /* ========================================================= 2. PAPER BOAT */
+  /* ==================================================================== SKY
+   * The light of the day, laid over the page the way a gloomy day dims a
+   * room: an overcast veil, heavier toward the top and the corners, with very
+   * large, very soft cloud shadows sliding across with the wind. Dimming the
+   * page is what lets white snow and bright rain show against it, as in
+   * life. A tiny canvas scaled up, so it is perfectly smooth; a plain
+   * translucent layer (no blend mode), so it costs next to nothing to show. */
 
-  function boatSvg(watermark, tint) {
-    var base = tint || '#fbf7ee';
-    return '<svg viewBox="0 0 64 38" aria-hidden="true">' +
-      '<polygon points="32,4 50,24 14,24" fill="' + base + '" stroke="#c8bda8" stroke-width="1"/>' +
-      '<polygon points="32,4 32,24 50,24" fill="#efe6d4" stroke="#c8bda8" stroke-width="0.9"/>' +
-      '<polygon points="4,22 60,22 50,34 14,34" fill="' + base + '" stroke="#bfb29a" stroke-width="1.1"/>' +
-      '<polygon points="32,22 60,22 50,34 32,34" fill="#eae0cb" stroke="#bfb29a" stroke-width="0.9"/>' +
-      '<text x="32" y="20" text-anchor="middle" font-size="8.5" font-family="Georgia,serif" fill="#7d6e57" opacity="0.72">' +
-        String(watermark || '').replace(/[<>&]/g, '') +
-      '</text>' +
-    '</svg>';
-  }
-
-  function playBoat(session, props) {
-    var waterline = document.createElement('div');
-    waterline.className = 'cgp-gem-waterline';
-    waterline.setAttribute('aria-hidden', 'true');
-    session.stage.appendChild(waterline);
-    session.after(40, function () { waterline.classList.add('is-visible'); });
-
-    var btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'cgp-gem-boat-btn';
-    btn.setAttribute('aria-label', 'Unfold paper boat');
-    btn.title = 'Click to unfold';
-    btn.innerHTML = boatSvg(props.watermark, props.paperTint);
-
-    var refl = document.createElement('div');
-    refl.className = 'cgp-gem-boat-reflection';
-    refl.setAttribute('aria-hidden', 'true');
-    refl.innerHTML = boatSvg('', props.paperTint);
-
-    session.stage.appendChild(refl);
-    session.stage.appendChild(btn);
-
-    var dir = props.direction === -1 ? -1 : 1;
-    var x = dir === 1 ? -70 : window.innerWidth + 14;
-    var speed = 38;
-    var paused = false;
-    var lastT = performance.now();
-    var startT = lastT;
-    var noteWrap = null;
-
-    function openNote() {
-      if (paused || noteWrap) return;
-      paused = true;
-      btn.style.opacity = '0';
-      btn.style.pointerEvents = 'none';
-      refl.style.opacity = '0';
-
-      var card = props.card || { kind: 'fact', front: 'Take a slow breath — you are doing better than you think.' };
-      var isRiddle = card.kind === 'riddle' && card.back;
-
-      noteWrap = document.createElement('div');
-      noteWrap.className = 'cgp-gem-note-wrap';
-      noteWrap.setAttribute('role', 'dialog');
-      noteWrap.setAttribute('aria-label', 'Paper boat note');
-
-      var inner = document.createElement('div');
-      inner.className = 'cgp-gem-note-inner';
-
-      var front = document.createElement('div');
-      front.className = 'cgp-gem-note-face';
-
-      var meta = document.createElement('div');
-      meta.className = 'cgp-gem-note-meta';
-      var metaLabel = document.createElement('span');
-      var kindLabel = isRiddle ? 'Riddle' : (card.kind === 'note' ? 'Note' : 'Curiosity');
-      metaLabel.textContent = (props.subjectId && props.subjectId !== 'general' ? props.subjectLabel + ' · ' : '') + kindLabel;
-      var metaMark = document.createElement('span');
-      metaMark.className = 'cgp-gem-note-mark';
-      metaMark.textContent = props.watermark || '✦';
-      meta.appendChild(metaLabel);
-      meta.appendChild(metaMark);
-
-      var body = document.createElement('p');
-      body.className = 'cgp-gem-note-body';
-      body.textContent = card.front;
-
-      var actions = document.createElement('div');
-      actions.className = 'cgp-gem-note-actions';
-
-      var flipBtn = null;
-      var back = null;
-      var flipBack = null;
-
-      if (isRiddle) {
-        flipBtn = document.createElement('button');
-        flipBtn.type = 'button';
-        flipBtn.className = 'cgp-gem-note-btn cgp-gem-note-btn--primary';
-        flipBtn.textContent = 'Flip for answer';
-        flipBtn.addEventListener('click', function () {
-          front.inert = true;
-          if (back) back.inert = false;
-          noteWrap.classList.add('is-flipped');
-          if (flipBack) flipBack.focus();
-        });
-        actions.appendChild(flipBtn);
-      }
-
-      var refoldFront = document.createElement('button');
-      refoldFront.type = 'button';
-      refoldFront.className = 'cgp-gem-note-btn';
-      refoldFront.textContent = 'Refold';
-      refoldFront.addEventListener('click', closeNote);
-      actions.appendChild(refoldFront);
-
-      front.appendChild(meta);
-      front.appendChild(body);
-      front.appendChild(actions);
-      inner.appendChild(front);
-
-      if (isRiddle) {
-        back = document.createElement('div');
-        back.className = 'cgp-gem-note-face cgp-gem-note-face--back';
-        back.inert = true;
-
-        var backMeta = document.createElement('div');
-        backMeta.className = 'cgp-gem-note-meta';
-        var bLabel = document.createElement('span');
-        bLabel.textContent = 'Answer';
-        var bMark = document.createElement('span');
-        bMark.className = 'cgp-gem-note-mark';
-        bMark.textContent = props.watermark || '✦';
-        backMeta.appendChild(bLabel);
-        backMeta.appendChild(bMark);
-
-        var ans = document.createElement('p');
-        ans.className = 'cgp-gem-note-answer';
-        ans.textContent = card.back;
-
-        var backActions = document.createElement('div');
-        backActions.className = 'cgp-gem-note-actions';
-        flipBack = document.createElement('button');
-        flipBack.type = 'button';
-        flipBack.className = 'cgp-gem-note-btn';
-        flipBack.textContent = 'Back';
-        flipBack.addEventListener('click', function () {
-          back.inert = true;
-          front.inert = false;
-          noteWrap.classList.remove('is-flipped');
-          if (flipBtn) flipBtn.focus();
-        });
-        var refoldBack = document.createElement('button');
-        refoldBack.type = 'button';
-        refoldBack.className = 'cgp-gem-note-btn cgp-gem-note-btn--primary';
-        refoldBack.textContent = 'Refold boat';
-        refoldBack.addEventListener('click', closeNote);
-        backActions.appendChild(flipBack);
-        backActions.appendChild(refoldBack);
-
-        back.appendChild(backMeta);
-        back.appendChild(ans);
-        back.appendChild(backActions);
-        inner.appendChild(back);
-      }
-
-      noteWrap.appendChild(inner);
-      session.stage.appendChild(noteWrap);
-      session.after(20, function () { noteWrap.classList.add('is-open'); });
+  function makeSky(session, kind, rng) {
+    var SC = 12;
+    var el = document.createElement('canvas');
+    el.className = 'cgp-gem-sky';
+    var w = Math.ceil(window.innerWidth / SC) + 2, h = Math.ceil(window.innerHeight / SC) + 2;
+    el.width = w; el.height = h;
+    el.style.width = (w * SC) + 'px';
+    el.style.height = (h * SC) + 'px';
+    session.stage.insertBefore(el, session.stage.firstChild);
+    var g = el.getContext('2d');
+    var snow = kind === 'snow';
+    var ink = snow ? [42, 58, 86] : [26, 38, 56];
+    var aTop = snow ? 0.27 : 0.46, aMid = snow ? 0.21 : 0.39, aBot = snow ? 0.16 : 0.33;
+    var aEdge = snow ? 0.13 : 0.16, aCloud = snow ? 0.08 : 0.11;
+    var clouds = [];
+    var big = Math.max(w, h);
+    for (var i = 0; i < 5; i++) {
+      clouds.push({ x: rng() * (w + big) - big / 2, y: rng() * h, r: big * (0.4 + rng() * 0.35),
+        a: 0.5 + rng() * 0.5, sp: 0.6 + rng() * 0.8, sq: 0.5 + rng() * 0.3 });
     }
-
-    function closeNote() {
-      if (!noteWrap) return;
-      noteWrap.classList.remove('is-open');
-      noteWrap.classList.add('is-closing');
-      var ref = noteWrap;
-      noteWrap = null;
-      session.after(420, function () {
-        if (ref.parentNode) ref.parentNode.removeChild(ref);
-        btn.style.opacity = '1';
-        btn.style.pointerEvents = 'auto';
-        refl.style.opacity = '0.22';
-        paused = false;
-        speed = 58;
-        lastT = performance.now();
-        session.raf(tick);
-      });
-    }
-
-    session.on(btn, 'click', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      openNote();
-    });
-    session.on(document, 'keydown', function (e) {
-      if (e.key === 'Escape' && noteWrap) closeNote();
-    });
-
-    function tick(now) {
-      if (session.isDone() || paused) return;
-      var dt = Math.min(0.05, (now - lastT) / 1000);
-      lastT = now;
-
-      x += dir * speed * dt;
-      var t = (now - startT) / 1000;
-      var bob = Math.sin(t * 2.6) * 2.2;
-      var tilt = Math.cos(t * 2.1) * 3.2;
-      btn.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + bob.toFixed(1) + 'px,0) rotate(' + tilt.toFixed(2) + 'deg)';
-      refl.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + (-bob * 0.5).toFixed(1) + 'px,0) scaleY(-0.55)';
-      var doneSail = dir === 1 ? x > window.innerWidth + 80 : x < -90;
-      if (doneSail) {
-        waterline.classList.remove('is-visible');
-        session.after(900, function () { session.destroy(); });
-        return;
-      }
-      session.raf(tick);
-    }
-
-    session.raf(tick);
-  }
-
-  /* ====================================================== 3. PAGE-CORNER PEEL */
-
-  function peelWorldSvg(scene) {
-    if (scene === 'molecules') {
-      return '<svg viewBox="0 0 148 148">' +
-        '<rect width="148" height="148" fill="#0f2433"/>' +
-        '<g stroke="#4db6ac" stroke-width="1.3" opacity="0.7">' +
-          '<line x1="78" y1="92" x2="108" y2="74"/><line x1="108" y1="74" x2="132" y2="96"/>' +
-          '<line x1="108" y1="74" x2="112" y2="44"/><line x1="78" y1="92" x2="88" y2="124"/>' +
-          '<line x1="88" y1="124" x2="124" y2="120"/><line x1="124" y1="120" x2="132" y2="96"/>' +
-        '</g>' +
-        '<g fill="#80cbc4"><circle cx="78" cy="92" r="4"/><circle cx="108" cy="74" r="5" fill="#ffd54f"/>' +
-        '<circle cx="132" cy="96" r="3.5"/><circle cx="112" cy="44" r="3"/><circle cx="88" cy="124" r="3.5"/><circle cx="124" cy="120" r="4" fill="#ff8a65"/></g>' +
-      '</svg>';
-    }
-    if (scene === 'cosmos') {
-      return '<svg viewBox="0 0 148 148">' +
-        '<defs><radialGradient id="cgp-sky" cx="75%" cy="75%" r="80%"><stop offset="0%" stop-color="#1d2d50"/><stop offset="100%" stop-color="#090d1a"/></radialGradient></defs>' +
-        '<rect width="148" height="148" fill="url(#cgp-sky)"/>' +
-        '<g fill="#fff"><circle cx="116" cy="52" r="1.2" opacity="0.9"/><circle cx="88" cy="96" r="1" opacity="0.7"/>' +
-        '<circle cx="130" cy="76" r="1.5" opacity="0.85"/><circle cx="96" cy="122" r="1.1" opacity="0.8"/><circle cx="64" cy="126" r="0.9" opacity="0.6"/></g>' +
-        '<circle cx="112" cy="96" r="13" fill="#e8c37d"/>' +
-        '<ellipse cx="112" cy="96" rx="26" ry="7" fill="none" stroke="#f7e3b5" stroke-width="1.6" transform="rotate(-22 112 96)"/>' +
-      '</svg>';
-    }
-    if (scene === 'blueprint') {
-      return '<svg viewBox="0 0 148 148">' +
-        '<rect width="148" height="148" fill="#173b66"/>' +
-        '<g stroke="rgba(173,216,255,0.22)" stroke-width="0.8">' +
-          '<path d="M0 30 H148 M0 60 H148 M0 90 H148 M0 120 H148 M30 0 V148 M60 0 V148 M90 0 V148 M120 0 V148"/>' +
-        '</g>' +
-        '<path d="M132 128 A42 42 0 0 1 90 86 A26 26 0 0 1 116 60 A16 16 0 0 1 132 76 A10 10 0 0 1 122 86" fill="none" stroke="#f6dd7a" stroke-width="1.8" stroke-linecap="round"/>' +
-      '</svg>';
-    }
-    if (scene === 'inkwash') {
-      return '<svg viewBox="0 0 148 148">' +
-        '<rect width="148" height="148" fill="#ebe3d2"/>' +
-        '<path d="M35 148 Q84 72 118 106 Q134 86 148 96 L148 148 Z" fill="#5e6b6b" opacity="0.45"/>' +
-        '<path d="M58 148 Q104 92 148 118 L148 148 Z" fill="#2f3a3a" opacity="0.65"/>' +
-        '<rect x="114" y="68" width="16" height="16" rx="2" fill="#b83b2d"/>' +
-        '<text x="122" y="80" text-anchor="middle" font-size="10" font-family="serif" fill="#f7efe2">&#38745;</text>' +
-      '</svg>';
-    }
-    if (scene === 'talavera') {
-      return '<svg viewBox="0 0 148 148">' +
-        '<rect width="148" height="148" fill="#1b4978"/>' +
-        '<g fill="none" stroke="#f5c352" stroke-width="1.5">' +
-          '<circle cx="110" cy="108" r="26"/><circle cx="110" cy="108" r="14"/>' +
-          '<path d="M110 82 L116 102 L136 108 L116 114 L110 134 L104 114 L84 108 L104 102 Z" fill="#e06d3b" stroke="#fdf5e6" stroke-width="1"/>' +
-        '</g>' +
-      '</svg>';
-    }
-    if (scene === 'stainedglass') {
-      return '<svg viewBox="0 0 148 148">' +
-        '<rect width="148" height="148" fill="#1c1938"/>' +
-        '<g transform="translate(110 106)">' +
-          '<circle r="28" fill="#2d3b75" stroke="#d4af37" stroke-width="2"/>' +
-          '<circle r="17" fill="#7c2846" stroke="#d4af37" stroke-width="1.4"/>' +
-          '<circle r="7" fill="#f2c94c"/>' +
-          '<g stroke="#d4af37" stroke-width="1.1">' +
-            '<line x1="-28" y1="0" x2="28" y2="0"/><line x1="0" y1="-28" x2="0" y2="28"/>' +
-            '<line x1="-20" y1="-20" x2="20" y2="20"/><line x1="20" y1="-20" x2="-20" y2="20"/>' +
-          '</g>' +
-        '</g>' +
-      '</svg>';
-    }
-    if (scene === 'parchment') {
-      return '<svg viewBox="0 0 148 148">' +
-        '<rect width="148" height="148" fill="#dcc8a0"/>' +
-        '<path d="M58 136 Q88 112 104 98 T136 62" fill="none" stroke="#8c3b2b" stroke-width="1.6" stroke-dasharray="4 4"/>' +
-        '<g transform="translate(112 106)" stroke="#5b4631" fill="none" stroke-width="1.2">' +
-          '<circle r="18"/><polygon points="0,-16 4,0 0,16 -4,0" fill="#8c3b2b"/>' +
-          '<polygon points="-16,0 0,4 16,0 0,-4" fill="#5b4631"/>' +
-        '</g>' +
-      '</svg>';
-    }
-    if (scene === 'staff') {
-      return '<svg viewBox="0 0 148 148">' +
-        '<rect width="148" height="148" fill="#231f2e"/>' +
-        '<g stroke="rgba(244,213,141,0.45)" stroke-width="1">' +
-          '<line x1="30" y1="82" x2="148" y2="82"/><line x1="30" y1="90" x2="148" y2="90"/>' +
-          '<line x1="30" y1="98" x2="148" y2="98"/><line x1="30" y1="106" x2="148" y2="106"/><line x1="30" y1="114" x2="148" y2="114"/>' +
-        '</g>' +
-        '<g fill="#f4d58d"><ellipse cx="96" cy="102" rx="5" ry="3.5" transform="rotate(-18 96 102)"/><rect x="100" y="76" width="1.8" height="26"/>' +
-        '<ellipse cx="122" cy="94" rx="5" ry="3.5" transform="rotate(-18 122 94)"/><rect x="126" y="68" width="1.8" height="26"/>' +
-        '<path d="M100 76 L128 68 L128 73 L100 81 Z"/></g>' +
-      '</svg>';
-    }
-    if (scene === 'circuit') {
-      return '<svg viewBox="0 0 148 148">' +
-        '<rect width="148" height="148" fill="#0d1b1e"/>' +
-        '<g fill="none" stroke="#38d39f" stroke-width="1.5" opacity="0.78">' +
-          '<path d="M62 136 L82 116 L108 116 L122 102 L122 68"/>' +
-          '<path d="M84 140 L102 122 L134 122"/>' +
-          '<circle cx="122" cy="66" r="3" fill="#38d39f"/><circle cx="136" cy="122" r="3" fill="#38d39f"/>' +
-        '</g>' +
-      '</svg>';
-    }
-    return '<svg viewBox="0 0 148 148">' +
-      '<rect width="148" height="148" fill="#1c232d"/>' +
-      '<g class="cgp-gem-gear-cw" fill="none" stroke="#d4a759" stroke-width="2.4">' +
-        '<circle cx="104" cy="104" r="18" stroke-dasharray="6 4"/><circle cx="104" cy="104" r="7"/>' +
-      '</g>' +
-      '<g class="cgp-gem-gear-ccw" fill="none" stroke="#9aa7b8" stroke-width="2">' +
-        '<circle cx="132" cy="78" r="12" stroke-dasharray="5 3"/><circle cx="132" cy="78" r="4"/>' +
-      '</g>' +
-    '</svg>';
-  }
-
-  function playPeel(session, props) {
-    var root = document.createElement('div');
-    root.className = 'cgp-gem-peel' + (props.corner === 'bottom-left' ? ' is-left' : '');
-
-    var world = document.createElement('div');
-    world.className = 'cgp-gem-peel-world';
-    world.innerHTML = peelWorldSvg(props.scene);
-
-    var caption = document.createElement('div');
-    caption.className = 'cgp-gem-peel-caption';
-    caption.textContent = props.caption || '';
-
-    var flap = document.createElement('div');
-    flap.className = 'cgp-gem-peel-flap';
-
-    var hit = document.createElement('div');
-    hit.className = 'cgp-gem-peel-hit';
-    hit.title = 'Peek behind the page';
-
-    root.appendChild(world);
-    root.appendChild(caption);
-    root.appendChild(flap);
-    root.appendChild(hit);
-    session.stage.appendChild(root);
-
-    var hovering = false;
-    var closing = false;
-
-    function close() {
-      if (closing) return;
-      closing = true;
-      root.classList.remove('is-peek');
-      root.classList.remove('is-open');
-      session.after(750, function () { session.destroy(); });
-    }
-
-    session.on(hit, 'mouseenter', function () {
-      if (closing) return;
-      hovering = true;
-      root.classList.add('is-peek');
-    });
-    session.on(hit, 'mouseleave', function () {
-      hovering = false;
-      root.classList.remove('is-peek');
-    });
-    session.on(hit, 'click', function () { close(); });
-
-    session.after(80, function () { root.classList.add('is-open'); });
-    session.after(12500, function () {
-      if (!hovering) close();
-      else session.after(4500, close);
-    });
-  }
-
-  /* ================================================ 4. MARGIN HARMONOGRAPH */
-
-  function playHarmonograph(session, props) {
-    var wrap = document.createElement('div');
-    wrap.className = 'cgp-gem-harm-wrap' + (props.corner === 'bottom-left' ? ' is-left' : '');
-
-    var size = 136;
-    var dpr = Math.min(2, window.devicePixelRatio || 1);
-    var canvas = document.createElement('canvas');
-    canvas.className = 'cgp-gem-harm-canvas';
-    canvas.width = size * dpr;
-    canvas.height = size * dpr;
-    wrap.appendChild(canvas);
-    session.stage.appendChild(wrap);
-
-    var ctx = canvas.getContext('2d');
-    if (!ctx) { session.destroy(); return; }
-    ctx.scale(dpr, dpr);
-
-    // Offscreen trail canvas so the glowing stylus nib can be redrawn cleanly
-    // on top without smudging the fine fountain-pen ink curve.
-    var inkCanvas = document.createElement('canvas');
-    inkCanvas.width = size * dpr;
-    inkCanvas.height = size * dpr;
-    var inkCtx = inkCanvas.getContext('2d');
-    inkCtx.scale(dpr, dpr);
-    inkCtx.strokeStyle = props.ink || '#2b4c6b';
-    inkCtx.lineWidth = 0.85;
-    inkCtx.lineCap = 'round';
-    inkCtx.lineJoin = 'round';
-    inkCtx.globalAlpha = 0.62;
-
-    var cx = size * 0.5;
-    var cy = size * 0.5;
-    var amp = size * 0.31;
-    var f1 = props.f1 || 2;
-    var f2 = props.f2 || 3;
-    var f3 = props.f3 || 1;
-    var p1 = props.p1 || 0;
-    var p2 = props.p2 || 1.1;
-    var p3 = props.p3 || 0.4;
-    var damp = props.damping || 0.011;
-
-    var t = 0;
-    var maxT = 46;
-    var phaseDrift = 0;
-    var driftVel = 0;
-    var lastX = null;
-    var lastY = null;
-    var finishing = false;
-
-    function sample(time) {
-      var env = Math.exp(-damp * time);
-      var x = cx + amp * env * (Math.sin(f1 * time + p1 + phaseDrift) + 0.42 * Math.sin(f3 * time + p3));
-      var y = cy + amp * env * (Math.sin(f2 * time + p2 - phaseDrift * 0.6) + 0.42 * Math.cos(f3 * time + p1));
-      return [x, y];
-    }
-
-    // Subtle cursor perturbation: brushing near the corner nudges the live phase.
-    session.on(window, 'mousemove', function (e) {
-      var rect = wrap.getBoundingClientRect();
-      var dx = e.clientX - (rect.left + rect.width * 0.5);
-      var dy = e.clientY - (rect.top + rect.height * 0.5);
-      if (dx * dx + dy * dy < 140 * 140) {
-        driftVel += 0.0022;
-      }
-    }, { passive: true });
-
-    session.after(40, function () { wrap.classList.add('is-visible'); });
-
-    function tick() {
-      if (session.isDone()) return;
-
-      driftVel *= 0.92;
-      phaseDrift += driftVel;
-
-      var steps = 10;
-      var stepDt = 0.012;
-      var tipX = cx, tipY = cy;
-
-      inkCtx.beginPath();
-      for (var s = 0; s < steps; s++) {
-        t += stepDt;
-        var pt = sample(t);
-        if (lastX === null) {
-          inkCtx.moveTo(pt[0], pt[1]);
-        } else {
-          inkCtx.moveTo(lastX, lastY);
-          inkCtx.lineTo(pt[0], pt[1]);
-        }
-        lastX = pt[0];
-        lastY = pt[1];
-        tipX = pt[0];
-        tipY = pt[1];
-      }
-      inkCtx.stroke();
-
-      ctx.clearRect(0, 0, size, size);
-      ctx.drawImage(inkCanvas, 0, 0, size, size);
-
-      if (t < maxT) {
-        // Tiny silver stylus nib at the active drawing point
-        ctx.save();
-        ctx.fillStyle = props.ink || '#2b4c6b';
-        ctx.globalAlpha = 0.85;
-        ctx.beginPath();
-        ctx.arc(tipX, tipY, 1.9, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-        ctx.lineWidth = 0.8;
-        ctx.stroke();
-        ctx.restore();
-        session.raf(tick);
-      } else if (!finishing) {
-        finishing = true;
-        // Linger briefly like fresh ink in the margin, then evaporate.
-        session.after(3200, function () {
-          wrap.classList.add('is-fading');
-          session.after(2300, function () { session.destroy(); });
-        });
-      }
-    }
-
-    session.raf(tick);
-  }
-
-  /* ========================================================= 5. DESK PRISM */
-
-  function crystalSvg(kind) {
-    var stroke = 'rgba(130, 165, 195, 0.55)';
-    var fill = 'url(#cgp-glass)';
-    if (kind === 'hex') {
-      return '<polygon points="0,-16 14,-8 14,8 0,16 -14,8 -14,-8" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1"/>' +
-        '<line x1="-14" y1="-8" x2="14" y2="8" stroke="rgba(255,255,255,0.65)" stroke-width="0.7"/>';
-    }
-    if (kind === 'diamond') {
-      return '<polygon points="0,-18 13,0 0,18 -13,0" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1"/>' +
-        '<line x1="0" y1="-18" x2="0" y2="18" stroke="rgba(255,255,255,0.7)" stroke-width="0.7"/>';
-    }
-    if (kind === 'lens') {
-      return '<circle cx="0" cy="0" r="14" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1"/>' +
-        '<path d="M-8,-6 A10,10 0 0 1 6,-8" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.2" stroke-linecap="round"/>';
-    }
-    if (kind === 'bevel') {
-      return '<polygon points="-13,-10 13,-10 17,10 -17,10" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1"/>' +
-        '<polygon points="-8,-6 8,-6 11,6 -11,6" fill="none" stroke="rgba(255,255,255,0.65)" stroke-width="0.7"/>';
-    }
-    // Classic triangular flint-glass prism
-    return '<polygon points="0,-17 16,12 -16,12" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1"/>' +
-      '<line x1="0" y1="-17" x2="-3" y2="12" stroke="rgba(255,255,255,0.72)" stroke-width="0.8"/>';
-  }
-
-  function playPrism(session, props) {
-    var corner = props.corner || 'top-right';
-    var wrap = document.createElement('div');
-    wrap.className = 'cgp-gem-prism-wrap pos-' + corner;
-
-    var palette = (props.palette && props.palette.length) ? props.palette : ['#ff6e6e', '#ffd166', '#66d9a8', '#5dade2', '#b388eb'];
-    var spread = props.spreadDeg || 30;
-    var baseAngle = props.baseAngle || 0;
-
-    // Anchor the crystal inside the chosen corner, projecting inward.
-    var cx = corner === 'top-left' ? 34 : 206;
-    var cy = corner === 'bottom-right' ? 166 : 34;
-    var inwardBase = corner === 'top-left' ? 38 : (corner === 'bottom-right' ? -142 : 142);
-
-    var beamsMarkup = '';
-    var n = palette.length;
-    for (var i = 0; i < n; i++) {
-      var frac = n > 1 ? (i / (n - 1)) - 0.5 : 0;
-      var a1 = (frac * spread - spread / (n * 1.5)) * (Math.PI / 180);
-      var a2 = (frac * spread + spread / (n * 1.5)) * (Math.PI / 180);
-      var len = 185;
-      var x1 = Math.cos(a1) * len;
-      var y1 = Math.sin(a1) * len;
-      var x2 = Math.cos(a2) * len;
-      var y2 = Math.sin(a2) * len;
-      beamsMarkup += '<polygon points="0,0 ' + x1.toFixed(1) + ',' + y1.toFixed(1) + ' ' + x2.toFixed(1) + ',' + y2.toFixed(1) + '" fill="' + palette[i] + '" opacity="0.22"/>';
-    }
-
-    // Optional hairline Fraunhofer absorption lines for physics/chemistry/science/cs.
-    var absorptionMarkup = '';
-    if (props.absorption) {
-      var lineAngles = [-0.32, -0.08, 0.21, 0.39];
-      for (var j = 0; j < lineAngles.length; j++) {
-        var la = lineAngles[j] * spread * (Math.PI / 180);
-        absorptionMarkup += '<line x1="' + (Math.cos(la) * 22).toFixed(1) + '" y1="' + (Math.sin(la) * 22).toFixed(1) + '" x2="' + (Math.cos(la) * 165).toFixed(1) + '" y2="' + (Math.sin(la) * 165).toFixed(1) + '" stroke="rgba(25,35,48,0.16)" stroke-width="0.9"/>';
-      }
-    }
-
-    wrap.innerHTML =
-      '<svg class="cgp-gem-prism-svg" viewBox="0 0 240 200">' +
-        '<defs>' +
-          '<linearGradient id="cgp-glass" x1="0%" y1="0%" x2="100%" y2="100%">' +
-            '<stop offset="0%" stop-color="rgba(255,255,255,0.88)"/>' +
-            '<stop offset="48%" stop-color="rgba(218,238,252,0.42)"/>' +
-            '<stop offset="100%" stop-color="rgba(182,216,240,0.68)"/>' +
-          '</linearGradient>' +
-          '<filter id="cgp-caustic-blur" x="-30%" y="-30%" width="160%" height="160%">' +
-            '<feGaussianBlur stdDeviation="5.5"/>' +
-          '</filter>' +
-          '<radialGradient id="cgp-beam-fade" cx="50%" cy="50%" r="50%">' +
-            '<stop offset="0%" stop-color="#fff" stop-opacity="0.9"/>' +
-            '<stop offset="72%" stop-color="#fff" stop-opacity="0.5"/>' +
-            '<stop offset="100%" stop-color="#fff" stop-opacity="0"/>' +
-          '</radialGradient>' +
-          '<mask id="cgp-beam-mask"><circle cx="0" cy="0" r="185" fill="url(#cgp-beam-fade)"/></mask>' +
-        '</defs>' +
-        '<g class="cgp-prism-fan" transform="translate(' + cx + ',' + cy + ') rotate(' + (inwardBase + baseAngle) + ')" mask="url(#cgp-beam-mask)">' +
-          '<g filter="url(#cgp-caustic-blur)">' + beamsMarkup + '</g>' +
-          absorptionMarkup +
-        '</g>' +
-        '<g class="cgp-prism-crystal" transform="translate(' + cx + ',' + cy + ') rotate(' + baseAngle + ')">' +
-          crystalSvg(props.crystal) +
-        '</g>' +
-      '</svg>';
-
-    session.stage.appendChild(wrap);
-    session.after(50, function () { wrap.classList.add('is-visible'); });
-
-    var fanEl = wrap.querySelector('.cgp-prism-fan');
-    var crystalEl = wrap.querySelector('.cgp-prism-crystal');
-    var targetOffset = 0;
-    var currentOffset = 0;
-    var startT = performance.now();
-
-    session.on(window, 'mousemove', function (e) {
-      var nx = (e.clientX / Math.max(1, window.innerWidth)) - 0.5;
-      var ny = (e.clientY / Math.max(1, window.innerHeight)) - 0.5;
-      targetOffset = (nx * 18) + (ny * 10);
-    }, { passive: true });
-
-    function tick(now) {
-      if (session.isDone()) return;
-      var t = (now - startT) / 1000;
-      var ambient = Math.sin(t * 0.55) * 4.5;
-      currentOffset += ((targetOffset + ambient) - currentOffset) * 0.045;
-
-      if (fanEl) {
-        fanEl.setAttribute('transform', 'translate(' + cx + ',' + cy + ') rotate(' + (inwardBase + baseAngle + currentOffset).toFixed(2) + ')');
-      }
-      if (crystalEl) {
-        crystalEl.setAttribute('transform', 'translate(' + cx + ',' + cy + ') rotate(' + (baseAngle + currentOffset * 0.45).toFixed(2) + ')');
-      }
-      session.raf(tick);
-    }
-
-    session.raf(tick);
-
-    session.after(9500, function () {
-      wrap.classList.add('is-fading');
-      session.after(2100, function () { session.destroy(); });
-    });
-  }
-
-  /* ====================================================== 6. ROLLING PENCIL */
-
-  function rollerSvg(variant) {
-    if (variant === 'marble') {
-      return {
-        w: 22, h: 22, isRound: true,
-        svg: '<svg viewBox="0 0 22 22" width="22" height="22">' +
-          '<defs><radialGradient id="cgp-mrb" cx="35%" cy="32%" r="68%"><stop offset="0%" stop-color="#e3f6ff"/><stop offset="45%" stop-color="#4ea3d1"/><stop offset="100%" stop-color="#194266"/></radialGradient></defs>' +
-          '<circle cx="11" cy="11" r="9.5" fill="url(#cgp-mrb)" stroke="rgba(255,255,255,0.45)" stroke-width="0.8"/>' +
-          '<path d="M6 12 Q11 6 16 12 Q11 16 6 12 Z" fill="rgba(255,255,255,0.32)"/>' +
-          '<circle cx="7.5" cy="7.2" r="2.1" fill="#ffffff" opacity="0.85"/></svg>'
-      };
-    }
-    if (variant === 'test-tube') {
-      return {
-        w: 76, h: 14, isRound: false,
-        svg: '<svg viewBox="0 0 76 14" width="76" height="14">' +
-          '<path d="M6 2 H66 A5 5 0 0 1 66 12 H6 Z" fill="rgba(225,244,252,0.88)" stroke="#7fa6bd" stroke-width="1.2"/>' +
-          '<path d="M38 3.5 H65 A3.5 3.5 0 0 1 65 10.5 H38 Z" fill="rgba(56,196,178,0.68)"/>' +
-          '<rect x="3" y="1" width="3.5" height="12" rx="1" fill="#9fb9c9"/>' +
-          '<line x1="14" y1="4.5" x2="54" y2="4.5" stroke="#fff" stroke-width="1" opacity="0.7"/></svg>'
-      };
-    }
-    if (variant === 'brush') {
-      return {
-        w: 84, h: 12, isRound: false,
-        svg: '<svg viewBox="0 0 84 12" width="84" height="12">' +
-          '<rect x="2" y="3.5" width="60" height="5" rx="2.5" fill="#c89f5d" stroke="#8a6830" stroke-width="0.8"/>' +
-          '<line x1="22" y1="3.5" x2="22" y2="8.5" stroke="#8a6830" stroke-width="1"/>' +
-          '<line x1="44" y1="3.5" x2="44" y2="8.5" stroke="#8a6830" stroke-width="1"/>' +
-          '<rect x="61" y="3" width="5" height="6" rx="1" fill="#3b332b"/>' +
-          '<path d="M66 3 Q77 3 83 6 Q77 9 66 9 Z" fill="#1c1c1e"/></svg>'
-      };
-    }
-    if (variant === 'baton') {
-      return {
-        w: 86, h: 10, isRound: false,
-        svg: '<svg viewBox="0 0 86 10" width="86" height="10">' +
-          '<ellipse cx="10" cy="5" rx="8.5" ry="4" fill="#d9b382" stroke="#8c683e" stroke-width="0.9"/>' +
-          '<polygon points="18,3.8 84,4.7 84,5.3 18,6.2" fill="#f7f4ec" stroke="#b8b0a0" stroke-width="0.6"/></svg>'
-      };
-    }
-    if (variant === 'colored-pencil') {
-      return {
-        w: 82, h: 11, isRound: false,
-        svg: '<svg viewBox="0 0 82 11" width="82" height="11">' +
-          '<rect x="2" y="2" width="64" height="7" rx="1" fill="#2c7bb6" stroke="#1b4f78" stroke-width="0.8"/>' +
-          '<line x1="2" y1="4.4" x2="66" y2="4.4" stroke="#5ba3d9" stroke-width="1"/>' +
-          '<polygon points="66,2 80,5.5 66,9" fill="#e6c49a" stroke="#b08e62" stroke-width="0.7"/>' +
-          '<polygon points="75,4.2 80,5.5 75,6.8" fill="#2c7bb6"/></svg>'
-      };
-    }
+    var last = -1;
     return {
-      w: 84, h: 11, isRound: false,
-      svg: '<svg viewBox="0 0 84 11" width="84" height="11">' +
-        '<rect x="2" y="2" width="7" height="7" rx="1.5" fill="#e58c8a" stroke="#b56361" stroke-width="0.7"/>' +
-        '<rect x="9" y="2" width="5" height="7" fill="#c0c6cc" stroke="#89929b" stroke-width="0.6"/>' +
-        '<rect x="14" y="2" width="54" height="7" fill="#f2c138" stroke="#c0911b" stroke-width="0.7"/>' +
-        '<line x1="14" y1="4.4" x2="68" y2="4.4" stroke="#f9dc7a" stroke-width="1.1"/>' +
-        '<polygon points="68,2 82,5.5 68,9" fill="#e6c49a" stroke="#b08e62" stroke-width="0.7"/>' +
-        '<polygon points="77,4.2 82,5.5 77,6.8" fill="#2e343b"/></svg>'
+      on: function () { el.classList.add('is-on'); },
+      off: function () { el.classList.remove('is-on'); el.classList.add('is-off'); },
+      draw: function (t, drift) {
+        if (t - last < 0.05) return;   // 20 frames a second is plenty for light
+        var dt = last < 0 ? 0 : t - last;
+        last = t;
+        g.clearRect(0, 0, w, h);
+        var grd = g.createLinearGradient(0, 0, 0, h);
+        grd.addColorStop(0, rgba(ink, aTop)); grd.addColorStop(0.55, rgba(ink, aMid)); grd.addColorStop(1, rgba(ink, aBot));
+        g.fillStyle = grd;
+        g.fillRect(0, 0, w, h);
+        for (var k = 0; k < clouds.length; k++) {
+          var c = clouds[k];
+          c.x += drift * c.sp * dt / SC;
+          if (c.x - c.r > w) c.x = -c.r; else if (c.x + c.r < 0) c.x = w + c.r;
+          g.save();
+          g.translate(c.x, c.y);
+          g.scale(1, c.sq);
+          var rg = g.createRadialGradient(0, 0, 0, 0, 0, c.r);
+          rg.addColorStop(0, rgba(ink, aCloud * c.a));
+          rg.addColorStop(1, rgba(ink, 0));
+          g.fillStyle = rg;
+          g.beginPath(); g.arc(0, 0, c.r, 0, TAU); g.fill();
+          g.restore();
+        }
+        // The corners of a dim room fall off first.
+        var vg = g.createRadialGradient(w / 2, h * 0.45, Math.min(w, h) * 0.35, w / 2, h * 0.45, Math.max(w, h) * 0.75);
+        vg.addColorStop(0, rgba(ink, 0));
+        vg.addColorStop(1, rgba(ink, aEdge));
+        g.fillStyle = vg;
+        g.fillRect(0, 0, w, h);
+      }
     };
   }
 
-  function playPencil(session, props) {
-    var spec = rollerSvg(props.variant);
-    var el = document.createElement('div');
-    el.className = 'cgp-gem-roller';
-    el.style.width = spec.w + 'px';
-    el.style.height = spec.h + 'px';
-    el.title = 'Nudge me';
-    el.innerHTML = spec.svg;
-    session.stage.appendChild(el);
-
-    var W = window.innerWidth;
-    var dir = props.direction === -1 ? -1 : 1;
-    var x = dir === 1 ? Math.max(40, W * 0.35) : Math.min(W - spec.w - 40, W * 0.65);
-    var vx = dir * 185;
-    var angle = 0;
-    var nudgedOff = false;
-    var settledAt = 0;
-    var lastT = performance.now();
-
-    function nudge(fromX) {
-      if (nudgedOff) return;
-      nudgedOff = true;
-      vx = fromX > x + spec.w * 0.5 ? -360 : 360;
-    }
-
-    session.on(el, 'mouseenter', function (e) { nudge(e.clientX); });
-    session.on(el, 'click', function (e) { nudge(e.clientX); });
-
-    function tick(now) {
-      if (session.isDone()) return;
-      var dt = Math.min(0.05, (now - lastT) / 1000);
-      lastT = now;
-
-      if (!nudgedOff) {
-        if (!settledAt) {
-          vx += dir * 58 * dt;
-          vx *= Math.pow(0.58, dt);
-          x += vx * dt;
-          var minX = 8;
-          var maxX = W - spec.w - 8;
-          if (dir === 1 && x > maxX) {
-            x = maxX;
-            vx = -Math.abs(vx) * 0.42;
-            if (Math.abs(vx) < 14) { vx = 0; settledAt = now; }
-          } else if (dir === -1 && x < minX) {
-            x = minX;
-            vx = Math.abs(vx) * 0.42;
-            if (Math.abs(vx) < 14) { vx = 0; settledAt = now; }
-          }
-        } else if (now - settledAt > 6500) {
-          el.classList.add('is-fading');
-          session.after(750, function () { session.destroy(); });
-          return;
-        }
-      } else {
-        x += vx * dt;
-        if (x < -spec.w - 40 || x > W + 40) {
-          session.destroy();
-          return;
-        }
-      }
-
-      if (spec.isRound) {
-        angle += (vx * dt) * 5.2;
-        el.style.transform = 'translate3d(' + x.toFixed(1) + 'px,0,0) rotate(' + angle.toFixed(1) + 'deg)';
-      } else {
-        el.style.transform = 'translate3d(' + x.toFixed(1) + 'px,0,0)';
-      }
-
-      session.raf(tick);
-    }
-
-    session.raf(tick);
+  /* Weather keeps falling while you click and scroll; a key press ends it. */
+  function weatherDismiss(session, onEnd) {
+    var ending = false;
+    session.dismiss = function (why) {
+      if (ending || why === 'click' || why === 'scroll') return;
+      ending = true;
+      if (onEnd) onEnd();
+      session.end(700);
+    };
   }
 
-  /* ============================================================= CONTROLLER */
+  /* Ledges move when the page scrolls: let go of them, find the new ones. */
+  function followScroll(session, onScroll, onSettled) {
+    var timer = 0;
+    session.on(document, 'scroll', function () {
+      onScroll();
+      clearTimeout(timer);
+      timer = session.after(260, onSettled);
+    }, { capture: true, passive: true });
+  }
 
-  var PLAYERS = {
-    washer: playWasher,
-    boat: playBoat,
-    peel: playPeel,
-    harmonograph: playHarmonograph,
-    prism: playPrism,
-    pencil: playPencil
+  /* A soft white sprite, drawn once: a flake, a clump, a droplet of spray. */
+  function makeSprite(size, paint) {
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    var c = document.createElement('canvas');
+    c.width = Math.ceil(size * dpr); c.height = Math.ceil(size * dpr);
+    var g = c.getContext('2d');
+    g.scale(dpr, dpr);
+    paint(g, size / 2);
+    return { c: c, s: size };
+  }
+  function softDot(r, hardness, alpha) {
+    return makeSprite(r * 2 + 2, function (g, m) {
+      var f = g.createRadialGradient(m, m, 0, m, m, r);
+      f.addColorStop(0, 'rgba(255,255,255,' + alpha + ')');
+      f.addColorStop(hardness, 'rgba(255,255,255,' + (alpha * 0.85) + ')');
+      f.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = f;
+      g.beginPath(); g.arc(m, m, r, 0, TAU); g.fill();
+    });
+  }
+
+  /* =================================================================== SNOW
+   * Snow on a snowy day. The page dims to the flat grey light of a snow
+   * sky. Flakes fall at every depth, soft and white: a fine haze far away,
+   * clearly drawn flakes in the middle, and a few large, out-of-focus ones
+   * drifting past close up. They do not sway in step: each rides the eddies
+   * of the air, and now and then a gust sweeps across the screen and
+   * swirls them. Snow settles on the page's own ledges (buttons, header
+   * bars, the letters of headings, nav icons) in soft, lumpy, unoutlined
+   * caps, bright on top and blue-grey underneath, and banks up along the
+   * bottom of the window. Rows of a table or list are sheltered by the row
+   * above, so only their top collects snow. A swipe of the pointer knocks
+   * snow off a ledge; moving the pointer stirs the falling flakes. */
+
+  var SNOW_COL = 2;
+  function makeShelf(x0, x1, y, maxDepth, ground) {
+    var n = Math.max(2, Math.ceil((x1 - x0) / SNOW_COL) + 1);
+    return { x0: x0, x1: x1, y: y, n: n, depth: new Float32Array(n), max: maxDepth, total: 0, ground: !!ground, slideT: 0, seed: Math.random() * 100 };
+  }
+  function shelfDepth(sh, x) {
+    var i = Math.round((x - sh.x0) / SNOW_COL);
+    return i >= 0 && i < sh.n ? sh.depth[i] : 0;
+  }
+  function shelfCap(sh, i, noise) {
+    var edge = Math.min(i, sh.n - 1 - i) * SNOW_COL;
+    // Lumpy, the way real snow lies: big undulations and small clumps.
+    var lump = 0.68 + 0.22 * noise(sh.seed + i * 0.02, 1.3) + 0.16 * noise(sh.seed + i * 0.11, 4.7);
+    if (sh.ground) return sh.max * clamp(0.5 + 0.35 * noise(i * 0.008, 3.1) + 0.2 * noise(i * 0.05, 9.4), 0.25, 1.1);
+    return sh.max * clamp(0.18 + edge / 18, 0.18, 1) * clamp(lump, 0.35, 1.15);
+  }
+  function deposit(sh, x, amount, spread, noise) {
+    var ci = (x - sh.x0) / SNOW_COL;
+    var R = Math.max(1, Math.round(spread / SNOW_COL));
+    for (var k = -R; k <= R; k++) {
+      var i = Math.round(ci) + k;
+      if (i < 0 || i >= sh.n) continue;
+      var w = Math.exp(-(k * k) / (R * R * 0.6));
+      sh.depth[i] = Math.min(shelfCap(sh, i, noise), sh.depth[i] + amount * w);
+    }
+    sh.total += amount;
+  }
+  function capProfile(sh) {
+    var d = sh.depth, n = sh.n;
+    var sm = new Float32Array(n);
+    for (var i = 0; i < n; i++) {
+      var a = 0, wsum = 0;
+      for (var k = -3; k <= 3; k++) {
+        var j = i + k;
+        if (j < 0 || j >= n) continue;
+        var w = 4 - Math.abs(k);
+        a += d[j] * w; wsum += w;
+      }
+      sm[i] = a / wsum;
+    }
+    return sm;
+  }
+  function traceCap(ctx, sh, sm, first, last) {
+    var y = sh.y;
+    var x0 = sh.x0 + first * SNOW_COL, x1 = sh.x0 + last * SNOW_COL;
+    var over = sh.ground ? 0 : Math.min(4, sm[first] * 0.6), overR = sh.ground ? 0 : Math.min(4, sm[last] * 0.6);
+    ctx.moveTo(x0 - over, y + 1.2);
+    ctx.bezierCurveTo(x0 - over - 1, y - sm[first] * 0.25, x0 - over * 0.5, y - sm[first], x0, y - sm[first]);
+    for (var p = first + 1; p <= last; p++) ctx.lineTo(sh.x0 + p * SNOW_COL, y - sm[p]);
+    ctx.bezierCurveTo(x1 + overR * 0.5, y - sm[last], x1 + overR + 1, y - sm[last] * 0.25, x1 + overR, y + 1.2);
+  }
+  function drawCap(ctx, sh, alpha) {
+    if (sh.total < 0.4) return;
+    var sm = capProfile(sh);
+    var first = -1, last = -1, top = 0;
+    for (var q = 0; q < sh.n; q++) if (sm[q] > 0.3) { if (first < 0) first = q; last = q; if (sm[q] > top) top = sm[q]; }
+    if (first < 0) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    // The shadow the snow casts on the ledge's face, then the snow itself.
+    ctx.beginPath();
+    traceCap(ctx, sh, sm, first, last);
+    ctx.closePath();
+    ctx.shadowColor = 'rgba(40, 58, 86, 0.35)';
+    ctx.shadowBlur = 5;
+    ctx.shadowOffsetY = 1.5;
+    var g = ctx.createLinearGradient(0, sh.y - top, 0, sh.y + 1.2);
+    g.addColorStop(0, '#ffffff');
+    g.addColorStop(0.45, '#f6f9fc');
+    g.addColorStop(1, '#d9e2ee');
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  PLAYERS.snow = function (session, props) {
+    var rng = makeRng(props.seed);
+    var noise = makeNoise(rng);
+    var W = window.innerWidth, H = window.innerHeight;
+    var heavy = !!props.heavy;
+    var DURATION = props.duration || 40;
+    var sky = makeSky(session, 'snow', rng);
+    var cv = session.canvas();
+    var ctx = cv.ctx;
+    var ending = false;
+    weatherDismiss(session, function () { ending = true; });
+
+    var shelves = [];
+    function gather() {
+      shelves = collectLedges(session.stage).map(function (L) { return makeShelf(L.x0, L.x1, L.y, L.x1 - L.x0 > 300 ? 12 : 9); });
+    }
+    gather();
+    var ground = makeShelf(-6, W + 6, H + 2, Math.min(40, H * 0.055), true);
+    followScroll(session, function () {
+      for (var k = 0; k < shelves.length; k++) if (shelves[k].total > 2) knock(shelves[k], shelves[k].x0, shelves[k].x1, 0.5);
+      shelves = [];
+    }, gather);
+
+    // Flake sprites by depth: far flakes small and soft, near flakes larger
+    // and crisp-centred, the nearest large and out of focus.
+    var far = [softDot(1.1, 0.3, 0.8), softDot(1.5, 0.35, 0.85)];
+    var midS = [softDot(2.0, 0.5, 0.95), softDot(2.5, 0.55, 0.95), softDot(3.0, 0.55, 1)];
+    var nearS = [softDot(3.6, 0.55, 1), softDot(4.4, 0.5, 1)];
+    var bokeh = softDot(14, 0.25, 0.42);
+
+    var COUNT = Math.round(clamp(W * H / (heavy ? 850 : 1300), 400, 1700));
+    var flakes = [];
+    function spawn(f, top) {
+      var z = Math.pow(rng(), 1.5);
+      f.z = z;
+      f.sp = z < 0.35 ? far[Math.floor(rng() * far.length)] : (z < 0.8 ? midS[Math.floor(rng() * midS.length)] : nearS[Math.floor(rng() * nearS.length)]);
+      f.r = f.sp.s / 2;
+      f.x = rng() * (W + 400) - 200;
+      f.y = top ? -10 - rng() * 60 : rng() * H;
+      f.vy = lerp(22, 64, z) * (0.7 + rng() * 0.6);   // big flakes fall a little faster, but not much
+      f.vx = 0;
+      f.k = rng() * 100;
+      f.py = f.y;
+      f.dead = false;
+      return f;
+    }
+    for (var i = 0; i < COUNT; i++) { flakes.push(spawn({}, true)); flakes[i].y -= rng() * H * 1.3; }
+    var near = [];
+    for (var b = 0; b < (heavy ? 7 : 5); b++) near.push({ x: rng() * W, y: -40 - rng() * H, r: 9 + rng() * 14, vy: 40 + rng() * 30, k: rng() * 100 });
+
+    var clumps = [];
+    var gusts = [];
+    for (var gt = 6 + rng() * 4; gt < DURATION; gt += 7 + rng() * 7) gusts.push({ t: gt, a: (rng() < 0.5 ? -1 : 1) * (60 + rng() * 80) });
+    var drift = (rng() < 0.5 ? -1 : 1) * (6 + rng() * 12);
+    function windAt(x, t) {
+      var w = drift + noise(t * 0.05, 0.5) * 26;
+      for (var k = 0; k < gusts.length; k++) {
+        var gg = gusts[k];
+        var lag = (gg.a > 0 ? x / W : 1 - x / W) * 1.2;   // the gust crosses the screen as a wave
+        var u = (t - gg.t - lag) / 1.4;
+        if (u > -3 && u < 3) w += gg.a * Math.exp(-u * u);
+      }
+      return w;
+    }
+
+    function knock(sh, xa, xb, power) {
+      var i0 = Math.max(0, Math.floor((xa - sh.x0) / SNOW_COL)), i1 = Math.min(sh.n - 1, Math.ceil((xb - sh.x0) / SNOW_COL));
+      var pv = session.pointer.vx || 0;
+      for (var i = i0; i <= i1; i++) {
+        var dpt = sh.depth[i];
+        if (dpt < 0.6) continue;
+        if (rng() < 0.55) {
+          clumps.push({ x: sh.x0 + i * SNOW_COL, y: sh.y - dpt * 0.6, vx: (rng() - 0.5) * 70 + pv * 0.1 * power,
+            vy: -30 * power - rng() * 80 * power, r: 0.8 + Math.min(2.4, dpt * 0.28) * rng() + 0.6, life: 0, burst: rng() < 0.6 });
+        }
+        sh.total -= dpt;
+        sh.depth[i] = 0;
+      }
+    }
+
+    sky.on();
+
+    session.loop(function (dt, t) {
+      var p = session.pointer;
+      var live = p.seen && performance.now() - p.at < 100;
+      var pv = live ? Math.hypot(p.vx, p.vy) : 0;
+      var snowing = !ending && t < DURATION;
+      var density = snowing ? smoothstep(0, 5, t) : 0;
+      if (!snowing && !sky.ended) { sky.off(); sky.ended = true; }
+      var windMid = windAt(W / 2, t);
+      sky.draw(t, windMid + drift * 2);
+
+      ctx.clearRect(0, 0, cv.w, cv.h);
+
+      // Snow lying on the ledges and banked along the bottom.
+      var melt = snowing ? 0 : smoothstep(0, 5, t - DURATION);
+      var all = shelves.concat([ground]);
+      for (var k = 0; k < all.length; k++) {
+        var sh = all[k];
+        if (melt > 0) {
+          for (var m = 0; m < sh.n; m++) sh.depth[m] *= 1 - 2.2 * dt * melt;
+        } else if (t > 1.5) {
+          // The steady settling of countless flakes too small to see.
+          var rate = (heavy ? 0.9 : 0.6) * density * dt * (sh.ground ? 1.6 : 1);
+          for (var gI = 0; gI < sh.n; gI++) {
+            var cap = shelfCap(sh, gI, noise);
+            if (sh.depth[gI] < cap) sh.depth[gI] = Math.min(cap, sh.depth[gI] + rate * (0.5 + noise(sh.seed + gI * 0.07, t * 0.1) * 0.5 + 0.5));
+          }
+          sh.total += rate * sh.n * 0.5;
+          // A full ledge sheds a little powder off its end now and then.
+          if (!sh.ground && sh.depth[0] > shelfCap(sh, 0, noise) * 0.9 && t > sh.slideT) {
+            sh.slideT = t + 3 + rng() * 7;
+            var leftEnd = rng() < 0.5;
+            for (var c2 = 0; c2 < 5; c2++) {
+              clumps.push({ x: (leftEnd ? sh.x0 - 2 : sh.x1 + 2) + (rng() - 0.5) * 3, y: sh.y - 2 - rng() * 3, vx: (leftEnd ? -1 : 1) * (6 + rng() * 16),
+                vy: rng() * 15, r: 0.6 + rng() * 1.2, life: 0, burst: false });
+            }
+          }
+        }
+        if (live && pv > 380 && !sh.ground && p.x > sh.x0 - 6 && p.x < sh.x1 + 6 && p.y > sh.y - 18 && p.y < sh.y + 8) {
+          knock(sh, p.x - 24, p.x + 24, 1);
+        }
+        drawCap(ctx, sh, 1 - melt * 0.9);
+      }
+
+      // Falling flakes: each rides the eddies of the air on its own.
+      for (var f = 0; f < flakes.length; f++) {
+        var fl = flakes[f];
+        if (fl.dead) {
+          if (snowing && rng() < density * 0.08) spawn(fl, true);
+          else continue;
+        }
+        var e = 0.004;
+        var n0 = noise(fl.x * e, fl.y * e, t * 0.18);
+        var cx = (noise(fl.x * e, (fl.y + 8) * e, t * 0.18) - n0) / 8;
+        var cy = (noise((fl.x + 8) * e, fl.y * e, t * 0.18) - n0) / 8;
+        var curlX = cx * 9000, curlY = -cy * 5000;
+        var wobble = noise(fl.k, t * 0.6) * 18 * (0.3 + fl.z);   // each flake's own flutter
+        var targetVx = windAt(fl.x, t) * (0.35 + 0.65 * fl.z) + curlX * (0.3 + fl.z) + wobble;
+        if (live && pv > 100) {
+          var dx = fl.x - p.x, dy = fl.y - p.y, d2 = dx * dx + dy * dy;
+          if (d2 < 150 * 150) targetVx += p.vx * (1 - Math.sqrt(d2) / 150) * 0.6;
+        }
+        fl.vx = lerp(fl.vx, targetVx, clamp(dt * 2.5, 0, 1));
+        fl.x += fl.vx * dt;
+        fl.py = fl.y;
+        fl.y += (fl.vy + curlY * fl.z) * dt;
+        if (fl.z > 0.3 && fl.y > fl.py) {
+          for (var s2 = 0; s2 <= shelves.length; s2++) {
+            var S2 = s2 < shelves.length ? shelves[s2] : ground;
+            if (fl.x < S2.x0 || fl.x > S2.x1) continue;
+            var surf = S2.y - shelfDepth(S2, fl.x);
+            if (fl.py <= surf && fl.y >= surf) {
+              if (rng() < 0.7 || S2.ground) { deposit(S2, fl.x, fl.r * (heavy ? 0.6 : 0.45), fl.r * 1.6 + 2, noise); fl.dead = true; }
+              break;
+            }
+          }
+        }
+        if (fl.y > H + 14 || fl.x < -220 || fl.x > W + 220) fl.dead = true;
+        if (fl.dead) continue;
+        ctx.globalAlpha = 0.55 + fl.z * 0.45;
+        ctx.drawImage(fl.sp.c, fl.x - fl.sp.s / 2, fl.y - fl.sp.s / 2, fl.sp.s, fl.sp.s);
+      }
+      ctx.globalAlpha = 1;
+
+      // A few big flakes right in front of you, out of focus.
+      for (var nb = 0; nb < near.length; nb++) {
+        var N = near[nb];
+        N.x += (windMid * 1.4 + noise(N.k, t * 0.4) * 30) * dt;
+        N.y += N.vy * dt;
+        if (N.y - N.r > H || N.x < -80 || N.x > W + 80) {
+          if (!snowing) { N.y = H * 3; continue; }
+          N.x = rng() * W; N.y = -N.r * 2 - rng() * 300;
+        }
+        var bs = N.r / 14;
+        ctx.globalAlpha = 0.75 * smoothstep(0, 6, t) * (snowing ? 1 : 0.5);
+        ctx.drawImage(bokeh.c, N.x - bokeh.s * bs / 2, N.y - bokeh.s * bs / 2, bokeh.s * bs, bokeh.s * bs);
+      }
+      ctx.globalAlpha = 1;
+
+      // Snow knocked or shed off a ledge: clumps that break into powder.
+      for (var c = clumps.length - 1; c >= 0; c--) {
+        var cl = clumps[c];
+        cl.life += dt;
+        cl.vy += 650 * dt;
+        cl.vx *= Math.pow(0.4, dt);
+        cl.x += cl.vx * dt; cl.y += cl.vy * dt;
+        if (cl.y > H + 10 || cl.life > 3) { clumps.splice(c, 1); continue; }
+        if (cl.burst && cl.life > 0.22 && cl.r > 1.1) {
+          for (var pz = 0; pz < 4; pz++) clumps.push({ x: cl.x, y: cl.y, vx: cl.vx + (rng() - 0.5) * 60, vy: cl.vy * 0.3 - rng() * 30, r: cl.r * 0.45, life: 0, burst: false });
+          clumps.splice(c, 1);
+          continue;
+        }
+        var cs = midS[Math.min(2, Math.max(0, Math.round(cl.r) - 1))];
+        ctx.drawImage(cs.c, cl.x - cl.r - 1, cl.y - cl.r - 1, cl.r * 2 + 2, cl.r * 2 + 2);
+      }
+
+      return t < DURATION + 6;
+    }, 900);
   };
+
+  /* =================================================================== RAIN
+   * Rain on a rainy day. The page dims to the slate light of a rain sky and
+   * clouds slide across. Rain falls in faint, bright, motion-blurred
+   * streaks, the way rain looks against a dark room: a fine mist of distant
+   * rain, clearer streaks in the middle, long fast ones close up, leaning
+   * with the wind and coming in sheets. It splashes into fine spray on the
+   * page's own ledges, which shine wet, and drips off their ends.
+   *
+   * And it runs down the glass: real drops on the screen that bend the page
+   * behind them, the way water on a window shows a tiny upside-down view
+   * of what is behind it (a CSS backdrop filter: an SVG displacement map
+   * shaped like a lens). Drops land, merge, and once heavy enough slide down
+   * in stop-start runs, leaving a trail of tiny droplets. A thunderstorm
+   * brings lightning. */
+
+  /* The lens: displacement that makes each drop show the page behind it
+   * upside down and smaller, with the squeeze toward the rim a real drop
+   * has. One map, a few filters for a few drop sizes. */
+  var LENS_SIZES = [3, 5, 7, 9, 12];
+  function makeLenses(session) {
+    var S = 96;
+    var c = document.createElement('canvas');
+    c.width = S; c.height = S;
+    var g = c.getContext('2d');
+    var im = g.createImageData(S, S);
+    for (var y = 0; y < S; y++) {
+      for (var x = 0; x < S; x++) {
+        var dx = (x + 0.5) / S * 2 - 1, dy = (y + 0.5) / S * 2 - 1;
+        var r = Math.hypot(dx, dy);
+        // Sample at -m * p: inverted and shrunk; m grows toward the rim.
+        var m = 0.55 + 0.4 * Math.pow(Math.min(1, r), 3);
+        var k = r < 1 ? (1 + m) / 2 : 0;   // displacement = -(1 + m) p, encoded around 0.5
+        var i = (y * S + x) * 4;
+        im.data[i] = clamp(128 - 127 * dx * k, 0, 255);
+        im.data[i + 1] = clamp(128 - 127 * dy * k, 0, 255);
+        im.data[i + 2] = 128;
+        im.data[i + 3] = 255;
+      }
+    }
+    g.putImageData(im, 0, 0);
+    var url = c.toDataURL();
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('class', 'cgp-gem-svg');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('width', '0');
+    svg.setAttribute('height', '0');
+    var html = '';
+    for (var s = 0; s < LENS_SIZES.length; s++) {
+      var R = LENS_SIZES[s];
+      html += '<filter id="cgp-gem-lens-' + R + '" x="0" y="0" width="1" height="1" color-interpolation-filters="sRGB">' +
+        '<feImage href="' + url + '" x="0" y="0" width="100%" height="100%" preserveAspectRatio="none" result="map"/>' +
+        '<feDisplacementMap in="SourceGraphic" in2="map" scale="' + (2 * R * 2) + '" xChannelSelector="R" yChannelSelector="G"/>' +
+        '</filter>';
+    }
+    svg.innerHTML = html;
+    session.stage.appendChild(svg);
+    return function (r) {
+      for (var i = 0; i < LENS_SIZES.length; i++) if (r <= LENS_SIZES[i] * 1.15) return LENS_SIZES[i];
+      return LENS_SIZES[LENS_SIZES.length - 1];
+    };
+  }
+
+  PLAYERS.rain = function (session, props) {
+    var rng = makeRng(props.seed);
+    var noise = makeNoise(rng);
+    var W = window.innerWidth, H = window.innerHeight;
+    var heavy = !!props.heavy || !!props.thunder;
+    var DURATION = props.duration || 38;
+    var sky = makeSky(session, 'rain', rng);
+    var flash = null;
+    if (props.thunder) {
+      flash = document.createElement('div');
+      flash.className = 'cgp-gem-flash';
+      session.stage.appendChild(flash);
+    }
+    // The glass comes before the rain canvas, so each drop bends the page
+    // itself and not the rain streaks, which would make every drop redraw
+    // on every frame.
+    var glass = document.createElement('div');
+    glass.className = 'cgp-gem-glass';
+    session.stage.appendChild(glass);
+    var cv = session.canvas();
+    var ctx = cv.ctx;
+    var lensFor = makeLenses(session);
+    var ending = false;
+    weatherDismiss(session, function () { ending = true; });
+
+    var ledges = [];
+    function gather() {
+      ledges = collectLedges(session.stage).map(function (L) {
+        return { x0: L.x0, x1: L.x1, y: L.y, beadL: rng() * 0.5, beadR: rng() * 0.5, wet: 0 };
+      });
+    }
+    gather();
+    followScroll(session, function () { ledges = []; }, gather);
+
+    var COUNT = Math.round(clamp(W * H / (heavy ? 750 : 1100), 450, 1800));
+    var drops = [];
+    function spawn(d) {
+      d.z = Math.pow(rng(), 1.15);
+      d.len = d.z < 0.45 ? 8 + rng() * 10 : (d.z < 0.8 ? 22 + rng() * 22 : 48 + rng() * 46);
+      d.v = lerp(700, 1600, d.z) * (0.9 + rng() * 0.2);
+      d.x = rng() * (W + 600) - 300;
+      d.y = -d.len - rng() * 150;
+      d.py = d.y;
+      d.dead = false;
+      return d;
+    }
+    for (var i = 0; i < COUNT; i++) { drops.push(spawn({})); drops[i].y -= rng() * H * 1.4; }
+
+    var spray = [];
+    var spraySprite = softDot(3, 0.2, 0.55);
+    var dotSprite = softDot(1.4, 0.6, 0.95);
+    var falls = [];
+
+    /* Drops on the glass: DOM elements, so each can bend the real page.
+     * Elements are kept and reused (hidden while spare) rather than added and
+     * removed, so drops coming and going never wake the page's own
+     * childList MutationObservers (SpeedGrader's layout scans and others). */
+    var beads = [];
+    var spareEls = [];
+    function addBead(x, y, r) {
+      if (beads.length >= 70) return null;
+      var el = spareEls.pop();
+      if (el) {
+        el.style.display = '';
+      } else {
+        el = document.createElement('div');
+        el.className = 'cgp-gem-drop';
+        glass.appendChild(el);
+      }
+      var b = { el: el, x: x, y: y, r: r, lens: 0, run: false, vy: 0, life: 0, trailAt: y, k: rng() * 50, born: 0 };
+      beads.push(b);
+      sizeBead(b);
+      el.style.transform = 'translate3d(' + (x - r).toFixed(1) + 'px,' + (y - b.h / 2).toFixed(1) + 'px,0) scale(0.6)';
+      return b;
+    }
+    function sizeBead(b) {
+      var lens = lensFor(b.r);
+      if (lens !== b.lens) { b.lens = lens; b.el.style.backdropFilter = 'url(#cgp-gem-lens-' + lens + ') brightness(1.06) contrast(1.08)'; }
+      var w = b.r * 2, h = b.r * 2 * (b.run ? 1.22 : 1.04);
+      b.el.style.width = w.toFixed(1) + 'px';
+      b.el.style.height = h.toFixed(1) + 'px';
+      b.h = h;
+    }
+    function removeBead(idx) {
+      var b = beads[idx];
+      b.el.style.display = 'none';
+      b.el.style.backdropFilter = '';
+      spareEls.push(b.el);
+      beads.splice(idx, 1);
+    }
+
+    var strikes = [];
+    if (props.thunder) for (var st = 5 + rng() * 4; st < DURATION - 4; st += 9 + rng() * 10) strikes.push(st);
+    function flashLevel(t) {
+      for (var k = 0; k < strikes.length; k++) {
+        var ft = t - strikes[k];
+        if (ft < 0 || ft > 1.4) continue;
+        if (ft < 0.05) return 0.5;
+        if (ft < 0.11) return 0.08;
+        if (ft < 0.17) return 0.38;
+        if (ft < 0.24) return 0.12;
+        if (ft < 0.3) return 0.26;
+        return Math.max(0, 0.26 - (ft - 0.3) * 0.3);
+      }
+      return 0;
+    }
+
+    var dir = rng() < 0.5 ? -1 : 1;
+    sky.on();
+
+    session.loop(function (dt, t) {
+      var raining = !ending && t < DURATION;
+      var density = raining ? smoothstep(0, 4, t) : 0;
+      if (!raining && !sky.ended) { sky.off(); sky.ended = true; }
+      var slant = dir * (0.09 + 0.06 * (noise(t * 0.07, 2.2) * 0.5 + 0.5) + 0.05 * Math.max(0, noise(t * 0.25, 8.8)));
+      sky.draw(t, slant * 500);
+      if (flash) flash.style.opacity = flashLevel(t).toFixed(3);
+
+      ctx.clearRect(0, 0, cv.w, cv.h);
+
+      // Streaks. Far rain is a faint blurred mist; near rain long and bright.
+      var LAYERS = [
+        { lo: 0, hi: 0.45, w: 1.1, a: 0.11, blur: 0 },
+        { lo: 0.45, hi: 0.8, w: 1.0, a: 0.24, blur: 0 },
+        { lo: 0.8, hi: 1.01, w: 1.35, a: 0.34, blur: 0 }
+      ];
+      ctx.lineCap = 'round';
+      for (var L = 0; L < 3; L++) {
+        var lay = LAYERS[L];
+        ctx.beginPath();
+        var heads = [];
+        var any = false;
+        for (var j = 0; j < drops.length; j++) {
+          var d = drops[j];
+          if (d.z < lay.lo || d.z >= lay.hi) continue;
+          if (d.dead) {
+            // Sheets of rain: heavier and lighter bands moving with the wind.
+            var sheet = 0.4 + 0.6 * (noise(d.x * 0.002 - t * 0.45 * dir, t * 0.1) * 0.5 + 0.5);
+            if (raining && rng() < density * sheet * 0.5) spawn(d); else continue;
+          }
+          d.py = d.y;
+          d.y += d.v * dt;
+          d.x += d.v * dt * slant;
+          var hit = false;
+          if (d.z > 0.5) {
+            for (var k = 0; k < ledges.length; k++) {
+              var lg = ledges[k];
+              if (d.x >= lg.x0 && d.x <= lg.x1 && d.py <= lg.y && d.y >= lg.y) {
+                if (rng() < 0.8) {
+                  var pw = lerp(0.5, 1.1, d.z);
+                  spray.push({ x: d.x, y: lg.y - 1, vx: (rng() - 0.5) * 30, vy: -20 - rng() * 30, life: 0, max: 0.25 + rng() * 0.2, s: 1.6 * pw, mist: true });
+                  for (var sp = 0; sp < (d.z > 0.8 ? 3 : 2); sp++) {
+                    spray.push({ x: d.x, y: lg.y - 1, vx: (rng() < 0.5 ? -1 : 1) * (30 + rng() * 110) * pw, vy: -(90 + rng() * 150) * pw, life: 0, max: 0.4, s: 0.6 + rng() * 0.5, mist: false });
+                  }
+                  lg.wet = Math.min(1, lg.wet + 0.02);
+                  if (d.x - lg.x0 < 50) lg.beadL += 0.06; else if (lg.x1 - d.x < 50) lg.beadR += 0.06;
+                  hit = true;
+                }
+                break;
+              }
+            }
+          }
+          // The nearest drops strike the glass itself.
+          if (!hit && d.z > 0.9 && d.y > 10 && d.y < H - 40 && rng() < 0.05 * (heavy ? 1.5 : 1)) {
+            var merged = false;
+            for (var mb = 0; mb < beads.length; mb++) {
+              var MB = beads[mb];
+              if (!MB.run && Math.abs(MB.x - d.x) < MB.r + 3 && Math.abs(MB.y - d.y) < MB.r + 3) {
+                MB.r = Math.min(10, Math.sqrt(MB.r * MB.r + 6)); sizeBead(MB); merged = true; break;
+              }
+            }
+            if (!merged) addBead(d.x, d.y, 2.4 + rng() * rng() * 6.5);
+            hit = true;
+          }
+          if (!hit && d.y > H) {
+            if (d.z > 0.45 && rng() < 0.5) spray.push({ x: d.x, y: H - 1 - rng() * 6, vx: (rng() - 0.5) * 40, vy: -30 - rng() * 40, life: 0, max: 0.35, s: 2, mist: true });
+            hit = true;
+          }
+          if (hit) { d.dead = true; continue; }
+          ctx.moveTo(d.x, d.y);
+          ctx.lineTo(d.x - d.len * slant, d.y - d.len);
+          if (L === 2) heads.push(d);
+          any = true;
+        }
+        if (any) {
+          ctx.save();
+          if (lay.blur) ctx.filter = 'blur(' + lay.blur + 'px)';
+          ctx.lineWidth = lay.w;
+          ctx.strokeStyle = 'rgba(236, 242, 250,' + lay.a + ')';
+          ctx.stroke();
+          ctx.restore();
+        }
+        // The leading part of a near streak is brightest: the drop itself.
+        if (heads.length) {
+          ctx.beginPath();
+          for (var hI = 0; hI < heads.length; hI++) {
+            var hd = heads[hI];
+            ctx.moveTo(hd.x, hd.y);
+            ctx.lineTo(hd.x - hd.len * 0.35 * slant, hd.y - hd.len * 0.35);
+          }
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = 'rgba(248, 251, 255, 0.5)';
+          ctx.stroke();
+        }
+      }
+
+      // Wet ledges shine; water gathers at their ends and drips off.
+      for (var g = 0; g < ledges.length; g++) {
+        var lg2 = ledges[g];
+        if (lg2.wet > 0.05) {
+          ctx.strokeStyle = 'rgba(255,255,255,' + (0.6 * lg2.wet).toFixed(3) + ')';
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(lg2.x0 + 2, lg2.y + 0.5); ctx.lineTo(lg2.x1 - 2, lg2.y + 0.5); ctx.stroke();
+        }
+        if (raining) { lg2.beadL += dt * 0.04 * density; lg2.beadR += dt * 0.04 * density; }
+        var ends = [[lg2.x0 + 1.5, 'beadL'], [lg2.x1 - 1.5, 'beadR']];
+        for (var e = 0; e < 2; e++) {
+          var bx = ends[e][0], key = ends[e][1];
+          var size = Math.min(1, lg2[key]);
+          if (size > 0.2) {
+            var br = 0.8 + size * 2;
+            var by = lg2.y + 0.5 + br;
+            var hb = ctx.createRadialGradient(bx - br * 0.3, by - br * 0.3, 0, bx, by, br);
+            hb.addColorStop(0, 'rgba(255,255,255,0.95)');
+            hb.addColorStop(0.5, 'rgba(220,230,240,0.5)');
+            hb.addColorStop(1, 'rgba(40,58,82,0.55)');
+            ctx.fillStyle = hb;
+            ctx.beginPath(); ctx.ellipse(bx, by, br * 0.85, br * (1 + size * 0.2), 0, 0, TAU); ctx.fill();
+          }
+          if (lg2[key] >= 1) { falls.push({ x: bx, y: lg2.y + 3, vy: 0 }); lg2[key] = 0; }
+        }
+      }
+      for (var f = falls.length - 1; f >= 0; f--) {
+        var fd = falls[f];
+        fd.vy += 1500 * dt;
+        var ny = fd.y + fd.vy * dt;
+        var landed = ny >= H - 1;
+        for (var q = 0; q < ledges.length && !landed; q++) {
+          var lq = ledges[q];
+          if (fd.x >= lq.x0 && fd.x <= lq.x1 && fd.y < lq.y - 1 && ny >= lq.y) { ny = lq.y; landed = true; }
+        }
+        fd.y = ny;
+        if (landed) {
+          for (var sq = 0; sq < 5; sq++) spray.push({ x: fd.x, y: fd.y - 1, vx: (rng() - 0.5) * 160, vy: -(80 + rng() * 120), life: 0, max: 0.4, s: 0.7, mist: false });
+          falls.splice(f, 1); continue;
+        }
+        ctx.strokeStyle = 'rgba(240,246,252,0.7)';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.moveTo(fd.x, fd.y); ctx.lineTo(fd.x, fd.y - Math.min(12, fd.vy * 0.02)); ctx.stroke();
+      }
+
+      // Spray: fine bright droplets and a puff of mist at each impact.
+      for (var s = spray.length - 1; s >= 0; s--) {
+        var S = spray[s];
+        S.life += dt;
+        if (S.life > S.max) { spray.splice(s, 1); continue; }
+        var u = S.life / S.max;
+        if (S.mist) {
+          S.x += S.vx * dt; S.y += S.vy * dt;
+          var ms = S.s * (1 + u * 3);
+          ctx.globalAlpha = (1 - u) * 0.6;
+          ctx.drawImage(spraySprite.c, S.x - ms * 2, S.y - ms * 2, ms * 4, ms * 4);
+        } else {
+          S.vy += 1500 * dt;
+          S.x += S.vx * dt; S.y += S.vy * dt;
+          ctx.globalAlpha = 1 - u;
+          ctx.drawImage(dotSprite.c, S.x - S.s * 2, S.y - S.s * 2, S.s * 4, S.s * 4);
+        }
+      }
+      ctx.globalAlpha = 1;
+
+      // Water on the glass.
+      var dry = raining ? 0 : smoothstep(0, 5, t - DURATION);
+      for (var bI = beads.length - 1; bI >= 0; bI--) {
+        var B = beads[bI];
+        B.life += dt;
+        if (!B.run && B.r > 6.5) { B.run = true; B.vy = 0; sizeBead(B); }
+        if (B.run) {
+          // Water on glass moves in fits: it snags, then lets go.
+          var stick = noise(B.k, t * 1.4) > 0.2 ? 0.08 : 1;
+          B.vy = lerp(B.vy, (50 + B.r * 16) * stick, clamp(dt * 6, 0, 1));
+          B.y += B.vy * dt;
+          B.x += noise(B.k + 3, B.y * 0.03) * 10 * dt;
+          if (B.y - B.trailAt > 9 + rng() * 8 && B.r > 4) {
+            B.trailAt = B.y;
+            var tr = 1.4 + rng() * 1.2;
+            addBead(B.x + (rng() - 0.5) * 1.5, B.y - B.h * 0.45, tr);
+            B.r = Math.sqrt(Math.max(9, B.r * B.r - tr * tr * 0.6));
+            sizeBead(B);
+          }
+          // It sweeps up the drops in its path.
+          for (var o = beads.length - 1; o >= 0; o--) {
+            var O = beads[o];
+            if (O === B || O.run || O.y < B.y) continue;   // only drops below, in its path
+            var ox = O.x - B.x, oy = O.y - B.y;
+            if (ox * ox + oy * oy < (B.r + O.r) * (B.r + O.r)) {
+              B.r = Math.min(11, Math.sqrt(B.r * B.r + O.r * O.r));
+              removeBead(o);
+              if (o < bI) bI--;
+              sizeBead(B);
+            }
+          }
+          if (B.r < 5) { B.run = false; sizeBead(B); }
+          if (B.y > H + 20) { removeBead(bI); continue; }
+        }
+        if (dry > 0 || B.life > 30) {
+          B.r -= dt * (dry > 0 ? 1.4 * dry : 0.06);
+          if (B.r < 1.2) { removeBead(bI); continue; }
+          sizeBead(B);
+        }
+        var pop = Math.min(1, B.life / 0.12);
+        B.el.style.transform = 'translate3d(' + (B.x - B.r).toFixed(1) + 'px,' + (B.y - B.h / 2).toFixed(1) + 'px,0) scale(' + (0.6 + 0.4 * pop).toFixed(3) + ')';
+      }
+
+      return t < DURATION + 6;
+    }, 900);
+  };
+
+  /* ============================================================= CONTROLLER */
 
   function HiddenGemsController(ctx) {
     this.settings = ctx.settings;
@@ -1184,32 +1191,30 @@
 
   var P = HiddenGemsController.prototype;
 
-  P._render = function (id, subject, props) {
+  P._render = function (id, props) {
+    if (!Object.prototype.hasOwnProperty.call(PLAYERS, id)) return null;
     if (this._active) {
       this._active.destroy();
       this._active = null;
     }
-    var session = createSession(id === 'boat');
+    var self = this;
+    var session = createSession(function (s) { if (self._active === s) self._active = null; });
     this._active = session;
+    var p = Object.assign({ seed: Math.floor(Math.random() * 4294967295) >>> 0 }, props || {});
     try {
-      PLAYERS[id](session, props);
+      PLAYERS[id](session, p);
     } catch (e) {
       session.destroy();
       if (CGP.diag) CGP.diag.error('hiddenGems.playFailed', { gem: id, message: String(e && e.message) });
       return null;
     }
-    if (CGP.diag) CGP.diag.log('hiddenGems.played', { gem: id, subject: subject.id, source: subject.source });
-    return { gem: id, subject: subject, cardId: props && props.card ? props.card.id : null };
+    if (CGP.diag) CGP.diag.log('hiddenGems.played', { gem: id, heavy: !!p.heavy, thunder: !!p.thunder });
+    return { gem: id };
   };
 
-  P.play = function (gemId, subjectOverride, opts) {
-    if (!CGP.hiddenGems) return Promise.resolve(null);
-    var self = this;
-    var id = PLAYERS[gemId] ? gemId : CGP.hiddenGems.pickGem(null);
-    return resolveCurrentSubject(subjectOverride).then(function (subject) {
-      var props = CGP.hiddenGems.contentFor(id, subject.id, undefined, opts);
-      return self._render(id, subject, props);
-    });
+  /* Plays snow or rain now (opts: { heavy, thunder }). */
+  P.play = function (id, opts) {
+    return Promise.resolve(this._render(id, opts));
   };
 
   P.stop = function () {
@@ -1217,17 +1222,33 @@
     if (this._active) { this._active.destroy(); this._active = null; }
   };
 
+  /* #cgp-gem=snow, #cgp-gem=snow:heavy, #cgp-gem=rain, #cgp-gem=rain:heavy,
+   * #cgp-gem=rain:thunder: play at once, whatever the weather. */
   P._checkHashPreview = function () {
     try {
-      var m = /^#cgp-gem=([a-z]+)(?::([a-z]+))?$/i.exec(String(location.hash || ''));
+      var m = /^#cgp-gem=(snow|rain)(?::(heavy|thunder))?$/i.exec(String(location.hash || ''));
       if (!m) return false;
-      var gem = m[1].toLowerCase();
-      var subj = m[2] ? m[2].toLowerCase() : null;
+      var id = m[1].toLowerCase();
+      var how = (m[2] || '').toLowerCase();
       var self = this;
-      setTimeout(function () { self.play(gem === 'random' ? null : gem, subj); }, 600);
+      setTimeout(function () { self.play(id, { heavy: !!how, thunder: how === 'thunder' }); }, 600);
       return true;
     } catch (e) { return false; }
   };
+
+  /* Asks the service worker what is falling around Philadelphia (it keeps
+   * the answer for 20 minutes). Resolves to the weather kind or null. */
+  function currentWeather() {
+    return new Promise(function (resolve) {
+      try {
+        if (!chrome || !chrome.runtime || !chrome.runtime.sendMessage) { resolve(null); return; }
+        chrome.runtime.sendMessage({ type: 'cgp.weather.now' }, function (res) {
+          void (chrome.runtime && chrome.runtime.lastError);
+          resolve(res && res.ok ? CGP.hiddenGems.weatherKind(res.codes) : null);
+        });
+      } catch (e) { resolve(null); }
+    });
+  }
 
   P.start = function () {
     if (this._started) return;
@@ -1235,9 +1256,7 @@
     var self = this;
 
     if (CGP.hiddenGems) {
-      CGP.hiddenGems.play = function (gemId, subjectOverride) {
-        return self.play(gemId, subjectOverride);
-      };
+      CGP.hiddenGems.play = function (id, opts) { return self.play(id, opts); };
     }
 
     if (this.settings && this.settings.onChange) {
@@ -1247,55 +1266,44 @@
     }
 
     if (this._checkHashPreview()) return;
-
     if (!this.settings || !this.settings.values || this.settings.values.hiddenGems === false) return;
-    if (prefersReducedMotion()) return;
+    if (prefersReducedMotion() || !CGP.hiddenGems) return;
 
+    function stillWanted() {
+      return !document.hidden && !!self.settings.values.hiddenGems && !prefersReducedMotion();
+    }
+
+    // Ask about the weather only when it could show: a page load within three
+    // hours of the last weather costs no request at all.
     readState().then(function (state) {
-      if (document.hidden) return;
-      if (!self.settings.values.hiddenGems) return;
-      var now = Date.now();
-      if (!CGP.hiddenGems.shouldTrigger(state, now, { enabled: true, reducedMotion: prefersReducedMotion() })) return;
-      var delay = CGP.hiddenGems.nextDelayMs();
+      if (!CGP.hiddenGems.weatherDue(state, Date.now(), { enabled: true, reducedMotion: prefersReducedMotion() })) return null;
+      return currentWeather();
+    }).then(function (kind) {
+      if (!kind) return;
+      // Let the page settle first, and play only if the teacher is still here.
       self._timer = setTimeout(function () {
         self._timer = null;
-        if (document.hidden || !self.settings.values.hiddenGems || prefersReducedMotion()) return;
+        if (!stillWanted()) return;
         withClaimLock(function (hasLock) {
           return readState().then(function (fresh) {
-            if (document.hidden || !self.settings.values.hiddenGems || prefersReducedMotion()) return null;
+            if (!stillWanted()) return null;
             var claimNow = Date.now();
-            if (!CGP.hiddenGems.isCooldownClear(fresh, claimNow, { enabled: true, reducedMotion: false })) return null;
-            var recentGems = Array.isArray(fresh && fresh.recentGems) ? fresh.recentGems.slice(-4) : (fresh && fresh.lastGemId ? [fresh.lastGemId] : []);
-            var recentCards = Array.isArray(fresh && fresh.recentCards) ? fresh.recentCards.slice(-16) : [];
-            var gemId = CGP.hiddenGems.pickGem(recentGems);
-            return resolveCurrentSubject(null).then(function (subject) {
-              if (document.hidden || !self.settings.values.hiddenGems || prefersReducedMotion()) return null;
-              var props = CGP.hiddenGems.contentFor(gemId, subject.id, undefined, { recentCards: recentCards });
-              var nextGems = recentGems.concat([gemId]).slice(-4);
-              var nextCards = (props && props.card && props.card.id)
-                ? recentCards.concat([props.card.id]).slice(-16)
-                : recentCards;
-              var claimId = claimNow + ':' + Math.random().toString(36).slice(2, 8);
-              return writeState({
-                lastShownAt: claimNow,
-                lastGemId: gemId,
-                recentGems: nextGems,
-                recentCards: nextCards,
-                claimId: claimId
-              }).then(function (okWrite) {
-                if (!okWrite || document.hidden || !self.settings.values.hiddenGems) return null;
-                if (hasLock) return self._render(gemId, subject, props);
-                // Fallback when Web Locks API is unavailable: verify our claim won.
-                return readState().then(function (verify) {
-                  if (!verify || verify.claimId !== claimId || document.hidden || !self.settings.values.hiddenGems) return null;
-                  return self._render(gemId, subject, props);
-                });
+            if (!CGP.hiddenGems.weatherDue(fresh, claimNow, { enabled: true })) return null;
+            var claimId = claimNow + ':' + Math.random().toString(36).slice(2, 8);
+            // Only the weather's own record: the earlier pieces' keys are left behind.
+            return writeState({ weatherShownAt: claimNow, weatherClaimId: claimId }).then(function (okWrite) {
+              if (!okWrite || !stillWanted()) return null;
+              var go = function () { return stillWanted() ? self._render(kind.id, { heavy: kind.heavy, thunder: kind.thunder }) : null; };
+              if (hasLock) return go();
+              // Without Web Locks: play only if this window's claim won.
+              return readState().then(function (verify) {
+                return verify && verify.weatherClaimId === claimId ? go() : null;
               });
             });
           });
         });
-      }, delay);
-    });
+      }, 8000 + Math.random() * 10000);
+    }, function () { return null; });
   };
 
   CGP.HiddenGemsController = HiddenGemsController;
