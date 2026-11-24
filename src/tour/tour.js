@@ -101,113 +101,94 @@
   var CSS = [
     ':host{all:initial}',
     '*,*::before,*::after{box-sizing:border-box}',
-    '.layer{position:fixed;inset:0;z-index:' + Z + ';pointer-events:none;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:#18222b;-webkit-font-smoothing:antialiased;--brand:#0374b5;--brand2:#5b3fd0;--ink:#18222b;--soft:#4a5864;--muted:#7a8792;--line:#e5e9ee;--ease:cubic-bezier(.22,1,.36,1);--spring:cubic-bezier(.22,1,.36,1);--spring:' + SPRING + '}',
+    /* Canvas's own face, ink and blue, so the tour reads as part of the page it sits on. */
+    '.layer{position:fixed;inset:0;z-index:' + Z + ';pointer-events:none;font-family:"Lato Extended",Lato,"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;color:#2d3b45;-webkit-font-smoothing:antialiased;--ink:#1a232b;--text:#2d3b45;--muted:#6b7780;--blue:#0374b5;--blue-dk:#045486;--tint:#eef6fb;--wash:#f5f7f8;--rule:#e1e5e8;--green:#0b7a45;--ease:cubic-bezier(.22,1,.36,1);--spring:cubic-bezier(.22,1,.36,1);--spring:' + SPRING + '}',
     '.layer.is-off .spot,.layer.is-off .card,.layer.is-off .block{opacity:0;pointer-events:none!important}',
-
-    /* the spotlight */
-    '.spot{position:fixed;left:0;top:0;width:0;height:0;border-radius:12px;box-shadow:0 0 0 9999px rgba(9,16,29,.62);opacity:0;will-change:transform,width,height}',
+    /* the spotlight: a cut-out in the dimmed page, ringed like Canvas's keyboard focus */
+    '.spot{position:fixed;left:0;top:0;width:0;height:0;border-radius:8px;box-shadow:0 0 0 9999px rgba(26,35,43,.56);opacity:0;will-change:transform,width,height}',
     '.spot.is-on{opacity:1}',
-    '.spot::before{content:"";position:absolute;inset:-2px;border-radius:inherit;padding:2px;background:linear-gradient(135deg,#5ec2ff,#7a5cff 55%,#ff7ab6);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:.95;transition:opacity .3s ease}',
-    /* the ripple that marks arrival (a WAAPI animation on ::after, ripple()) */
-    '.spot::after{content:"";position:absolute;inset:-2px;border-radius:inherit;box-shadow:0 0 0 0 rgba(122,92,255,0)}',
+    '.spot::before{content:"";position:absolute;inset:-4px;border-radius:inherit;border:2px solid var(--blue);box-shadow:0 0 0 2px #fff;transition:opacity .25s ease}',
+    /* arrival: one ring spreading from the edge (ripple()) */
+    '.spot::after{content:"";position:absolute;inset:-4px;border-radius:inherit;box-shadow:0 0 0 0 rgba(3,116,181,0)}',
     '.spot.is-empty::before{opacity:0}',
     '.block{position:fixed;pointer-events:auto;background:transparent}',
-
     /* the card */
-    '.card{position:fixed;left:0;top:0;width:380px;max-width:calc(100vw - 24px);pointer-events:auto;background:rgba(255,255,255,.98);border-radius:18px;box-shadow:0 24px 64px -12px rgba(9,16,29,.45),0 4px 14px rgba(9,16,29,.12),inset 0 0 0 1px rgba(255,255,255,.6);transition:opacity .3s ease;opacity:0;outline:none;overflow:visible;will-change:transform}',
+    '.card{position:fixed;left:0;top:0;width:372px;max-width:calc(100vw - 24px);pointer-events:auto;background:#fff;border-radius:12px;box-shadow:0 1px 2px rgba(26,35,43,.1),0 14px 36px -10px rgba(26,35,43,.38);transition:opacity .3s ease;opacity:0;outline:none;will-change:transform}',
     '.card.is-on{opacity:1}',
-    '.card--center{width:540px}',
-    '.card--finale{width:440px;text-align:center}',
-    '.card__in{position:relative;border-radius:18px;overflow:hidden;padding:22px 24px 18px}',
-    '.card__in::before{content:"";position:absolute;left:0;right:0;top:0;height:4px;background:linear-gradient(90deg,#0374b5,#5b3fd0 55%,#e2589c)}',
-    '.arrow{position:absolute;width:16px;height:16px;background:#fff;transform:rotate(45deg);border-radius:3px;box-shadow:-2px -2px 6px rgba(9,16,29,.06);display:none}',
-    '.card[data-side="bottom"] .arrow{display:block;top:-7px}',
-    '.card[data-side="top"] .arrow{display:block;bottom:-7px;box-shadow:2px 2px 6px rgba(9,16,29,.1)}',
-    '.card[data-side="right"] .arrow{display:block;left:-7px}',
-    '.card[data-side="left"] .arrow{display:block;right:-7px;box-shadow:2px -2px 6px rgba(9,16,29,.08)}',
-    /* the outgoing card content while the new one comes in (morph()) */
+    '.card--center{width:520px}',
+    '.card--finale{width:400px}',
+    '.card__in{position:relative;border-radius:12px;overflow:hidden;padding:18px 20px 16px}',
+    '.arrow{position:absolute;width:14px;height:14px;background:#fff;transform:rotate(45deg);border-radius:2px;display:none}',
+    '.card[data-side="bottom"] .arrow{display:block;top:-6px}',
+    '.card[data-side="top"] .arrow{display:block;bottom:-6px}',
+    '.card[data-side="right"] .arrow{display:block;left:-6px}',
+    '.card[data-side="left"] .arrow{display:block;right:-6px}',
     '.ghost{position:absolute;pointer-events:none}',
-
-    '.head{display:flex;align-items:center;gap:10px;margin:2px 0 12px}',
-    '.ico{flex:0 0 auto;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:linear-gradient(135deg,#e7f3fb,#efeafe);color:var(--brand)}',
-    '.ico svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}',
-    '.eyebrow{flex:1 1 auto;font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;background:linear-gradient(90deg,#0374b5,#5b3fd0);-webkit-background-clip:text;background-clip:text;color:transparent}',
-    '.count{flex:0 0 auto;white-space:nowrap;font-size:12px;font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums}',
-    '.prog{flex:1 1 auto;min-width:40px;max-width:120px;height:5px;border-radius:5px;background:#e6eaef;overflow:hidden;margin-right:auto}',
-    '.prog i{display:block;height:100%;width:var(--to);border-radius:inherit;background:linear-gradient(90deg,#0374b5,#5b3fd0);animation:prog .6s var(--ease) both}',
-    '@keyframes prog{from{width:var(--from)}to{width:var(--to)}}',
-    '.x{all:unset;cursor:pointer;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;color:var(--muted);margin-right:-6px}',
-    '.x:hover{background:#f1f4f7;color:var(--ink)}',
-    '.x:focus-visible{box-shadow:0 0 0 3px rgba(3,116,181,.3)}',
+    /* head: which tutorial, how far along (a row of gradebook cells, ticked off as you go), close */
+    '.head{display:flex;align-items:center;gap:12px;margin:0 0 12px}',
+    '.label{flex:1 1 auto;min-width:0;font-size:13px;font-weight:700;color:var(--blue-dk)}',
+    '.cells{flex:0 0 auto;display:flex;gap:3px}',
+    '.cells i{width:16px;height:12px;border:1px solid #c7cdd1;border-radius:2px;background:#fff;display:grid;place-items:center;transition:background .35s ease,border-color .35s ease}',
+    '.cells i.is-done{background:var(--blue);border-color:var(--blue)}',
+    '.cells i.is-done::after{content:"";width:6px;height:3px;border:solid #fff;border-width:0 0 1.5px 1.5px;transform:translateY(-1px) rotate(-45deg)}',
+    '.cells i.is-now{border-color:var(--blue);box-shadow:inset 0 0 0 1px var(--blue)}',
+    '.x{all:unset;cursor:pointer;flex:0 0 auto;width:28px;height:28px;margin:-4px -6px -4px 0;border-radius:6px;display:grid;place-items:center;color:var(--muted)}',
+    '.x:hover{background:var(--wash);color:var(--ink)}',
+    '.x:focus-visible{outline:2px solid var(--blue);outline-offset:1px}',
     '.x svg{width:14px;height:14px;stroke:currentColor;stroke-width:2;stroke-linecap:round}',
-    'h2{margin:0 0 8px;font-size:19px;line-height:1.28;font-weight:700;letter-spacing:-.01em;color:var(--ink)}',
-    '.card--finale h2{font-size:28px}',
-    'p{margin:0;font-size:14px;line-height:1.58;color:var(--soft)}',
-    'p strong,p b{color:var(--ink)}',
-    '.c-blue{color:#0a72a8!important}.c-purple{color:#6b3fa0!important}.c-green{color:#0b7a45!important}.c-gray{color:#6b7780!important}.c-amber{color:#a35f0c!important}',
-    'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:#f1f4f7;border-radius:5px;padding:1px 5px;color:var(--ink)}',
-    '.note{margin-top:10px;font-size:12.5px;line-height:1.5;color:#6a5a1f;background:#fff8e6;border:1px solid #f6e3ad;border-radius:10px;padding:8px 11px}',
-    'ul{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:8px}',
-    'li{position:relative;padding-left:18px;font-size:13.5px;line-height:1.55;color:var(--soft)}',
-    'li::before{content:"";position:absolute;left:3px;top:.62em;width:6px;height:6px;border-radius:50%;background:linear-gradient(135deg,#0374b5,#5b3fd0)}',
-    '.kc{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;margin:0 1px;border-radius:6px;font:600 12px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:#28343e;background:linear-gradient(#fff,#f1f4f7);border:1px solid #d5dbe1;box-shadow:0 1.5px 0 #c4ccd4;vertical-align:1px}',
-    '.kc--red{color:#fff;background:linear-gradient(#e5484d,#c9363b);border-color:#b52f33;box-shadow:0 1.5px 0 #94262a}',
-    '.kc--amber{color:#4a3200;background:linear-gradient(#ffd25e,#f2b829);border-color:#d9a01c;box-shadow:0 1.5px 0 #b78512}',
-    '.kc--green{color:#fff;background:linear-gradient(#2f9e6a,#1f8656);border-color:#197148;box-shadow:0 1.5px 0 #145c3a}',
-    '.try{display:flex;gap:10px;align-items:flex-start;margin-top:14px;padding:10px 12px;border-radius:12px;background:linear-gradient(135deg,rgba(3,116,181,.07),rgba(91,63,208,.08));border:1px solid rgba(91,63,208,.16);font-size:13px;line-height:1.5;color:#2f2a63}',
-    '.try__dot{flex:0 0 auto;margin-top:3px;width:18px;height:18px;border-radius:50%;background:linear-gradient(135deg,#0374b5,#5b3fd0);display:grid;place-items:center;box-shadow:0 0 0 4px rgba(91,63,208,.14);animation:tap 1.8s ease-in-out infinite}',
-    '.try__dot::after{content:"";width:6px;height:6px;border-radius:50%;background:#fff}',
-    '@keyframes tap{0%,100%{transform:scale(1)}50%{transform:scale(.82)}}',
-    '.try b{color:#2f2a63}',
-
+    'h2{margin:0 0 6px;font-size:18px;line-height:1.3;font-weight:700;color:var(--ink)}',
+    'p{margin:0;font-size:14.5px;line-height:1.55;color:var(--text)}',
+    'p b{color:var(--ink)}',
+    '.c-blue{color:#0a72a8!important}.c-green{color:#0b7a45!important}.c-gray{color:#6b7780!important}',
+    'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;background:var(--wash);border-radius:4px;padding:1px 5px;color:var(--ink)}',
+    '.note{margin-top:12px;padding:8px 12px;border-left:3px solid #c7cdd1;background:var(--wash);font-size:13.5px;line-height:1.5;color:var(--text)}',
+    'ul{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:7px}',
+    'li{position:relative;padding-left:16px;font-size:14px;line-height:1.55;color:var(--text)}',
+    'li::before{content:"";position:absolute;left:2px;top:.62em;width:5px;height:5px;border-radius:1px;background:#8b959c}',
+    'li b{color:var(--ink)}',
+    /* keys, as on a keyboard; the status keys in Canvas\'s status colours */
+    '.kc{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;margin:0 1px;border-radius:5px;font:700 12px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink);background:#fff;border:1px solid #c7cdd1;border-bottom-width:2px;vertical-align:1px}',
+    '.kc--red{color:#fff;background:#d1453b;border-color:#a8352d}',
+    '.kc--amber{color:#3a2600;background:#e0a300;border-color:#b78512}',
+    '.kc--green{color:#fff;background:#0b7a45;border-color:#095f36}',
+    /* try it: what to do on the real page */
+    '.try{display:flex;gap:10px;align-items:baseline;margin-top:14px;padding:9px 12px;border-left:3px solid var(--blue);background:var(--tint);font-size:14px;line-height:1.5;color:var(--text)}',
+    '.try__k{flex:0 0 auto;font-weight:700;color:var(--blue-dk)}',
+    '.try b{color:var(--ink)}',
     /* footer */
-    '.foot{display:flex;align-items:center;gap:12px;margin-top:18px}',
-    '.dots{flex:1 1 auto;display:flex;gap:5px;align-items:center;flex-wrap:wrap}',
-    '.dot{width:6px;height:6px;border-radius:6px;background:#d8dee4;transition:width .35s var(--ease),background .35s}',
-    '.dot.is-done{background:#9fc6e2}',
-    '.dot.is-now{width:20px;background:linear-gradient(90deg,#0374b5,#5b3fd0)}',
-    '.btn{all:unset;box-sizing:border-box;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:38px;padding:0 16px;border-radius:11px;font-size:14px;font-weight:650;letter-spacing:.005em;transition:transform .15s ease,box-shadow .2s ease,background .2s ease;white-space:nowrap}',
-    '.btn:focus-visible{box-shadow:0 0 0 3px rgba(3,116,181,.35)}',
-    '.btn--ghost{color:var(--soft)}',
-    '.btn--ghost:hover{background:#f1f4f7;color:var(--ink)}',
-    '.btn--primary{color:#fff;background:linear-gradient(135deg,#0374b5,#4f46d8);box-shadow:0 6px 16px -6px rgba(63,70,216,.6),inset 0 1px 0 rgba(255,255,255,.18)}',
-    '.btn--primary:hover{transform:translateY(-1px);box-shadow:0 10px 22px -8px rgba(63,70,216,.7),inset 0 1px 0 rgba(255,255,255,.18)}',
-    '.btn--primary:active{transform:translateY(0) scale(.97)}',
-    '.btn--ghost:active,.btn--soft:active{transform:scale(.97)}',
-    '.btn--primary:focus-visible{box-shadow:0 0 0 3px rgba(79,70,216,.35),0 6px 16px -6px rgba(63,70,216,.6)}',
-    '.btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}',
-    '.btn--lg{height:44px;padding:0 22px;font-size:15px;border-radius:13px}',
-    '.btn--soft{color:#3a3f9e;background:#eef0ff}',
-    '.btn--soft:hover{background:#e3e6ff}',
-
-    /* the introduction */
-    '.card--intro{width:420px}',
+    '.foot{display:flex;align-items:center;gap:6px;margin-top:16px}',
+    '.step{flex:1 1 auto;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}',
+    '.btn{all:unset;box-sizing:border-box;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:36px;padding:0 14px;border-radius:8px;font-size:14px;font-weight:700;white-space:nowrap;transition:background .15s ease,color .15s ease,transform .1s ease}',
+    '.btn:focus-visible{outline:2px solid var(--blue);outline-offset:2px}',
+    '.btn:active{transform:scale(.97)}',
+    '.btn--primary{color:#fff;background:var(--blue)}',
+    '.btn--primary:hover{background:var(--blue-dk)}',
+    '.btn--ghost{color:var(--text)}',
+    '.btn--ghost:hover{background:var(--wash);color:var(--ink)}',
+    '.btn--soft{color:var(--blue-dk);background:var(--tint)}',
+    '.btn--soft:hover{background:#e0eef8}',
+    '.btn svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}',
+    /* the welcome card: the tutorials as a ruled list, like a class roster */
+    '.card--intro{width:480px}',
     '.card--intro .card__in{max-height:calc(100vh - 24px);overflow:auto}',
-    '.card--intro .choice{padding:6px 10px}',
-    '.foot--intro{margin-top:16px}',
-    '.foot--intro .btn--primary{flex:1 1 auto}',
-    '.choices{display:grid;gap:6px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}',
-    '.choices__q{margin:0 0 2px;font-size:12.5px;font-weight:650;color:var(--muted)}',
-    '.choice{all:unset;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:12px;border:1px solid var(--line);background:#fff;transition:background .2s ease,border-color .2s ease,transform .15s ease}',
-    '.choice:hover{background:#f6f8ff;border-color:#d9dcfb}',
-    '.choice:active{transform:scale(.985)}',
-    '.choice>svg{transition:transform .25s var(--ease)}',
-    '.choice:hover>svg{transform:translateX(3px)}',
-    '.choice:focus-visible{box-shadow:0 0 0 3px rgba(3,116,181,.3)}',
-    '.choice .ico{width:30px;height:30px;border-radius:9px}',
-    '.choice .ico svg{width:16px;height:16px}',
+    '.brand{display:flex;align-items:center;gap:10px;margin:0 0 14px}',
+    '.brand .label{font-size:14px;color:var(--ink)}',
+    '.brand__mark{flex:0 0 auto;width:30px;height:30px;border-radius:7px;background:var(--blue);display:grid;place-items:center}',
+    '.brand__mark svg{width:18px;height:18px;fill:none;stroke:#fff;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}',
+    '.choices{list-style:none;display:block;margin:14px -8px 0;padding:0;border-top:1px solid var(--rule)}',
+    '.choices li{padding:0}.choices li::before{display:none}',
+    '.choice{all:unset;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;gap:12px;width:100%;padding:9px 8px;border-bottom:1px solid var(--rule);transition:background .15s ease}',
+    '.choice:hover{background:var(--wash)}',
+    '.choice:focus-visible{outline:2px solid var(--blue);outline-offset:-2px;border-radius:4px}',
+    '.choice .ico{flex:0 0 auto;width:20px;height:20px;color:var(--blue)}',
+    '.choice .ico svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}',
     '.choice__t{flex:1 1 auto;display:flex;flex-direction:column;min-width:0}',
-    '.choice__t b{font-size:14px;color:var(--ink)}',
-    '.choice__t small{font-size:12px;line-height:1.4;color:var(--muted)}',
-    '.choice>svg{flex:0 0 auto;width:15px;height:15px;fill:none;stroke:var(--muted);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}',
-    '.choice.is-seen .choice__t b{color:var(--soft)}',
-    '.choice__done{flex:0 0 auto;display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:650;color:#0b7a45}',
-    '.choice__done svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}',
-    '.hint{margin-top:12px;font-size:12.5px;line-height:1.5;color:var(--muted)}',
-    '.brand__mark{width:36px;height:36px;border-radius:11px;background:linear-gradient(135deg,#0374b5,#5b3fd0);display:grid;place-items:center;box-shadow:0 8px 18px -8px rgba(63,70,216,.7)}',
-    '.brand__mark svg{width:20px;height:20px;fill:none;stroke:#fff;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}',
-    '@keyframes pop{from{opacity:0;transform:scale(.3)}to{opacity:1;transform:none}}',
-
+    '.choice__t b{font-size:14.5px;font-weight:700;color:var(--ink)}',
+    '.choice__t small{font-size:13px;line-height:1.4;color:var(--muted)}',
+    '.choice__meta{flex:0 0 auto;font-size:12.5px;color:var(--muted);white-space:nowrap}',
+    '.choice__meta.is-done{display:inline-flex;align-items:center;gap:4px;color:var(--green);font-weight:700}',
+    '.choice__meta svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}',
+    '.hint{margin-top:12px;font-size:13px;line-height:1.5;color:var(--muted)}',
     /* illustrations: sizes and colours copied from gradebook.css (named per block) */
     '.art{margin:2px 0 14px;font-family:Lexend,"IBM Plex Sans",system-ui,sans-serif;color:#2d3b45}',
     '.art svg{display:block}',
@@ -348,47 +329,40 @@
     '.card.is-busy .btn--primary{opacity:.85;cursor:progress}',
     '.spin{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;animation:spin .8s linear infinite}',
     '@keyframes spin{to{transform:rotate(360deg)}}',
-    '.dots{min-width:0;overflow:hidden}',
-
-    /* numbered steps */
-    '.steps{list-style:none;margin:14px 0 10px;padding:0;display:grid;gap:10px;counter-reset:none}',
-    '.steps li{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:14px;background:linear-gradient(160deg,#f7fafc,#f4f1ff);border:1px solid #e9e6fb;font-size:13.5px;line-height:1.5;color:var(--soft)}',
+    /* numbered steps: a ruled list */
+    '.steps{list-style:none;margin:12px 0 0;padding:0;display:block;border-top:1px solid var(--rule)}',
+    '.steps li{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--rule);font-size:14px;line-height:1.5}',
     '.steps li::before{display:none}',
-    '.steps__t{display:block;color:var(--ink);font-size:14px;font-weight:700;margin-bottom:2px}',
-    '.steps b{color:var(--ink)}',
-    '.steps__n{flex:0 0 auto;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:800;color:#fff;background:linear-gradient(135deg,#0374b5,#5b3fd0);box-shadow:0 4px 10px -4px rgba(91,63,208,.6)}',
-
-    /* finale */
-    '.badge{width:72px;height:72px;margin:6px auto 14px;border-radius:22px;display:grid;place-items:center;background:linear-gradient(135deg,#0374b5,#5b3fd0 60%,#e2589c);box-shadow:0 14px 30px -12px rgba(91,63,208,.7);animation:pop .7s var(--ease) both}',
-    '.badge svg{width:38px;height:38px;fill:none;stroke:#fff;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:24;stroke-dashoffset:24;animation:draw .6s .35s ease forwards}',
+    '.steps__n{flex:0 0 auto;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--blue);display:grid;place-items:center;font-size:12.5px;font-weight:700;color:var(--blue-dk)}',
+    '.steps__t{display:block;color:var(--ink);font-weight:700}',
+    /* the last card: a check that draws itself */
+    '.done{display:flex;align-items:center;gap:12px;margin:0 0 10px}',
+    '.done h2{margin:0}',
+    '.done__mark{flex:0 0 auto;width:36px;height:36px;border-radius:50%;background:var(--green);display:grid;place-items:center}',
+    '.done__mark svg{width:20px;height:20px;fill:none;stroke:#fff;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:22;stroke-dashoffset:22;animation:draw .45s .2s cubic-bezier(.65,0,.35,1) forwards}',
     '@keyframes draw{to{stroke-dashoffset:0}}',
-    '.card--finale .foot{justify-content:center}',
-    '.confetti{position:fixed;inset:0;pointer-events:none;overflow:hidden}',
-    '.confetti i{position:absolute;width:8px;height:13px;border-radius:2px;will-change:transform}',
-
-    /* the paused pill and the invitation */
-    '.pill{position:fixed;left:50%;bottom:22px;transform:translate(-50%,24px);opacity:0;pointer-events:none;display:flex;align-items:center;gap:6px;padding:6px 6px 6px 14px;border-radius:999px;background:rgba(20,26,40,.94);color:#fff;box-shadow:0 14px 40px -10px rgba(9,16,29,.6);transition:transform .7s var(--spring),opacity .25s ease;font-size:13.5px;font-weight:600;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}',
+    '.card--finale .foot{justify-content:flex-end}',
+    /* the bar at the bottom of the page while trying something out, and after closing */
+    '.pill{position:fixed;left:50%;bottom:20px;transform:translate(-50%,24px);opacity:0;pointer-events:none;display:flex;align-items:center;gap:10px;padding:6px 6px 6px 16px;border-radius:10px;background:#fff;color:var(--text);box-shadow:0 1px 2px rgba(26,35,43,.12),0 12px 30px -8px rgba(26,35,43,.4);transition:transform .7s var(--spring),opacity .25s ease;font-size:14px}',
     '.pill.is-on{transform:translate(-50%,0);opacity:1;pointer-events:auto}',
-    '.pill__spark{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#5ec2ff,#7a5cff);display:grid;place-items:center;margin-right:2px}',
-    '.pill__spark svg{width:13px;height:13px;fill:#fff;stroke:none}',
-    '.pill__txt{padding-right:6px;white-space:nowrap}.pill__txt small{color:#a9b4c2;font-weight:500;margin-left:6px}',
-    '.pill .btn{height:32px;padding:0 14px;font-size:13px;border-radius:999px}',
-    '.pill .btn--ghost{color:#c4ccd6}.pill .btn--ghost:hover{background:rgba(255,255,255,.1);color:#fff}',
-    '.invite{position:fixed;right:22px;bottom:22px;width:350px;max-width:calc(100vw - 32px);pointer-events:auto;background:#fff;border-radius:18px;box-shadow:0 24px 60px -14px rgba(9,16,29,.45),0 3px 10px rgba(9,16,29,.1);overflow:hidden;transform:translateY(36px) scale(.96);transform-origin:100% 100%;opacity:0;transition:transform .75s var(--spring),opacity .35s ease}',
+    '.pill__txt{white-space:nowrap}.pill__txt b{color:var(--ink)}.pill__txt small{margin-left:10px;font-size:13px;color:var(--muted)}',
+    '.pill--note{padding:10px 16px}',
+    '.pill .btn{height:32px}',
+    /* the offer in the corner */
+    '.invite{position:fixed;right:20px;bottom:20px;width:340px;max-width:calc(100vw - 32px);pointer-events:auto;background:#fff;border-radius:12px;box-shadow:0 1px 2px rgba(26,35,43,.12),0 14px 36px -10px rgba(26,35,43,.4);overflow:hidden;transform:translateY(36px) scale(.96);transform-origin:100% 100%;opacity:0;transition:transform .75s var(--spring),opacity .35s ease}',
     '.invite.is-on{transform:none;opacity:1}',
-    '.invite .card__in{padding:18px 20px 16px}',
+    '.invite .card__in{padding:16px 18px 14px}',
+    '.invite .brand{margin-bottom:10px}',
     '.invite h2{font-size:17px}',
-    '.invite p{font-size:13.5px}',
+    '.invite p{font-size:14px}',
     '.invite .foot{margin-top:14px;justify-content:flex-end}',
-
-    '@media (max-width:600px){.card,.card--intro,.card--center,.card--finale{width:calc(100vw - 24px)}.tiles{grid-template-columns:1fr}}',
+    '@media (max-width:600px){.card,.card--intro,.card--center,.card--finale{width:calc(100vw - 24px)}}',
     /* Reduced motion: movement goes (tour.js does the same for its own
      * animations); end states stay, and fades and colour changes remain. */
-    '@media (prefers-reduced-motion:reduce){.try__dot,.xsn__caret{animation:none}.badge{animation:none}.badge svg{animation:none;stroke-dashoffset:0}.prog i{animation:none}.pill,.invite{transition:opacity .2s ease}.invite{transform:none}.pill{transform:translate(-50%,0)}.choice>svg,.choice:active,.btn:active{transition:none;transform:none}}'
+    '@media (prefers-reduced-motion:reduce){.xsn__caret{animation:none}.done__mark svg{animation:none;stroke-dashoffset:0}.pill,.invite{transition:opacity .2s ease}.invite{transform:none}.pill{transform:translate(-50%,0)}.btn:active{transform:none}}'
   ].join('\n');
 
   var X_ICON = '<svg viewBox="0 0 14 14"><path d="M3 3l8 8M11 3l-8 8"/></svg>';
-  var NEXT_ICON = '<svg viewBox="0 0 16 16"><path d="M6 3.5 10.5 8 6 12.5"/></svg>';
   var DONE_ICON = '<svg viewBox="0 0 16 16"><path d="M3.5 8.4l3 2.9 6-6.6"/></svg>';
   var MARK = '<svg viewBox="0 0 20 20"><rect x="3" y="3.5" width="14" height="13" rx="2.2"/><path d="M3 8h14M8 8v8.5"/><path d="M11 11.6l1.6 1.6 2.8-3"/></svg>';
   var SECTION_ICON = { grading: 'keys', student: 'person', tools: 'gear', snippets: 'bubble', classes: 'swap', groups: 'people', schedule: 'calendar' };
@@ -502,7 +476,7 @@
       try { return !!s.target(); } catch (e) { return false; }
     });
     var fin = (CGP.tourFinales && CGP.tourFinales[this.section]) || {};
-    list.push({ id: this.section + '-done', kind: 'finale', title: fin.title || 'Finished', body: fin.body || '' });
+    list.push({ id: this.section + '-done', kind: 'finale', title: fin.title || '', body: fin.body || '' });
     this.stops = list;
   };
 
@@ -660,16 +634,15 @@
     this._lastRect = null;
     this._morph = false;
     this.reflow(true);
-    var focusEl = s.kind === 'welcome' ? this.cardIn.querySelector('[data-act="section"]')
-      : (this.cardIn.querySelector('[data-act="primary"], [data-act="next"]') || this.cardIn.querySelector('[data-act="section"]') ||
-        this.cardIn.querySelector('[data-act="finish"]'));
-    focusEl = focusEl || this.card;
+    // Focus goes to the card itself (a dialog), not a button inside it, so
+    // nothing looks pre-selected; Enter does the card's main action, and
+    // Tab reaches every button.
+    var focusEl = this.card;
     try { focusEl.focus({ preventScroll: true }); } catch (e) { /* ignore */ }
     this.loop();
     if (before) this.morph(before, oldBody, dir || 1, s);
     else this.entrance(s);
     this._visible = true;
-    if (s.kind === 'finale') this.celebrate();
   };
 
   /* ---------------------------------------------------- moving between stops */
@@ -714,10 +687,10 @@
     var invite = s.tryIt && !this.targetUsedFallback;
     try {
       this.track(this.spot.animate([
-        { boxShadow: '0 0 0 0 rgba(122,92,255,.55)' },
-        { boxShadow: '0 0 0 16px rgba(122,92,255,0)', offset: invite ? 0.42 : 1 },
-        { boxShadow: '0 0 0 16px rgba(122,92,255,0)' }
-      ], { duration: invite ? 2600 : 1100, delay: delay, easing: 'cubic-bezier(.2,.7,.3,1)', iterations: invite ? Infinity : 1, pseudoElement: '::after' }));
+        { boxShadow: '0 0 0 0 rgba(3,116,181,.45)' },
+        { boxShadow: '0 0 0 12px rgba(3,116,181,0)', offset: invite ? 0.35 : 1 },
+        { boxShadow: '0 0 0 12px rgba(3,116,181,0)' }
+      ], { duration: invite ? 3200 : 1000, delay: delay, easing: 'cubic-bezier(.2,.7,.3,1)', iterations: invite ? Infinity : 1, pseudoElement: '::after' }));
     } catch (e) { /* pseudo-element animation not supported: no ripple */ }
   };
 
@@ -855,55 +828,59 @@
   };
 
   /* The welcome card: every tutorial, with a tick on the ones seen. */
+  /* The welcome card: the tutorials as a ruled list, with the ones seen ticked. */
   Tour.prototype.renderWelcome = function () {
     var ICON = CGP.tourIcons || {};
     var v = this.record;
-    var html = '<div class="head"><span class="brand__mark">' + MARK + '</span>' +
-      '<span class="eyebrow">Welcome to Gradebook+</span>' +
+    var html = '<div class="brand"><span class="brand__mark">' + MARK + '</span><span class="label">Gradebook+</span>' +
       '<button class="x" type="button" data-act="finish" aria-label="Close">' + X_ICON + '</button></div>' +
       '<h2 id="cgp-tour-title">Learn Gradebook+ one part at a time</h2>' +
       '<p>Pick a topic to see a short walkthrough on your own pages. Each one takes about a minute.</p>' +
-      '<div class="choices" role="list">';
+      '<ul class="choices">';
     S().SECTIONS.forEach(function (sec) {
       var seen = S().statusOf(v, sec.id) === 'done';
-      html += '<button class="choice' + (seen ? ' is-seen' : '') + '" type="button" role="listitem" data-act="section" data-id="' + sec.id + '">' +
-        '<span class="ico">' + (ICON[SECTION_ICON[sec.id]] || '') + '</span>' +
+      html += '<li><button class="choice" type="button" data-act="section" data-id="' + sec.id + '">' +
+        '<span class="ico" aria-hidden="true">' + (ICON[SECTION_ICON[sec.id]] || '') + '</span>' +
         '<span class="choice__t"><b>' + sec.title + '</b><small>' + sec.blurb + '</small></span>' +
-        (seen ? '<span class="choice__done">' + DONE_ICON + 'Seen</span>' : NEXT_ICON) + '</button>';
+        (seen ? '<span class="choice__meta is-done">' + DONE_ICON + 'Seen</span>' : '') + '</button></li>';
     });
-    html += '</div><p class="hint">Not now? Close this. You can come back to these anytime from Gradebook+ settings, under <b>Tutorials</b>.</p>';
+    html += '</ul><p class="hint">Not now? Close this. You can come back to these anytime from Gradebook+ settings, under <b>Tutorials</b>.</p>';
     return html;
   };
 
+  /* Progress as a row of gradebook cells: ticked for the stops done, outlined for this one. */
+  function cellsHtml(pos, total) {
+    var h = '<span class="cells" aria-hidden="true">';
+    for (var k = 1; k <= total; k++) h += '<i class="' + (k < pos ? 'is-done' : k === pos ? 'is-now' : '') + '"></i>';
+    return h + '</span>';
+  }
+
   Tour.prototype.render = function (s, usedFallback, dir) {
-    var ICON = CGP.tourIcons || {};
     var i = this.index;
     var counted = countedStops(this.stops);
     var pos = counted.indexOf(s) + 1;
-    var html = '<div class="body' + (dir < 0 ? ' is-back' : '') + '">';
+    var html = '<div class="body">';
     var live = this.targets().length > 0;
+    var name = sectionInfo(this.section).title;
 
     if (s.kind === 'welcome') return html + this.renderWelcome() + '</div>';
 
     if (s.kind === 'finale') {
       var nxt = this.nextUp();
-      html += '<div class="badge"><svg viewBox="0 0 24 24"><path d="M5.5 12.5l4.2 4.2 8.8-9.4"/></svg></div>';
-      html += '<span class="eyebrow">' + sectionInfo(this.section).title + '</span>';
-      html += '<h2 id="cgp-tour-title" style="margin-top:6px">' + s.title + '</h2>' + (s.body ? '<p>' + s.body + '</p>' : '');
+      html += '<div class="done"><span class="done__mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5.5 12.5l4.2 4.2 8.8-9.4"/></svg></span>' +
+        '<h2 id="cgp-tour-title">' + (s.title || 'You’ve finished ' + name) + '</h2></div>' + (s.body ? '<p>' + s.body + '</p>' : '');
       html += '<div class="foot">' + (i > 0 ? '<button class="btn btn--ghost" type="button" data-act="back">Back</button>' : '');
       if (nxt) {
         html += '<button class="btn btn--soft" type="button" data-act="finish">Close</button>' +
-          '<button class="btn btn--primary" type="button" data-act="section" data-id="' + nxt + '">Next: ' + sectionInfo(nxt).title + ' ' + NEXT_ICON + '</button>';
+          '<button class="btn btn--primary" type="button" data-act="section" data-id="' + nxt + '">Next: ' + sectionInfo(nxt).title + '</button>';
       } else {
-        html += '<button class="btn btn--primary btn--lg" type="button" data-act="finish">Done</button>';
+        html += '<button class="btn btn--primary" type="button" data-act="finish">Done</button>';
       }
       return html + '</div></div>';
     }
 
-    html += '<div class="head">' + (s.icon && ICON[s.icon] ? '<span class="ico">' + ICON[s.icon] + '</span>' : '') +
-      '<span class="eyebrow">' + sectionInfo(this.section).title + '</span>' +
-      '<span class="count">' + pos + ' of ' + counted.length + '</span>' +
-      '<button class="x" type="button" data-act="skip" aria-label="Skip this tutorial">' + X_ICON + '</button></div>';
+    html += '<div class="head"><span class="label">' + name + '</span>' + cellsHtml(pos, counted.length) +
+      '<button class="x" type="button" data-act="skip" aria-label="Skip this tutorial" title="Skip this tutorial (Esc)">' + X_ICON + '</button></div>';
     // With the real thing spotlighted, the page speaks for itself. The
     // illustration is only for when the stop's own element is not on screen
     // (or a fallback stands in for it), or the card points at nothing.
@@ -917,15 +894,14 @@
       }).join('') + '</ol>';
     }
     if ((usedFallback || (s.fallbackArt && !live)) && s.fallbackNote) html += '<div class="note">' + s.fallbackNote + '</div>';
-    else if (s.try && live) html += '<div class="try"><span class="try__dot"></span><span><b>Try it:</b> ' + s.try + '</span></div>';
+    else if (s.try && live) html += '<div class="try"><span class="try__k">Try it</span><span>' + s.try + '</span></div>';
 
-    var pct = counted.length ? Math.round(pos / counted.length * 100) : 0;
-    var was = counted.length ? Math.round(Math.max(0, pos - dir) / counted.length * 100) : 0;
-    html += '<div class="foot"><span class="prog" aria-hidden="true"><i style="--from:' + was + '%;--to:' + pct + '%"></i></span>';
+    var last = pos === counted.length;
+    html += '<div class="foot"><span class="step">Step ' + pos + ' of ' + counted.length + '</span>';
     if (i > 0) html += '<button class="btn btn--ghost" type="button" data-act="back">Back</button>';
     html += s.primary
-      ? '<button class="btn btn--primary" type="button" data-act="primary">' + s.primary.label + ' ' + NEXT_ICON + '</button></div>'
-      : '<button class="btn btn--primary" type="button" data-act="next">Next ' + NEXT_ICON + '</button></div>';
+      ? '<button class="btn btn--primary" type="button" data-act="primary">' + s.primary.label + '</button></div>'
+      : '<button class="btn btn--primary" type="button" data-act="next">' + (last ? 'Finish' : 'Next') + '</button></div>';
     return html + '</div>';
   };
 
@@ -1140,6 +1116,14 @@
       if (e.key === 'Escape') { this.end(s && (s.kind === 'finale' || s.kind === 'welcome') ? 'done' : 'skipped'); swallow(e); return; }
     }
     if (!this.holdKeys && !inside) return;
+    var origin = e.composedPath ? e.composedPath()[0] : e.target;
+    if (e.type === 'keydown' && e.key === 'Enter' && origin === this.card) {
+      var main = this.cardIn.querySelector('[data-act="primary"], [data-act="next"]') ||
+        this.cardIn.querySelector('.foot [data-act="section"]') || this.cardIn.querySelector('.foot [data-act="finish"]');
+      if (main) main.click();
+      swallow(e);
+      return;
+    }
     if (inside && (e.key === 'Enter' || e.key === ' ' || e.key === 'Tab')) {
       e.stopPropagation(); // the button handles it; Canvas never sees it
       return;
@@ -1172,44 +1156,12 @@
     this.exit(true).then(function () { if (self.minimized) self.layer.classList.add('is-off'); });
     var counted = countedStops(this.stops);
     var pos = counted.indexOf(this.stop()) + 1;
-    this.pill.innerHTML = '<span class="pill__spark">' + ((CGP.tourIcons || {}).sparkle || '') + '</span>' +
-      '<span class="pill__txt">Try it out<small>' + pos + ' of ' + counted.length + '</small></span>' +
+    this.pill.className = 'pill';
+    this.pill.innerHTML = '<span class="pill__txt"><b>Try it, then continue</b><small>Step ' + pos + ' of ' + counted.length + '</small></span>' +
       '<button class="btn btn--ghost" type="button" data-act="skip">Skip tutorial</button>' +
-      '<button class="btn btn--primary" type="button" data-act="resume">Next ' + NEXT_ICON + '</button>';
+      '<button class="btn btn--primary" type="button" data-act="resume">Next</button>';
     setTimeout(function () { if (self.minimized) self.pill.classList.add('is-on'); }, reducedMotion() ? 0 : 160);
   };
-
-  /* Confetti bursting up out of the check mark and falling away. */
-  Tour.prototype.celebrate = function () {
-    if (reducedMotion()) return;
-    var badge = this.cardIn.querySelector('.badge');
-    var r = badge ? badge.getBoundingClientRect() : null;
-    var ox = r ? r.left + r.width / 2 : window.innerWidth / 2;
-    var oy = r ? r.top + r.height / 2 : window.innerHeight / 3;
-    var box = el('div', 'confetti');
-    var colors = ['#0374b5', '#5b3fd0', '#e2589c', '#5ec2ff', '#f2b829', '#2f9e6a'];
-    this.layer.insertBefore(box, this.card);
-    for (var i = 0; i < 56; i++) {
-      var p = el('i');
-      p.style.left = ox + 'px';
-      p.style.top = oy + 'px';
-      p.style.background = colors[i % colors.length];
-      if (i % 3 === 0) { p.style.width = '7px'; p.style.height = '7px'; p.style.borderRadius = '50%'; }
-      box.appendChild(p);
-      var ang = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.1;
-      var v = 160 + Math.random() * 220;
-      var dx = Math.cos(ang) * v, up = Math.sin(ang) * v;
-      var spin = (Math.random() - 0.5) * 1080;
-      var fall = window.innerHeight - oy + 40;
-      p.animate([
-        { transform: 'translate(-50%,-50%) translate(0,0) rotate(0deg)', opacity: 1, easing: 'cubic-bezier(.15,.6,.35,1)' },
-        { transform: 'translate(-50%,-50%) translate(' + (dx * 0.7) + 'px,' + up + 'px) rotate(' + (spin * 0.4) + 'deg)', opacity: 1, offset: 0.3, easing: 'cubic-bezier(.45,0,.9,.55)' },
-        { transform: 'translate(-50%,-50%) translate(' + dx + 'px,' + fall + 'px) rotate(' + spin + 'deg)', opacity: 0.85 }
-      ], { duration: 1900 + Math.random() * 900, delay: 140 + Math.random() * 120, fill: 'both' });
-    }
-    setTimeout(function () { if (box.parentNode) box.parentNode.removeChild(box); }, 3400);
-  };
-
 
   Tour.prototype.detach = function () {
     this.unwatch();
@@ -1224,8 +1176,8 @@
   /* A one-line note at the bottom of the page, then gone. */
   Tour.prototype.flash = function (head, small) {
     var self = this;
-    this.pill.innerHTML = '<span class="pill__spark">' + ((CGP.tourIcons || {}).sparkle || '') + '</span>' +
-      '<span class="pill__txt">' + head + (small ? '<small>' + small + '</small>' : '') + '</span>';
+    this.pill.className = 'pill pill--note';
+    this.pill.innerHTML = '<span class="pill__txt"><b>' + head + '</b>' + (small ? '<small>' + small + '</small>' : '') + '</span>';
     setTimeout(function () { self.pill.classList.add('is-on'); }, reducedMotion() ? 0 : 180);
     setTimeout(function () { self.pill.classList.remove('is-on'); }, 4200);
     setTimeout(function () { self.unmount(); }, 4800);
@@ -1273,11 +1225,11 @@
    * hides it for this tab's visit; Skip hides that tutorial only. */
   function offerCopy(d) {
     if (d.section === 'welcome') {
-      return { eyebrow: 'Gradebook+', title: 'New to Gradebook+?', body: 'Take a one-minute walkthrough on your own gradebook.' };
+      return { label: 'Gradebook+', title: 'New to Gradebook+?', body: 'Take a one-minute walkthrough on your own gradebook.' };
     }
     var info = sectionInfo(d.section);
-    if (d.resume) return { eyebrow: 'Tutorial', title: 'Finish “' + info.title + '”?', body: 'Pick up where you left off.' };
-    return { eyebrow: 'Tutorial · ' + info.mins + ' min', title: info.title, body: info.blurb + '.' };
+    if (d.resume) return { label: 'Tutorial in progress', title: 'Finish “' + info.title + '”?', body: 'Pick up where you left off.' };
+    return { label: info.mins + '-minute tutorial', title: info.title, body: info.blurb + '.' };
   }
 
   function showOffer(state, courseId, d) {
@@ -1292,13 +1244,12 @@
     card.setAttribute('role', 'dialog');
     card.setAttribute('aria-labelledby', 'cgp-invite-title');
     card.innerHTML = '<div class="card__in">' +
-      '<div class="head"><span class="brand__mark" style="width:30px;height:30px;border-radius:9px">' + MARK + '</span>' +
-      '<span class="eyebrow">' + copy.eyebrow + '</span>' +
-      '<button class="x" type="button" data-act="later" aria-label="Not now">' + X_ICON + '</button></div>' +
+      '<div class="brand"><span class="brand__mark">' + MARK + '</span><span class="label">' + copy.label + '</span>' +
+      '<button class="x" type="button" data-act="later" aria-label="Not now" title="Not now">' + X_ICON + '</button></div>' +
       '<h2 id="cgp-invite-title">' + copy.title + '</h2>' +
       '<p>' + copy.body + '</p>' +
       '<div class="foot"><button class="btn btn--ghost" type="button" data-act="skip">' + (d.section === 'welcome' ? 'No thanks' : 'Skip this one') + '</button>' +
-      '<button class="btn btn--primary" type="button" data-act="go">Show me ' + NEXT_ICON + '</button></div></div>';
+      '<button class="btn btn--primary" type="button" data-act="go">Show me</button></div></div>';
     layer.appendChild(card);
     root.appendChild(layer);
     (document.body || document.documentElement).appendChild(host);
