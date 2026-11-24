@@ -606,7 +606,7 @@
       this._morph = true;
       var self = this;
       scrollIntoViewAsync(first, !reducedMotion()).then(function () {
-        if (gen !== self._gen || !self.active) return;
+        if (gen !== self._gen || !self.active || self.minimized) return;
         self.paintNow(s, dir, target, usedFallback);
       });
       return;
@@ -620,6 +620,7 @@
   Tour.prototype.paintNow = function (s, dir, target, usedFallback) {
     var first = Array.isArray(target) ? target[0] : target;
     var before = this._visible ? this.snapshot() : null;
+    this._paints = (this._paints || 0) + 1; // an exit still settling must not hide this
     this.cancelMotion();
     var oldBody = this.cardIn.firstElementChild;
     if (oldBody) oldBody.remove();
@@ -704,13 +705,18 @@
     var newBody = inner.firstElementChild;
     var nw = card.offsetWidth, nh = inner.offsetHeight;
     var reduced = reducedMotion();
+    var cs = getComputedStyle(inner);
+    var padT = parseFloat(cs.paddingTop) || 0, padL = parseFloat(cs.paddingLeft) || 0;
+    var padX = padL + (parseFloat(cs.paddingRight) || 0);
     this._morph = true;
 
     if (oldBody) {
       oldBody.classList.add('ghost');
       oldBody.setAttribute('aria-hidden', 'true');
       oldBody.inert = true;
-      oldBody.style.cssText = 'top:22px;left:24px;width:' + Math.max(0, before.card.w - 48) + 'px';
+      var oldTitle = oldBody.querySelector('#cgp-tour-title');
+      if (oldTitle) oldTitle.removeAttribute('id');
+      oldBody.style.cssText = 'top:' + padT + 'px;left:' + padL + 'px;width:' + Math.max(0, before.card.w - padX) + 'px';
       inner.appendChild(oldBody);
       this.track(oldBody.animate(reduced
         ? [{ opacity: 1 }, { opacity: 0 }]
@@ -719,7 +725,7 @@
     }
     if (newBody) {
       this._newBody = newBody;
-      newBody.style.width = Math.max(0, nw - 48) + 'px'; // no re-wrapping while the card resizes
+      newBody.style.width = Math.max(0, nw - padX) + 'px'; // no re-wrapping while the card resizes
       if (reduced) this.track(newBody.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, delay: 60, easing: 'ease', fill: 'backwards' }));
       else this.staggerIn(newBody, dir, 120);
     }
@@ -787,13 +793,17 @@
   /* Leaving: the card sinks away, and the spotlight opens out until the page
    * is clear. `toPill` folds the card down towards the pill instead. */
   Tour.prototype.exit = function (toPill) {
-    var card = this.card, spot = this.spot, g = this._spotGeo || { x: 0, y: 0, w: 0, h: 0, r: 12 };
+    var card = this.card, spot = this.spot;
+    // From where things are right now, even mid-move.
+    var now = this._visible ? this.snapshot() : null;
+    var g = now ? now.spot : (this._spotGeo || { x: 0, y: 0, w: 0, h: 0, r: 12 });
+    var paints = this._paints;
     this.cancelMotion();
     this._settleToken = (this._settleToken || 0) + 1;
     this._morph = true;
     this._visible = false;
     var reduced = reducedMotion(), list = [];
-    var c = this._cardGeo || { x: 0, y: 0 };
+    var c = now ? now.card : (this._cardGeo || { x: 0, y: 0 });
     var endCard = reduced ? { opacity: 0 } : toPill
       ? { opacity: 0, transform: tf(window.innerWidth / 2 - card.offsetWidth / 2, window.innerHeight - 60) + ' scale(.35)' }
       : { opacity: 0, transform: tf(c.x, c.y + 10) + ' scale(.96)' };
@@ -805,6 +815,7 @@
     this.blocks.forEach(function (b) { place(b, 0, 0, 0, 0); });
     var self = this;
     return finished(list).then(function () {
+      if (self._paints !== paints) return; // shown again meanwhile (Next on the pill)
       self.card.classList.remove('is-on');
       self.spot.classList.remove('is-on');
     });
@@ -1194,6 +1205,8 @@
     if (shown && shown.leave) { try { shown.leave(this); } catch (e) { /* ignore */ } }
     if (this.welcome) { if (this.state.welcomeSeen) this.state.welcomeSeen(); }
     else if (this.section && this.state.finish) this.state.finish(this.section, how === 'done' ? 'done' : 'skipped');
+    // Over: another tutorial may start now, while this one's closing note shows.
+    if (CGP.tourInstance === this) CGP.tourInstance = null;
     var self = this;
     this.exit();
     if (this.welcome) this.flash('Tutorials are in Gradebook+ settings', 'Click the Gradebook+ icon in Chrome’s toolbar');
