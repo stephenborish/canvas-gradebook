@@ -475,7 +475,7 @@
       group: 'si',
       icon: 'chart',
       title: 'See how the student uses your course',
-      body: 'The Activity tab compares the student’s page views with the rest of the class and shows a calendar of their activity over the last 16 weeks. It also lists which pages they’ve opened and how much of each Studio video they’ve watched.',
+      body: 'The Activity tab compares the student’s page views with the rest of the class and shows a calendar of their activity over the last 16 weeks. Below that, the course is laid out module by module: which items they’ve opened and how much of each Studio video they’ve watched.',
       enter: openTab('activity', '#cgp-si-panel-activity .cgp-si__card', 6000),
       target: function () {
         var heat = pick('#cgp-si-panel-activity .cgp-si__heat-cell');

@@ -498,21 +498,31 @@ link. **←** / **→** step to the previous / next student without closing; **E
   and how much lands in the last two hours.
 - The feedback conversation: your comments, the student's, resubmissions, and any student reply
   still waiting on you.
-- **Studio videos**: every video in the course's Studio list *and* every Studio video embedded in an
-  assignment, quiz, discussion or page (or added to a module as a Studio link), with what share of
-  each this student watched. A **Posted in** column says where each video is embedded (linked) and
-  in which module, and chips narrow the list to videos **In assignments**, **In modules & pages**
-  (posted on their own, not tied to an assignment) or **Not posted** in Canvas at all. An embed
-  whose id differs from the one in Studio's course list (copied in with the course from another
-  class, or added from your own Studio library) is the same video: it is matched to it through
-  Studio's list of the video's embeds (or, when Studio won't say, by its exact title) and shown
-  once, on the course video, rather than as a second "Unavailable" row. Its "in class" count only
-  counts this class.
+- **Course material by module**: the course laid out the way students meet it. Each module, in
+  Canvas's order, lists its items (pages, assignments, quizzes, discussions, files, links, with the
+  module's own text headers) and says for each whether this student **Opened** it (views, time where
+  Canvas shares page views, last opened) or **Not opened** it, from their Access Report. Every Studio
+  video sits right under the item it is embedded in, with what share of it the student watched and
+  how many classmates watched any of it. Each module's header carries its tally (*3/7 opened*,
+  *1/4 videos watched*, with a coloured bar), so a module can stay folded until it needs a look;
+  **Expand all** / **Collapse all**, and the folding is remembered. Chips show only what is
+  **Not opened**, **Videos not watched** or **No video data** (a matching video brings its item along,
+  dimmed). After the modules: **Not in a module** (what the student opened outside them, and items
+  holding a Studio video that isn't in a module), then, folded and not counted, **Studio videos not
+  posted in Canvas** and **Students' own recordings** (videos students embedded in submissions or
+  discussion replies, which Studio copies into the course). Course areas (home, grades, ...) are one
+  line, *Also visited*. Pictures shown inside pages (a banner on the course home) are left out:
+  Canvas logs one each time the page opens.
+- Studio videos: copies of one video (the same title and length, even as two Studio media: a
+  YouTube video added twice, or the copies a course copy makes) are one video, and an embed copied
+  in from another class joins them. An embed Studio won't read, with no such copy, says why: *No
+  access in Studio* (another course's or someone else's library) or *Not found in Studio* (it no
+  longer exists).
 - On the **Assignments** tab, an assignment with a Studio video embedded in it shows this student's
   status for that video right by its name (*Video watched*, *Video 47% watched*, *Video not
   watched*), and the **Video not watched** chip lists the assignments whose video they haven't
   finished.
-- **Course content opened**: everything from the student's Access Report, each with its module.
+- **Assignments never opened**: the assignments, quizzes and graded discussions the student never opened, past due first.
 - One search box at the top of the tab finds videos and course content by name, type
   (`video`, `file`, `quiz`), module, or the assignment a video is embedded in. While searching, the
   charts step aside so the matches sit right under the box. The query carries over to the

@@ -587,7 +587,8 @@
    *      (aliasOf: {embedUuid: courseVideoUuid}, from the media's list of
    *      perspectives);
    *   2. course videos of the same media (mediaId);
-   *   3. videos with the same title and the same length. A copy whose
+   *   3. videos with the same title and the same length, even as two
+   *      media (each copy Studio makes is a new media). A copy whose
    *      length isn't known (an embed Studio gave nothing for) joins the
    *      one length its title has; with two lengths under one title they
    *      are different videos and nothing is guessed.
@@ -655,16 +656,19 @@
       if (g.length < 2) return;
       var lengths = [];   // [[videos of one length]]
       var unknown = [];
-      // Two known, different media ids are two videos, whatever the title
-      // and however close the lengths: a title is only a guess.
-      var fits = function (c, v) { return !v.mediaId || c.every(function (x) { return !x.mediaId || String(x.mediaId) === String(v.mediaId); }); };
+      // The same title and the same length (within 2 s) is one video, even
+      // as two media: Studio makes a new media for each copy - a YouTube
+      // video added to the course twice, or the copies a course copy makes
+      // - and an embed copied from another class plays whichever copy
+      // Studio picks. Only a different length keeps two apart.
+      var fits = function () { return true; };
       g.forEach(function (v) {
         if (!known(v.duration)) { unknown.push(v); return; }
-        var c = lengths.filter(function (l) { return Math.abs(l[0].duration - v.duration) <= 2 && fits(l, v); })[0];
+        var c = lengths.filter(function (l) { return Math.abs(l[0].duration - v.duration) <= 2; })[0];
         if (c) c.push(v); else lengths.push([v]);
       });
       var media = function (c) { var m = []; c.forEach(function (x) { if (x.mediaId && m.indexOf(String(x.mediaId)) < 0) m.push(String(x.mediaId)); }); return m; };
-      if (lengths.length === 1) lengths[0] = lengths[0].concat(unknown.filter(function (v) { return fits(lengths[0], v); }));
+      if (lengths.length === 1) lengths[0] = lengths[0].concat(unknown);
       // No length known at all: embeds join the title's one course video;
       // two course videos with no length to tell them apart stay apart.
       else if (!lengths.length && unknown.filter(function (v) { return !v.embeddedOnly; }).length <= 1 && media(unknown).length <= 1) lengths.push(unknown);

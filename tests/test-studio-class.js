@@ -389,18 +389,20 @@ suite('Studio: who watched, and which video', (test) => {
     out('student overview', { alex1: 'Not watched', alex2: 'Watched (285 s)', sharedNameNoEmail: s.rows[0].label, noCompletion: nc.rows[0].label });
   });
 
-  test('two videos with different media ids stay two, though titles match and lengths differ by a second', () => {
-    const a1 = { uuid: 'p1', mediaId: 501, title: 'Lab safety', duration: 240, viewers: [] };
-    const a2 = { uuid: 'p2', mediaId: 502, title: 'Lab safety', duration: 241, viewers: [] };
-    const folded = sc().foldEmbeds([a1, a2].map((x) => Object.assign({}, x)));
-    a.deep(folded.map((v) => v.uuid), ['p1', 'p2']);
-    // An embed with no media id and no length still joins the one it can only be... unless two media share the title.
-    const emb = { uuid: 'e9', title: 'Lab safety', duration: null, embeddedOnly: true, viewers: [] };
-    a.eq(sc().foldEmbeds([a1, a2, emb].map((x) => Object.assign({}, x))).length, 3, 'nothing guessed between two media');
-    // Same media id, or same title and length with no media ids: still one.
-    a.eq(sc().foldEmbeds([Object.assign({}, a1), Object.assign({}, a1, { uuid: 'p3', duration: 238 })]).length, 1);
-    a.eq(sc().foldEmbeds([{ uuid: 'q1', title: 'Lab safety', duration: 240, viewers: [] }, { uuid: 'q2', title: 'Lab safety', duration: 241, viewers: [] }]).length, 1);
-    out('distinct media', { videos: folded.map((v) => v.uuid + ':' + v.mediaId) });
+  test('copies of one video (same title and length, two media) are one; a different length keeps two apart', () => {
+    const a1 = { uuid: 'p1', mediaId: 501, title: 'Gel Electrophoresis', duration: 480, viewers: sc().viewersFrom({ insights: [{ id: 1, display_name: 'Alex Rivera', email: 'arivera1@school.org', role_names: ['Student'], completion_rate: 0.3 }] }) };
+    const a2 = { uuid: 'p2', mediaId: 502, title: 'Gel Electrophoresis', duration: 481, viewers: sc().viewersFrom({ insights: [{ id: 1, display_name: 'Alex Rivera', email: 'arivera1@school.org', role_names: ['Student'], completion_rate: 0.95 }] }) };
+    // The page's embed, copied from another class: Studio no longer finds it.
+    const emb = { uuid: 'e9', title: 'Gel Electrophoresis', duration: null, embeddedOnly: true, viewers: [], error: 'unavailable', errorStatus: 404 };
+    const folded = sc().foldEmbeds([a1, a2, emb].map((x) => Object.assign({}, x)));
+    a.eq(folded.length, 1, 'both copies and the embed are one video');
+    a.ok(!folded[0].error, 'readable: the copies’ viewers');
+    a.deep(folded[0].aliases.sort(), ['e9', 'p2']);
+    a.eq(folded[0].viewers[0].completion, 0.95, 'the most of it the student watched in either copy');
+    const b = { uuid: 'p3', mediaId: 503, title: 'Gel Electrophoresis', duration: 900, viewers: [] };
+    const two = sc().foldEmbeds([a1, b, emb].map((x) => Object.assign({}, x)));
+    a.eq(two.length, 3, 'two lengths under one title: different videos, and the embed isn’t guessed');
+    out('copies', { one: folded.map((v) => v.uuid), apart: two.map((v) => v.uuid) });
   });
 
   test('a verified Studio alias still folds into its course video, with its viewers', () => {

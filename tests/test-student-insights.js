@@ -440,6 +440,51 @@ suite('student overview: course content opened', (test) => {
   test('no Access Report, nothing to show', () => {
     a.eq(si().contentActivity({ courseId: '5', accesses: null }), null);
   });
+  test('the course module by module: what was opened, the videos inside each item, and what sits outside', () => {
+    const ifr = (id) => '<iframe src="https://m.instructuremedia.com/embed/' + id + '"></iframe>';
+    const idx = si().courseIndex({ courseId: 5,
+      modules: [
+        { name: 'Topic 2', items: [{ id: 1, type: 'SubHeader', title: 'Readings' }, { id: 2, type: 'Page', content_id: 20, page_url: 'dna', title: 'DNA Structure' }, { id: 3, type: 'Quiz', content_id: 77, title: 'Quiz 2' }] },
+        { name: 'Topic 1', items: [{ id: 4, type: 'Assignment', content_id: 1, title: 'Lab 1' }, { id: 5, type: 'ExternalUrl', title: 'Simulation', external_url: 'https://phet.colorado.edu' },
+          { id: 6, type: 'Page', content_id: 99, page_url: 'draft', title: 'Draft page', published: false }] },
+        { name: 'Next unit', published: false, items: [{ id: 7, type: 'Assignment', content_id: 3, title: 'Not yet' }] }
+      ],
+      pages: [{ page_id: 20, url: 'dna', title: 'DNA Structure', body: ifr('VID-A') }, { page_id: 30, url: 'extra', title: 'Extra page', body: ifr('VID-B') }],
+      assignments: [{ id: 1, name: 'Lab 1' }, { id: 2, name: 'Quiz 2', quiz_id: 77 }] });
+    a.deep(idx.moduleItems[0].items.map((i) => i.key), ['module_item_1', 'wiki_page_20', 'quiz_77']);
+    a.deep(idx.sameAs.quiz_77, ['assignment_2'], 'a quiz is also its assignment');
+    const content = si().contentActivity({ courseId: '5', now: NOW, pageViews: null, assignments: [], accesses: [
+      access('wiki_page_20', { readable_name: 'DNA Structure', view_score: 3 }),
+      access('assignment_2', { readable_name: 'Quiz 2', view_score: 2 }),
+      access('attachment_9', { display_name: 'banner.jpeg', view_score: 53 }),
+      access('attachment_8', { display_name: 'notes.pdf', view_score: 1 }),
+      access('home:course_5', { view_score: 40 })
+    ] });
+    const vid = (uuid, title, key, status, origin) => ({ uuid, title, status, origin: origin || 'posted', places: key ? [{ kind: 'Page', name: 'p', url: '/p', key }] : [] });
+    const videos = [vid('VID-A', 'DNA video', 'wiki_page_20', 'partial'), vid('VID-B', 'Extra video', 'wiki_page_30', 'none'),
+      vid('VID-C', 'Spare', null, 'none', 'unposted'), vid('VID-D', '[Untitled ...]', null, 'none', 'student')];
+    const M = si().courseMaterial({ index: idx, content, videos });
+    a.deep(M.groups.map((g) => g.label), ['Topic 2', 'Topic 1', 'Not in a module', 'Studio videos not posted in Canvas', 'Students’ own recordings']);
+    const t2 = M.groups[0];
+    a.eq(t2.entries[0].type, 'header');
+    a.eq(t2.entries[1].opened, true);
+    a.deep(t2.entries[1].videos.map((v) => v.uuid), ['VID-A'], 'the video inside the page');
+    a.eq(t2.entries[2].opened, true, 'the quiz opened as its assignment');
+    a.deep(t2.counts, { items: 2, opened: 2, videos: 1, watched: 0, partial: 1, none: 0, unknown: 0 });
+    a.eq(M.groups[1].entries[0].opened, false, 'Lab 1 never opened');
+    a.eq(M.groups[1].entries[1].opened, null, 'a link: Canvas can’t say, so never "not opened"');
+    a.eq(M.groups[1].entries.length, 2, 'an unpublished item is left out');
+    a.not(M.groups.some((g) => g.label === 'Next unit'), 'an unpublished module is left out');
+    const loose = M.groups[2].entries.map((e) => e.title);
+    a.ok(loose.includes('notes.pdf') && loose.includes('p'), 'a file opened outside modules, and the page holding a posted video');
+    a.not(loose.includes('banner.jpeg'), 'a picture shown inside a page is left out');
+    a.eq(M.hiddenImages, 1);
+    a.deep(M.areas.map((x) => x.name), ['Course home']);
+    a.deep(M.totals, { items: 3, opened: 2, videos: 2, watched: 0, partial: 1, none: 1, unknown: 0 }, 'items: the modules; videos: every posted one');
+    const blind = si().courseMaterial({ index: idx, content: null, videos: [] });
+    a.eq(blind.groups[0].entries[1].opened, null, 'no Access Report: opened unknown, not "not opened"');
+    a.eq(blind.totals.opened, null);
+  });
 });
 
 suite('student overview: never-opened review fixes', (test) => {
@@ -483,7 +528,7 @@ suite('student overview: never-opened review fixes', (test) => {
     const ids = idx.embeds.map((e) => e.uuid);
     a.deep(ids, ['aaaaaa-1', 'bbbbbb-2', 'cccccc-3', 'aaaaaa-1', 'dddddd-4'], 'a quiz’s own description is read even when its assignment’s is empty');
     a.eq(idx.embeds[1].place.url, '/courses/9/assignments/2', 'the quiz is linked through its assignment');
-    a.deep(idx.embeds[0].place, { kind: 'Assignment', name: 'HW - Isotopes', url: '/courses/9/assignments/1', modules: ['Unit 2: Atoms'], order: idx.embeds[0].place.order });
+    a.deep(idx.embeds[0].place, { kind: 'Assignment', name: 'HW - Isotopes', url: '/courses/9/assignments/1', modules: ['Unit 2: Atoms'], key: 'assignment_1', order: idx.embeds[0].place.order });
     a.ok(typeof idx.embeds[0].place.order === 'number', 'where it sits in the modules, for ordering');
     a.ok(Array.isArray(idx.moduleOrder) && idx.moduleOrder.indexOf('Unit 2: Atoms') >= 0, 'the modules, in order');
     a.eq(idx.embeds[3].place.kind, 'Page');
@@ -687,34 +732,42 @@ suite('student overview: profile tab', (test) => {
     a.deep(Object.keys(c.fromStudents({ T: { userId: '1' } }, [])), ['T'], 'no roster: nothing dropped');
   });
 
-  test('Studio videos: grouped by module, status chips, and each assignment’s video status', () => {
+  test('Course material by module: one card with what was opened and the videos inside, filters, and each assignment’s video status', () => {
     const Ctl = C();
     const c = new Ctl({ model: {}, api: {}, adapter: {}, settings: { values: {} }, courseId: 9 });
-    const row = (o) => Object.assign({ duration: 600, completion: 0, status: 'none', classWatched: 3, places: [] }, o);
-    const r = { indexKnown: true, studio: { moduleOrder: ['Unit 1', 'Unit 2'], counts: { watched: 1, partial: 1, none: 2, unknown: 0 },
-      postedCounts: { total: 3, watched: 1, partial: 1, none: 1, unknown: 0 }, rows: [
-        row({ uuid: 'd', title: 'Cells', origin: 'posted', places: [{ kind: 'Page', name: 'Cells', url: '/courses/9/pages/cells', modules: ['Unit 2'], order: 10000 }] }),
-        row({ uuid: 'a', title: 'Bonds', origin: 'posted', status: 'partial', completion: 0.47, places: [{ kind: 'Assignment', name: 'HW - Bonds', url: '/courses/9/assignments/5', modules: ['Unit 1'], order: 2 }] }),
-        row({ uuid: 'b', title: 'Atoms', origin: 'posted', status: 'watched', completion: 1, places: [{ kind: 'Module', name: 'Atoms video', url: '/courses/9/modules/items/3', modules: ['Unit 1'], order: 1 }] }),
-        row({ uuid: 'c', title: 'Spare', origin: 'unposted', places: [] }),
-        row({ uuid: 's', title: '[Untitled Thu Nov 19 2026 16:42:28 GMT-0500 (Eastern Standard Time)]', origin: 'student', submittedBy: '7', submittedByName: 'Avery Adams', submittedIn: 'Discussion reply', places: [] })
-      ] } };
-    const html = c.studioPanel(r);
+    const idx = si().courseIndex({ courseId: 9,
+      modules: [{ name: 'Unit 1', items: [{ id: 1, type: 'Assignment', content_id: 5, title: 'HW - Bonds' }, { id: 2, type: 'Page', content_id: 7, page_url: 'atoms', title: 'Atoms' }] }],
+      pages: [{ page_id: 7, url: 'atoms', title: 'Atoms' }], assignments: [{ id: 5, name: 'HW - Bonds' }] });
+    const row = (o) => Object.assign({ duration: 600, completion: 0, status: 'none', classWatched: 3, places: [], origin: 'posted' }, o);
+    const rows = [
+      row({ uuid: 'a', title: 'Bonds video', status: 'partial', completion: 0.47, places: [{ kind: 'Assignment', name: 'HW - Bonds', url: '/courses/9/assignments/5', key: 'assignment_5' }] }),
+      row({ uuid: 'b', title: 'Atoms video', status: 'watched', completion: 1, places: [{ kind: 'Page', name: 'Atoms', url: '/courses/9/pages/atoms', key: 'wiki_page_7' }] }),
+      row({ uuid: 'c', title: 'Spare', origin: 'unposted' }),
+      row({ uuid: 's', title: '[Untitled Thu Nov 19 2026 16:42:28 GMT-0500 (Eastern Standard Time)]', origin: 'student', submittedBy: '7', submittedByName: 'Avery Adams', submittedIn: 'Discussion reply' })
+    ];
+    const content = si().contentActivity({ courseId: '9', now: NOW, pageViews: null, assignments: [], accesses: [
+      { asset_code: 'wiki_page_7', readable_name: 'Atoms', view_score: 2, created_at: new Date(NOW - 3 * D).toISOString(), last_access: new Date(NOW - D).toISOString() }] });
+    const r = { indexKnown: true, index: idx, contentKnown: true, content, now: NOW, studio: { rows } };
+    const html = c.materialPanel(r);
     const at = (t) => html.indexOf(t);
-    a.ok(at('Unit 1') < at('Unit 2') && at('Unit 2') < at('Not posted in Canvas') && at('Not posted in Canvas') < at('Students’ own recordings'), 'modules in order, then unposted, then students’ recordings');
-    a.ok(at('>Atoms') < at('>Bonds'), 'videos in the order the module lists them');
-    a.ok(html.includes('<b>1</b> of 3 posted videos watched'), 'the headline counts posted videos only');
-    a.ok(html.includes('Submitted by Avery Adams'), 'who submitted a student recording');
-    a.ok(html.includes('data-si-vstatus="none"') && html.includes('data-vstatus="other"'), 'status chips; uncounted rows apart');
-    a.ok(/<details class="cgp-si__vgroup cgp-si__vgroup--unposted" data-si-vgroup-box>/.test(html), 'unposted folded away by default');
-    a.ok(html.includes('href="/courses/9/assignments/5"') && html.includes('Posted in'), 'the assignment it is in');
-    c._videoStatus = 'unknown';
-    const h2 = c.studioPanel(r);
-    a.ok(!/<tr [^>]* hidden>/.test(h2) && c._videoStatus === 'all', 'a filter whose chip isn’t shown falls back to All');
-    const early = c.studioPanel({ indexKnown: false, studio: { counts: r.studio.counts, rows: [row({ uuid: 'z', title: 'Z' })] } });
-    a.ok(early.includes('Looking…') && !early.includes('Not posted in Canvas'), 'not called unposted before the index is in');
+    a.ok(html.includes('Course material by module'));
+    a.ok(at('Unit 1') < at('Studio videos not posted in Canvas') && at('Studio videos not posted in Canvas') < at('Students’ own recordings'), 'modules first, then the uncounted groups');
+    a.ok(at('HW - Bonds') < at('Bonds video') && at('Bonds video') < at('>Atoms<'), 'each video right under the item it sits in, in module order');
+    a.ok(html.includes('Not opened') && html.includes('Opened'), 'whether each item was opened');
+    a.ok(html.includes('<b>1</b> of 2 module items opened') && html.includes('<b>1</b> of 2 Studio videos watched'), 'the whole course in two lines');
+    a.ok(html.includes('Submitted by Avery Adams'));
+    a.ok(html.includes('data-si-mfilter="unopened"') && html.includes('data-mparent="'), 'filters; videos know their item');
+    a.ok(html.includes('href="/courses/9/modules/items/1"'), 'an item links to it in its module');
+    c._materialFilter = 'nodata';
+    const h2 = c.materialPanel(r);
+    a.ok(!/<tr [^>]* hidden>/.test(h2) && c._materialFilter === 'all', 'a filter whose chip isn’t shown falls back to All');
+    const early = c.materialPanel({ indexKnown: false, studio: { rows } });
+    a.ok(early.includes('Reading the course’s modules'), 'waits for the course outline');
+    const noStudio = c.materialPanel({ indexKnown: true, index: idx, contentKnown: true, content, now: NOW, studio: { loading: true } });
+    a.ok(noStudio.includes('Opening Studio in the background') && noStudio.includes('HW - Bonds'), 'the outline shows while Studio opens');
+    r.studio = { rows: rows.map((v) => Object.assign({}, v, { places: (v.places || []).map((p) => Object.assign({}, p)) })) };
     const by = c.videosByAssignment(r);
     a.deep(Object.keys(by), ['5']);
-    a.eq(by['5'][0].title, 'Bonds');
+    a.eq(by['5'][0].title, 'Bonds video');
   });
 });
