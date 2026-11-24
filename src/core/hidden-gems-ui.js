@@ -56,6 +56,20 @@
     });
   }
 
+  /* Earlier versions of Hidden Gems (the margin pieces, the canvas pictures,
+   * Gravity, the first snow and rain) kept their own fields in this record.
+   * Keep only today's, whether or not Hidden Gems is on. */
+  var STATE_FIELDS = ['rolledDay', 'weatherDay', 'lastGem', 'claimId'];
+  function tidyState() {
+    return readState().then(function (state) {
+      var keys = Object.keys(state || {});
+      if (!keys.some(function (k) { return STATE_FIELDS.indexOf(k) === -1; })) return false;
+      var kept = {};
+      STATE_FIELDS.forEach(function (k) { if (k in state) kept[k] = state[k]; });
+      return writeState(kept);
+    });
+  }
+
   function withClaimLock(fn) {
     try {
       if (typeof navigator !== 'undefined' && navigator.locks && typeof navigator.locks.request === 'function') {
@@ -346,6 +360,7 @@
     if (this._started) return;
     this._started = true;
     var self = this;
+    tidyState();
 
     if (CGP.hiddenGems) {
       CGP.hiddenGems.play = function (id, opts) { return self.play(id, opts); };
@@ -405,5 +420,6 @@
     }, function () { return null; });
   };
 
+  HiddenGemsController.tidyState = tidyState;
   CGP.HiddenGemsController = HiddenGemsController;
 })();

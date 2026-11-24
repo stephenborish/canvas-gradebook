@@ -200,6 +200,20 @@ suite('Hidden Gems: starting and stopping an effect', (test) => {
     eq(stages().length, 0, 'no stage was made');
   });
 
+  test('fields saved by earlier Hidden Gems versions are removed; today\'s are kept', async () => {
+    const { sb } = sandbox();
+    let saved = { 'cgp.hiddenGems.state': { rolledDay: '2026-11-24', weatherDay: null, lastGem: 'leaves', claimId: 'x',
+      weatherShownAt: 1, weatherClaimId: 'y', pieceSeen: { washer: 1 }, lastPieceAt: 2 } };
+    sb.chrome.storage = { local: {
+      get(k, cb) { cb({ [k]: saved[k] }); },
+      set(o, cb) { saved = Object.assign({}, saved, o); cb(); }
+    } };
+    ok(await sb.CGP.HiddenGemsController.tidyState(), 'rewritten');
+    eq(Object.keys(saved['cgp.hiddenGems.state']).sort().join(','), 'claimId,lastGem,rolledDay,weatherDay');
+    eq(saved['cgp.hiddenGems.state'].lastGem, 'leaves');
+    eq(await sb.CGP.HiddenGemsController.tidyState(), false, 'nothing to do the second time');
+  });
+
   test('the rain and sunshine preview codes no longer play anything', () => {
     const { sb, ctl } = sandbox();
     for (const h of ['#cgp-gem-rain', '#cgp-gem-rain-light', '#cgp-gem-rain-heavy', '#cgp-gem-rain-storm', '#cgp-gem-rain-thunder', '#cgp-gem-sunshine']) {
