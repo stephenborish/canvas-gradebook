@@ -285,17 +285,22 @@
     }
     on(document, 'keydown', onKey, true);
     // Typing in an editor frame (Canvas's rich content editor) never reaches
-    // this document: when focus moves into a frame of this site, listen there.
-    on(window, 'blur', function () {
-      api.after(0, function () {
-        var f = document.activeElement;
-        if (!f || f.tagName !== 'IFRAME') return;
-        try {
-          var fd = f.contentDocument;
-          if (fd) on(fd, 'keydown', onKey, true);
-        } catch (e) { /* another site's frame: its keys cannot be seen */ }
-      });
-    });
+    // this document: listen in the frame of this site that has focus, both
+    // one already focused when the piece starts and any focused later.
+    var watchedFrames = [];
+    function watchFocusedFrame() {
+      var f = document.activeElement;
+      if (!f || f.tagName !== 'IFRAME') return;
+      try {
+        var fd = f.contentDocument;
+        if (fd && watchedFrames.indexOf(fd) === -1) {
+          watchedFrames.push(fd);
+          on(fd, 'keydown', onKey, true);
+        }
+      } catch (e) { /* another site's frame: its keys cannot be seen */ }
+    }
+    watchFocusedFrame();
+    on(window, 'blur', function () { api.after(0, watchFocusedFrame); });
     on(window, 'pointerdown', function () { api.dismiss('click'); }, true);
     on(window, 'wheel', function () { api.dismiss('scroll'); }, { capture: true, passive: true });
     on(document, 'scroll', function () { api.dismiss('scroll'); }, { capture: true, passive: true });
