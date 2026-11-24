@@ -933,8 +933,9 @@
    * as Canvas's API gives them (pages with bodies, modules with items).
    * Item keys match the Access Report's: assignment_<id>, quiz_<id>,
    * discussion_topic_<id>, wiki_page_<id>, attachment_<id>.
-   * Returns { modules: {key: [module names]}, embeds: [{uuid, title, place}] }
-   * where place is {kind, name, url, modules}. */
+   * Returns { modules: {key: [module names]}, moduleOrder: [module names],
+   * embeds: [{uuid, title, place}] } where place is {kind, name, url,
+   * modules, order} (order: where it first sits in the modules, if it does). */
   function courseIndex(input) {
     input = input || {};
     var SC = CGP.studioClass;
@@ -944,17 +945,25 @@
     (input.pages || []).forEach(function (p) {
       if (p && p.url && p.page_id !== undefined) pageIdBySlug[String(p.url)] = String(p.page_id);
     });
+    // Where an item first sits in the course's modules, as one sortable
+    // number (module, then item), so videos list in the order students meet them.
+    var order = Object.create(null);
+    var moduleOrder = [];
+    var at = 0;
     function addModule(key, name) {
       if (!key || !name) return;
       var list = modules[key] = modules[key] || [];
       if (list.indexOf(name) < 0) list.push(name);
+      if (order[key] === undefined && at !== null) order[key] = at;
     }
     var moduleEmbeds = [];
-    (input.modules || []).forEach(function (m) {
+    (input.modules || []).forEach(function (m, mi) {
       if (!m) return;
       var mname = String(m.name || '').trim();
-      (m.items || []).forEach(function (it) {
+      if (mname && moduleOrder.indexOf(mname) < 0) moduleOrder.push(mname);
+      (m.items || []).forEach(function (it, ii) {
         if (!it) return;
+        at = mi * 10000 + ii;
         var cid = it.content_id === undefined || it.content_id === null ? null : String(it.content_id);
         switch (it.type) {
           case 'Assignment': addModule(cid && 'assignment_' + cid, mname); break;
@@ -969,12 +978,13 @@
           case 'ExternalTool':
           case 'ExternalUrl':
             var id = SC && SC.embedIdFromUrl(it.external_url || it.url || it.html_url || '');
-            if (id) moduleEmbeds.push({ uuid: id, title: String(it.title || ''), place: { kind: 'Module', name: String(it.title || '') || mname, url: base + '/modules' + (it.id !== undefined && it.id !== null ? '/items/' + it.id : ''), modules: mname ? [mname] : [] } });
+            if (id) moduleEmbeds.push({ uuid: id, title: String(it.title || ''), place: { kind: 'Module', name: String(it.title || '') || mname, url: base + '/modules' + (it.id !== undefined && it.id !== null ? '/items/' + it.id : ''), modules: mname ? [mname] : [], order: at } });
             break;
           default: break;
         }
       });
     });
+    at = null;   // a quiz's or discussion's assignment takes the quiz's place, below
     var embeds = [];
     var placed = Object.create(null);    // one entry per video per place
     function scan(html, kind, name, url, key) {
@@ -983,7 +993,9 @@
         var k = e.uuid + '|' + url;
         if (placed[k]) return;
         placed[k] = true;
-        embeds.push({ uuid: e.uuid, title: e.title, place: { kind: kind, name: String(name || ''), url: url, modules: (key && modules[key]) || [] } });
+        var place = { kind: kind, name: String(name || ''), url: url, modules: (key && modules[key]) || [] };
+        if (key && order[key] !== undefined) place.order = order[key];
+        embeds.push({ uuid: e.uuid, title: e.title, place: place });
       });
     }
     // A quiz or graded discussion is listed once, under its assignment's
@@ -997,6 +1009,10 @@
       if (a.quiz_id) { (modules['quiz_' + a.quiz_id] || []).forEach(function (n) { addModule(key, n); }); quizAt[a.quiz_id] = base + '/assignments/' + a.id; }
       var tid = a.discussion_topic && a.discussion_topic.id;
       if (tid) { (modules['discussion_topic_' + tid] || []).forEach(function (n) { addModule(key, n); }); topicAt[tid] = base + '/assignments/' + a.id; }
+      if (order[key] === undefined) {
+        var o2 = a.quiz_id ? order['quiz_' + a.quiz_id] : tid ? order['discussion_topic_' + tid] : undefined;
+        if (o2 !== undefined) order[key] = o2;
+      }
       scan(a.description, a.quiz_id ? 'Quiz' : tid ? 'Discussion' : 'Assignment', a.name, base + '/assignments/' + a.id, key);
     });
     (input.quizzes || []).forEach(function (q) {
@@ -1011,7 +1027,7 @@
       if (!p || !p.url) return;
       scan(p.body, 'Page', p.title, base + '/pages/' + encodeURIComponent(p.url), p.page_id !== undefined ? 'wiki_page_' + p.page_id : 'page_url:' + p.url);
     });
-    return { modules: modules, embeds: embeds.concat(moduleEmbeds) };
+    return { modules: modules, moduleOrder: moduleOrder, embeds: embeds.concat(moduleEmbeds) };
   }
 
   /* Every way a teacher might type a date, so a search for "10/12",
