@@ -1781,9 +1781,10 @@
     var what = tasks.length === 1
       ? '“' + ((tasks[0].item && tasks[0].item.title) || 'an item') + '” in ' + (tasks[0].destName || 'another class')
       : tasks.length + ' copies in your other classes';
-    CGP.ui.toast('Gradebook+ didn’t finish setting up ' + what + ' (copied ' + when + '): dates and publishing weren’t set yet. ' +
-      'Finish now, unless you’ve changed ' + (tasks.length === 1 ? 'it' : 'them') + ' by hand since.', {
-      action: {
+    // A notice, not a toast: it stays until the teacher answers, so a
+    // grading message a moment later cannot replace it unseen (it is not
+    // offered again for hours once shown).
+    var finish = {
         label: 'Finish now',
         run: function () {
           var ids = waiting.map(function (w) { return w.id; });
@@ -1793,7 +1794,11 @@
             else CGP.ui.toast('Canvas is still copying it. Gradebook+ will finish it on a later page.');
           }, function () { CGP.ui.error('Gradebook+ couldn’t finish it just now. It will offer again later.'); });
         }
-      }
+    };
+    CGP.ui.notice('Gradebook+ didn’t finish setting up ' + what + ' (copied ' + when + '): dates and publishing weren’t set yet. ' +
+      'Finish now, unless you’ve changed ' + (tasks.length === 1 ? 'it' : 'them') + ' by hand since.', {
+      id: 'sections-waiting',
+      actions: [finish, { label: 'Not now' }]
     });
     CGP.diag.log('sections.offeredWaiting', { count: tasks.length });
   };

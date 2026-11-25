@@ -2080,6 +2080,20 @@ html.cgp-speedgrader .cgp-toast__action:focus-visible { outline: 2px solid #fff;
   html.cgp-on .cgp-toast { transition: opacity 120ms linear; }
 }
 
+/* A message waiting for a decision (CGP.ui.notice): above the toast, so a
+ * passing toast never covers or replaces it. */
+html.cgp-on .cgp-notice,
+html.cgp-speedgrader .cgp-notice {
+  bottom: 64px;
+  z-index: 100001;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+html.cgp-on .cgp-notice__text,
+html.cgp-speedgrader .cgp-notice__text { flex: 1 1 260px; }
+
 /* Keep marker geometry from affecting SlickGrid measurements. */
 html.cgp-on .slick-cell > .cgp-marks,
 html.cgp-on .slick-cell > .cgp-val { box-sizing: border-box !important; }

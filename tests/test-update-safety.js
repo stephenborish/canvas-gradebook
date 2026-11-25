@@ -68,11 +68,65 @@ suite('gradebook boot: a missing grid', (test) => {
 
 });
 
+suite('gradebook boot: grading scripts that never arrive', (test) => {
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'gradebook', 'content.js'), 'utf8');
+  test('the course-page tools still start, and the teacher is told, with a Reload', () => {
+    const at = src.indexOf("CGP.diag.error('boot.gradingScriptsMissing')");
+    a.ok(at > 0);
+    const after = src.slice(at, at + 600);
+    a.ok(/CGP\.ui\.error\(/.test(after), 'told');
+    a.ok(/label: 'Reload'/.test(after));
+    a.ok(/startCourseChrome\(courseId\)/.test(after), 'Switch course and Find student still start');
+  });
+});
+
 suite('the settings page', (test) => {
   test('leaving the settings page with unsaved edits asks first', () => {
     const fs = require('fs');
     const path = require('path');
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'options', 'options.js'), 'utf8');
     a.ok(/addEventListener\('beforeunload'[\s\S]{0,300}isDirty\(\)/.test(src));
+  });
+});
+
+suite('a notice that waits for an answer', (test) => {
+  const fs = require('fs');
+  const path = require('path');
+  const vm = require('vm');
+  const { domshim } = require('./domharness');
+
+  function freshUi() {
+    domshim.install();
+    const saved = globalThis.CGP.ui;
+    delete globalThis.CGP.ui;
+    vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'ui.js'), 'utf8'), { filename: 'src/core/ui.js' });
+    const ui = globalThis.CGP.ui;
+    globalThis.CGP.ui = saved;
+    return ui;
+  }
+
+  test('a toast never replaces a notice; a button runs its action and closes it', () => {
+    const ui = freshUi();
+    let ran = 0;
+    ui.notice('Finish setting up?', { id: 'x', actions: [{ label: 'Finish now', run: () => { ran++; } }, { label: 'Not now' }] });
+    ui.toast('Grade saved');
+    const notices = document.querySelectorAll('.cgp-notice');
+    a.eq(notices.length, 1, 'still showing after a toast');
+    const buttons = notices[0].querySelectorAll('button');
+    a.deep(Array.prototype.map.call(buttons, (b) => b.textContent), ['Finish now', 'Not now']);
+    buttons[0].dispatchEvent(Object.assign(new globalThis.Event('click'), { preventDefault() {}, stopPropagation() {} }));
+    a.eq(ran, 1);
+    a.eq(document.querySelectorAll('.cgp-notice').length, 0, 'closed');
+  });
+
+  test('a second notice with the same id replaces the first', () => {
+    const ui = freshUi();
+    ui.notice('one', { id: 'y' });
+    ui.notice('two', { id: 'y' });
+    const n = document.querySelectorAll('.cgp-notice[data-cgp-notice="y"]');
+    a.eq(n.length, 1);
+    a.eq(n[0].querySelector('.cgp-notice__text').textContent, 'two');
   });
 });

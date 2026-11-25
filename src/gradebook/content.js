@@ -836,7 +836,14 @@
       // Should they ever arrive after this boot, it waits for them.
       if ((isSpeedGrader || (isGradebook && courseId)) && !gradingScriptsLoaded()) {
         return whenGradingScriptsLoaded().then(function (loaded) {
-          if (!loaded) { CGP.diag.error('boot.gradingScriptsMissing'); return null; }
+          if (!loaded) {
+            // Never leave the page with nothing at all: the tools every
+            // course page has still start, and the teacher is told.
+            CGP.diag.error('boot.gradingScriptsMissing');
+            CGP.ui.error('Gradebook+ didn’t fully load on this page, so its ' + (isSpeedGrader ? 'SpeedGrader' : 'gradebook') +
+              ' tools are off. Reload the page to try again.', { action: { label: 'Reload', run: function () { location.reload(); } } });
+            return courseId ? startCourseChrome(courseId) : null;
+          }
           if (isSpeedGrader) { CGP.startSpeedGrader(courseId); return null; }
           return startGradebook(courseId);
         });

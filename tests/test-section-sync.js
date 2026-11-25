@@ -601,17 +601,19 @@ suite('copy to sections: the copy runner', (test) => {
     const said = [];
     const ui = globalThis.CGP.ui;
     globalThis.CGP.ui = {
-      toast: (m, o) => said.push({ text: String(m), action: o && o.action }),
-      error: (m) => said.push({ text: String(m), error: true })
+      toast: (m) => said.push({ text: String(m) }),
+      error: (m) => said.push({ text: String(m), error: true }),
+      notice: (m, o) => said.push({ text: String(m), notice: true, actions: o.actions, id: o.id })
     };
     try {
       const ctl = Object.create(globalThis.CGP.SectionCopyController.prototype);
       ctl.copier = copier(api, store);
       await ctl.resume();
       a.eq(puts(), 0, 'nothing done before the teacher answers');
-      const offer = said.find((x) => x.action);
-      a.ok(offer, 'a notice with an action');
-      a.eq(offer.action.label, 'Finish now');
+      const offer = said.find((x) => x.notice);
+      a.ok(offer, 'a notice that stays until answered, not a toast that the next message replaces');
+      a.deep(offer.actions.map((x) => x.label), ['Finish now', 'Not now']);
+      offer.action = offer.actions[0];
       a.ok(offer.text.indexOf('“' + ASSIGNMENT.title + '”') >= 0, offer.text);
       a.ok(/1 day ago/.test(offer.text), offer.text);
       offer.action.run();
