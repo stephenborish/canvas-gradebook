@@ -158,8 +158,8 @@
     var gear = this.findSettingsButton();
     if (!gear || !gear.isConnected) {
       CGP.diag.warn('layout.arrangeMenu.gearNotFound');
-      CGP.ui.error('Couldn’t find Canvas’s gradebook settings button. Look for the gear icon, then ' +
-        'View Options → Arrange By, to sort assignments by due date, name, points or module.');
+      CGP.ui.error('Couldn’t find Canvas’s gradebook settings. To sort assignments, click the gear icon, then ' +
+        'View Options → Arrange By.');
       return Promise.resolve(false);
     }
     gear.click();
@@ -211,8 +211,7 @@
     btn.className = 'cgp-crumb-toggle cgp-settings-gear';
     btn.setAttribute('aria-label', 'Gradebook settings');
     btn.setAttribute('aria-haspopup', 'dialog');
-    btn.title = 'Gradebook settings: arrange assignment columns (by due date, name, points or module), ' +
-      'late policies, grade posting policy';
+    btn.title = 'Gradebook settings: sort assignment columns, late policies, grade posting';
     btn.innerHTML = GEAR_SVG;
     var self = this;
     btn.addEventListener('click', function (e) {
@@ -238,8 +237,8 @@
         this.restoreControls();
         this.applyGeometry();
       }
-      CGP.ui.error('Couldn’t open Canvas’s gradebook settings from here, so Canvas’s own controls are back above ' +
-        'the grid. Use the gear there, then View Options → Arrange By, to sort the assignments.');
+      CGP.ui.error('Couldn’t open Canvas’s gradebook settings from here, so Canvas’s toolbar is back. To sort ' +
+        'assignments, click its gear, then View Options → Arrange By.');
       return Promise.resolve(false);
     }
     gear.click();

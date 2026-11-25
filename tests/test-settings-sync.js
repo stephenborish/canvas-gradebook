@@ -155,7 +155,7 @@ suite('settings sync: two computers', (test) => {
     // starting list, adds 10 different ones.
     Object.assign(synced, S.plan(synced, start, settingsWith({ snippets: shared.concat(list('x', 10)) })).set);
     const p = S.plan(synced, start, settingsWith({ snippets: shared.concat(list('y', 10)) }));
-    a.ok(p.problem && /another computer/.test(p.problem), 'explained');
+    a.ok(p.problem && /other computers/.test(p.problem), 'explained');
     a.deep(p.set, {});
     a.deep(p.remove, []);
     const fake = fakeChrome(synced);

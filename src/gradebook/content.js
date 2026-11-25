@@ -316,7 +316,7 @@
       adapter.ensureRowsMapped(0, count).then(function () {
         var found = adapter.rowIndexForStudent(uid);
         if (found === null) {
-          CGP.ui.error('That student is not in this gradebook\u2019s current view \u2014 a Canvas filter or section may be hiding them.');
+          CGP.ui.error('That student isn\u2019t showing in this gradebook. A Canvas filter or section may be hiding them.');
           CGP.diag.warn('revealStudent.notInGrid');
           return;
         }
@@ -691,8 +691,8 @@
         });
       }, function (err) {
         CGP.diag.error('boot.modelFailed', { status: err && err.status, message: String(err && err.message) });
-        CGP.ui.error(CGP.util.describeApiError(err, { fallback: 'Gradebook+ could not read this course from Canvas' }) +
-          ' Canvas itself is unaffected.');
+        CGP.ui.error(CGP.util.describeApiError(err, { fallback: 'Gradebook+ couldn\u2019t load this course' }) +
+          ' Canvas itself works as usual.');
       });
     }).then(function () {
       CGP.settings.onChange(function () {

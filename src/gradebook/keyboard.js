@@ -372,8 +372,8 @@
               hasAssignmentId: !!(info && info.assignmentId),
               hasStudentId: !!(info && info.studentId)
             });
-            CGP.ui.error('Gradebook+ couldn\u2019t identify this cell for the ' + token + ' shortcut. ' +
-              'Turn on Diagnostics in the options page if this keeps happening.');
+            CGP.ui.error('Gradebook+ couldn\u2019t tell which cell this is, so ' + token + ' did nothing. ' +
+              'Click the cell and try again.');
             return;
           }
           this.applyToken(token, scope, info);
@@ -599,8 +599,8 @@
       return;
     }
     if (built.invalid.length) {
-      CGP.ui.error('"' + token + '" doesn\u2019t fit ' + built.invalid.length + ' of the selected cells' +
-        ' (their columns grade differently); those were left unchanged.');
+      CGP.ui.error('"' + token + '" doesn\u2019t work for ' + built.invalid.length + ' of the selected cells' +
+        ' (their columns use a different kind of grade), so those were left unchanged.');
     }
     var count = built.targets.length;
     var threshold = this.settings.values.bulkConfirmThreshold;

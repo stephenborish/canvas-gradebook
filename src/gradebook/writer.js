@@ -95,7 +95,7 @@
     // cell's current status) until the course itself has loaded, and a write
     // made blind is exactly how a toggle goes the wrong way.
     if (!this.model.ready) {
-      CGP.ui.error('Gradebook+ is still loading this course from Canvas. Nothing was changed \u2014 try again in a moment.');
+      CGP.ui.error('Gradebook+ is still loading this course. Nothing was changed. Try again in a moment.');
       return Promise.resolve({ ok: 0, failed: 0, skipped: ops.length, errors: [], unconfirmed: [], notReady: true });
     }
 
@@ -167,13 +167,13 @@
             ' could not be saved: ' + CGP.util.describeApiError(first) + ' Those cells were left unchanged.');
         } else {
           messages.push(result.failed + (result.failed === 1 ? ' grade' : ' grades') +
-            ' could not be saved' + (first.status ? ' (Canvas ' + first.status + ')' : '') +
+            ' could not be saved' + (first.status ? ' (Canvas error ' + first.status + ')' : '') +
             '. Those cells were left unchanged.');
         }
       }
       if (result.unloaded) {
         messages.push(result.unloaded + (result.unloaded === 1 ? ' cell was' : ' cells were') +
-          ' left unchanged because Canvas did not send that column\u2019s current grades. Try again in a moment.');
+          ' left unchanged because Canvas did not send that column\u2019s grades yet. Try again in a moment.');
       }
       if (result.changedSinceConfirm) {
         var n = result.changedSinceConfirm;
@@ -183,7 +183,7 @@
       }
       if (result.skipped) {
         messages.push(result.skipped + (result.skipped === 1 ? ' cell was' : ' cells were') +
-          ' skipped (an anonymous or moderated assignment, or an unresolved student/assignment) ' +
+          ' skipped (an anonymous or moderated assignment, or a cell Gradebook+ couldn\u2019t match) ' +
           'and left unchanged.');
       }
       var action = null;
@@ -497,21 +497,21 @@
   /** What the teacher is told about writes that couldn't be confirmed. */
   P.unconfirmedMessage = function (list) {
     var signIn = list.some(function (u) { return u.signIn; });
-    var hint = signIn ? ' Canvas answered with its sign-in page: your session may have expired. Sign in again in another tab, then check again.' : '';
+    var hint = signIn ? ' Canvas showed its sign-in page, so you may be signed out. Sign in again in another tab, then check again.' : '';
     if (list.length === 1) {
       var u = list[0];
       var where = ' (' + this.cellName(u) + ')';
       if (u.canvasNow) {
         return 'Couldn\u2019t confirm this grade' + where + '. Canvas currently shows ' + u.canvasNow +
-          ' there; the cell shows that.' + hint;
+          ', so the cell shows that.' + hint;
       }
-      return 'Couldn\u2019t confirm this grade' + where + ': Canvas\u2019s answer couldn\u2019t be read, and the cell couldn\u2019t be re-read' +
-        ' to check, so it may not show what Canvas has.' + hint;
+      return 'Couldn\u2019t confirm this grade' + where + '. Canvas didn\u2019t answer clearly and the cell couldn\u2019t be re-read,' +
+        ' so it may not match Canvas.' + hint;
     }
     var unread = list.filter(function (x) { return !x.canvasNow; }).length;
-    return 'Couldn\u2019t confirm ' + list.length + ' grades: Canvas\u2019s answers couldn\u2019t be read.' +
-      (unread ? ' ' + unread + (unread === 1 ? ' cell' : ' cells') + ' couldn\u2019t be re-read either and may not show what Canvas has;' +
-        ' the rest show what Canvas holds now.' : ' The cells show what Canvas holds now.') + hint;
+    return 'Couldn\u2019t confirm ' + list.length + ' grades: Canvas didn\u2019t answer clearly.' +
+      (unread ? ' ' + unread + (unread === 1 ? ' cell' : ' cells') + ' couldn\u2019t be re-read either and may not match Canvas;' +
+        ' the rest show what Canvas has now.' : ' The cells show what Canvas has now.') + hint;
   };
 
   /* "Check again": read each unconfirmed cell back and report. Only ever
@@ -581,8 +581,8 @@
           return fresh;
         }
         CGP.diag.error('write.missingRefused', { assignmentId: assignmentId });
-        CGP.ui.error('Canvas would not mark this submission Missing. ' +
-          'Its own late policy may be overriding the status.');
+        CGP.ui.error('Canvas wouldn\u2019t mark this Missing. ' +
+          'Your course\u2019s late policy may be overriding it.');
         return fresh;
       }, function (err) {
         CGP.diag.error('write.missingRetryFailed', { assignmentId: assignmentId, status: err && err.status });
@@ -597,8 +597,8 @@
           if (sub && typeof onAnswer === 'function') onAnswer(sub);
           var fresh = sub ? self.model.applySubmission(sub) : null;
           if (self.isMissing(fresh)) return fresh;
-          CGP.ui.error('Couldn\u2019t confirm the Missing status: Canvas\u2019s answer couldn\u2019t be read' +
-            (fresh ? ', and the submission does not show Missing yet.' : '.'));
+          CGP.ui.error('Couldn\u2019t confirm the Missing mark: Canvas didn\u2019t answer clearly' +
+            (fresh ? ', and the work doesn\u2019t show Missing yet.' : '.'));
           return fresh || rec;
         });
       });
@@ -649,7 +649,7 @@
     if (assignment.anonymous || assignment.moderated) {
       CGP.diag.warn('comment.anonymousOrModeratedSkipped', { assignmentId: assignmentId, moderated: !!assignment.moderated });
       return Promise.reject(new Error(
-        'Comments cannot be added here on an anonymous or moderated assignment - use SpeedGrader instead.'));
+        'On an anonymous or moderated assignment, add comments in SpeedGrader instead.'));
     }
     // A comment never touches a status - Canvas's comment write leaves
     // late_policy_status exactly where it was - so nothing here checks or
@@ -703,7 +703,7 @@
     if (!this.model.student(userId)) return Promise.reject(new Error('Unknown student.'));
     if (assignment.anonymous || assignment.moderated) {
       return Promise.reject(new Error(
-        'Comments cannot be deleted here on an anonymous or moderated assignment - use SpeedGrader instead.'));
+        'On an anonymous or moderated assignment, delete comments in SpeedGrader instead.'));
     }
     // The comment disappears the moment the teacher confirms: the model is
     // updated now and rolled back only if Canvas refuses. The API call itself

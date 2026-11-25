@@ -451,7 +451,7 @@ suite('posting: refusals never widen into the whole-column fallback', (test) => 
     const h = poster([[true, true]], { ['POST ' + GQL]: [html(404, '<html>Not Found</html>')] });
     await h.post();
     a.eq(h.count('PUT', UNMUTE), 0, 'the broader legacy endpoint was never called');
-    a.ok(/doesn’t offer posting only graded submissions/.test(last().text) && /nothing was posted/.test(last().text), last().text);
+    a.ok(/doesn’t allow posting only graded submissions/.test(last().text) && /nothing was posted/.test(last().text), last().text);
   });
 
   test('schema mismatch: no fallback either', async () => {

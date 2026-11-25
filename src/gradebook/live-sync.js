@@ -371,8 +371,8 @@
     bar.className = 'cgp-sg-stale';
     bar.setAttribute('role', 'status');
     var text = doc.createElement('span');
-    text.textContent = 'This submission was just changed in another tab (the Gradebook). ' +
-      'Reload SpeedGrader to see its current grade and status.';
+    text.textContent = 'This submission was just changed in the gradebook in another tab. ' +
+      'Reload SpeedGrader to see the latest grade and status.';
     var reload = doc.createElement('button');
     reload.type = 'button';
     reload.className = 'cgp-sg-stale__reload';

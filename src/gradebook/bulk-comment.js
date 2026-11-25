@@ -93,7 +93,7 @@
     }
     targets = (targets || []).filter(function (t) { return t && t.assignmentId && t.userId; });
     if (!targets.length) {
-      CGP.ui.error('Select one or more grade cells first (Cmd/Ctrl-click or Shift-click), then press C.');
+      CGP.ui.error('First select grade cells (Cmd/Ctrl-click or Shift-click), then press C.');
       return;
     }
     this.targets = targets;
@@ -102,7 +102,7 @@
     el.innerHTML =
       '<div class="cgp-pop__head">' +
       '<span class="cgp-pop__who">Comment on ' + n + (n === 1 ? ' cell' : ' cells') + '</span>' +
-      '<span class="cgp-pop__what">Posted as your own comment on each of the selected submissions.</span>' +
+      '<span class="cgp-pop__what">Added as your comment on each selected submission.</span>' +
       '<button type="button" class="cgp-pop__close" title="Close (Esc)" aria-label="Close">×</button>' +
       '</div>' +
       '<div class="cgp-pop__reply">' +

@@ -280,7 +280,7 @@
       self.loading = false;
       self.error = 'Couldn’t read your course list. ' +
         CGP.util.describeApiError(err, { fallback: 'Canvas did not return your course list' }) +
-        ' Close and reopen Find student to retry.';
+        ' Close Find student and open it again to retry.';
       CGP.diag.error('studentSearch.coursesFailed', { status: err && err.status });
       self.paintList();
       return null;
@@ -295,7 +295,7 @@
     if (f) parts.push(f + (f === 1 ? ' course' : ' courses') + ' couldn’t be read, so ' +
       (f === 1 ? 'its' : 'their') + ' students are not searched.');
     if (t) parts.push(t + (t === 1 ? ' course is' : ' courses are') +
-      ' too large to search completely; only part of ' + (t === 1 ? 'its' : 'their') + ' roster is searched.');
+      ' too large to search fully, so only some of ' + (t === 1 ? 'its' : 'their') + ' students are searched.');
     return parts.join(' ');
   };
 

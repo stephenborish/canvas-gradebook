@@ -80,7 +80,7 @@
       : '';
     return {
       text: 'Post ' + count,
-      title: why + hidden + '. Post them to the students now (every section; submissions with a grade or a comment from you).'
+      title: why + hidden + '. Click to show them to students now (all sections).'
     };
   };
 
@@ -252,7 +252,7 @@
         self.busy.delete(id);
         self.setBusy(btn, false);
         self.requestPaint();
-        CGP.ui.error('Couldn’t confirm this column’s current state. Nothing was changed — try again.');
+        CGP.ui.error('Couldn’t check this column. Nothing was changed. Try again.');
         return null;
       }
       var pendingIds = self.model.pendingPosts(id);
@@ -407,7 +407,7 @@
             self.recheckLater(id);
           } else {
             // We stopped waiting before Canvas finished.
-            CGP.ui.toast('Canvas is still posting ' + name + ' in the background — the grid will update on its own.');
+            CGP.ui.toast('Canvas is still posting ' + name + '. The gradebook will update when it\u2019s done.');
             CGP.diag.bump('post.stillRunning', count);
             if (btn && btn.parentElement) {
               btn.parentElement.classList.add('cgp-posted');
@@ -421,20 +421,20 @@
           // Every error reaching here is a refusal Canvas made before acting
           // (an unusable answer was settled above by re-reading instead).
           if (err && err.postingUnsupported) {
-            CGP.ui.error('This Canvas doesn\u2019t offer posting only graded submissions from here, so nothing was posted. ' +
-              'Use Post grades in the column\u2019s own menu instead.');
+            CGP.ui.error('Your Canvas doesn\u2019t allow posting only graded submissions from here, so nothing was posted. ' +
+              'Use Post grades in the column\u2019s menu instead.');
           } else if (CGP.util.isSessionExpiredError(err) || CGP.util.isPermissionDeniedError(err)) {
             CGP.ui.error(CGP.util.describeApiError(err) + ' Nothing was posted.');
           } else {
             CGP.ui.error('Canvas would not post these grades' +
               (err && err.status ? ' (Canvas ' + err.status + ')' : (err && err.message ? ': ' + err.message : '')) +
-              '. Nothing was changed — you can still post from the column’s own menu.');
+              '. Nothing was changed. You can still post from the column’s menu.');
           }
         });
     }, function () {
       // The re-read itself failed: refuse rather than posting against a
       // count we can no longer vouch for.
-      CGP.ui.error('Couldn’t confirm this column’s current state. Nothing was changed — try again.');
+      CGP.ui.error('Couldn’t check this column. Nothing was changed. Try again.');
     })
       .then(function () {
         self.busy.delete(id);
@@ -451,7 +451,7 @@
   P.reportUnconfirmedPost = function (id, name, pendingIds, settled, uncertain) {
     var self = this;
     var err = uncertain && uncertain.err;
-    var hint = err && err.signIn ? ' Canvas answered with its sign-in page: your session may have expired.' : '';
+    var hint = err && err.signIn ? ' Canvas showed its sign-in page, so you may be signed out.' : '';
     // Counted over the submissions this post was for, not the whole column:
     // grades hidden since the pre-post read are not part of this answer.
     var stillPending = settled && settled.known ? this.model.pendingPosts(id) : [];

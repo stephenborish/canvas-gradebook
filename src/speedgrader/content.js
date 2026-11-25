@@ -335,8 +335,8 @@
     function warnSaveFailedOnce() {
       if (state.saveWarned) return;
       state.saveWarned = true;
-      CGP.ui.error('Gradebook+ couldn’t save your draft comment just now. ' +
-        'Copy your text somewhere safe before navigating away.');
+      CGP.ui.error('Gradebook+ couldn’t save a draft of your comment. ' +
+        'Copy your text somewhere safe before you leave this page.');
     }
 
     // Always saved under the key the caller captured when the text was typed

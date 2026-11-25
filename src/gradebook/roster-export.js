@@ -406,8 +406,8 @@
     var tableNote = this._dialog.querySelector('.cgp-roster__table-note');
     if (tableNote) {
       tableNote.textContent = t.oneLine
-        ? 'Copy table pastes one line per student, each part separated by a comma. Download CSV gives the same thing as First Name, Last Name and Email columns.'
-        : 'Copy table pastes as a formatted table in Google Docs, Word and Gmail, and as columns in Sheets or Excel.';
+        ? 'Copy table pastes one line per student, separated by commas. Download CSV gives First Name, Last Name and Email columns.'
+        : 'Copy table pastes as a table in Google Docs, Word and Gmail, and as columns in Sheets or Excel.';
     }
     var hasTable = !!t.header.length && !!n;
     var emailCount = this.renderEmailChoices(n - noEmail);
