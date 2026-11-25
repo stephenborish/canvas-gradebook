@@ -450,6 +450,27 @@ suite('copy to sections: the copy runner', (test) => {
     a.eq(Object.keys(store.mem).length, 0);
   });
 
+  test('a batch whose start got no answer is never retried item by item: the copy may have started', async () => {
+    const api = fakeCanvas();
+    let starts = 0;
+    api.startCourseCopy = () => {
+      starts++;
+      return Promise.reject(Object.assign(new globalThis.CGP.CanvasApiError('Timed out on POST', {}), { network: true, timedOut: true }));
+    };
+    const page = { type: 'page', id: '8', title: 'Notes', published: true, html: '' };
+    const rs = [];
+    await copier(api).runPlan([
+      { srcCourseId: '11', destCourseId: '22', item: ASSIGNMENT, mode: 'copy', dates: {}, publish: 'match' },
+      { srcCourseId: '11', destCourseId: '22', item: page, mode: 'copy', dates: {}, publish: 'match' }
+    ], null, (t, r) => rs.push(r));
+    a.eq(rs.length, 2);
+    a.eq(starts, 1, 'one start only: a second could copy everything twice');
+    rs.forEach((r) => {
+      a.not(r.ok);
+      a.ok(/may still have started/.test(r.error) && /check that class/.test(r.error), r.error);
+    });
+  });
+
   test('a refused copy (no rights in that course) says so', async () => {
     const api = fakeCanvas({ refuseCopy: true });
     const r = await copier(api).run({ srcCourseId: '11', destCourseId: '22', item: ASSIGNMENT, mode: 'copy', dates: {}, publish: 'match' });

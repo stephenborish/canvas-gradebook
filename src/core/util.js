@@ -935,8 +935,8 @@
       var bytes = triggers.reduce(function (t, k) { return t + snippetItemBytes(current[k]); }, 0);
       if (triggers.length > MAX_SNIPPETS || bytes > MAX_SNIPPET_BYTES) {
         out.problem = 'With the snippets saved on your other computers, that makes ' + triggers.length +
-          ' snippets, more than Chrome sync can hold (' + MAX_SNIPPETS + ' snippets, or ' + Math.floor(MAX_SNIPPET_BYTES / 1024) +
-          ' KB in all). Delete some snippets, then save again.';
+          ' snippets (' + Math.ceil(bytes / 1024) + ' KB), more than Chrome sync can hold (at most ' + MAX_SNIPPETS +
+          ' snippets and ' + Math.floor(MAX_SNIPPET_BYTES / 1024) + ' KB in all). Delete some snippets, then save again.';
         out.set = {};
         return out;
       }

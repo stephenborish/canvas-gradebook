@@ -583,10 +583,17 @@
       self.forgetCopies(dest);
       return self.saveJob(job).then(function () { return self.continueJob(job, results, onStep); });
     }, function (err) {
-      var msg = describe(err, 'Canvas refused to start the copy');
+      // No answer at all (a lost connection, or a write that timed out -
+      // see canvas-api.js WRITE_TIMEOUT_MS): Canvas may well have started
+      // the copy, so it is neither retried item by item nor worded as a
+      // refusal - another start would put a second copy in the class.
+      var lost = !!(err && err.network === true);
+      var msg = lost
+        ? describe(err, 'Canvas didn’t answer') + ' The copy may still have started: check that class before copying again.'
+        : describe(err, 'Canvas refused to start the copy');
       // One item Canvas cannot take must not sink the rest: a refused
       // request (not a refused person) is tried again item by item.
-      var alone = tasks.length > 1 && !(err && (err.status === 401 || err.status === 403));
+      var alone = tasks.length > 1 && !lost && !(err && (err.status === 401 || err.status === 403));
       results.forEach(function (r) { r.error = msg; if (alone) r.retryAlone = true; });
       return results;
     }).then(null, function (err) {
@@ -1902,9 +1909,19 @@
         if (!(j.offeredAt && now - j.offeredAt < OFFER_AGAIN_MS)) {
           waiting.push({ id: String(j.id), startedAt: j.startedAt || 0, tasks: jobTasks(j).slice() });
           j.offeredAt = now;
-          var v = {};
-          v[JOB_PREFIX + j.id] = j;
-          self.store.set(v).catch(function () { return null; });
+          // Stamped on the job as stored now, not the listed copy: another
+          // tab may have finished tasks of it, or all of it, since the list
+          // was read, and writing the listed copy back would bring those
+          // back to be set up a second time.
+          var key = JOB_PREFIX + j.id;
+          self.store.get(key).then(function (got) {
+            var current = got && got[key];
+            if (!current) return null;
+            current.offeredAt = now;
+            var v = {};
+            v[key] = current;
+            return self.store.set(v);
+          }).catch(function () { return null; });
         }
         return false;
       });

@@ -284,8 +284,18 @@
     if (!runtime || typeof runtime.sendMessage !== 'function') { state.rosters[key] = { status: 'none' }; return; }
     try {
       runtime.sendMessage({ type: ROSTER_MESSAGE, courseName: name, courseId: p && p.courseId }, function (answer) {
-        void runtime.lastError;   // no Canvas page script to answer, or the extension was reloaded
-        onRoster(Object.assign({ ok: false, error: 'Canvas didn’t give the class list' }, answer || {}, { id: id }));
+        // No Canvas page script to answer (a Canvas page without the class
+        // list, a page that isn't Canvas), or the extension was reloaded:
+        // viewers only, as when no answer came in time - not an error.
+        var lost = runtime.lastError;
+        if (lost || !answer || typeof answer !== 'object' || answer.error === 'refused') {
+          if (state.rosters[key] && state.rosters[key].id === id) {
+            state.rosters[key] = { status: 'none' };
+            render();
+          }
+          return;
+        }
+        onRoster(Object.assign({ ok: false, error: 'Canvas didn’t give the class list' }, answer, { id: id }));
       });
     } catch (e) { state.rosters[key] = { status: 'none' }; return; }
     setTimeout(function () {

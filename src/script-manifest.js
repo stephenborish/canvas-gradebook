@@ -83,9 +83,6 @@ export const BOOT_JS = [
   'src/gradebook/content.js'
 ];
 
-// The whole set a grading page gets, in order.
-export const CONTENT_JS = COMMON_JS.concat(GRADING_JS, BOOT_JS);
-
 /* The course page itself gets the groups above (and CONTENT_CSS, plus
  * GRADING_CSS on grading pages); every frame inside
  * it gets only this (see frame-gate.js), which adds what a comment editor's
