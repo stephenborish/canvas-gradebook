@@ -1838,18 +1838,35 @@
 
   /* Jobs a closed tab left behind on this Canvas: finish them. Resolves the
    * results ([{job, result}]) of the ones it could finish or give up on. */
-  /* Claim a job for this tab; resolves true only when the claim held. */
+  /* Claim a job for this tab. Resolves the job as stored now, claimed by
+   * this tab, or null when it is gone or another tab holds it. */
   P.claimJob = function (job) {
     var self = this;
     var key = JOB_PREFIX + job.id;
-    return this.saveJob(job).then(function () {
-      return self.sleep(CLAIM_SETTLE_MS);
-    }).then(function () {
-      return self.store.get(key);
-    }).then(function (got) {
-      var stored = got && got[key];
-      return !!(stored && stored.claimedBy === self.tabId);
-    }, function () { return false; });
+    // Read the job as it is now, not as listed when resumePending began: by
+    // the time a later job in the list comes up (after earlier ones were
+    // finished here), another tab may have claimed it, or finished and
+    // removed it - writing it again would run it twice, or bring it back.
+    return this.store.get(key).then(function (got) {
+      var current = got && got[key];
+      if (!current) return false;
+      var now = self.now();
+      if (current.claimedBy !== self.tabId && current.claimedAt && now - current.claimedAt < CLAIM_MS) return null;
+      // The stored record, not the listed copy: tasks another tab already
+      // finished stay finished. Only the teacher's "Finish now" is carried.
+      if (job.confirmedAt && !current.confirmedAt) current.confirmedAt = job.confirmedAt;
+      return current;
+    }).then(function (current) {
+      if (!current) return null;
+      return self.saveJob(current).then(function () {
+        return self.sleep(CLAIM_SETTLE_MS);
+      }).then(function () {
+        return self.store.get(key);
+      }).then(function (got) {
+        var stored = got && got[key];
+        return stored && stored.claimedBy === self.tabId ? current : null;
+      });
+    }).catch(function () { return null; });
   };
 
   /* Finish the jobs a closed tab left (see the file's header). Resolves
@@ -1883,7 +1900,11 @@
       // Too old to finish without asking: offered (and remembered as
       // offered, so a teacher who leaves it is not asked on every page).
       var run = live.filter(function (j) {
-        if (confirmed[String(j.id)] || now - (j.startedAt || 0) <= ASK_AFTER_MS) return true;
+        // Once the teacher has said "Finish now", that holds on later pages
+        // too (claimJob saves it with the job), e.g. while Canvas is still
+        // copying.
+        if (confirmed[String(j.id)]) j.confirmedAt = j.confirmedAt || now;
+        if (j.confirmedAt || now - (j.startedAt || 0) <= ASK_AFTER_MS) return true;
         if (!(j.offeredAt && now - j.offeredAt < OFFER_AGAIN_MS)) {
           waiting.push({ id: String(j.id), startedAt: j.startedAt || 0, tasks: jobTasks(j).slice() });
           j.offeredAt = now;
@@ -1896,15 +1917,16 @@
       return Promise.all(stale.map(function (j) { return self.dropJob(j); })).then(function () {
         return run.reduce(function (p, job) {
           return p.then(function (done) {
-            return self.claimJob(job).then(function (held) {
-              // Another tab claimed it in the same moment: it finishes it.
-              if (!held) return done;
+            return self.claimJob(job).then(function (claimed) {
+              // Gone, or another tab holds it: that tab finishes it.
+              if (!claimed) return done;
               // A job from an earlier version holds one task; a batch, several.
-              var list = jobTasks(job).slice();
+              var list = jobTasks(claimed).slice();
+              if (!list.length) return done;
               var results = list.map(function () { return freshResult(); });
-              return self.continueJob(job, results, function () {}, { maxWaitMs: 1 }).then(function (rs) {
+              return self.continueJob(claimed, results, function () {}, { maxWaitMs: 1 }).then(function (rs) {
                 rs.forEach(function (r, i) {
-                  if (!r.pending) done.push({ job: { id: job.id, task: list[i] }, result: r });
+                  if (!r.pending) done.push({ job: { id: claimed.id, task: list[i] }, result: r });
                 });
                 return done;
               });

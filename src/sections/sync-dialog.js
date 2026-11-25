@@ -1743,7 +1743,11 @@
     var self = this;
     return this.copier.resumePending().then(function (done) {
       self.reportResumed(done);
-      if (done.waiting && done.waiting.length) self.offerWaiting(done.waiting);
+      if (!(done.waiting && done.waiting.length)) return;
+      // One toast at a time: a "Finished copying" message is left up for a
+      // moment before the offer replaces it.
+      if (done.length) setTimeout(function () { self.offerWaiting(done.waiting); }, 3500);
+      else self.offerWaiting(done.waiting);
     });
   };
 
