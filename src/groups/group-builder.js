@@ -43,6 +43,14 @@
     this.state = null;
     this._tries = 0;
     this._observer = null;
+    // Making or copying a group set is many Canvas writes in a row.
+    var self = this;
+    if (CGP.busy) {
+      CGP.busy.register(function () {
+        var st = self.state;
+        return st && ((st.form && st.form.busy) || (st.board && st.board.saving) || (st.copy && st.copy.running)) ? 'saving groups' : '';
+      });
+    }
   }
 
   var P = GroupBuilder.prototype;

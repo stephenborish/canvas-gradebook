@@ -22,7 +22,9 @@ not instantly: Chrome checks the Web Store for each extension about every five h
 extension ask for a check only that often (a check in between answers "throttled" without asking).
 The extension spends that one check as early as Chrome allows: it tries when Chrome starts, when you
 open a Canvas course and every 20 minutes (a throttled try costs nothing), and installs a new
-version the moment it has downloaded. Canvas tabs that were already open keep running the old
+version as soon as it is safe once downloaded: not while the settings page is open (installing
+closes it), and not while an open Canvas tab is saving to Canvas, copying to other classes, making
+groups or holding a SpeedGrader comment being typed. It tries again every minute until then. Canvas tabs that were already open keep running the old
 version until they are reloaded, so they show a small **Gradebook+ was updated · Reload** notice.
 **Options → Diagnostics → Updates** shows the installed version, when Chrome last checked and when
 it will next, and has **Check for updates now**. To update immediately, open `chrome://extensions`,

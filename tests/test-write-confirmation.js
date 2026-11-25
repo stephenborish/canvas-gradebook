@@ -53,6 +53,12 @@ function fakeCanvas(routes) {
       calls.push({ method: init.method, path: u.pathname, body: init.body });
       const r = route.answers.length > 1 ? route.answers.shift() : route.answers[0];
       if (r === 'network' || r === undefined) return Promise.reject(new TypeError('Failed to fetch'));
+      // A stalled connection: no answer ever, until the client gives up.
+      if (r === 'hang') {
+        return new Promise((resolve, reject) => {
+          if (init.signal) init.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+        });
+      }
       return Promise.resolve(answer(r, url));
     }
   });
@@ -161,6 +167,24 @@ suite('grade writes: a lost answer is settled by reading, never by resending', (
     a.eq(said.filter((s) => s.level === 'error').length, 0, 'nothing alarming said');
     a.eq(h.m.cell('50', '10').grade, '9');
     a.eq(h.m.cell('50', '10').override, '9', 'shown over Canvas’s stale grid cell');
+  });
+
+  test('a save that stalls times out, and is settled by reading - one PUT, never a hung cell', async () => {
+    const before = CGP.CanvasApi.WRITE_TIMEOUT_MS;
+    CGP.CanvasApi.WRITE_TIMEOUT_MS = 30;
+    try {
+      const h = setup({
+        ['PUT ' + SUB_PATH]: ['hang'],
+        ['GET ' + SUB_PATH]: [sub({ grade: '9', score: 9, entered_grade: '9' })]
+      });
+      const res = await h.write('9');
+      a.eq(h.count('PUT', PUT), 1, 'a timed-out write is never sent again');
+      a.eq(res.ok, 1, 'Canvas shows it saved');
+      a.eq(res.confirmedOnReread, 1);
+      a.eq(h.m.cell('50', '10').pending, false, 'the cell is not left saving');
+    } finally {
+      CGP.CanvasApi.WRITE_TIMEOUT_MS = before;
+    }
   });
 
   test('a 502 after Canvas applied the grade: same, one PUT', async () => {

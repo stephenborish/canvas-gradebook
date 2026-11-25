@@ -437,6 +437,63 @@
       return false;
     }
 
+    /* Canvas's grid, waited for. Most gradebooks draw it within seconds;
+     * a very large one, or a tab opened in the background, can take longer,
+     * so the wait goes on after GRID_WAIT_MS - but the teacher is told then,
+     * instead of finding the gradebook tools silently missing. Not finding
+     * the grid at all usually means Canvas changed its gradebook page, and
+     * a teacher who hears nothing cannot report it. Canvas's Individual
+     * View has no grid by design and is left alone. Resolves true once the
+     * grid is there, false if it never comes. */
+    var GRID_WAIT_MS = 30000;
+    var GRID_LATE_WAIT_MS = 5 * 60 * 1000;
+    function looksLikeIndividualView() {
+      // The view switcher's button names the current view; its menu items
+      // are only drawn while the menu is open, so they never match here.
+      if (document.querySelector('#individual-gradebook, .individual-gradebook, [data-testid="individual-gradebook"]')) return true;
+      var buttons = document.querySelectorAll('button, [role="button"]');
+      for (var i = 0; i < buttons.length && i < 400; i++) {
+        if (/^\s*individual view\b/i.test(buttons[i].textContent || '')) return true;
+      }
+      return false;
+    }
+    var gridWarned = false;
+    function warnGridMissing() {
+      if (adapter.isReady() || looksLikeIndividualView()) return;
+      gridWarned = true;
+      CGP.diag.error('boot.gridNotFound');
+      CGP.ui.error('Gradebook+ couldn’t find Canvas’s gradebook grid on this page, so its gradebook tools are ' +
+        'off here for now. If the grid is showing, reload the page. If this keeps happening, Canvas may have ' +
+        'changed its gradebook and Gradebook+ needs an update.', {
+        action: { label: 'Reload', run: function () { location.reload(); } }
+      });
+    }
+    function waitForGrid() {
+      var ready = function () { return adapter.isReady(); };
+      return waitFor(ready, GRID_WAIT_MS).then(function (found) {
+        if (found) return true;
+        // A background tab may simply not have drawn it yet: say so only
+        // once the teacher is looking (and a moment after, for the tab to
+        // draw), if the grid still is not there.
+        var onVisible = function () {
+          if (document.visibilityState === 'hidden') return;
+          document.removeEventListener('visibilitychange', onVisible);
+          setTimeout(warnGridMissing, 5000);
+        };
+        if (document.visibilityState === 'hidden') document.addEventListener('visibilitychange', onVisible);
+        else warnGridMissing();
+        return waitFor(ready, GRID_LATE_WAIT_MS).then(function (late) {
+          document.removeEventListener('visibilitychange', onVisible);
+          if (late) {
+            CGP.diag.log('boot.gridLate');
+            if (gridWarned) CGP.ui.toast('Canvas’s grid is up now: Gradebook+ is on.');
+          }
+          else CGP.diag.error('boot.gridNeverFound');
+          return late;
+        });
+      });
+    }
+
     var gridObserver = null;
     var gridObserverRoot = null;
     function observeGrid() {
@@ -469,11 +526,8 @@
       return observer;
     }
 
-    return waitFor(function () { return adapter.isReady(); }, 30000).then(function (ready) {
-      if (!ready) {
-        CGP.diag.error('boot.gridNotFound');
-        return;
-      }
+    return waitForGrid().then(function (ready) {
+      if (!ready) return;
       indicators.start();
       follower.start();
       selection.start();
@@ -753,6 +807,11 @@
       // teacher's own snippets in these frames, not the built-in defaults.
       return CGP.settings.load().then(function () { return null; }, function () { return null; });
     }
+
+    // Answers "is this tab busy?" before an update is applied (self-update.js).
+    try {
+      if (CGP.busy && typeof chrome !== 'undefined' && chrome.runtime) CGP.busy.listen(chrome.runtime);
+    } catch (e) { /* extension context gone */ }
 
     return CGP.settings.load().then(function () {
       var path = location.pathname;

@@ -15,7 +15,8 @@ function fakeChrome(opts) {
   const o = Object.assign({ origins: ['*://*.instructure.com/*'] }, opts);
   const local = {};
   const calls = { reload: 0, check: 0, injected: [], alarms: [] };
-  let alarm = o.existingAlarm || null;
+  const alarmsByName = {};
+  if (o.existingAlarm) alarmsByName[o.existingAlarm.name] = o.existingAlarm;
   const store = (bag) => ({
     get: async (k) => (k in bag ? { [k]: bag[k] } : {}),
     set: async (obj) => { Object.assign(bag, obj); }
@@ -25,7 +26,16 @@ function fakeChrome(opts) {
     permissions: { getAll: async () => ({ origins: o.origins }) },
     tabs: {
       onUpdated: { addListener() {} },
-      query: async (q) => { calls.query = q; return o.tabs || []; }
+      query: async (q) => { calls.query = q; return o.tabs || []; },
+      // "Are you busy?" (CGP.busy): o.busy maps a tab id to its answer;
+      // 'silent' never answers, 'none' has no listener.
+      sendMessage: (tabId, msg, opt) => {
+        calls.asked = (calls.asked || []).concat([{ tabId, msg, opt }]);
+        const ans = (o.busy || {})[tabId];
+        if (ans === 'silent') return new Promise(() => {});
+        if (ans === 'none') return Promise.reject(new Error('Receiving end does not exist.'));
+        return Promise.resolve(ans || { busy: false, reason: '' });
+      }
     },
     scripting: {
       executeScript: async (inj) => {
@@ -34,12 +44,14 @@ function fakeChrome(opts) {
       }
     },
     alarms: {
-      get: async () => alarm,
-      create: (name, info) => { alarm = { name, info }; calls.alarms.push(name); },
+      get: async (name) => alarmsByName[name] || undefined,
+      create: (name, info) => { alarmsByName[name] = { name, info }; calls.alarms.push(name); },
+      clear: async (name) => { calls.cleared = (calls.cleared || []).concat([name]); delete alarmsByName[name]; return true; },
       onAlarm: { addListener(fn) { calls.onAlarm = fn; } }
     },
     runtime: {
       reload: () => { calls.reload++; },
+      getContexts: o.noContexts ? undefined : async () => o.pages || [],
       getManifest: () => ({ version: o.version || '1.31.0' }),
       requestUpdateCheck: async () => { calls.check++; return o.answer || { status: 'no_update' }; },
       onUpdateAvailable: { addListener() {} },
@@ -56,6 +68,65 @@ suite('self-update', (test) => {
     await createSelfUpdater(f.chrome).onUpdateAvailable({ version: '1.17.0' });
     a.eq(f.calls.reload, 1);
     a.eq(f.local['cgp.update'].foundVersion, '1.17.0', 'recorded before the restart');
+  });
+
+  test('an update waits while a Canvas tab is busy, then applies on the next minute alarm', async () => {
+    const { createSelfUpdater, APPLY_ALARM, BUSY_MESSAGE } = await import(MODULE);
+    const f = fakeChrome({ version: '1.36.0', tabs: [{ id: 1 }, { id: 2 }], busy: { 2: { busy: true, reason: 'copying to your other classes' } } });
+    const u = createSelfUpdater(f.chrome, () => 5e12);
+    u.start();
+    const r = await u.onUpdateAvailable({ version: '1.37.0' });
+    a.eq(r.applied, false);
+    a.eq(f.calls.reload, 0, 'not reloaded under a running copy');
+    a.ok(f.calls.alarms.includes(APPLY_ALARM), 'retried every minute');
+    a.eq(f.calls.asked[0].msg.type, BUSY_MESSAGE);
+    a.eq(f.calls.asked[0].opt.frameId, 0, 'top frame only');
+    const st = f.local['cgp.update'];
+    a.eq(st.pendingVersion, '1.37.0');
+    a.ok(/copying to your other classes/.test(st.deferredReason), 'the reason is recorded for the settings page');
+    // The copy finishes; the alarm fires.
+    f.chrome.tabs.sendMessage = async () => ({ busy: false, reason: '' });
+    await f.calls.onAlarm({ name: APPLY_ALARM });
+    await new Promise((r2) => setTimeout(r2, 0));
+    a.eq(f.calls.reload, 1);
+    a.ok((f.calls.cleared || []).includes(APPLY_ALARM), 'the retry alarm is cleared');
+  });
+
+  test('an update never closes an open settings page', async () => {
+    const { createSelfUpdater } = await import(MODULE);
+    const f = fakeChrome({ pages: [{ contextType: 'TAB', documentUrl: 'chrome-extension://x/src/options/options.html' }] });
+    const r = await createSelfUpdater(f.chrome).onUpdateAvailable({ version: '1.37.0' });
+    a.eq(r.applied, false);
+    a.eq(f.calls.reload, 0);
+    a.ok(/settings page/.test(f.local['cgp.update'].deferredReason));
+  });
+
+  test('tabs that do not answer, or have no listener, do not hold an update back', async () => {
+    const { createSelfUpdater } = await import(MODULE);
+    const f = fakeChrome({ tabs: [{ id: 1 }, { id: 2 }], busy: { 1: 'silent', 2: 'none' } });
+    const r = await createSelfUpdater(f.chrome).onUpdateAvailable({ version: '1.37.0' });
+    a.eq(r.applied, true);
+    a.eq(f.calls.reload, 1);
+  });
+
+  test('a waiting update that is already installed (Chrome restarted) is forgotten', async () => {
+    const { createSelfUpdater, APPLY_ALARM } = await import(MODULE);
+    const f = fakeChrome({ version: '1.37.0' });
+    f.local['cgp.update'] = { pendingVersion: '1.37.0' };
+    const r = await createSelfUpdater(f.chrome).applyWhenSafe();
+    a.eq(r.applied, false);
+    a.eq(f.calls.reload, 0);
+    a.eq(f.local['cgp.update'].pendingVersion, null);
+    a.ok((f.calls.cleared || []).includes(APPLY_ALARM));
+  });
+
+  test('after an update, the waiting record is cleared', async () => {
+    const { createSelfUpdater } = await import(MODULE);
+    const f = fakeChrome({ version: '1.37.0' });
+    f.local['cgp.update'] = { pendingVersion: '1.37.0', deferredReason: 'a Canvas tab is busy' };
+    await createSelfUpdater(f.chrome).afterUpdate({ reason: 'update', previousVersion: '1.36.0' });
+    a.eq(f.local['cgp.update'].pendingVersion, null);
+    a.eq(f.local['cgp.update'].deferredReason, null);
   });
 
   test('self-hosted Canvas domains count as Canvas pages', async () => {

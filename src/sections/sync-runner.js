@@ -70,6 +70,12 @@
     this.tabId = Math.random().toString(36).slice(2);
     // Jobs this tab is finishing right now: resumePending leaves them alone.
     this.active = {};
+    // A job records each step in chrome.storage.local: an update is not
+    // applied (the extension not reloaded) while one is running here.
+    var self = this;
+    if (CGP.busy && !opts.store) {
+      CGP.busy.register(function () { return Object.keys(self.active).length ? 'copying to your other classes' : ''; });
+    }
   }
 
   var P = SectionCopier.prototype;

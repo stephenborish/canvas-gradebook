@@ -2036,6 +2036,16 @@
     el.textContent = ver;
   }
 
+  /* Leaving with unsaved edits asks first (closing the tab, or an update
+   * being applied - though self-update.js waits while this page is open). */
+  window.addEventListener('beforeunload', function (e) {
+    var unsaved = false;
+    try { unsaved = !!saver.inflight || isDirty(); } catch (err) { unsaved = false; }
+    if (!unsaved) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+
   initTabs();
   initSnippetsUI();
   initScheduleUI();
