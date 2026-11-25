@@ -298,9 +298,9 @@ suite('Tutorials: each part on its own', (test) => {
 
   test('only the small record module loads on every course page; the tour itself is injected on demand', () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
-    const js = manifest.content_scripts.find((c) => (c.js || []).includes('src/gradebook/content.js')).js;
+    const js = require('./page-scripts').pageScripts().all;
     const list = fs.readFileSync(path.join(ROOT, 'src/script-manifest.js'), 'utf8');
-    a.ok(js.includes('src/tour/tour-state.js'));
+    a.ok(require('./page-scripts').pageScripts().lists.common.includes('src/tour/tour-state.js'), 'in the group every course page loads');
     a.ok(list.includes("'src/tour/tour-state.js'"));
     TourState.FILES.forEach((f) => {
       a.not(js.includes(f), f + ' is not a static content script');

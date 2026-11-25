@@ -72,6 +72,35 @@
         "src/core/util.js",
         "src/core/canvas-api.js",
         "src/core/settings-mirror.js",
+        "src/core/course-calendar.js",
+        "src/core/section-sync.js",
+        "src/core/group-builder.js",
+        "src/core/hidden-gems.js",
+        "src/core/hidden-gems-ui.js",
+        "src/core/ui.js",
+        "src/gradebook/course-switcher.js",
+        "src/gradebook/student-search.js",
+        "src/studio/canvas-relay.js",
+        "src/assignments/course-schedule.js",
+        "src/sections/sync-runner.js",
+        "src/sections/sync-dialog.js",
+        "src/sections/sync-board.js",
+        "src/sections/inline-copy.js",
+        "src/sections/link-copy.js",
+        "src/groups/group-builder.js",
+        "src/tour/tour-state.js"
+      ],
+      "css": [
+        "src/styles/gradebook.css",
+        "src/styles/hidden-gems.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.instructure.com/courses/*/gradebook*"
+      ],
+      "js": [
         "src/core/grade-ops.js",
         "src/core/post-ops.js",
         "src/core/clipboard-matrix.js",
@@ -83,12 +112,6 @@
         "src/core/studio-class.js",
         "src/core/roster-format.js",
         "src/core/snippets.js",
-        "src/core/course-calendar.js",
-        "src/core/section-sync.js",
-        "src/core/group-builder.js",
-        "src/core/hidden-gems.js",
-        "src/core/hidden-gems-ui.js",
-        "src/core/ui.js",
         "src/core/model.js",
         "src/gradebook/dom-adapter.js",
         "src/gradebook/cell-registry.js",
@@ -110,28 +133,23 @@
         "src/gradebook/roster-export.js",
         "src/gradebook/comment-popover.js",
         "src/gradebook/bulk-comment.js",
-        "src/gradebook/course-switcher.js",
-        "src/gradebook/student-search.js",
         "src/gradebook/course-menu.js",
         "src/gradebook/tray-layout.js",
-        "src/studio/canvas-relay.js",
-        "src/assignments/course-schedule.js",
-        "src/sections/sync-runner.js",
-        "src/sections/sync-dialog.js",
-        "src/sections/sync-board.js",
-        "src/sections/inline-copy.js",
-        "src/sections/link-copy.js",
-        "src/groups/group-builder.js",
         "src/speedgrader/comment-layout.js",
         "src/speedgrader/sidebar-layout.js",
-        "src/speedgrader/content.js",
-        "src/tour/tour-state.js",
-        "src/gradebook/content.js"
+        "src/speedgrader/content.js"
       ],
       "css": [
-        "src/styles/gradebook.css",
-        "src/styles/speedgrader.css",
-        "src/styles/hidden-gems.css"
+        "src/styles/speedgrader.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.instructure.com/courses/*"
+      ],
+      "js": [
+        "src/gradebook/content.js"
       ],
       "run_at": "document_idle"
     },

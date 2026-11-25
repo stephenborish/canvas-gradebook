@@ -1167,11 +1167,13 @@ Student names, grades and comment text are never written to the log — only cou
 ## How it is put together
 
 ```
-manifest.json                     MV3 manifest; the ordered content-script entry (course page only)
+manifest.json                     MV3 manifest; the page's content scripts in three ordered entries
 src/background.js                 service worker: defaults, options, custom-domain registration
 src/settings-times.js             service worker: this computer's Chrome sync check-in
 src/calendar-sync.js              service worker: fetches the class-schedule calendar, keeps its classes
-src/script-manifest.js            the ordered file list (mirror of the manifest entry)
+src/script-manifest.js            the ordered file lists (mirror of the manifest entries): every
+                                  course page / the gradebook and SpeedGrader only / the boot
+src/studio-roster.js              service worker: passes Studio's class-list request to the Canvas page
 src/frame-gate.js                 the one script frames get; adds snippets to comment-editor frames
 src/self-update.js                service worker: update checks, Reload notice on tabs already open
 

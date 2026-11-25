@@ -1,7 +1,8 @@
 /* Canvas Gradebook+ - what a frame inside a course page gets.
  *
- * The full set of content scripts (about 1.6 MB of script and 200 KB of
- * styles) runs in the course page itself only. It used to run in every
+ * The page's content scripts (about 0.7 MB of script on a course page,
+ * 1.7 MB on the gradebook and SpeedGrader - see script-manifest.js - and
+ * 240 KB of styles) run in the course page itself only. It used to run in every
  * frame of every course page as well - each rich-text editor's blank frame,
  * SpeedGrader's submission preview, every same-site frame - where all of it
  * was read and compiled again, only for the page boot to return at once

@@ -797,6 +797,13 @@
     }
   }
 
+  function gradingScriptsLoaded() {
+    return !!(CGP.GradebookModel && CGP.startSpeedGrader && CGP.GradeWriter);
+  }
+  function whenGradingScriptsLoaded() {
+    return waitFor(gradingScriptsLoaded, 5000);
+  }
+
   function boot() {
     // Only the top-level window should initialize the Gradebook, CourseSwitcher,
     // or CourseMenuController. This script is no longer injected into frames
@@ -829,6 +836,16 @@
         }
       }
 
+      // The grading scripts are their own content-script group (grading
+      // pages only, injected before this one - see script-manifest.js).
+      // Should they ever arrive after this boot, it waits for them.
+      if ((isSpeedGrader || (isGradebook && courseId)) && !gradingScriptsLoaded()) {
+        return whenGradingScriptsLoaded().then(function (loaded) {
+          if (!loaded) { CGP.diag.error('boot.gradingScriptsMissing'); return null; }
+          if (isSpeedGrader) { CGP.startSpeedGrader(courseId); return null; }
+          return startGradebook(courseId);
+        });
+      }
       if (isSpeedGrader) {
         if (CGP.startSpeedGrader) CGP.startSpeedGrader(courseId);
         return null;

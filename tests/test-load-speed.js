@@ -237,10 +237,12 @@ suite('load speed: frames inside a course page', (test) => {
   });
 
   test('the full set runs in the page only; frames get the gate, in both lists', () => {
-    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
-    const main = manifest.content_scripts.find((cs) => (cs.js || []).indexOf('src/gradebook/content.js') >= 0);
-    a.ok(!main.all_frames, 'the full set is not injected into frames');
-    a.ok(!main.match_about_blank);
+    const { manifest, entries, all } = require('./page-scripts').pageScripts();
+    ['common', 'grading', 'boot'].forEach((k) => {
+      a.ok(!entries[k].all_frames, k + ': not injected into frames');
+      a.ok(!entries[k].match_about_blank, k);
+    });
+    const main = { js: all, matches: entries.boot.matches };
     const gate = manifest.content_scripts.find((cs) => (cs.js || []).indexOf('src/frame-gate.js') >= 0);
     a.ok(gate && gate.all_frames && gate.match_about_blank, 'the gate reaches every frame, blank ones too');
     a.deep(gate.matches, main.matches);
@@ -259,7 +261,10 @@ suite('load speed: frames inside a course page', (test) => {
     const bg = fs.readFileSync(path.join(ROOT, 'src/background.js'), 'utf8');
     a.ok(bg.includes("import './frame-gate.js'"), 'background shares the gate’s file list');
     a.ok(/msg\.type === FrameGate\.MESSAGE[\s\S]*executeScript[\s\S]*files: FrameGate\.FILES/.test(bg), 'background injects on request');
-    a.ok(/id: DYNAMIC_ID,[\s\S]*?allFrames: false/.test(bg), 'self-hosted Canvas: the full set in the page only');
+    a.ok(/const page = \{[^}]*allFrames: false/.test(bg), 'self-hosted Canvas: the page scripts in the page only');
+    ['DYNAMIC_ID', 'DYNAMIC_GRADING_ID', 'DYNAMIC_BOOT_ID'].forEach((id) => {
+      a.ok(new RegExp('Object\\.assign\\(\\{ id: ' + id + ',[^\\n]*\\}, page\\)').test(bg), id + ' uses the page-only options');
+    });
     a.ok(/id: DYNAMIC_FRAME_ID,[\s\S]*?js: FRAME_JS,[\s\S]*?allFrames: true/.test(bg), 'self-hosted Canvas: the gate in frames');
   });
 

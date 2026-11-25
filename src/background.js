@@ -12,7 +12,7 @@
  * whether it is snowing or raining around Philadelphia (weather.js). It
  * never reads or stores Canvas data itself. */
 
-import { CONTENT_JS, CONTENT_CSS, FRAME_JS, isCustomCanvasOrigin } from './script-manifest.js';
+import { COMMON_JS, GRADING_JS, BOOT_JS, CONTENT_CSS, GRADING_CSS, FRAME_JS, isCustomCanvasOrigin } from './script-manifest.js';
 import { createSelfUpdater, CHECK_NOW } from './self-update.js';
 import { createLiveRelay, LIVE_SYNC_TYPE } from './live-relay.js';
 import { createSettingsTimes } from './settings-times.js';
@@ -32,6 +32,8 @@ const DYNAMIC_ID = 'cgp-custom-domains';
 const DYNAMIC_BRIDGE_ID = 'cgp-custom-domains-bridge';
 const DYNAMIC_WATCH_ID = 'cgp-custom-domains-write-watch';
 const DYNAMIC_FRAME_ID = 'cgp-custom-domains-frames';
+const DYNAMIC_GRADING_ID = 'cgp-custom-domains-grading';
+const DYNAMIC_BOOT_ID = 'cgp-custom-domains-boot';
 
 function toCoursesPattern(origin) {
   // "*://canvas.school.edu/*" -> "*://canvas.school.edu/courses/*"
@@ -72,7 +74,7 @@ async function syncDynamicScripts() {
     const perms = await chrome.permissions.getAll();
     // A class-schedule calendar's site is granted too, and gets no scripts.
     const origins = (perms.origins || []).filter(isCustomCanvasOrigin);
-    const ids = [DYNAMIC_ID, DYNAMIC_BRIDGE_ID, DYNAMIC_WATCH_ID, DYNAMIC_FRAME_ID];
+    const ids = [DYNAMIC_ID, DYNAMIC_GRADING_ID, DYNAMIC_BOOT_ID, DYNAMIC_BRIDGE_ID, DYNAMIC_WATCH_ID, DYNAMIC_FRAME_ID];
     const existing = await chrome.scripting.getRegisteredContentScripts({ ids }).catch(() => []);
     if (existing.length) await chrome.scripting.unregisterContentScripts({ ids: existing.map((s) => s.id) });
     if (!origins.length) return { registered: 0 };
@@ -96,16 +98,15 @@ async function syncDynamicScripts() {
       allFrames: false,
       persistAcrossSessions: true
     }, []);
-    await registerWithFallback({
-      id: DYNAMIC_ID,
-      matches: origins.map(toCoursesPattern),
-      js: CONTENT_JS,
-      css: CONTENT_CSS,
-      runAt: 'document_idle',
-      // The page only; frames get the gate below.
-      allFrames: false,
-      persistAcrossSessions: true
-    }, []);
+    // The page's scripts in three groups, as in manifest.json (see
+    // script-manifest.js): every course page, grading pages only, then the
+    // boot. One call, so they are registered - and injected - in order.
+    const page = { runAt: 'document_idle', allFrames: false, persistAcrossSessions: true };   // frames get the gate below
+    await chrome.scripting.registerContentScripts([
+      Object.assign({ id: DYNAMIC_ID, matches: origins.map(toCoursesPattern), js: COMMON_JS, css: CONTENT_CSS }, page),
+      Object.assign({ id: DYNAMIC_GRADING_ID, matches: origins.map(toGradebookPattern), js: GRADING_JS, css: GRADING_CSS }, page),
+      Object.assign({ id: DYNAMIC_BOOT_ID, matches: origins.map(toCoursesPattern), js: BOOT_JS }, page)
+    ]);
     await registerWithFallback({
       id: DYNAMIC_FRAME_ID,
       matches: origins.map(toCoursesPattern),
