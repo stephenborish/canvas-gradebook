@@ -543,7 +543,7 @@ suite('copy to sections: the copy runner', (test) => {
   test('"Finish now" while Canvas is still copying holds on later pages, without asking again', async () => {
     const { api, store, key, puts } = await leftJob(2 * 3600 * 1000);
     const id = store.mem[key].id;
-    api.db.pollsUntilDone = 1000;   // still copying
+    api.db.pollsUntilDone = Infinity;   // still copying (polls are instant here: no finite count is safe)
     const first = await copier(api, store).resumePending();
     a.eq(first.waiting.length, 1, 'offered');
     const confirmed = await copier(api, store).resumePending({ confirm: [id] });
