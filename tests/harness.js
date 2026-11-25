@@ -36,6 +36,8 @@ const CORE_FILES = [
   'src/core/model.js'
 ];
 
+const SLEEP_SCALE = 20;
+
 function loadCore() {
   // No chrome, no document: the modules must tolerate both being absent.
   for (const rel of CORE_FILES) {
@@ -47,6 +49,14 @@ function loadCore() {
   if (!globalThis.CGP || !globalThis.CGP.gradeOps) {
     throw new Error('core modules did not register on globalThis.CGP');
   }
+  // Waits the code sleeps through on purpose - retry backoff, polling a
+  // posting job, a re-read that lags - run SLEEP_SCALE times faster here.
+  // They are still real, ordered timers (never skipped), so a case still
+  // sees a retry come after its backoff; it just does not take seconds.
+  // A case that needs real time sets CGP.util.sleep itself.
+  const realSleep = globalThis.CGP.util.sleep;
+  globalThis.CGP.util.sleep = (ms) => realSleep(Math.ceil((Number(ms) || 0) / SLEEP_SCALE));
+  globalThis.CGP.util.realSleep = realSleep;
   return globalThis.CGP;
 }
 
@@ -105,6 +115,8 @@ function suite(name, fn) {
  * Without that, an async case's assertions land after run() has already
  * printed its result, and a failure surfaces as an unhandled rejection with
  * a green summary above it. */
+const SLOW_MS = 300;
+
 async function run() {
   let pass = 0;
   const failures = [];
@@ -116,10 +128,14 @@ async function run() {
     s.fn(test);
     console.log(`\n${s.name}`);
     for (const c of cases) {
+      const t0 = Date.now();
       try {
         await c.fn();
         pass++;
-        console.log(`  ok   ${c.name}`);
+        // Slow cases say so: the suite should stay quick enough to run on
+        // every push (.github/workflows/tests.yml).
+        const took = Date.now() - t0;
+        console.log(`  ok   ${c.name}${took >= SLOW_MS ? `  (${took}ms)` : ''}`);
       } catch (err) {
         failures.push({ suite: s.name, name: c.name, err });
         console.log(`  FAIL ${c.name}`);

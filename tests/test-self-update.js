@@ -104,7 +104,7 @@ suite('self-update', (test) => {
   test('tabs that do not answer, or have no listener, do not hold an update back', async () => {
     const { createSelfUpdater } = await import(MODULE);
     const f = fakeChrome({ tabs: [{ id: 1 }, { id: 2 }], busy: { 1: 'silent', 2: 'none' } });
-    const r = await createSelfUpdater(f.chrome).onUpdateAvailable({ version: '1.37.0' });
+    const r = await createSelfUpdater(f.chrome, undefined, { busyAnswerMs: 30 }).onUpdateAvailable({ version: '1.37.0' });
     a.eq(r.applied, true);
     a.eq(f.calls.reload, 1);
   });

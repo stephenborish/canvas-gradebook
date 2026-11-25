@@ -102,7 +102,8 @@ export function showUpdatedNotice(version) {
   } catch (e) { /* never break the page */ }
 }
 
-export function createSelfUpdater(chrome, now = () => Date.now()) {
+export function createSelfUpdater(chrome, now = () => Date.now(), opts = {}) {
+  const busyAnswerMs = opts.busyAnswerMs || BUSY_ANSWER_MS;
   async function readState() {
     try {
       const got = await chrome.storage.local.get(UPDATE_STATE_KEY);
@@ -172,7 +173,7 @@ export function createSelfUpdater(chrome, now = () => Date.now()) {
     return new Promise((resolve) => {
       let done = false;
       const finish = (v) => { if (!done) { done = true; clearTimeout(timer); resolve(v); } };
-      const timer = setTimeout(() => finish(null), BUSY_ANSWER_MS);
+      const timer = setTimeout(() => finish(null), busyAnswerMs);
       try {
         Promise.resolve(chrome.tabs.sendMessage(tabId, { type: BUSY_MESSAGE }, { frameId: 0 }))
           .then((a) => finish(a || null), () => finish(null));

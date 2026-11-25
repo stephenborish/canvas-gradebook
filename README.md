@@ -44,9 +44,8 @@ a checkout of this repo.
 
 ### Making the Web Store upload (one button)
 
-1. Raise the version, the same in all three places: `"version"` in `manifest.json`,
-   `CGP.VERSION` in `src/core/util.js`, and `extensionVersion` in `src/options/options.html`.
-   Merge it to `main`.
+1. Raise `"version"` in `manifest.json`, its only source (the scripts and the options page read
+   it from the manifest). Merge it to `main`.
 2. On GitHub: **Actions** → **Package for Chrome Web Store** → **Run workflow** → **Run workflow**.
    Tick *Also save as a GitHub Release* to keep the zip permanently under **Releases**.
 3. When the run is green (about two minutes), open it and download

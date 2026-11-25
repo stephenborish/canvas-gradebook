@@ -13,7 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 const { suite, assert: a } = require('./harness');
-const { loadGradebookDom, domshim } = require('./domharness');
+const { loadGradebookDom, domshim, followUpRan, FOLLOW_UP_WAIT_MS } = require('./domharness');
 
 suite('SelectionController & multi-cell bulk comment', (test) => {
   test('SelectionController shows and updates floating bar when multi-selected, hides and removes on clear', () => {
@@ -533,7 +533,7 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     a.eq(calls.updates.length, 0, 'no direct PUT from focusout');
     a.not(calls.marked, 'no local-write mark for a write we did not make');
     a.not(calls.patched, 'no optimistic grade patch over Canvas\u2019s own cell');
-    await new Promise((r) => setTimeout(r, 1300));
+    await followUpRan();
     a.eq(calls.refreshes, 1, 'the submission was re-read after Canvas\u2019s own save');
     a.eq(calls.applied.length, 1, 'one guarded write through GradeWriter');
     a.eq(calls.applied[0][0].parsed.kind, CGP.gradeOps.KIND.LIFT_MISSING, 'the status is handed back - never set to Late');
@@ -548,7 +548,7 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     const calls = focusOutHarness(CGP, { assignmentId: '101', userId: '201', grade: '3', enteredScore: 3, score: 3,
       gradedAt: 't1', latePolicyStatus: 'missing', missing: true, excused: false },
     { modelExtras: { _writeStartedAt: stamped, key: (x, y) => x + ':' + y, localWriteSince: () => false } });
-    await new Promise((r) => setTimeout(r, 1300));
+    await followUpRan();
     a.eq(calls.applied.length, 1);
     a.eq(calls.applied[0][0].parsed.kind, CGP.gradeOps.KIND.LIFT_MISSING);
   });
@@ -562,7 +562,7 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     await new Promise((r) => setTimeout(r, 20));
     a.eq(calls.refreshes, 1);
     a.eq(calls.applied.length, 1);
-    await new Promise((r) => setTimeout(r, 1300));
+    await followUpRan();
     a.eq(calls.applied.length, 1, 'the timer no longer fires as well');
   });
 
@@ -583,7 +583,7 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     const calls = focusOutHarness(CGP, { assignmentId: '101', userId: '201', grade: '0', enteredScore: 0, score: 0,
       gradedAt: 't0', latePolicyStatus: 'missing', missing: true, excused: false }, { skipFocusIn: true });
     calls.kb.followNativeSave('101', '201', { grade: '0', enteredScore: 0, gradedAt: 't0', latePolicyStatus: null, at: Date.now() });
-    await new Promise((r) => setTimeout(r, 1400));
+    await new Promise((r) => setTimeout(r, FOLLOW_UP_WAIT_MS + 10));
     a.eq(calls.refreshes, 1, 'one read, no retries');
     a.eq(calls.applied.length, 0);
   });
@@ -594,7 +594,7 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
       gradedAt: 't1', latePolicyStatus: null, missing: false, late: false, excused: false },
     { before: { assignmentId: '101', userId: '201', score: null, grade: null, enteredScore: null, gradedAt: null,
       missing: true, latePolicyStatus: null } });
-    await new Promise((r) => setTimeout(r, 1300));
+    await followUpRan();
     a.eq(calls.refreshes, 1);
     a.eq(calls.applied.length, 0, 'no Late, whatever the submission type');
   });
@@ -603,7 +603,7 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     const CGP = loadGradebookDom();
     const calls = focusOutHarness(CGP, { assignmentId: '101', userId: '201', grade: '3', enteredScore: 3, score: 3,
       gradedAt: 't1', latePolicyStatus: 'missing', missing: true, excused: false }, { lift: false });
-    await new Promise((r) => setTimeout(r, 1300));
+    await followUpRan();
     a.eq(calls.applied.length, 0);
   });
 
@@ -612,7 +612,7 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     const calls = focusOutHarness(CGP, { assignmentId: '101', userId: '201', grade: '3', enteredScore: 3, score: 3,
       gradedAt: 't1', latePolicyStatus: 'missing', missing: true, excused: false },
     { modelExtras: { localWriteSince: () => true } });
-    await new Promise((r) => setTimeout(r, 1300));
+    await followUpRan();
     a.eq(calls.applied.length, 0);
   });
 
@@ -620,7 +620,7 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     const CGP = loadGradebookDom();
     const calls = focusOutHarness(CGP, { assignmentId: '101', userId: '201', grade: '0', enteredScore: 0, score: 0,
       gradedAt: 't1', latePolicyStatus: 'missing', missing: true, excused: false }, { typed: '' });
-    await new Promise((r) => setTimeout(r, 1300));
+    await followUpRan();
     a.eq(calls.applied.length, 0);
   });
 
@@ -628,7 +628,7 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     const CGP = loadGradebookDom();
     const calls = focusOutHarness(CGP, { assignmentId: '101', userId: '201', grade: '0', enteredScore: 0,
       gradedAt: 't0', latePolicyStatus: 'missing', missing: true });
-    await new Promise((r) => setTimeout(r, 1300));
+    await followUpRan();
     a.eq(calls.applied.length, 0);
     a.eq(calls.updates.length, 0);
   });
@@ -636,7 +636,7 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
   test('a focusout with no recorded focusin is never treated as an edit', async () => {
     const CGP = loadGradebookDom();
     const calls = focusOutHarness(CGP, null, { skipFocusIn: true });
-    await new Promise((r) => setTimeout(r, 1300));
+    await followUpRan();
     a.eq(calls.refreshes, 0);
     a.eq(calls.updates.length, 0);
   });
@@ -678,22 +678,25 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
     const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'manifest.json'), 'utf8'));
     a.ok(manifest.description.length <= 132, 'description is ' + manifest.description.length + ' characters');
   });
-  test('extension version is bumped to 1.36.0 and displayed directly above Save changes button', () => {
-    const manifestPath = path.resolve(__dirname, '../manifest.json');
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    a.eq(manifest.version, '1.36.0', 'manifest.json version is 1.36.0');
+  test('the version has one source, manifest.json, and is shown directly above Save changes', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../manifest.json'), 'utf8'));
+    a.ok(/^\d+(\.\d+){0,3}$/.test(manifest.version), 'manifest.json has a valid version');
 
-    const CGP = loadGradebookDom();
-    a.eq(CGP.VERSION, '1.36.0', 'CGP.VERSION is 1.36.0');
+    // Read from the manifest wherever there is an extension; '' in a bare vm.
+    const util = fs.readFileSync(path.resolve(__dirname, '../src/core/util.js'), 'utf8');
+    a.ok(/CGP\.VERSION = \(function[\s\S]{0,400}chrome\.runtime\.getManifest\(\)\.version/.test(util), 'CGP.VERSION reads the manifest');
+    a.not(/CGP\.VERSION\s*=\s*'\d/.test(util), 'no version typed into util.js');
+    const vm = require('vm');
+    const ctx = { chrome: { runtime: { getManifest: () => ({ version: manifest.version }) } } };
+    ctx.globalThis = ctx;
+    vm.runInNewContext(util, ctx);
+    a.eq(ctx.CGP.VERSION, manifest.version, 'CGP.VERSION is the manifest\'s version');
 
-    const htmlPath = path.resolve(__dirname, '../src/options/options.html');
-    const content = fs.readFileSync(htmlPath, 'utf8');
-
-    // Verify sidebar__version appears before button#save in options.html
+    const content = fs.readFileSync(path.resolve(__dirname, '../src/options/options.html'), 'utf8');
     const versionIdx = content.indexOf('class="sidebar__version"');
     const saveBtnIdx = content.indexOf('id="save"');
     a.ok(versionIdx > 0, 'sidebar__version element exists');
     a.ok(saveBtnIdx > versionIdx, 'sidebar__version appears directly above save button');
-    a.ok(content.includes('id="extensionVersion">1.36.0<'), 'displays 1.36.0 version number');
+    a.ok(content.includes('<span id="extensionVersion"></span>'), 'filled in from the manifest, not typed in');
   });
 });

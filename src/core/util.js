@@ -7,7 +7,17 @@
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.util) return;
 
-  CGP.VERSION = '1.36.0';
+  /* The version comes from manifest.json, its one source: nothing else
+   * needs changing when it is bumped. '' where there is no extension
+   * (unit tests); reading the manifest is synchronous and safe at load. */
+  CGP.VERSION = (function () {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest) {
+        return String(chrome.runtime.getManifest().version || '');
+      }
+    } catch (e) { /* extension context gone */ }
+    return '';
+  })();
 
   /* Default letter-grade scale: the lowest rounded percentage (to 0.1) that
    * earns each letter. The last entry is the floor and always has min 0. */

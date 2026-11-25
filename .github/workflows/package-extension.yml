@@ -77,5 +77,5 @@ jobs:
               echo "   (It is also saved under **Releases** as v$VERSION.)"
             fi
             echo "2. Upload that zip as it is (don't unzip it): [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole) → Canvas Gradebook+ → **Package** → **Upload new package**."
-            echo "3. The Web Store only accepts a version higher than the one it has. If it refuses, raise the version in manifest.json, src/core/util.js and src/options/options.html (all three the same) and run this again."
+            echo "3. The Web Store only accepts a version higher than the one it has. If it refuses, raise the version in manifest.json (its only source) and run this again."
           } >> "$GITHUB_STEP_SUMMARY"
