@@ -1114,7 +1114,7 @@ check. The Canvas copy keeps working regardless.
 
 ## Diagnostics
 
-Turn on **Record diagnostics** in the options page, open a gradebook, then come back and press
+Turn on **Keep a diagnostics log** in the options page, open a gradebook, then come back and press
 **Refresh**. You get course id, student and assignment counts, submissions loaded, instructor
 comments found, mapped and unmapped cells, failed requests, and a recent event log.
 
@@ -1283,7 +1283,7 @@ Canvas's actual gradebook markup can vary between instances, and this extension 
 unit tested without access to a live one. If comment bubbles don't appear, column widths don't
 change, or a keyboard shortcut seems to do nothing:
 
-1. Open the extension's options page and turn on **Record diagnostics**.
+1. Open the extension's options page and turn on **Keep a diagnostics log**.
 2. Reload the gradebook, let it fully load, and try the thing that isn't working.
 3. Come back to options → **Diagnostics** → **Refresh**.
 4. Look at `columnsUnresolved` and `rowsUnresolved` under counters/facts. Zero means the

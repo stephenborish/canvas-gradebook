@@ -73,13 +73,13 @@
         <section class="panel" id="panel-layout" role="tabpanel" aria-labelledby="tab-layout" data-panel="layout">
           <header class="panel__head">
             <h1>Layout &amp; Display</h1>
-            <p>Column sizing, spacing and how the grid reads at a glance. Defaults already fit normal grading.</p>
+            <p>How the gradebook looks. The defaults work well for most teachers.</p>
           </header>
 
           <h2 class="panel__group">Column sizing</h2>
           <div class="setting setting--field">
             <label class="setting__label" for="assignmentColumnWidth">Assignment column width
-              <span class="hint">100&ndash;120 px fits two lines of title and keeps many assignments on screen.</span>
+              <span class="hint">100&ndash;120 px shows two lines of each title and fits many assignments on screen.</span>
             </label>
             <div class="setting__control">
               <input id="assignmentColumnWidth" type="number" min="70" max="260" step="5">
@@ -94,7 +94,7 @@
             </div>
           </div>
           <div class="setting">
-            <label class="setting__label" for="narrowColumns">Narrow the assignment columns and wrap titles onto two lines</label>
+            <label class="setting__label" for="narrowColumns">Make assignment columns narrower, with titles on two lines</label>
             <input id="narrowColumns" type="checkbox" class="switch">
           </div>
           <div class="setting">
@@ -104,24 +104,24 @@
 
           <h2 class="panel__group">Appearance</h2>
           <div class="setting">
-            <label class="setting__label" for="rowHoverHighlight">Highlight the whole row under the pointer, across the frozen columns too</label>
+            <label class="setting__label" for="rowHoverHighlight">Highlight the whole row your mouse is over</label>
             <input id="rowHoverHighlight" type="checkbox" class="switch">
           </div>
           <div class="setting">
             <label class="setting__label" for="frozenTotal">Keep Total frozen beside the student name
-              <span class="hint">Moves Canvas's own Total column right after the student name, wherever it was, and keeps it there (the same as choosing "Move to Front" in its menu), so the Total shown is always Canvas's. Turn this off to put Total back at the far right.</span>
+              <span class="hint">Moves Canvas's Total column next to the student names and keeps it there. Turn this off to put Total back at the far right.</span>
             </label>
             <input id="frozenTotal" type="checkbox" class="switch">
           </div>
           <div class="setting">
             <label class="setting__label" for="roundTotals">Round the Total to one decimal place
-              <span class="hint">Shows 86.02% as 86.0% (rounded half up, the same rounding the letter grade uses). Hover a Total for its letter grade and points.</span>
+              <span class="hint">86.02% shows as 86.0%. Point to a Total to see its letter grade and points.</span>
             </label>
             <input id="roundTotals" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="totalHighlights">Flag a Total at or below a threshold
-              <span class="hint">A student's Total at or below a percentage you set gets an icon beside it (alert, warning, eye, megaphone, flag or arrow) in the color you pick, compared on the rounded Total you see. The icons are drawn by the extension, not emoji, so they look the same in every browser. When a Total falls under more than one threshold, the lowest one wins: by default 70% or below gets a red alert and 70.1&ndash;77% a yellow flag. Pick any color with <strong>Custom color&hellip;</strong>.</span>
+            <label class="setting__label" for="totalHighlights">Flag low Totals
+              <span class="hint">When a student's Total is at or below a percentage you choose, an icon appears beside it in the color you pick. By default, 70% or below gets a red alert and 70.1&ndash;77% gets a yellow flag. If a Total matches more than one row, the lowest one wins.</span>
             </label>
             <input id="totalHighlights" type="checkbox" class="switch">
           </div>
@@ -133,8 +133,8 @@
             </div>
           </div>
           <div class="setting setting--field">
-            <label class="setting__label" for="gradingScale">Letter-grade scale for the Total hover and Analyze Scores
-              <span class="hint">One per line as "Letter: minimum %", highest first. The percentage is rounded to the nearest 0.1 first; the last line is the floor (0).</span>
+            <label class="setting__label" for="gradingScale">Letter-grade scale
+              <span class="hint">Used when you point to a Total and in Analyze Scores. One grade per line, highest first, like "B+: 86.5". The last line is the lowest grade (0).</span>
             </label>
             <div class="setting__control">
               <textarea id="gradingScale" rows="11" spellcheck="false"></textarea>
@@ -142,24 +142,23 @@
             </div>
           </div>
           <div class="setting">
-            <label class="setting__label" for="showAssignmentDueDate">Show each assignment's due date under its points in the header</label>
+            <label class="setting__label" for="showAssignmentDueDate">Show each assignment's due date in its column header</label>
             <input id="showAssignmentDueDate" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="hideCanvasUtilityControls">Collapse Canvas's search, filter, Import/Export/Sync and View Options strip
-              <span class="hint">Alt+Shift+H brings it back for the current page. While it is collapsed, a gear beside
-                Find student opens Canvas's gradebook settings (Arrange By, late and posting policies).</span>
+            <label class="setting__label" for="hideCanvasUtilityControls">Hide Canvas's toolbar above the gradebook (search, filters, Import, Export)
+              <span class="hint">Press Alt+Shift+H (Option+Shift+H on a Mac) to show it again on that page. While it is
+                hidden, the gear next to Find student opens Canvas's gradebook settings.</span>
             </label>
             <input id="hideCanvasUtilityControls" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="maximizeHeight">Give the grid the full height of the window</label>
+            <label class="setting__label" for="maximizeHeight">Make the gradebook fill the whole window</label>
             <input id="maximizeHeight" type="checkbox" class="switch">
           </div>
           <div class="setting setting--field">
             <label class="setting__label" for="gradeFontSize">Grade text size
-              <span class="hint">Applies to the numbers in grade and Total cells &ndash; including the one you are
-                typing, which is drawn exactly as it will look once it is committed.</span>
+              <span class="hint">The size of the numbers in grade and Total cells, including the one you are typing.</span>
             </label>
             <div class="setting__control">
               <input id="gradeFontSize" type="number" min="11" max="24" step="1">
@@ -168,26 +167,24 @@
           </div>
           <div class="setting">
             <label class="setting__label" for="hideTestStudent">Hide the Test Student row
-              <span class="hint">Removes Canvas's Student View row from the grid so a grade is never typed into it by
-                accident.</span>
+              <span class="hint">Hides Canvas's Student View row so you never type a grade into it by mistake.</span>
             </label>
             <input id="hideTestStudent" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="hiddenGems">Weather and seasons on Canvas, now and then
-              <span class="hint">On a day it really snows around Philadelphia and Malvern, snow falls over your Canvas
-                page for a few seconds. On a few other days: autumn leaves in the fall, Christmas lights in December. Any
-                key, click or scroll ends it at once, and it respects Reduced Motion.</span>
+            <label class="setting__label" for="hiddenGems">Seasonal touches on Canvas, now and then
+              <span class="hint">On days it really snows near Philadelphia and Malvern, snow falls on your Canvas page for a
+                few seconds. Some days bring autumn leaves in the fall or lights in December. Any key, click or scroll
+                stops it right away.</span>
             </label>
             <input id="hiddenGems" type="checkbox" class="switch">
           </div>
 
           <h2 class="panel__group">Canvas View Options</h2>
-          <p class="hint">Canvas's own Gradebook Settings &rarr; View Options, set here once instead of per course.
-            Turn on the switch below to have this extension apply them to Canvas automatically; leave it off and
-            these are just remembered preferences.</p>
+          <p class="hint">Canvas's own View Options, chosen once here instead of in every course. They only change
+            Canvas when the first switch is on.</p>
           <div class="setting">
-            <label class="setting__label" for="syncViewOptionsToCanvas">Apply these to Canvas's own settings automatically</label>
+            <label class="setting__label" for="syncViewOptionsToCanvas">Apply these in every course automatically</label>
             <input id="syncViewOptionsToCanvas" type="checkbox" class="switch">
           </div>
           <div class="setting">
@@ -216,8 +213,7 @@
           </div>
           <div class="setting">
             <label class="setting__label" for="gbEnableStatusIcons">Enable Gradebook Status Icons
-              <span class="hint">Leave this off if you'd rather rely on this extension's own Missing/Late badges,
-                which are drawn to fully replace Canvas's own icon so the two never overlap.</span>
+              <span class="hint">Leave this off to use Gradebook+'s Missing and Late badges instead of Canvas's icons.</span>
             </label>
             <input id="gbEnableStatusIcons" type="checkbox" class="switch">
           </div>
@@ -226,7 +222,7 @@
         <section class="panel" id="panel-indicators" role="tabpanel" aria-labelledby="tab-indicators" data-panel="indicators" hidden>
           <header class="panel__head">
             <h1>Cell Indicators</h1>
-            <p>What the small marks in each grade cell mean, and which ones show up.</p>
+            <p>Choose which small marks appear in grade cells.</p>
           </header>
 
           <div class="setting">
@@ -238,27 +234,24 @@
             <input id="showCommentCount" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="commentPopover">Clicking the bubble opens the comment thread in place</label>
+            <label class="setting__label" for="commentPopover">Click the bubble to read and reply to comments without leaving the gradebook</label>
             <input id="commentPopover" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="resubmissionIndicator">Mark cells where the student resubmitted after grading</label>
+            <label class="setting__label" for="resubmissionIndicator">Mark work the student resubmitted after you graded it</label>
             <input id="resubmissionIndicator" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="hiddenGradeIndicator">Mark cells whose grade the student cannot see yet
-              <span class="hint">A coloured bar down the left edge of every cell holding a grade that is still hidden
-                &mdash; exactly the grades that column&rsquo;s Post button would post. Canvas keeps a submission
-                posted once it has been posted, so editing an already-posted score reaches the student immediately
-                and needs no second post: no bar means the student can see it.</span>
+            <label class="setting__label" for="hiddenGradeIndicator">Mark grades students can't see yet
+              <span class="hint">A colored bar on the left of a cell means the grade is still hidden. No bar means the
+                student can see it. Once a grade is posted, any change you make shows to the student right away.</span>
             </label>
             <input id="hiddenGradeIndicator" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="submissionIndicator">Show whether the student has handed anything in, and link it to SpeedGrader
-              <span class="hint">A solid badge means submitted, a hollow one means nothing yet; the glyph shows what
-                kind of submission the assignment asks for. Clicking it opens that student's submission in SpeedGrader
-                in a new tab. Only shown for assignments Canvas accepts online submissions for.</span>
+            <label class="setting__label" for="submissionIndicator">Show whether the student has turned in work
+              <span class="hint">A filled badge means turned in; an outlined one means nothing yet. Click it to open the
+                work in SpeedGrader. Shown only for assignments with online submission.</span>
             </label>
             <input id="submissionIndicator" type="checkbox" class="switch">
           </div>
@@ -267,48 +260,44 @@
         <section class="panel" id="panel-grading" role="tabpanel" aria-labelledby="tab-grading" data-panel="grading" hidden>
           <header class="panel__head">
             <h1>Grading Input</h1>
-            <p>Keyboard shortcuts, navigation and how quickly grades and statuses are applied.</p>
+            <p>Keyboard shortcuts and faster ways to enter grades.</p>
           </header>
 
           <h2 class="panel__group">Status shortcuts</h2>
           <div class="setting">
-            <label class="setting__label" for="enableM"><kbd>M</kbd> marks the submission Missing instantly, and again removes it
-              <span class="hint">Written to Canvas itself, so it shows as Missing everywhere &ndash; the Grade Detail
-                Tray, SpeedGrader and the student&rsquo;s own grades page. A toggle: press <kbd>M</kbd> again to remove it.
-                Removed from work the student did hand in, Canvas marks it Late (with your late deduction) if it came in late.</span>
+            <label class="setting__label" for="enableM"><kbd>M</kbd> marks work Missing; press it again to undo
+              <span class="hint">Saved in Canvas, so students see it too. If you undo Missing on work that came in after
+                the due date, Canvas marks it Late and applies your late penalty.</span>
             </label>
             <input id="enableM" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="enableL"><kbd>L</kbd> marks the submission Late, and un-marks one that is already Late
-              <span class="hint">A toggle: pressing <kbd>L</kbd> again removes the status. It never changes the grade you
-                entered, and entering a grade never touches Late either. Like Canvas&rsquo;s own tray, it records how late
-                the work really was, so your course&rsquo;s late deduction applies.</span>
+            <label class="setting__label" for="enableL"><kbd>L</kbd> marks work Late; press it again to undo
+              <span class="hint">Your course's late penalty applies, based on how late the work really was. The grade you
+                typed stays the same.</span>
             </label>
             <input id="enableL" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="enableE"><kbd>E</kbd> marks the submission Excused</label>
+            <label class="setting__label" for="enableE"><kbd>E</kbd> marks work Excused</label>
             <input id="enableE" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="liftMissingOnGrade">A real grade typed over a Missing you applied takes Missing off
-              <span class="hint">Only a Missing somebody set (with <kbd>M</kbd>, the Grade Detail Tray or SpeedGrader), and only
-                for a grade above zero, typed in the grid or saved in the Grade Detail Tray. The status goes back to Canvas, which marks the work Late only if the student
-                really submitted it after the due date &ndash; never on-paper or no-submission work. Canvas&rsquo;s own
-                automatic Missing needs nothing: Canvas removes it the moment any grade is saved. Off: grades never
-                touch a status, exactly as in Canvas itself. No status is ever added by entering a grade.</span>
+            <label class="setting__label" for="liftMissingOnGrade">Entering a grade removes a Missing mark
+              <span class="hint">When you type a grade above zero over work marked Missing, the Missing mark comes off.
+                Canvas then marks it Late only if the student really turned it in late. Turn this off to leave statuses
+                alone when you grade.</span>
             </label>
             <input id="liftMissingOnGrade" type="checkbox" class="switch">
           </div>
 
           <h2 class="panel__group">Navigation &amp; entry</h2>
           <div class="setting">
-            <label class="setting__label" for="spreadsheetNavigation">Enter / Shift+Enter / Tab / Shift+Tab / arrows move between grade cells</label>
+            <label class="setting__label" for="spreadsheetNavigation">Move between grade cells with Enter, Tab and the arrow keys, like a spreadsheet</label>
             <input id="spreadsheetNavigation" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="multiCellSelection">Cmd/Ctrl-click and Shift-click select several cells</label>
+            <label class="setting__label" for="multiCellSelection">Select several cells with Cmd/Ctrl-click or Shift-click</label>
             <input id="multiCellSelection" type="checkbox" class="switch">
           </div>
           <div class="setting">
@@ -316,8 +305,8 @@
             <input id="bulkPaste" type="checkbox" class="switch">
           </div>
           <div class="setting setting--field">
-            <label class="setting__label" for="bulkConfirmThreshold">Confirm bulk operations above
-              <span class="hint">Smaller everyday operations apply immediately with no dialog.</span>
+            <label class="setting__label" for="bulkConfirmThreshold">Ask before changing more than
+              <span class="hint">Smaller changes are saved right away without asking.</span>
             </label>
             <div class="setting__control">
               <input id="bulkConfirmThreshold" type="number" min="1" max="2000" step="1">
@@ -325,49 +314,39 @@
             </div>
           </div>
 
-          <h2 class="panel__group">Keeping every view in step</h2>
+          <h2 class="panel__group">Keeping tabs up to date</h2>
           <div class="setting">
-            <label class="setting__label" for="liveSync">Keep the gradebook and SpeedGrader up to date with each other, without reloading
-              <span class="hint">A grade, status or comment saved in SpeedGrader shows up in a gradebook already open in
-                another tab &ndash; in the cell, the Total and the Grade Detail Tray &ndash; and one saved in the gradebook
-                reaches an open SpeedGrader. The gradebook also re-reads the columns on screen when you come back to its
-                tab. Only ids pass between your tabs; nothing is stored.</span>
+            <label class="setting__label" for="liveSync">Keep the gradebook and SpeedGrader in sync without reloading
+              <span class="hint">A grade or comment you save in SpeedGrader appears in the gradebook open in another tab,
+                and the other way around.</span>
             </label>
             <input id="liveSync" type="checkbox" class="switch">
           </div>
 
           <h2 class="panel__group">Opening a submission</h2>
           <div class="setting">
-            <label class="setting__label" for="hideGradeCellArrow">Hide Canvas's arrow button inside the grade cell
-              <span class="hint">The arrow's action stays available through double-click, below. Ignored unless
-                double-click is also on, so the tray can never become unreachable.</span>
+            <label class="setting__label" for="hideGradeCellArrow">Hide Canvas's arrow button in grade cells
+              <span class="hint">Works only when double-click (below) is on, so you can always open the cell.</span>
             </label>
             <input id="hideGradeCellArrow" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="doubleClickOpensTray">Double-clicking a grade cell opens it, the same as Canvas's own arrow button
-              <span class="hint">Whatever that arrow opens on your Canvas &ndash; the Grade Detail Tray, or
-                SpeedGrader &ndash; is what a double-click opens.</span>
+            <label class="setting__label" for="doubleClickOpensTray">Double-click a grade cell to open it, like Canvas's arrow button
+              <span class="hint">Opens the same thing the arrow does: the Grade Detail Tray or SpeedGrader.</span>
             </label>
             <input id="doubleClickOpensTray" type="checkbox" class="switch">
           </div>
           <div class="setting">
             <label class="setting__label" for="trayLayout">Tidy the Grade Detail Tray
-              <span class="hint">Status becomes one row of buttons in your status colours: click one to set it,
-                click it again to clear it, and Late gets a &ldquo;Late by &minus; 2 + days&rdquo; box that takes
-                decimals too (1.5 or 1,5). The comment
-                box's Cancel / Submit move above the editor so a new comment is easy to spot, the editor grows as
-                you type (down to the bottom of the window, then it scrolls), and its
-                formatting buttons are always showing (the &ldquo;more&rdquo; button holds the Paragraph menu).
-                SpeedGrader and Submit for Student sit side by side.</span>
+              <span class="hint">Statuses become one row of buttons: click to set, click again to clear. Late gets a box
+                for how many days late. The comment box grows as you type, with all its formatting buttons showing.</span>
             </label>
             <input id="trayLayout" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="postGradesButton">Show a Post button on columns holding grades students cannot see yet
-              <span class="hint">Appears only while a column actually has hidden grades, labelled with how many.
-                Pressing it posts that column's graded submissions to the students immediately, the same as
-                Canvas's own &ldquo;Post grades&rdquo; action.</span>
+            <label class="setting__label" for="postGradesButton">Show a Post button on columns with hidden grades
+              <span class="hint">The button shows how many grades are hidden. Click it to post them to students, just like
+                Canvas's &ldquo;Post grades&rdquo;.</span>
             </label>
             <input id="postGradesButton" type="checkbox" class="switch">
           </div>
@@ -376,34 +355,34 @@
         <section class="panel" id="panel-snippets" role="tabpanel" aria-labelledby="tab-snippets" data-panel="snippets" hidden>
           <header class="panel__head">
             <h1>Comment Snippets</h1>
-            <p>Speed up grading with instant feedback templates in SpeedGrader and the Gradebook.</p>
+            <p>Type a short code to insert a comment you use often.</p>
           </header>
 
           <div class="snippets-instructions">
-            <h2 class="snippets-instructions__title">How Comment Snippets Work</h2>
+            <h2 class="snippets-instructions__title">How it works</h2>
             <ol class="snippets-steps">
               <li>
-                <strong>Choose a shortcut name:</strong> Enter a short keyword (e.g. <code>late</code>, <code>PDF</code>, <code>evidence</code>). The <code>/</code> is optional &ndash; both work automatically.
+                <strong>Pick a short name:</strong> for example <code>late</code> or <code>evidence</code> (no <code>/</code> needed).
               </li>
               <li>
-                <strong>Write your feedback template:</strong> Enter your comment message below. Supports multiple sentences and paragraphs (up to 2,000 characters).
+                <strong>Write the comment:</strong> it can be several sentences or paragraphs (up to 2,000 characters).
               </li>
               <li>
-                <strong>Save your changes:</strong> Click the blue <strong>Save changes</strong> button at the bottom-left to save your snippets to Chrome.
+                <strong>Save:</strong> click <strong>Save changes</strong> at the bottom left.
               </li>
               <li>
-                <strong>Expand while grading:</strong> In SpeedGrader, Grade Detail Tray, or Gradebook comments, type <code>/</code> followed by your shortcut (e.g. <kbd>/late</kbd>), then press the <kbd>Tab</kbd> key.
+                <strong>Use it:</strong> in any comment box in SpeedGrader or the gradebook, type <kbd>/late</kbd> and press <kbd>Tab</kbd>.
               </li>
             </ol>
             <div class="snippets-tip">
               <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M10 2a6 6 0 0 0-6 6c0 2.2 1.2 4.1 3 5.2V15a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1.8c1.8-1.1 3-3 3-5.2a6 6 0 0 0-6-6zm-1 15h2v1H9v-1z"/></svg>
-              <span><strong>Helpful Tip:</strong> Pressing <kbd>Tab</kbd> instantly replaces your shortcut with the full comment in place. Shortcuts are case-insensitive (<kbd>/hw</kbd> and <kbd>/HW</kbd> both match). Focus never leaves your comment box.</span>
+              <span><strong>Tip:</strong> capital letters don't matter: <kbd>/hw</kbd> and <kbd>/HW</kbd> both work.</span>
             </div>
           </div>
 
           <div class="snippets-manager">
             <div class="snippets-manager__bar">
-              <h2 class="panel__group" style="margin: 0; border: none; padding: 0;">Your Snippet Templates</h2>
+              <h2 class="panel__group" style="margin: 0; border: none; padding: 0;">Your snippets</h2>
               <div class="snippets-manager__actions">
                 <span id="snippets-counter" class="snippets-counter">0 of 100 snippets</span>
                 <button type="button" id="btn-add-snippet" class="btn btn--secondary btn--sm">+ Add Snippet</button>
@@ -416,7 +395,7 @@
 
             <!-- Fallback / Bulk Textarea (hidden by default) -->
             <div id="snippets-raw-container" class="snippets-raw-container" style="display: none;">
-              <p class="hint">In bulk mode, separate each snippet with a blank line. The first line is the trigger name, and following lines are the comment text. Up to 100 snippets of 2,000 characters each; anything beyond that is pointed out on Save rather than saved.</p>
+              <p class="hint">Leave a blank line between snippets. The first line is the name; the lines below it are the comment. Up to 100 snippets of 2,000 characters each.</p>
               <textarea id="snippets" rows="12" spellcheck="false"></textarea>
             </div>
           </div>
@@ -424,13 +403,13 @@
           <div class="snippets-test-box">
             <h2 class="snippets-test-box__title">
               <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M11.3 1.8 4.3 11.6h4.9L8 18.2l7.7-9.7h-5z"/></svg>
-              Interactive Test Playground
+              Try it out
             </h2>
-            <p id="snippet-test-instructions" class="hint">Click any active shortcut chip below to test instantly, or type it in the box and press <kbd>Tab</kbd>:</p>
+            <p id="snippet-test-instructions" class="hint">Click a snippet below, or type its name in the box and press <kbd>Tab</kbd>:</p>
             <div id="snippet-test-chips" class="snippet-test-chips"></div>
             <div class="snippets-test-input-wrap">
-              <textarea id="snippet-test-input" rows="3" placeholder="Type a shortcut and press Tab here to test..."></textarea>
-              <div id="snippet-test-feedback" class="snippet-test-feedback">Ready &ndash; click a shortcut chip above or type /shortcut and press Tab.</div>
+              <textarea id="snippet-test-input" rows="3" placeholder="Type /name and press Tab"></textarea>
+              <div id="snippet-test-feedback" class="snippet-test-feedback">Ready. Click a snippet above, or type /name and press Tab.</div>
             </div>
           </div>
         </section>
@@ -438,13 +417,12 @@
         <section class="panel" id="panel-schedule" role="tabpanel" aria-labelledby="tab-schedule" data-panel="schedule" hidden>
           <header class="panel__head">
             <h1>Class Schedule</h1>
-            <p>Connect the calendar that holds your classes, and every Canvas due date box shows that day&rsquo;s schedule &ndash; click a class to use its time.</p>
+            <p>Connect your class calendar, and Canvas's date boxes show that day's classes. Click a class to use its time.</p>
           </header>
 
           <div class="setting">
-            <label class="setting__label" for="courseScheduleEnabled">Show my class schedule beside Canvas&rsquo;s date and time boxes
-              <span class="hint">On the Due, Available from and Until boxes when you create or edit an assignment (and the
-                same Assign To card on quizzes, discussions and modules), and in &ldquo;Also copy to your linked courses&rdquo;.</span>
+            <label class="setting__label" for="courseScheduleEnabled">Show my classes next to Canvas&rsquo;s date and time boxes
+              <span class="hint">On the Due, Available from and Until boxes of assignments, quizzes, discussions and modules.</span>
             </label>
             <input id="courseScheduleEnabled" type="checkbox" class="switch">
           </div>
@@ -453,8 +431,8 @@
             <div class="schedule-find" id="calendarFind">
               <div class="schedule-find__text">
                 <strong>Connect it for me</strong>
-                <span class="hint">Gradebook+ opens your Google Calendar, finds your <strong>All Classes</strong> calendar, reads its
-                  link and connects it. Chrome asks once &ndash; choose <strong>Allow</strong>. Sign in to your school Google account first.</span>
+                <span class="hint">Gradebook+ opens Google Calendar and connects your <strong>All Classes</strong> calendar. Sign in to
+                  your school Google account first. When Chrome asks, click <strong>Allow</strong>.</span>
               </div>
               <button type="button" id="findCalendar" class="btn btn--primary">Find my calendar link</button>
             </div>
@@ -462,14 +440,13 @@
             <div id="calendarStatus" class="schedule-status" role="status" aria-live="polite"></div>
 
             <p class="schedule-skip"><button type="button" id="skipCalendar" class="btn btn--quiet btn--sm">Not now &ndash; I&rsquo;ll type dates myself</button>
-              <span class="hint" id="skipCalendarNote" hidden>Canvas&rsquo;s date boxes stay as they are. Connect a calendar here any time.</span></p>
+              <span class="hint" id="skipCalendarNote" hidden>Canvas&rsquo;s date boxes stay as they are. You can connect a calendar any time.</span></p>
 
             <details class="schedule-manual" id="calendarManual">
               <summary id="calendarManualSummary">I already have a calendar link</summary>
               <div class="schedule-manual__body">
                 <label class="setting__label schedule-connect__paste" for="courseCalendarUrl"><strong>Paste your calendar link</strong>
-                  <span class="hint"><strong>Connect calendar</strong> checks the link, asks Chrome once to let Gradebook+ read that
-                    calendar, and saves it &ndash; nothing else on this page is saved with it.</span>
+                  <span class="hint">Click <strong>Connect calendar</strong>. Chrome asks once for permission to read it.</span>
                 </label>
                 <div class="schedule-connect__row">
                   <input id="courseCalendarUrl" type="text" inputmode="url" class="schedule-connect__url" spellcheck="false" autocomplete="off"
@@ -483,20 +460,16 @@
                   <div class="schedule-guide__body">
                     <p class="schedule-guide__lead"><strong>Google Calendar &ndash; your &ldquo;All Classes&rdquo; calendar</strong>
                       <button type="button" id="showCalendarLink" class="btn btn--secondary btn--sm">Show me my link in Google Calendar &#8599;</button></p>
-                    <p class="schedule-guide__note">That button opens Google Calendar on your <strong>All Classes</strong> settings, scrolls
-                      to its link and highlights it. To do it by hand:</p>
+                    <p class="schedule-guide__note">That button opens Google Calendar and highlights the link. Or by hand:</p>
                     <ol class="schedule-steps__list">
-                      <li>In Google Calendar, open <strong>Settings</strong> (the gear at the top right, then Settings), or
-                        <a href="https://calendar.google.com/calendar/r/settings" target="_blank" rel="noopener noreferrer">open Google Calendar settings</a>.</li>
+                      <li><a href="https://calendar.google.com/calendar/r/settings" target="_blank" rel="noopener noreferrer">Open Google Calendar settings</a>
+                        (or click the gear at the top right, then <strong>Settings</strong>).</li>
                       <li>On the left, under <em>Settings for other calendars</em>, click <strong>All Classes</strong>.</li>
-                      <li>Under <strong>Calendar settings</strong>, copy the whole link in the <strong>URL</strong> box (it starts with
-                        <code>webcal://</code>) and paste it above as it is.</li>
+                      <li>Copy the whole link in the <strong>URL</strong> box (it starts with <code>webcal://</code>) and paste it above.</li>
                     </ol>
-                    <p class="schedule-guide__note"><strong>Classes in a different calendar?</strong> Select that calendar instead, choose
-                      <strong>Integrate calendar</strong>, and copy its <strong>Secret address in iCal format</strong> (private &ndash; treat it
-                      like a password), or its <strong>Public address in iCal format</strong> if the calendar is already public. A
-                      subscription link from your school (<code>webcal://</code> or <code>.ics</code>), Outlook and Apple calendar links work too.
-                      Don&rsquo;t change a school calendar&rsquo;s sharing settings.</p>
+                    <p class="schedule-guide__note"><strong>Classes in another calendar?</strong> Click that calendar, then
+                      <strong>Integrate calendar</strong>, and copy its <strong>Secret address in iCal format</strong> (keep it private,
+                      like a password). Links from your school, Outlook or Apple Calendar work too.</p>
                   </div>
                 </details>
               </div>
@@ -505,7 +478,7 @@
 
           <div class="setting">
             <label class="setting__label" for="courseScheduleTime">Clicking a class puts in its
-              <span class="hint">The other time is one more click away, on the small button beside each class.</span>
+              <span class="hint">For the other time, use the small button next to each class.</span>
             </label>
             <select id="courseScheduleTime" class="schedule-select">
               <option value="start">start time</option>
@@ -529,17 +502,15 @@
           <div class="snippets-instructions">
             <h2 class="snippets-instructions__title">Then, in Canvas</h2>
             <ol class="snippets-steps">
-              <li><strong>Open a date or time box:</strong> click any Due, Available from or Until box when you create or edit an
-                assignment. That day&rsquo;s classes appear beside it.</li>
-              <li><strong>Click a class:</strong> its start time goes into the time box (the small <strong>End</strong> button uses
-                its end time). Use the arrows to see another day; picking a class there puts that day in the date box too.</li>
+              <li><strong>Click a date or time box:</strong> any Due, Available from or Until box. That day&rsquo;s classes appear
+                next to it.</li>
+              <li><strong>Click a class:</strong> its start time fills the box (the small <strong>End</strong> button uses its end
+                time). Use the arrows to pick a class on another day.</li>
             </ol>
             <div class="snippets-tip">
               <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M10 2a6 6 0 0 0-6 6c0 2.2 1.2 4.1 3 5.2V15a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1.8c1.8-1.1 3-3 3-5.2a6 6 0 0 0-6-6zm-1 15h2v1H9v-1z"/></svg>
-              <span><strong>Good to know:</strong> the calendar is read again every few hours (or with <strong>Refresh</strong> in the
-                schedule panel). Classes named like the Canvas course you are editing are marked <em>This course</em>. The calendar&rsquo;s
-                link travels with your settings through Chrome sync (never into your Canvas account); on another computer, click
-                <strong>Allow calendar access on this computer</strong> here once.</span>
+              <span><strong>Good to know:</strong> the calendar updates every few hours, or click <strong>Refresh</strong> in the
+                schedule panel. On another computer, click <strong>Allow calendar access on this computer</strong> here once.</span>
             </div>
           </div>
         </section>
@@ -547,102 +518,90 @@
         <section class="panel" id="panel-course" role="tabpanel" aria-labelledby="tab-course" data-panel="course" hidden>
           <header class="panel__head">
             <h1>Course &amp; Domains</h1>
-            <p>Moving between courses, finding students, and enabling a self-hosted Canvas.</p>
+            <p>Switching courses, finding students, groups and copying between classes.</p>
           </header>
 
           <div class="setting">
-            <label class="setting__label" for="courseSwitcher">Turn the course name in the Canvas breadcrumb into a gradebook switcher</label>
+            <label class="setting__label" for="courseSwitcher">Add a "Switch course" button to jump to another course's gradebook</label>
             <input id="courseSwitcher" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="studentSearch">Add a "Find student" search to the breadcrumb on every course page, across every course you teach
-              <span class="hint">Type a name, pick the student, and Canvas opens that course's gradebook with their
-                row scrolled to and highlighted. Rosters are read from Canvas only when you open the search and are
-                held in memory for that page only &mdash; never written to the device.</span>
+            <label class="setting__label" for="studentSearch">Add a "Find student" search at the top of every course page
+              <span class="hint">Searches all your courses. Pick a student to open their gradebook with their row
+                highlighted. Class lists are never saved on your computer.</span>
             </label>
             <input id="studentSearch" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="studentInsights">Clicking a student's name opens their overview
-              <span class="hint">Missing and late work, how late and how often, averages by category, score trend
-                against the class median, and Canvas activity (page views, participations, when they work). Read
-                from Canvas when you open it and held in memory for that page only. Cmd/Ctrl-click a name still opens
-                Canvas's grades page.</span>
+            <label class="setting__label" for="studentInsights">Click a student's name to open their overview
+              <span class="hint">Missing and late work, averages by category, how they compare to the class, and their
+                Canvas activity. Cmd/Ctrl-click a name to open Canvas's grades page instead.</span>
             </label>
             <input id="studentInsights" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="groupBuilder">Show "Make groups" beside "+ Group Set" on the People page
-              <span class="hint">Make a whole group set in one step: how many groups (or how many students in each), a
-                name format for the groups that you can save and use again (Group 1, Team A, Hydrogen&hellip;), and how
-                students get in &mdash; sorted at random, placed by you, or signing themselves up. Then move students
-                between groups by dragging, and copy the same groups to your other classes or to another section.</span>
+            <label class="setting__label" for="groupBuilder">Show "Make groups" next to "+ Group Set" on the People page
+              <span class="hint">Make a whole group set in one step: choose how many groups, how to name them, and whether
+                students are shuffled in, placed by you, or sign up. Drag students between groups, and copy the groups to
+                your other classes.</span>
             </label>
             <input id="groupBuilder" type="checkbox" class="switch">
           </div>
           <h2 class="panel__group">Copy to other classes</h2>
           <div class="setting">
-            <label class="setting__label" for="sectionCopy">Show "Copy to other classes" next to Edit on assignments, quizzes, discussions, announcements and pages, on the Modules page and in the course home sidebar
-              <span class="hint">For a course you teach to several classes as separate Canvas courses (not cross-listed):
-                copy assignments, quizzes, discussions, announcements, pages and modules to the other classes in one go,
-                with each class's own dates and an optional note for one class. It uses Canvas's own course copy,
-                so rubrics, linked files and quiz questions come along, and copying again updates the copy instead of
-                adding a second one. It never copies students, grades or submissions. The first time, it asks which
-                classes are the same course.</span>
+            <label class="setting__label" for="sectionCopy">Show "Copy to other classes" buttons
+              <span class="hint">If you teach the same course to several classes (each its own Canvas course), copy
+                assignments, quizzes, discussions, pages and modules to all of them at once, each with its own due dates.
+                Rubrics, files and quiz questions come along. Students and grades are never copied.</span>
             </label>
             <input id="sectionCopy" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="sectionCopyNudge">Show a notice on an item's page when another class's version differs
-              <span class="hint">One line per class whose version is older, newer or different, with a button to make
-                them match (either way), and for a new item that is not in your other classes yet. Nothing changes
-                until you press a button.</span>
+            <label class="setting__label" for="sectionCopyNudge">Tell me when another class's copy is different
+              <span class="hint">On an item's page, a notice shows which classes have a different or missing copy, with a
+                button to make them match. Nothing changes until you click it.</span>
             </label>
             <input id="sectionCopyNudge" type="checkbox" class="switch">
           </div>
           <div class="setting setting--list">
             <div class="setting__label">Classes that share a course
-              <span class="hint">Linked from <strong>Copy to other classes</strong> in Canvas, and changed there. Remove a group here to unlink its classes.</span>
+              <span class="hint">Set up from <strong>Copy to other classes</strong> in Canvas. Remove a group here to unlink its classes.</span>
             </div>
             <div id="sectionGroupsList" class="section-groups"></div>
           </div>
 
           <h2 class="panel__group">SpeedGrader</h2>
           <div class="setting">
-            <label class="setting__label" for="speedgraderDrafts">Protect unsent SpeedGrader comment drafts</label>
+            <label class="setting__label" for="speedgraderDrafts">Keep drafts of unsent SpeedGrader comments</label>
             <input id="speedgraderDrafts" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="speedgraderStickySubmit">Keep the SpeedGrader "Submit Comment" button in view instead of below the comment box</label>
+            <label class="setting__label" for="speedgraderStickySubmit">Keep SpeedGrader's "Submit Comment" button always in view</label>
             <input id="speedgraderStickySubmit" type="checkbox" class="switch">
           </div>
           <div class="setting">
             <label class="setting__label" for="speedgraderTidyComments">Tidy the SpeedGrader sidebar and comment box
-              <span class="hint">The sidebar as three clean cards (Submission, Assessment, Comments), with
-                files as rows and comments as bubbles. The comment box gets the same look as the Grade Detail Tray: every formatting button showing (including
-                images and equations), an editor that grows as you type down to the bottom of the window and then
-                scrolls, with a footer bar joined to it: the attach-a-file, record video / audio and speech
-                buttons on the left and Submit Comment on the right, all on one line.</span>
+              <span class="hint">Groups the sidebar into three cards: Submission, Assessment and Comments. The comment box
+                grows as you type, shows all its formatting buttons, and keeps attach, record and Submit on one line.</span>
             </label>
             <input id="speedgraderTidyComments" type="checkbox" class="switch">
           </div>
           <div class="setting">
             <label class="setting__label" for="annotationDefaultRed">Start Free Draw and Point annotations in red
-              <span class="hint">In the document viewer over a student&rsquo;s file: red is set the moment you pick
-                either tool, before your first mark. Pick another colour yourself and
-                that choice is kept for the rest of the session in that tab.</span>
+              <span class="hint">When you mark up a student&rsquo;s file. If you pick another color, it stays until you
+                close the tab.</span>
             </label>
             <input id="annotationDefaultRed" type="checkbox" class="switch">
           </div>
           <div class="setting">
-            <label class="setting__label" for="prefetchAllAssignments">Warm every assignment column in the background so indicators appear everywhere</label>
+            <label class="setting__label" for="prefetchAllAssignments">Load all assignment columns in the background, so their marks are ready</label>
             <input id="prefetchAllAssignments" type="checkbox" class="switch">
           </div>
 
           <h2 class="panel__group">Self-hosted Canvas</h2>
           <div class="setting setting--field">
             <label class="setting__label" for="customDomain">Domain
-              <span class="hint">Only needed if your Canvas is not on instructure.com.</span>
+              <span class="hint">Only needed if your school's Canvas address doesn't end in instructure.com.</span>
             </label>
             <div class="setting__control setting__control--wide">
               <input id="customDomain" type="text" placeholder="canvas.myschool.edu" autocomplete="off">
@@ -655,27 +614,22 @@
         <section class="panel" id="panel-backup" role="tabpanel" aria-labelledby="tab-backup" data-panel="backup" hidden>
           <header class="panel__head">
             <h1>Sync &amp; Backup</h1>
-            <p>Your settings and snippets follow you to every computer where you use Chrome or Canvas.</p>
+            <p>Your settings and snippets follow you to your other computers.</p>
           </header>
 
           <h2 class="panel__group">Your other computers</h2>
           <div id="syncStatus" class="sync-status" aria-live="polite"><p class="hint">Checking&hellip;</p></div>
           <div class="setting">
-            <label class="setting__label" for="settingsInCanvas">Also keep my settings in my Canvas account
-              <span class="hint">Chrome sync carries settings between computers signed in to the same Google account, but only
-                with Chrome sync on (and a school can turn it off). With this on, every Canvas page also keeps your
-                settings and snippets in step with a copy in your own Canvas account (Canvas's private per-user data), so
-                any computer where you open Canvas gets them, whatever Chrome sync is doing. Changes reach another
-                computer the next time Canvas is opened there.</span>
+            <label class="setting__label" for="settingsInCanvas">Also save my settings in my Canvas account
+              <span class="hint">Chrome sync only works when you're signed in to Chrome with sync turned on. With this on,
+                any computer where you open Canvas gets your settings and snippets, even without Chrome sync.</span>
             </label>
             <input id="settingsInCanvas" type="checkbox" class="switch">
           </div>
 
           <h2 class="panel__group">Backup file</h2>
-          <p class="hint">Carry your settings by hand: download a file here, then use &ldquo;Restore from
-            file&hellip;&rdquo; on the other computer.</p>
-          <p class="hint">The file holds your preferences, layout and snippets only &ndash; never grades, comments or
-            student names.</p>
+          <p class="hint">Download a file of your settings and snippets, then use &ldquo;Restore from file&hellip;&rdquo;
+            on another computer. It never contains grades, comments or student names.</p>
           <div class="action-row">
             <button id="exportSettings" type="button" class="btn btn--primary">Download settings file</button>
             <button id="importSettingsButton" type="button" class="btn">Restore from file&hellip;</button>
@@ -686,7 +640,7 @@
         <section class="panel" id="panel-diagnostics" role="tabpanel" aria-labelledby="tab-diagnostics" data-panel="diagnostics" hidden>
           <header class="panel__head">
             <h1>Diagnostics</h1>
-            <p>Counts and ids only. Student names, grades and comment text are never written to the log.</p>
+            <p>Help for fixing problems. The log never includes student names, grades or comments.</p>
           </header>
           <h2 class="panel__group">Updates</h2>
           <div class="updates">
@@ -694,14 +648,13 @@
             <div class="action-row">
               <button id="checkUpdates" type="button" class="btn btn--secondary">Check for updates now</button>
             </div>
-            <p class="hint updates__hint">Chrome checks for new versions about every five hours, and lets an extension ask
-              only that often. Tabs that were open during an update show a <strong>Reload</strong> notice. To update right
-              away: open <code>chrome://extensions</code>, switch on <strong>Developer mode</strong> (top right) and click
-              <strong>Update</strong>.</p>
+            <p class="hint updates__hint">Chrome checks for updates about every five hours. Tabs open during an update show
+              a <strong>Reload</strong> notice. To update now: open <code>chrome://extensions</code>, turn on
+              <strong>Developer mode</strong> (top right) and click <strong>Update</strong>.</p>
           </div>
           <h2 class="panel__group">Diagnostics log</h2>
           <div class="setting">
-            <label class="setting__label" for="diagnostics">Record diagnostics while the gradebook is open</label>
+            <label class="setting__label" for="diagnostics">Keep a diagnostics log while the gradebook is open</label>
             <input id="diagnostics" type="checkbox" class="switch">
           </div>
           <div class="action-row">
@@ -729,7 +682,7 @@
         <h2 id="tutorialsTitle">Tutorials</h2>
         <button type="submit" class="btn btn--quiet tutorials__x" aria-label="Close">&times;</button>
       </header>
-      <p class="tutorials__lead">Short walkthroughs, one per part of Gradebook+. Watch any of them again here.</p>
+      <p class="tutorials__lead">Short walkthroughs of each part of Gradebook+. Watch any of them again.</p>
       <ul id="tutorialsList" class="tutorials__list"></ul>
       <p id="tutorialsStatus" class="tutorials__status" role="status" aria-live="polite"></p>
       <footer class="tutorials__foot">

@@ -99,20 +99,20 @@
     if (validSnippets.length === 0) {
       var emptyChip = document.createElement('span');
       emptyChip.className = 'snippet-test-chip snippet-test-chip--empty';
-      emptyChip.textContent = 'No snippets saved yet. Click "+ Add Snippet" above to create one!';
+      emptyChip.textContent = 'No snippets yet. Click "+ Add Snippet" above to make one.';
       chipsContainer.appendChild(emptyChip);
       if (testInstructions) {
-        testInstructions.innerHTML = 'Add a snippet template above, then test it here:';
+        testInstructions.innerHTML = 'Add a snippet above, then try it here:';
       }
       if (testInput) {
-        testInput.placeholder = 'Type /shortcut and press Tab here to test...';
+        testInput.placeholder = 'Type /name and press Tab';
       }
       return;
     }
 
     var firstTrig = String(validSnippets[0].trigger).replace(/^\/+/, '').trim();
     if (testInstructions) {
-      testInstructions.innerHTML = 'Click any active shortcut chip below to test instantly, or type <kbd>/' + escapeHtml(firstTrig) + '</kbd> in the box and press <kbd>Tab</kbd>:';
+      testInstructions.innerHTML = 'Click a snippet below, or type <kbd>/' + escapeHtml(firstTrig) + '</kbd> in the box and press <kbd>Tab</kbd>:';
     }
     if (testInput) {
       testInput.placeholder = 'Type /' + firstTrig + ' and press Tab...';
@@ -152,7 +152,7 @@
     if (!currentSnippets.length) {
       var emptyEl = document.createElement('div');
       emptyEl.className = 'snippets-empty';
-      emptyEl.innerHTML = '<p>No comment snippets yet. Click <strong>+ Add Snippet</strong> above to create your first feedback template!</p>';
+      emptyEl.innerHTML = '<p>No snippets yet. Click <strong>+ Add Snippet</strong> above to make your first one.</p>';
       container.appendChild(emptyEl);
       updateSnippetsCounter();
       renderSnippetTestChips();
@@ -349,9 +349,9 @@
 
           testFeedback.className = 'snippet-test-feedback is-hint';
           if (activeTriggers.length > 0) {
-            testFeedback.textContent = 'Type a slash shortcut (e.g. ' + activeTriggers[0] + ') then press Tab.';
+            testFeedback.textContent = 'Type a snippet name, like ' + activeTriggers[0] + ', then press Tab.';
           } else {
-            testFeedback.textContent = 'Add a snippet template above, then type its shortcut here and press Tab.';
+            testFeedback.textContent = 'Add a snippet above, then type its name here and press Tab.';
           }
         }
       });
@@ -676,7 +676,7 @@
       // None read on its own: the best link goes in the box, one click away.
       $('courseCalendarUrl').value = links[0];
       var msg = first && first.kind === 'denied'
-        ? 'Found your ' + name + ' calendar link and put it in the box. Click Connect calendar to finish: Chrome asks once more to read that calendar – choose Allow.'
+        ? 'Found your ' + name + ' calendar link and put it in the box. Click Connect calendar to finish, then click Allow when Chrome asks.'
         : 'Found your ' + name + ' calendar link and put it in the box, but it couldn’t be read yet: ' + ((first && first.message) || '') +
           ' Click Connect calendar to try again.';
       return { ok: false, kind: 'found-unconnected', message: msg, actions: [{ id: 'connect', label: 'Connect calendar' }] };
@@ -703,8 +703,8 @@
       if (mode === 'show' && links.length) {
         setCalendarBusy(false);
         $('calendarManual').open = true;
-        setCalendarStatus('Your ' + name + ' link is highlighted in the Google Calendar tab. Copy it, come back, and paste it in the box below – ' +
-          'or click Find my calendar link to have it connected for you.', 'ok');
+        setCalendarStatus('Your ' + name + ' link is highlighted in the Google Calendar tab. Copy it and paste it in the box below, ' +
+          'or click Find my calendar link to connect it for you.', 'ok');
         return res;
       }
       if (!links.length) {
@@ -789,14 +789,14 @@
         setCalendarStatus(calendarResult.message, 'error', calendarResult.actions);
       } else if (switching) {
         setCalendarStatus(saved
-          ? 'Click Connect calendar to switch to this link. Your current calendar stays connected until the new one has been read and saved.'
+          ? 'Click Connect calendar to switch to this link. Your current calendar stays connected until the new one works.'
           : 'Click Connect calendar.');
       } else if (!saved) {
         setCalendarStatus('');
       } else if (needsAllow) {
         // The link came through Chrome sync: Chrome asks once per computer.
-        setCalendarStatus('Your calendar link came with your settings from another computer. Chrome asks once on each computer: click ' +
-          'Allow calendar access on this computer, and choose Allow. You don\u2019t need to paste the link again.', 'error',
+        setCalendarStatus('Your calendar link came with your settings from another computer. To use it here, click ' +
+          'Allow calendar access on this computer, then Allow. No need to paste it again.', 'error',
           [{ id: 'authorize', label: 'Allow calendar access on this computer' }]);
       } else if (!lastCalendar) {
         setCalendarStatus('Saved. Your calendar hasn’t been read on this computer yet.', null, [{ id: 'refresh', label: 'Read it now' }]);
@@ -805,7 +805,7 @@
           (lastCalendar.occ ? ' (Showing the schedule read ' + fmtWhen(lastCalendar.lastOk) + '.)' : ''), 'error', [{ id: 'refresh', label: 'Try again' }]);
       } else {
         var view = connector().describe(lastCalendar);
-        var off = !$('courseScheduleEnabled').checked ? 'The class schedule is turned off above: turn it on and click Save changes to see it in Canvas.' : '';
+        var off = !$('courseScheduleEnabled').checked ? 'The class schedule is turned off above. Turn it on and click Save changes to see it in Canvas.' : '';
         if (view.empty) setCalendarStatus(view.text + (off ? ' ' + off : ''), 'ok');
         else setCalendarSuccess(view, off);
       }
@@ -866,7 +866,7 @@
     var zoneEl = $('scheduleZone');
     if (zoneEl) {
       zoneEl.textContent = tz ? 'Times shown in ' + Cal().zoneName(tz, Cal().wallToMs(scheduleDay, '12:00', tz)) + ' (' + tz.replace(/_/g, ' ') + ')' +
-        (canvasZone ? ', your Canvas time zone.' : '. Once you open an assignment in Canvas, this uses your Canvas time zone.') : '';
+        (canvasZone ? ', your Canvas time zone.' : '. After you open an assignment in Canvas, your Canvas time zone is used.') : '';
     }
   }
 
@@ -1084,7 +1084,7 @@
     var box = $('sectionGroupsList');
     if (!box) return;
     if (!currentGroups.length) {
-      box.innerHTML = '<p class="hint">None yet. In Canvas, open an assignment (or the course home) and press Copy to other classes.</p>';
+      box.innerHTML = '<p class="hint">None yet. In Canvas, open an assignment or the course home and click Copy to other classes.</p>';
       return;
     }
     box.innerHTML = currentGroups.map(function (g, i) {
@@ -1246,7 +1246,7 @@
           show(r.values);
           status('Updated with settings saved on another computer.');
         } else {
-          status('Settings were changed on another computer. Saving keeps your edits here and their other changes.');
+          status('Settings were changed on another computer. Saving keeps your changes here and theirs.');
         }
       });
     });
@@ -1694,7 +1694,7 @@
   });
   $('resetTotalHighlights').addEventListener('click', function () {
     renderThresholds(CGP.DEFAULTS.totalHighlightRules);
-    status('Default thresholds restored above \u2014 click Save changes to keep them.');
+    status('Default thresholds restored above. Click Save changes to keep them.');
   });
 
   $('resetGradingScale').addEventListener('click', function () {
@@ -1716,7 +1716,7 @@
   })();
 
   $('reset').addEventListener('click', function () {
-    if (!window.confirm('Restore every setting to its default? Your linked sections are kept (unlink them below).')) return;
+    if (!window.confirm('Put every setting back to its default? Your linked classes stay linked.')) return;
     writeSettings(null, CGP.sanitizeSettings({ sectionGroups: currentGroups }), 'Defaults restored.', 'Defaults not restored: ');
   });
 
@@ -1764,20 +1764,19 @@
       }).map(function (k) { return sync[k]; }).sort(function (a, b) { return b.at - a.at; });
       var lines = [];
       if (others.length) {
-        lines.push('<p class="sync-status__ok"><strong>Chrome sync is working.</strong> It is carrying your settings to ' + others.length +
+        lines.push('<p class="sync-status__ok"><strong>Chrome sync is working.</strong> Your settings reach ' + others.length +
           (others.length === 1 ? ' other computer' : ' other computers') + ': ' + others.map(function (d) {
             return escapeHtml(d.label || 'Computer') + ' (last seen ' + ago(d.at) + ')';
           }).join(', ') + '.</p>');
       } else {
-        lines.push('<p class="sync-status__warn"><strong>No other computer has been seen through Chrome sync yet.</strong> ' +
-          'If you use this extension on another computer and it has not shown up here within an hour of opening Chrome there, ' +
-          'Chrome sync is not carrying it: in Chrome, open Settings &rarr; You and Google &rarr; Sync and Google services &rarr; Manage what you sync, ' +
-          'and make sure sync is on and <em>Extensions</em> is included, on both computers. If your school has turned Chrome sync off, ' +
-          'the copy in your Canvas account below keeps your settings in step instead.</p>');
+        lines.push('<p class="sync-status__warn"><strong>No other computer has shown up through Chrome sync yet.</strong> ' +
+          'If you use Gradebook+ on another computer and it isn\u2019t listed here within an hour, check Chrome sync on both computers: ' +
+          'Chrome Settings &rarr; You and Google &rarr; Sync and Google services &rarr; Manage what you sync, and make sure <em>Extensions</em> is on. ' +
+          'If your school has turned Chrome sync off, the Canvas account option below keeps your settings in step instead.</p>');
       }
       var mirrors = Object.keys(local).filter(function (k) { return k.indexOf('cgp.mirror.status.') === 0; });
       if (!mirrors.length) {
-        lines.push('<p class="hint">Canvas copy: not used on this computer yet (it runs when you open a Canvas course page).</p>');
+        lines.push('<p class="hint">Canvas copy: not used on this computer yet. It starts when you open a Canvas course page.</p>');
       }
       mirrors.forEach(function (k) {
         var st = local[k] || {};
@@ -1786,8 +1785,8 @@
           lines.push('<p class="sync-status__ok"><strong>Canvas copy (' + where + '):</strong> in step ' + ago(st.at) +
             (st.pulled ? ', ' + st.pulled + ' change(s) brought here' : '') + (st.pushed ? ', ' + st.pushed + ' change(s) saved to Canvas' : '') + '.</p>');
           if (st.leftOut) {
-            lines.push('<p class="sync-status__warn">' + st.leftOut.length + ' snippet(s) from your other computers do not fit here: Chrome holds at most ' +
-              CGP.SETTINGS_LIMITS.MAX_SNIPPETS + ' snippets. Remove some you no longer use (on any computer), and they will come through: ' +
+            lines.push('<p class="sync-status__warn">' + st.leftOut.length + ' snippet(s) from your other computers didn\u2019t fit (the limit is ' +
+              CGP.SETTINGS_LIMITS.MAX_SNIPPETS + '). Delete some you no longer use, on any computer, and these will come through: ' +
               st.leftOut.map(function (k) { return escapeHtml('/' + k.replace(/^cgp\.snippet\./, '')); }).join(', ') + '.</p>');
           }
           if (st.waiting) lines.push('<p class="hint">' + st.waiting + ' change(s) are waiting for Chrome sync to finish delivering them.</p>');
@@ -1819,8 +1818,8 @@
 
   function conflictHtml(statusKey, conflicts) {
     return '<div class="sync-conflict" data-status="' + escapeHtml(statusKey) + '"><p><strong>Your computers disagree on ' + conflicts.length +
-      (conflicts.length === 1 ? ' setting' : ' settings') + '</strong>, and neither was changed since this extension started keeping times, ' +
-      'so it can’t tell which is newer:</p><ul>' + conflicts.map(function (c) {
+      (conflicts.length === 1 ? ' setting' : ' settings') + '</strong>, and Gradebook+ can’t tell which is newer. ' +
+      'Choose which to keep:</p><ul>' + conflicts.map(function (c) {
         return '<li>' + escapeHtml(label(c.key)) + ': this computer <code>' + escapeHtml(shortValue(c.mine)) + '</code>, other computer <code>' +
           escapeHtml(shortValue(c.theirs)) + '</code></li>';
       }).join('') + '</ul><div class="action-row"><button type="button" class="btn btn--primary" data-resolve="mine">Keep this computer’s</button>' +
@@ -1844,7 +1843,7 @@
           return chrome.storage.local.set(o);
         });
       }).then(function () {
-        status('Done. Your other computers get it the next time Canvas is opened there.');
+        status('Done. Your other computers get it the next time they open Canvas.');
         renderSyncStatus();
       }, function (err) { status('Not done: ' + String(err && err.message), { error: true }); });
     });
