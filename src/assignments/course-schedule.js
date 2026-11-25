@@ -492,8 +492,8 @@
     this.lastView = null;
     if (!this.calendarUrl()) {
       // No calendar yet: where to connect one, or carry on typing dates.
-      html += '<p class="cgp-sched__msg"><strong>Pick class times here.</strong> Connect the calendar that holds your class periods once, ' +
-        'and this shows each day&rsquo;s classes &ndash; click one to use its time.</p>' +
+      html += '<p class="cgp-sched__msg"><strong>Pick class times here.</strong> Connect your class calendar once, ' +
+        'and this shows each day&rsquo;s classes. Click one to use its time.</p>' +
         '<div class="cgp-sched__foot"><button type="button" class="cgp-sched__cta" data-act="setup">Set up class schedule</button>' +
         '<button type="button" class="cgp-sched__link" data-act="dismiss">Not now</button></div>';
       this.panel.innerHTML = html;
@@ -507,8 +507,8 @@
       // calendar site's permission on each computer: one click on the
       // options page, which then fills this panel in.
       if (failed && failed.code === 'permission') {
-        html += '<p class="cgp-sched__msg">Your class schedule came with your settings, but Chrome asks once on each computer ' +
-          'before Gradebook+ may read your calendar. Click below, then <strong>Allow calendar access on this computer</strong>.</p>' +
+        html += '<p class="cgp-sched__msg">Your class schedule came with your settings from another computer. To use it here, ' +
+          'click below, then <strong>Allow calendar access on this computer</strong>.</p>' +
           '<div class="cgp-sched__foot"><button type="button" class="cgp-sched__cta" data-act="settings">Allow calendar access on this computer</button></div>';
         this.panel.innerHTML = html;
         return;

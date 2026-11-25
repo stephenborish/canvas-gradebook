@@ -124,15 +124,14 @@
     }).then(function (colsOk) {
       if (!rowsConfirmed) {
         CGP.diag.error('paste.rowsUnconfirmed', { rows: matrix.rowCount });
-        CGP.ui.error('Paste stopped: Gradebook+ couldn\u2019t confirm which student every pasted row belongs to ' +
-          '(the paste may run past the last student, or the grid is still re-sorting). Nothing was changed.');
+        CGP.ui.error('Paste stopped: Gradebook+ couldn\u2019t confirm which student each row belongs to ' +
+          '(it may run past the last student, or the list is still re-sorting). Nothing was changed.');
         return null;
       }
       if (colsOk === false) {
         CGP.diag.error('paste.columnsUnconfirmed', { cols: matrix.colCount });
-        CGP.ui.error('Paste stopped: Gradebook+ couldn\u2019t confirm which assignment every pasted column belongs to ' +
-          '(the paste may run past the last column, or the grid is still loading). Nothing was changed. ' +
-          'Scroll so the target columns are on screen and paste again.');
+        CGP.ui.error('Paste stopped: Gradebook+ couldn\u2019t confirm which assignment each column belongs to. ' +
+          'Nothing was changed. Scroll so those columns are on screen, then paste again.');
         return null;
       }
       var mapped = CGP.gridMap.mapMatrixToTargets(matrix, anchor, {
@@ -146,9 +145,8 @@
         mapped.errors.forEach(function (er) { codes[er.code] = (codes[er.code] || 0) + 1; });
         CGP.diag.error('paste.unresolved', codes);
         if (codes['test-student']) {
-          CGP.ui.error('Paste stopped: a pasted value would land on the hidden Test Student row, so the ' +
-            'clipboard does not line up with the students shown. Leave that row blank in your copy, or paste ' +
-            'in two parts. Nothing was changed.');
+          CGP.ui.error('Paste stopped: a value would land on the hidden Test Student row, so your rows don\u2019t ' +
+            'line up with the students shown. Leave that row blank, or paste in two parts. Nothing was changed.');
           return null;
         }
         CGP.ui.error('Paste stopped: ' + mapped.errors.length +
@@ -176,7 +174,7 @@
         CGP.diag.error('paste.unverifiedTargets', { count: unknown.length });
         CGP.ui.error('Paste stopped: ' + unknown.length + (unknown.length === 1 ? ' cell' : ' cells') +
           ' could not be matched to a student and assignment in this course. Nothing was changed. ' +
-          'Reload the page if the roster or assignments changed, then paste again.');
+          'If students or assignments changed, reload the page and paste again.');
         return null;
       }
 
@@ -201,8 +199,8 @@
           });
           CGP.diag.error('paste.columnsUnverified', { count: state.missing.length });
           CGP.ui.error('Paste stopped: Canvas didn\u2019t send the current grades for ' + names.join(', ') +
-            ', so Gradebook+ can\u2019t tell which cells the paste would overwrite. Nothing was changed. ' +
-            'Wait a moment and paste again; if this keeps happening, reload the page.');
+            ', so Gradebook+ can\u2019t tell which grades would be replaced. Nothing was changed. ' +
+            'Wait a moment and paste again, or reload the page.');
           return null;
         }
         return self.confirmAndApply(built, matrix);

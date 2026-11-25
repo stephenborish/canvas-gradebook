@@ -9,8 +9,8 @@
  * manifest.json, icons/ and src/. Tests, docs and Mac .DS_Store files are not.
  *
  * Before zipping it checks, and stops with a plain message if not:
- *   - the version is the same in manifest.json, src/core/util.js and the
- *     options page (they are bumped together);
+ *   - manifest.json has a valid version (its one source: the scripts and
+ *     the options page read it from the manifest);
  *   - every file the extension loads exists: the manifest's scripts, styles,
  *     icons, options page and service worker, the options page's own
  *     scripts and styles, and every 'src/...' file named in the code
@@ -50,16 +50,6 @@ function walk(dir, out) {
 const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
 const version = manifest.version;
 if (!/^\d+(\.\d+){0,3}$/.test(String(version || ''))) problems.push('manifest.json has no valid "version" (e.g. 1.33.0).');
-
-const versionSpots = [
-  ['src/core/util.js', /CGP\.VERSION\s*=\s*'([^']+)'/],
-  ['src/options/options.html', /id="extensionVersion">([^<]+)</]
-];
-for (const [file, re] of versionSpots) {
-  const m = re.exec(fs.readFileSync(path.join(ROOT, file), 'utf8'));
-  if (!m) problems.push(`Couldn't find the version in ${file}.`);
-  else if (m[1] !== version) problems.push(`${file} says version ${m[1]} but manifest.json says ${version}. Change them to match.`);
-}
 
 const needed = new Set();
 const need = (r, from) => { if (r) needed.add(JSON.stringify([r.replace(/^\//, '').split(/[?#]/)[0], from])); };

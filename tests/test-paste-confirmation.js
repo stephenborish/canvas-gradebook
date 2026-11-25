@@ -146,7 +146,7 @@ suite('paste: an unverified target range sends nothing', (test) => {
     const h = harness({ columns: { 3: '50', 4: '50' }, colsOk: false });
     await h.paste('8\t8\n');
     a.eq(h.log.writes.length, 0);
-    a.ok(/couldn’t confirm which assignment every pasted column belongs to/.test(last().text) && /paste again/.test(last().text), last().text);
+    a.ok(/couldn’t confirm which assignment each column belongs to/.test(last().text) && /paste again/.test(last().text), last().text);
   });
 
   test('rows the grid could not confirm stop the paste, zero writes', async () => {

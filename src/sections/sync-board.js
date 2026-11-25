@@ -318,7 +318,7 @@
         : '<div class="cgp-board__counts">' + bits.join('') + (c.same ? '<span class="cgp-board__count is-ok">' + c.same + ' same</span>' : '') + '</div>') +
       errs.map(function (d) { return '<p class="cgp-sections__err">' + esc(this.courseName(d.courseId)) + ': ' + esc(d.error) + '</p>'; }, this).join('') +
       (b.scan.truncated && Object.keys(b.scan.truncated).length
-        ? '<p class="cgp-stats__note">This class has more items than can be read at once; some may be missing from the list.</p>' : '') +
+        ? '<p class="cgp-stats__note">This class has too many items to load at once, so some may be missing from the list.</p>' : '') +
       '</section>';
   };
 
@@ -397,7 +397,7 @@
     if (!list.length) return '';
     return '<details class="cgp-roster__section cgp-board__orphans"><summary>' + list.length +
       (list.length === 1 ? ' item is' : ' items are') + ' in your other classes but no longer here</summary>' +
-      '<p class="cgp-stats__note">Deleted here after copying. Nothing is deleted in your other classes; open each to decide.</p>' +
+      '<p class="cgp-stats__note">You deleted these here after copying. Nothing was deleted in your other classes; open each to decide.</p>' +
       '<ul class="cgp-board__orphanlist">' + list.map(function (o) {
         return '<li><span class="cgp-sections__tag">' + esc(S().TYPES[o.type].label) + '</span> ' + esc(o.title || '(untitled)') + ' — ' +
           esc(self.courseName(o.courseId)) + ' <a class="cgp-board__link" href="' + esc(o.url) + '" target="_blank" rel="noopener">Open</a></li>';

@@ -7,7 +7,17 @@
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.util) return;
 
-  CGP.VERSION = '1.36.0';
+  /* The version comes from manifest.json, its one source: nothing else
+   * needs changing when it is bumped. '' where there is no extension
+   * (unit tests); reading the manifest is synchronous and safe at load. */
+  CGP.VERSION = (function () {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest) {
+        return String(chrome.runtime.getManifest().version || '');
+      }
+    } catch (e) { /* extension context gone */ }
+    return '';
+  })();
 
   /* Default letter-grade scale: the lowest rounded percentage (to 0.1) that
    * earns each letter. The last entry is the floor and always has min 0. */
@@ -391,27 +401,27 @@
     // canvas-api.js unusableAnswer): not a refusal, so never worded as one.
     if (err && err.unconfirmed === true && err.malformed === true) {
       return String(err.message || 'Canvas\u2019s answer couldn\u2019t be read, so this couldn\u2019t be confirmed.') +
-        (err.signIn ? ' Canvas answered with its sign-in page: your session may have expired.' : '');
+        (err.signIn ? ' Canvas showed its sign-in page, so you may be signed out.' : '');
     }
     if (util.isPermissionDeniedError(err)) {
       return 'Canvas says you don\u2019t have permission to change this' +
-        ' (the grading period may be closed, the course concluded, or your role may not allow it).';
+        ' (the grading period may be closed, the course may have ended, or your role may not allow it).';
     }
     if (err && err.status === 401) {
-      return 'Your Canvas session has expired. Reload the page and log back in, then try again.';
+      return 'Your Canvas session has expired. Reload the page, sign back in, and try again.';
     }
     if (err && err.network === true) {
-      return 'Canvas could not be reached (a network problem). Check your connection and try again.';
+      return 'Couldn\u2019t reach Canvas. Check your internet connection and try again.';
     }
     var throttled403 = err && err.status === 403 &&
       /rate limit/i.test(String(err.snippet || '') + ' ' + String(err.canvasMessage || ''));
     if (err && (err.status === 429 || throttled403)) {
       var secs = err.retryAfterMs ? Math.ceil(err.retryAfterMs / 1000) : 0;
-      return 'Canvas asked us to slow down (rate limited). ' +
+      return 'Canvas is busy and asked Gradebook+ to slow down. ' +
         (secs > 1 ? 'Wait about ' + secs + ' seconds and try again.' : 'Wait a moment and try again.');
     }
     var base = opts.fallback || 'Canvas rejected this request';
-    if (err && err.status) return base + ' (Canvas ' + err.status + ').';
+    if (err && err.status) return base + ' (Canvas error ' + err.status + ').';
     if (err && err.message) return base + ': ' + err.message + '.';
     return base + '.';
   };
@@ -924,9 +934,9 @@
       var triggers = Object.keys(current);
       var bytes = triggers.reduce(function (t, k) { return t + snippetItemBytes(current[k]); }, 0);
       if (triggers.length > MAX_SNIPPETS || bytes > MAX_SNIPPET_BYTES) {
-        out.problem = 'Together with the snippets saved on another computer, that makes ' + triggers.length +
-          ' snippets (' + bytes + ' bytes), and at most ' + MAX_SNIPPETS + ' snippets (' + MAX_SNIPPET_BYTES +
-          ' bytes) fit in Chrome sync. Remove some snippets, then save again.';
+        out.problem = 'With the snippets saved on your other computers, that makes ' + triggers.length +
+          ' snippets (' + Math.ceil(bytes / 1024) + ' KB), more than Chrome sync can hold (at most ' + MAX_SNIPPETS +
+          ' snippets and ' + Math.floor(MAX_SNIPPET_BYTES / 1024) + ' KB in all). Delete some snippets, then save again.';
         out.set = {};
         return out;
       }

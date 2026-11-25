@@ -667,7 +667,7 @@ suite('student overview: profile tab', (test) => {
     a.ok(c.profilePanel('7', { name: 'A' }, viaRecent).includes('Last Canvas login</dt><dd>' + when), 'from recent_students');
 
     const none = c.profilePanel('7', { name: 'A' }, { profile: { user: null, observers: null, sections: null, emails: {}, profile: null, enrollments: null, courses: null } });
-    a.ok(none.includes('didn’t let you see'), 'observers refused');
+    a.ok(none.includes('can’t see this course’s parents'), 'observers refused');
     a.ok(!none.includes('Also in your classes'));
     a.ok(c.profilePanel('7', { name: 'A' }, {}).includes('Reading this student’s profile'), 'loading');
   });

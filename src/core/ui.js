@@ -1,6 +1,9 @@
-/* Canvas Gradebook+ - the only chrome this extension ever draws: a small
- * transient message used for write failures and bulk results. It is created on
- * demand, disappears on its own, and is never a persistent control. */
+/* Canvas Gradebook+ - small messages at the bottom of the page.
+ *   toast:  a transient message for write failures and bulk results. One at
+ *           a time (a new one replaces it); it disappears on its own.
+ *   notice: a message that asks the teacher to decide something. It sits
+ *           just above the toast, is never replaced by one, and stays until
+ *           one of its buttons is clicked. */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
@@ -60,6 +63,44 @@
       } catch (e) { /* never let a message break grading */ }
     },
     error: function (message, opts) { this.toast(message, Object.assign({}, opts || {}, { level: 'error' })); },
+    /* opts.actions: [{ label, run }], one button each, in order; any button
+     * closes the notice. opts.id: a later notice with the same id replaces
+     * this one. Returns a function that closes it. */
+    notice: function (message, opts) {
+      opts = opts || {};
+      try {
+        var id = String(opts.id || 'notice');
+        var old = document.querySelector('.cgp-notice[data-cgp-notice="' + id.replace(/"/g, '') + '"]');
+        if (old) old.remove();
+        var el = document.createElement('div');
+        el.className = 'cgp-toast cgp-toast--on cgp-toast--action cgp-notice';
+        el.setAttribute('data-cgp-notice', id);
+        el.setAttribute('role', 'alertdialog');
+        el.setAttribute('aria-live', 'polite');
+        var text = document.createElement('span');
+        text.className = 'cgp-notice__text';
+        text.textContent = String(message || '');
+        el.appendChild(text);
+        var close = function () { if (el.parentNode) el.parentNode.removeChild(el); };
+        (opts.actions || [{ label: 'OK' }]).forEach(function (a) {
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'cgp-toast__action';
+          btn.textContent = String(a.label || 'OK');
+          btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            close();
+            if (typeof a.run === 'function') {
+              try { a.run(); } catch (err) { /* reported by the action itself */ }
+            }
+          });
+          el.appendChild(btn);
+        });
+        document.body.appendChild(el);
+        return close;
+      } catch (e) { return function () {}; }
+    },
     copy: copy,
     closeFlyouts: closeFlyouts
   };

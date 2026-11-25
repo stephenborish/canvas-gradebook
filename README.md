@@ -42,9 +42,8 @@ a checkout of this repo.
 
 ### Making the Web Store upload (one button)
 
-1. Raise the version, the same in all three places: `"version"` in `manifest.json`,
-   `CGP.VERSION` in `src/core/util.js`, and `extensionVersion` in `src/options/options.html`.
-   Merge it to `main`.
+1. Raise `"version"` in `manifest.json`, its only source (the scripts and the options page read
+   it from the manifest). Merge it to `main`.
 2. On GitHub: **Actions** → **Package for Chrome Web Store** → **Run workflow** → **Run workflow**.
    Tick *Also save as a GitHub Release* to keep the zip permanently under **Releases**.
 3. When the run is green (about two minutes), open it and download
@@ -902,6 +901,10 @@ what students can see says that.
 - **A reload while Canvas is copying** brings the banner back and finishes that copy job (its dates
   included) instead of starting a second copy. A class whose copy had not started yet offers **Try
   again**; one whose request may have reached Canvas says to check that class first.
+- **A copy job a closed tab left unfinished** is finished on the next Canvas course page if it is under
+  half an hour old. An older one is not finished on its own, since you may have changed the copy by
+  hand since: a notice offers **Finish now** (again at most every six hours), and the job is dropped
+  after three days. When several tabs open at once, only one finishes a job.
 - **Saving an edit of an item that is already in your linked courses updates their versions.** A class
   whose version was edited there says so on its row, with **Pick a version…** beside it.
 - **A New Quiz** is copied with Copy to other classes once its questions are in.
@@ -1111,7 +1114,7 @@ check. The Canvas copy keeps working regardless.
 
 ## Diagnostics
 
-Turn on **Record diagnostics** in the options page, open a gradebook, then come back and press
+Turn on **Keep a diagnostics log** in the options page, open a gradebook, then come back and press
 **Refresh**. You get course id, student and assignment counts, submissions loaded, instructor
 comments found, mapped and unmapped cells, failed requests, and a recent event log.
 
@@ -1162,11 +1165,13 @@ Student names, grades and comment text are never written to the log — only cou
 ## How it is put together
 
 ```
-manifest.json                     MV3 manifest; the ordered content-script entry (course page only)
+manifest.json                     MV3 manifest; the page's content scripts in three ordered entries
 src/background.js                 service worker: defaults, options, custom-domain registration
 src/settings-times.js             service worker: this computer's Chrome sync check-in
 src/calendar-sync.js              service worker: fetches the class-schedule calendar, keeps its classes
-src/script-manifest.js            the ordered file list (mirror of the manifest entry)
+src/script-manifest.js            the ordered file lists (mirror of the manifest entries): every
+                                  course page / the gradebook and SpeedGrader only / the boot
+src/studio-roster.js              service worker: passes Studio's class-list request to the Canvas page
 src/frame-gate.js                 the one script frames get; adds snippets to comment-editor frames
 src/self-update.js                service worker: update checks, Reload notice on tabs already open
 
@@ -1278,7 +1283,7 @@ Canvas's actual gradebook markup can vary between instances, and this extension 
 unit tested without access to a live one. If comment bubbles don't appear, column widths don't
 change, or a keyboard shortcut seems to do nothing:
 
-1. Open the extension's options page and turn on **Record diagnostics**.
+1. Open the extension's options page and turn on **Keep a diagnostics log**.
 2. Reload the gradebook, let it fully load, and try the thing that isn't working.
 3. Come back to options → **Diagnostics** → **Refresh**.
 4. Look at `columnsUnresolved` and `rowsUnresolved` under counters/facts. Zero means the

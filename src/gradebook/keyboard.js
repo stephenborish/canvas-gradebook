@@ -215,6 +215,10 @@
    * (canvasSaved), and on a backoff otherwise. A read showing nothing new
    * (Canvas refused the value, or the edit was cancelled) changes nothing. */
   var RECONCILE_DELAYS = [1200, 3000, 8000];
+  // Read at each use, so tests can run the same schedule faster.
+  function delays() {
+    return (CGP.KeyboardGradingController && CGP.KeyboardGradingController.RECONCILE_DELAYS) || RECONCILE_DELAYS;
+  }
 
   P.scheduleReconcile = function (assignmentId, userId, before, attempt) {
     var self = this;
@@ -224,7 +228,7 @@
     this._reconcileState.set(key, { before: before, attempt: attempt });
     this._refreshTimers.set(key, setTimeout(function () {
       self.runReconcile(assignmentId, userId);
-    }, RECONCILE_DELAYS[attempt]));
+    }, delays()[attempt]));
   };
 
   /* A grade Canvas saved from somewhere other than the grid's editor (the
@@ -238,7 +242,7 @@
       gradedAt: before.gradedAt,
       latePolicyStatus: before.latePolicyStatus || null,
       at: before.at
-    }, RECONCILE_DELAYS.length - 1);
+    }, delays().length - 1);
     this.canvasSaved(assignmentId, userId);
   };
 
@@ -278,7 +282,7 @@
       var changed = rec.grade !== before.grade || rec.enteredScore !== before.enteredScore ||
         (rec.gradedAt && rec.gradedAt !== before.gradedAt);
       if (!changed || !hasGrade) {
-        if (attempt + 1 < RECONCILE_DELAYS.length) self.scheduleReconcile(assignmentId, userId, before, attempt + 1);
+        if (attempt + 1 < delays().length) self.scheduleReconcile(assignmentId, userId, before, attempt + 1);
         return;
       }
       // Only a Missing that was ALREADY applied when the grade was typed,
@@ -368,8 +372,8 @@
               hasAssignmentId: !!(info && info.assignmentId),
               hasStudentId: !!(info && info.studentId)
             });
-            CGP.ui.error('Gradebook+ couldn\u2019t identify this cell for the ' + token + ' shortcut. ' +
-              'Turn on Diagnostics in the options page if this keeps happening.');
+            CGP.ui.error('Gradebook+ couldn\u2019t tell which cell this is, so ' + token + ' did nothing. ' +
+              'Click the cell and try again.');
             return;
           }
           this.applyToken(token, scope, info);
@@ -595,8 +599,8 @@
       return;
     }
     if (built.invalid.length) {
-      CGP.ui.error('"' + token + '" doesn\u2019t fit ' + built.invalid.length + ' of the selected cells' +
-        ' (their columns grade differently); those were left unchanged.');
+      CGP.ui.error('"' + token + '" doesn\u2019t work for ' + built.invalid.length + ' of the selected cells' +
+        ' (their columns use a different kind of grade), so those were left unchanged.');
     }
     var count = built.targets.length;
     var threshold = this.settings.values.bulkConfirmThreshold;
@@ -708,5 +712,6 @@
   };
 
   CGP.KeyboardGradingController = KeyboardGradingController;
+  KeyboardGradingController.RECONCILE_DELAYS = RECONCILE_DELAYS;
   CGP.keyboardInternals = { isTextEntry: isTextEntry };
 })();

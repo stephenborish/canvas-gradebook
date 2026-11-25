@@ -236,7 +236,7 @@
   P.requestClose = function () {
     var st = this.state;
     if (st && ((st.form && st.form.busy) || (st.board && st.board.saving) || (st.copy && st.copy.running))) {
-      CGP.ui.toast('Still saving to Canvas in the background — stay on this page until it is done.');
+      CGP.ui.toast('Still saving to Canvas. Keep this page open until it’s done.');
     } else if (st && st.board && G().moves(st.board.before, st.board.after).length) {
       if (typeof confirm === 'function' && !confirm('Close without saving your changes to the groups?')) return;
     }

@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const { suite, assert: a } = require('./harness');
+const { followUpRan } = require('./domharness');
 const CGP = globalThis.CGP;
 
 ['src/gradebook/writer.js', 'src/gradebook/bulk-paste.js'].forEach((rel) => {
@@ -420,20 +421,20 @@ suite('write safety: typed-grade follow-up never undoes a newer decision', (test
   test('an M pressed after the edit is not undone by the follow-up', async () => {
     const applied = harness({ grade: null, enteredScore: null, gradedAt: null, latePolicyStatus: null },
       { grade: '9', enteredScore: 9, gradedAt: 't1', latePolicyStatus: 'missing' }, { thenMarkedAt: true });
-    await new Promise((r) => setTimeout(r, 1300));
+    await followUpRan();
     a.eq(applied.length, 0);
   });
 
   test('Missing that was not on the cell when the grade was typed is left alone', async () => {
     const applied = harness({ grade: null, enteredScore: null, gradedAt: null, latePolicyStatus: null },
       { grade: '9', enteredScore: 9, gradedAt: 't1', latePolicyStatus: 'missing' });
-    await new Promise((r) => setTimeout(r, 1300));
+    await followUpRan();
     a.eq(applied.length, 0);
   });
 
   test('a column with no record before the edit is re-read but never acted on', async () => {
     const applied = harness(null, { grade: '9', enteredScore: 9, gradedAt: 't1', latePolicyStatus: 'missing' });
-    await new Promise((r) => setTimeout(r, 1300));
+    await followUpRan();
     a.eq(applied.length, 0);
   });
 });

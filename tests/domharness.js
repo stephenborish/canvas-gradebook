@@ -40,7 +40,15 @@ function loadGradebookDom() {
   if (!globalThis.CGP || !globalThis.CGP.GradebookDomAdapter) {
     throw new Error('gradebook DOM modules did not register on globalThis.CGP');
   }
+  // The grid editor's follow-up re-reads (keyboard.js), on the same
+  // schedule ten times faster, so a case waits ~0.1 s instead of 1.3 s.
+  globalThis.CGP.KeyboardGradingController.RECONCILE_DELAYS = RECONCILE_DELAYS_FAST;
   return globalThis.CGP;
 }
 
-module.exports = { loadGradebookDom, domshim };
+const RECONCILE_DELAYS_FAST = [120, 300, 800];
+// Past the first follow-up, short of the second.
+const FOLLOW_UP_WAIT_MS = 130;
+const followUpRan = () => new Promise((r) => setTimeout(r, FOLLOW_UP_WAIT_MS));
+
+module.exports = { loadGradebookDom, domshim, followUpRan, FOLLOW_UP_WAIT_MS };

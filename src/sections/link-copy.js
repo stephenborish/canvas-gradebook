@@ -91,7 +91,7 @@
 
   P.closeLinks = function () {
     if (this.state && this.state.lk && this.state.lk.running) {
-      CGP.ui.toast('Adding links carries on in the background — stay on this page until it is done.');
+      CGP.ui.toast('Still adding links. Keep this page open until it’s done.');
     }
     this.close();
   };

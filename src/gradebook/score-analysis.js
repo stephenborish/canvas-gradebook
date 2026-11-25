@@ -149,7 +149,7 @@
     label.innerHTML = ITEM_HTML;
     label.classList.add('cgp-analyze-label');
     item.setAttribute('aria-label', ITEM_LABEL);
-    item.setAttribute('title', 'Mean, median, standard deviation, high/low students and a letter-grade histogram for ' +
+    item.setAttribute('title', 'Average, median, spread, highest and lowest, and a letter-grade chart for ' +
       (isTotal ? 'the course totals' : 'this column'));
 
     var self = this;
@@ -310,7 +310,7 @@
 
     var counted = total
       ? s.count + (s.count === 1 ? ' student' : ' students') + ' with a total · ' + s.ungraded +
-        ' with no graded work yet (left out of every figure)'
+        ' with no graded work yet (not counted)'
       : s.count + ' graded' +
         (s.ungraded ? ' · ' + s.ungraded + ' not graded' : '') +
         (s.excused ? ' · ' + s.excused + ' excused' : '') +
@@ -381,7 +381,7 @@
       }).join('') + '</tbody></table></details>';
 
     return '<div class="cgp-stats__chart"><h3>Distribution by letter grade</h3>' + svg +
-      '<p class="cgp-stats__note">Cutoffs from your grading scale (lower bound shown under each letter). Hover a bar for its students.</p>' +
+      '<p class="cgp-stats__note">Each letter shows its lowest percentage from your grading scale. Point to a bar to see its students.</p>' +
       table + '</div>';
   };
 

@@ -298,7 +298,7 @@
         }
         self.drafts[key] = text;
         CGP.ui.error('Your comment for ' + studentName() + ' was not saved. ' + reason +
-          ' Reopen their comment bubble to try again; your text is kept there.');
+          ' Open their comment bubble again to retry; your text is still there.');
         if (self.isShowing(info.assignmentId, userId)) self.renderCurrent();
       });
     }
@@ -470,7 +470,7 @@
       (comments.instructorCount > 1 ? '<span class="cgp-preview__count">' + comments.instructorCount + ' comments</span>' : '') +
       '</div>' +
       '<div class="cgp-preview__text">' + CGP.util.escapeHtml(snippet || '—') + '</div>' +
-      '<div class="cgp-preview__hint">Click to open this submission in Canvas\u2019s side pane</div>';
+      '<div class="cgp-preview__hint">Click to open this submission</div>';
     el.classList.add('cgp-preview--on');
     this._previewInfo = info;
     this.positionPreview(info.el);

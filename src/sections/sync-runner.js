@@ -20,7 +20,9 @@
  * A job is written to this computer (chrome.storage.local) as soon as Canvas
  * has accepted it, and removed only once step 4 is done, so a tab closed
  * while Canvas is still copying finishes the job the next time a Canvas
- * course page opens (resumePending). */
+ * course page opens (resumePending) - at once if the job is recent, else
+ * only once the teacher says "Finish now", since they may have changed the
+ * copy by hand meanwhile. */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
@@ -30,6 +32,18 @@
   var FP_PREFIX = 'cgp.sections.fp.';
   var JOB_MAX_AGE_MS = 3 * 24 * 3600 * 1000;
   var CLAIM_MS = 2 * 60 * 1000;
+  // A job left by a closed tab is finished on the next course page without
+  // asking only while it is this fresh. An older one sets dates, a note and
+  // the published state on a copy the teacher may have changed by hand
+  // since, so they are asked first (resumePending's `waiting`), and asked
+  // again no more often than OFFER_AGAIN_MS until the job expires.
+  var ASK_AFTER_MS = 30 * 60 * 1000;
+  var OFFER_AGAIN_MS = 6 * 3600 * 1000;
+  // Claiming a job is "write the claim, wait, read it back": storage has no
+  // compare-and-set, and two tabs restored together would otherwise both
+  // read the job as free and both finish it. The last claim written wins,
+  // and both tabs read back the same winner.
+  var CLAIM_SETTLE_MS = 300;
 
   function S() { return CGP.sectionSync; }
 
@@ -168,7 +182,7 @@
       return out;
     }, function (err) {
       out.error = CGP.util.isPermissionDeniedError(err)
-        ? 'You can’t add content to this course in Canvas (your role there may not allow it, or the course has concluded).'
+        ? 'You can’t add content to this course in Canvas (your role there may not allow it, or the course may have ended).'
         : describe(err, 'Couldn’t read this class from Canvas');
       return out;
     });
@@ -569,10 +583,17 @@
       self.forgetCopies(dest);
       return self.saveJob(job).then(function () { return self.continueJob(job, results, onStep); });
     }, function (err) {
-      var msg = describe(err, 'Canvas refused to start the copy');
+      // No answer at all (a lost connection, or a write that timed out -
+      // see canvas-api.js WRITE_TIMEOUT_MS): Canvas may well have started
+      // the copy, so it is neither retried item by item nor worded as a
+      // refusal - another start would put a second copy in the class.
+      var lost = !!(err && err.network === true);
+      var msg = lost
+        ? describe(err, 'Canvas didn’t answer') + ' The copy may still have started: check that class before copying again.'
+        : describe(err, 'Canvas refused to start the copy');
       // One item Canvas cannot take must not sink the rest: a refused
       // request (not a refused person) is tried again item by item.
-      var alone = tasks.length > 1 && !(err && (err.status === 401 || err.status === 403));
+      var alone = tasks.length > 1 && !lost && !(err && (err.status === 401 || err.status === 403));
       results.forEach(function (r) { r.error = msg; if (alone) r.retryAlone = true; });
       return results;
     }).then(null, function (err) {
@@ -741,7 +762,7 @@
             var step = function (s) { onStep(i, s); };
             var destId = S().destIdFor(mapping, task.item.type, task.item.id);
             if (!destId) {
-              result.error = 'Canvas finished, but did not report where the copy is. Check this class before copying again.';
+              result.error = 'Canvas finished, but didn’t say where the copy is. Check this class before copying again.';
               return settle(i, false);
             }
             return self.settled(task, destId, opts.maxWaitMs || self.maxWaitMs, job).then(function (ready) {
@@ -775,7 +796,7 @@
     }).then(null, function (err) {
       // Canvas could not be asked (a network failure, a throttle, the job's
       // state or mapping refused): the job stays saved to try again later.
-      var msg = describe(err, 'Lost track of Canvas’s copy job') + ' Gradebook+ will check on it again later.';
+      var msg = describe(err, 'Couldn’t check on Canvas’s copy') + ' Gradebook+ will check again later.';
       return all(function (r) {
         if (r.ok || r.error) return;
         r.pending = true;
@@ -1044,7 +1065,7 @@
       }
       return steps;
     }, function (err) {
-      result.warnings.push('Could not read the copy back to add the note and set publishing. ' + describe(err, 'Canvas refused'));
+      result.warnings.push('Couldn’t find the copy to add the note and set publishing. ' + describe(err, 'Canvas refused'));
     });
   };
 
@@ -1203,7 +1224,7 @@
         return out;
       }, function (err) {
         out.error = CGP.util.isPermissionDeniedError(err)
-          ? 'You can’t change this class’s modules in Canvas (your role there may not allow it, or the course has concluded).'
+          ? 'You can’t change this class’s modules in Canvas (your role there may not allow it, or the course may have ended).'
           : describe(err, 'Couldn’t read this class’s modules from Canvas');
         return out;
       });
@@ -1490,7 +1511,7 @@
       return out;
     }).then(null, function (err) {
       out.error = CGP.util.isPermissionDeniedError(err)
-        ? 'You can’t read this class’s content in Canvas (your role there may not allow it, or the course has concluded).'
+        ? 'You can’t read this class’s content in Canvas (your role there may not allow it, or the course may have ended).'
         : describe(err, 'Couldn’t read this class from Canvas');
       return out;
     });
@@ -1818,8 +1839,48 @@
 
   /* Jobs a closed tab left behind on this Canvas: finish them. Resolves the
    * results ([{job, result}]) of the ones it could finish or give up on. */
-  P.resumePending = function () {
+  /* Claim a job for this tab. Resolves the job as stored now, claimed by
+   * this tab, or null when it is gone or another tab holds it. */
+  P.claimJob = function (job) {
     var self = this;
+    var key = JOB_PREFIX + job.id;
+    // Read the job as it is now, not as listed when resumePending began: by
+    // the time a later job in the list comes up (after earlier ones were
+    // finished here), another tab may have claimed it, or finished and
+    // removed it - writing it again would run it twice, or bring it back.
+    return this.store.get(key).then(function (got) {
+      var current = got && got[key];
+      if (!current) return false;
+      var now = self.now();
+      if (current.claimedBy !== self.tabId && current.claimedAt && now - current.claimedAt < CLAIM_MS) return null;
+      // The stored record, not the listed copy: tasks another tab already
+      // finished stay finished. Only the teacher's "Finish now" is carried.
+      if (job.confirmedAt && !current.confirmedAt) current.confirmedAt = job.confirmedAt;
+      return current;
+    }).then(function (current) {
+      if (!current) return null;
+      return self.saveJob(current).then(function () {
+        return self.sleep(CLAIM_SETTLE_MS);
+      }).then(function () {
+        return self.store.get(key);
+      }).then(function (got) {
+        var stored = got && got[key];
+        return stored && stored.claimedBy === self.tabId ? current : null;
+      });
+    }).catch(function () { return null; });
+  };
+
+  /* Finish the jobs a closed tab left (see the file's header). Resolves
+   * the jobs finished here, [{job: {id, task}, result}], with `waiting`
+   * on that list: older jobs not run because the teacher should decide,
+   * [{id, startedAt, tasks}]. opts.confirm: ids of jobs the teacher has
+   * said to finish, whatever their age. */
+  P.resumePending = function (opts) {
+    var self = this;
+    var confirmed = {};
+    ((opts && opts.confirm) || []).forEach(function (id) { confirmed[String(id)] = true; });
+    var waiting = [];
+    var withWaiting = function (done) { done.waiting = waiting; return done; };
     return this.store.get(null).then(function (all) {
       var jobs = Object.keys(all || {}).filter(function (k) { return k.indexOf(JOB_PREFIX) === 0; }).map(function (k) { return all[k]; });
       var now = self.now();
@@ -1836,16 +1897,47 @@
         return k.indexOf(CACHE_PREFIX) === 0 && !(v && now - Number(v.at || 0) < MAP_TTL_MS);
       });
       if (expired.length) self.store.remove(expired).catch(function () { return null; });
+      var live = mine.filter(function (j) { return stale.indexOf(j) < 0; });
+      // Too old to finish without asking: offered (and remembered as
+      // offered, so a teacher who leaves it is not asked on every page).
+      var run = live.filter(function (j) {
+        // Once the teacher has said "Finish now", that holds on later pages
+        // too (claimJob saves it with the job), e.g. while Canvas is still
+        // copying.
+        if (confirmed[String(j.id)]) j.confirmedAt = j.confirmedAt || now;
+        if (j.confirmedAt || now - (j.startedAt || 0) <= ASK_AFTER_MS) return true;
+        if (!(j.offeredAt && now - j.offeredAt < OFFER_AGAIN_MS)) {
+          waiting.push({ id: String(j.id), startedAt: j.startedAt || 0, tasks: jobTasks(j).slice() });
+          j.offeredAt = now;
+          // Stamped on the job as stored now, not the listed copy: another
+          // tab may have finished tasks of it, or all of it, since the list
+          // was read, and writing the listed copy back would bring those
+          // back to be set up a second time.
+          var key = JOB_PREFIX + j.id;
+          self.store.get(key).then(function (got) {
+            var current = got && got[key];
+            if (!current) return null;
+            current.offeredAt = now;
+            var v = {};
+            v[key] = current;
+            return self.store.set(v);
+          }).catch(function () { return null; });
+        }
+        return false;
+      });
       return Promise.all(stale.map(function (j) { return self.dropJob(j); })).then(function () {
-        return mine.filter(function (j) { return stale.indexOf(j) < 0; }).reduce(function (p, job) {
+        return run.reduce(function (p, job) {
           return p.then(function (done) {
-            return self.saveJob(job).then(function () {
+            return self.claimJob(job).then(function (claimed) {
+              // Gone, or another tab holds it: that tab finishes it.
+              if (!claimed) return done;
               // A job from an earlier version holds one task; a batch, several.
-              var list = jobTasks(job).slice();
+              var list = jobTasks(claimed).slice();
+              if (!list.length) return done;
               var results = list.map(function () { return freshResult(); });
-              return self.continueJob(job, results, function () {}, { maxWaitMs: 1 }).then(function (rs) {
+              return self.continueJob(claimed, results, function () {}, { maxWaitMs: 1 }).then(function (rs) {
                 rs.forEach(function (r, i) {
-                  if (!r.pending) done.push({ job: { id: job.id, task: list[i] }, result: r });
+                  if (!r.pending) done.push({ job: { id: claimed.id, task: list[i] }, result: r });
                 });
                 return done;
               });
@@ -1853,11 +1945,12 @@
           });
         }, Promise.resolve([]));
       });
-    }, function () { return []; });
+    }, function () { return []; }).then(withWaiting);
   };
 
   CGP.SectionCopier = SectionCopier;
   CGP.SectionCopier.JOB_PREFIX = JOB_PREFIX;
   CGP.SectionCopier.FP_PREFIX = FP_PREFIX;
   CGP.SectionCopier.BACKUP_PREFIX = BACKUP_PREFIX;
+  CGP.SectionCopier.ASK_AFTER_MS = ASK_AFTER_MS;
 })();

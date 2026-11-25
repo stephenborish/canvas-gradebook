@@ -20,8 +20,11 @@
   var SC = function () { return CGP.studioClass; };
 
   var WATCH = 'cgp-studio-watch';
-  var RELAY = 'cgp-canvas-relay';
-  var ASK = 'cgp-studio-ask';
+  // The class list is asked for through the extension (the service worker
+  // passes it to the Canvas page's own script, canvas-relay.js), never with
+  // window.postMessage: an answer posted to this window could be read, and
+  // a question forged, by any script on the Studio page.
+  var ROSTER_MESSAGE = 'cgp.studio.roster';
   var ROSTER_WAIT_MS = 12000;
 
   var state = {
@@ -60,7 +63,6 @@
     }
     if (e.source === window && d.source === STUDIO_ANSWER) { onAnswer(d); return; }
     if (e.origin !== canvasOrigin()) return;
-    if (d.source === RELAY) { onRoster(d); return; }
     if (d.source === CANVAS_ASK && e.source === window.top) onCanvasAsk(d);
   });
 
@@ -278,8 +280,23 @@
     var id = 'r' + (++asks) + '-' + Date.now();
     var p = state.current && state.perspectives[state.current];
     state.rosters[key] = { status: 'loading', id: id };
+    var runtime = typeof chrome !== 'undefined' && chrome.runtime;
+    if (!runtime || typeof runtime.sendMessage !== 'function') { state.rosters[key] = { status: 'none' }; return; }
     try {
-      window.top.postMessage({ source: ASK, type: 'roster', id: id, courseName: name, courseId: p && p.courseId }, origin);
+      runtime.sendMessage({ type: ROSTER_MESSAGE, courseName: name, courseId: p && p.courseId }, function (answer) {
+        // No Canvas page script to answer (a Canvas page without the class
+        // list, a page that isn't Canvas), or the extension was reloaded:
+        // viewers only, as when no answer came in time - not an error.
+        var lost = runtime.lastError;
+        if (lost || !answer || typeof answer !== 'object' || answer.error === 'refused') {
+          if (state.rosters[key] && state.rosters[key].id === id) {
+            state.rosters[key] = { status: 'none' };
+            render();
+          }
+          return;
+        }
+        onRoster(Object.assign({ ok: false, error: 'Canvas didn’t give the class list' }, answer, { id: id }));
+      });
     } catch (e) { state.rosters[key] = { status: 'none' }; return; }
     setTimeout(function () {
       if (state.rosters[key] && state.rosters[key].id === id && state.rosters[key].status === 'loading') {
@@ -429,8 +446,8 @@
     var copy = L.viewersOnly ? '' : '<button type="button" class="copy" data-act="copy" title="Names of students who haven’t watched, or haven’t finished, one per line">Copy who hasn’t finished</button>';
     var rows = L.rows.map(function (r) {
       var label = SC().labelOf(r);
-      var why = r.unknownReason === 'completion' ? 'Studio lists this student as a viewer but gave no completion for them'
-        : r.unknownReason === 'ambiguous' ? 'More than one student or viewer has this name, and no email settles which is which' : '';
+      var why = r.unknownReason === 'completion' ? 'Studio lists this student as a viewer but doesn’t say how much they watched'
+        : r.unknownReason === 'ambiguous' ? 'Another student or viewer has the same name, so Gradebook+ can’t tell them apart' : '';
       // Unknown shows no share at all; a student Studio never saw shows none.
       var pct = r.status === 'unknown' ? '<span class="muted">–</span>' : (r.viewer ? pctText(r.completion) : '<span class="muted">–</span>');
       return '<tr data-status="' + r.status + '"' + (filter === 'all' || filter === r.status ? '' : ' hidden') + '>' +
@@ -447,9 +464,9 @@
       : '') + (L.unclear && L.unclear.length
       ? '<p class="note">Couldn’t tell which student watched as: ' + L.unclear.map(function (v) { return esc(v.name) + (v.email ? ' (' + esc(v.email) + ')' : ''); }).join(', ') + '.</p>'
       : '');
-    var foot = '<p class="note">“Watched” is at least ' + Math.round(SC().WATCHED_AT * 100) + '% of the video, from Studio’s completion rate for this embed. ' +
-      'Students are matched to Studio’s viewers by email; by name only when the name fits exactly one student and one viewer.' +
-      (n.unknown ? ' “Completion unavailable”: Studio listed the viewer without a share. “Match unclear”: a shared name. Neither counts as not watched or in the average.' : '') + '</p>';
+    var foot = '<p class="note">“Watched” means at least ' + Math.round(SC().WATCHED_AT * 100) + '% of the video, according to Studio. ' +
+      'Students are matched to viewers by email, or by name when only one student has that name.' +
+      (n.unknown ? ' “Completion unavailable” and “Match unclear” rows aren’t counted as not watched or in the average.' : '') + '</p>';
     return head + '<div class="body">' + warn + tiles + chart + '<div class="bar">' + chips + copy + '</div>' + table + extra + foot + '</div>';
   }
 

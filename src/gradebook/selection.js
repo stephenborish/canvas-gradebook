@@ -233,7 +233,7 @@
       if (ok === false) {
         CGP.diag.warn('selection.rangeUnconfirmed', { rows: count });
         CGP.ui.error('Gradebook+ couldn\u2019t confirm every student in that range, so nothing was selected. ' +
-          'Scroll so the range is on screen and try again.');
+          'Scroll so the whole range is on screen and try again.');
         return false;
       }
       self.applyRange(anchor, focus);

@@ -168,14 +168,53 @@ suite('SpeedGrader tidy sidebar', (test) => {
 });
 
 suite('content-script lists', (test) => {
-  test('manifest.json and script-manifest.js (self-hosted Canvas) list the same scripts in the same order', () => {
-    const root = path.join(__dirname, '..');
-    const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-    const src = fs.readFileSync(path.join(root, 'src/script-manifest.js'), 'utf8');
-    const block = /export const CONTENT_JS = \[([\s\S]*?)\];/.exec(src);
-    a.ok(block, 'CONTENT_JS found');
-    const dynamic = block[1].match(/'[^']+'/g).map((s) => s.slice(1, -1));
-    const entry = manifest.content_scripts.find((cs) => (cs.js || []).indexOf('src/gradebook/content.js') >= 0);
-    a.deep(dynamic, entry.js);
+  const { pageScripts, BOOT } = require('./page-scripts');
+
+  test('manifest.json and script-manifest.js (self-hosted Canvas) list the same scripts in the same groups and order', () => {
+    const { lists, entries, order } = pageScripts();
+    a.deep(entries.common.js, lists.common, 'every course page');
+    a.deep(entries.grading.js, lists.grading, 'grading pages');
+    a.deep(entries.boot.js, lists.boot, 'the boot');
+    a.deep(lists.boot, [BOOT]);
+    a.deep(entries.common.css, lists.css);
+    a.deep(entries.grading.css, lists.gradingCss);
+    a.ok(order[0] < order[1] && order[1] < order[2], 'injected in order: common, grading, boot');
+  });
+
+  test('the grading group runs only on the gradebook and SpeedGrader; the others on every course page', () => {
+    const { entries } = pageScripts();
+    a.deep(entries.grading.matches, ['*://*.instructure.com/courses/*/gradebook*']);
+    a.deep(entries.common.matches, ['*://*.instructure.com/courses/*']);
+    a.deep(entries.boot.matches, entries.common.matches);
+    ['common', 'grading', 'boot'].forEach((k) => a.eq(entries[k].run_at, 'document_idle', k));
+  });
+
+  test('no script is in two groups, and every one exists', () => {
+    const { all } = pageScripts();
+    a.eq(new Set(all).size, all.length);
+    all.forEach((f) => a.ok(fs.existsSync(path.join(__dirname, '..', f)), f));
+  });
+
+  /* What makes the split safe: no file every course page loads uses a name
+   * (CGP.X) that only a grading-page file defines. The boot may: it starts
+   * the gradebook only on grading pages. */
+  test('a file every course page loads never relies on one only grading pages load', () => {
+    const { lists } = pageScripts();
+    const read = (f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+    const defines = (src) => new Set([...src.matchAll(/\bCGP\.([A-Za-z_]\w*)\s*=(?!=)/g)].map((m) => m[1]));
+    const uses = (src) => new Set([...src.matchAll(/\bCGP\.([A-Za-z_]\w*)/g)].map((m) => m[1]));
+    const commonDefs = new Set();
+    lists.common.forEach((f) => defines(read(f)).forEach((n) => commonDefs.add(n)));
+    const gradingOnly = new Map();
+    lists.grading.forEach((f) => defines(read(f)).forEach((n) => { if (!commonDefs.has(n) && !gradingOnly.has(n)) gradingOnly.set(n, f); }));
+    // Defined by the boot, or set on CGP at run time by more than one file.
+    const bootDefs = defines(read(BOOT));
+    const bad = [];
+    lists.common.forEach((f) => {
+      uses(read(f)).forEach((n) => {
+        if (gradingOnly.has(n) && !bootDefs.has(n)) bad.push(f + ' uses CGP.' + n + ' (' + gradingOnly.get(n) + ')');
+      });
+    });
+    a.deep(bad, []);
   });
 });

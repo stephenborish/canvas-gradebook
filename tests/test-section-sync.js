@@ -450,6 +450,27 @@ suite('copy to sections: the copy runner', (test) => {
     a.eq(Object.keys(store.mem).length, 0);
   });
 
+  test('a batch whose start got no answer is never retried item by item: the copy may have started', async () => {
+    const api = fakeCanvas();
+    let starts = 0;
+    api.startCourseCopy = () => {
+      starts++;
+      return Promise.reject(Object.assign(new globalThis.CGP.CanvasApiError('Timed out on POST', {}), { network: true, timedOut: true }));
+    };
+    const page = { type: 'page', id: '8', title: 'Notes', published: true, html: '' };
+    const rs = [];
+    await copier(api).runPlan([
+      { srcCourseId: '11', destCourseId: '22', item: ASSIGNMENT, mode: 'copy', dates: {}, publish: 'match' },
+      { srcCourseId: '11', destCourseId: '22', item: page, mode: 'copy', dates: {}, publish: 'match' }
+    ], null, (t, r) => rs.push(r));
+    a.eq(rs.length, 2);
+    a.eq(starts, 1, 'one start only: a second could copy everything twice');
+    rs.forEach((r) => {
+      a.not(r.ok);
+      a.ok(/may still have started/.test(r.error) && /check that class/.test(r.error), r.error);
+    });
+  });
+
   test('a refused copy (no rights in that course) says so', async () => {
     const api = fakeCanvas({ refuseCopy: true });
     const r = await copier(api).run({ srcCourseId: '11', destCourseId: '22', item: ASSIGNMENT, mode: 'copy', dates: {}, publish: 'match' });
@@ -461,7 +482,7 @@ suite('copy to sections: the copy runner', (test) => {
     const api = fakeCanvas({ onComplete: () => {} });
     const r = await copier(api).run({ srcCourseId: '11', destCourseId: '22', item: ASSIGNMENT, mode: 'copy', dates: {}, publish: 'match' });
     a.not(r.ok);
-    a.ok(/did not report where the copy is/.test(r.error));
+    a.ok(/didn’t say where the copy is/.test(r.error));
     a.not(api.calls.some((x) => x[0] === 'putDates'));
   });
 
@@ -486,6 +507,122 @@ suite('copy to sections: the copy runner', (test) => {
     a.ok(done[0].result.ok, done[0].result.error);
     a.eq(api.calls.filter((x) => x[0] === 'putDates').pop()[4].due_at, '2026-03-04T13:00:00.000Z');
     a.eq(Object.keys(store.mem).filter((k) => k.indexOf('cgp.sections.job.') === 0).length, 0);
+  });
+
+  /* A job a tab left behind, its copy finished in Canvas, started `ageMs` ago. */
+  async function leftJob(ageMs) {
+    let api;
+    api = fakeCanvas({ pollsUntilDone: 1000, onComplete: (dest) => landCopy(api, dest, '705', '<p>Do the lab.</p>') });
+    const store = memStore();
+    const c = copier(api, store);
+    c.maxWaitMs = 0;
+    await c.run({ srcCourseId: '11', destCourseId: '22', item: ASSIGNMENT, mode: 'copy',
+      dates: { due_at: '2026-03-04T13:00:00.000Z', unlock_at: null, lock_at: null }, note: '', publish: 'match' });
+    api.db.pollsUntilDone = 0;
+    const key = Object.keys(store.mem).find((k) => k.indexOf('cgp.sections.job.') === 0);
+    store.mem[key].startedAt = Date.now() - ageMs;
+    store.mem[key].claimedAt = 0;
+    return { api, store, key, puts: () => api.calls.filter((x) => x[0] === 'putDates').length };
+  }
+
+  test('an old job is not finished on its own: it waits for the teacher, offered once in a while', async () => {
+    const { api, store, key, puts } = await leftJob(2 * 3600 * 1000);
+    const later = copier(api, store);
+    const done = await later.resumePending();
+    a.eq(done.length, 0, 'nothing finished without asking');
+    a.eq(puts(), 0, 'no dates set on a copy the teacher may have changed');
+    a.eq(done.waiting.length, 1);
+    a.eq(done.waiting[0].id, store.mem[key].id);
+    a.eq(done.waiting[0].tasks[0].item.title, ASSIGNMENT.title, 'enough to name it in the notice');
+    a.ok(store.mem[key], 'the job is kept');
+    const again = await copier(api, store).resumePending();
+    a.eq(again.waiting.length, 0, 'not offered again on the next page');
+    const confirmed = await copier(api, store).resumePending({ confirm: [store.mem[key].id] });
+    a.eq(confirmed.length, 1, 'finished once the teacher says so');
+    a.ok(confirmed[0].result.ok, confirmed[0].result.error);
+    a.eq(puts(), 1);
+    a.not(store.mem[key], 'and then dropped');
+  });
+
+  test('a recent job is still finished at once, with nothing waiting', async () => {
+    const { api, store, puts } = await leftJob(5 * 60 * 1000);
+    const done = await copier(api, store).resumePending();
+    a.eq(done.length, 1);
+    a.eq(done.waiting.length, 0);
+    a.eq(puts(), 1);
+  });
+
+  test('two tabs opening at once: only one finishes the job', async () => {
+    const { api, store, puts } = await leftJob(5 * 60 * 1000);
+    const one = copier(api, store);
+    const two = copier(api, store);
+    const [d1, d2] = await Promise.all([one.resumePending(), two.resumePending()]);
+    a.eq(d1.length + d2.length, 1, 'finished once between them');
+    a.eq(puts(), 1, 'its dates set once');
+  });
+
+  test('"Finish now" while Canvas is still copying holds on later pages, without asking again', async () => {
+    const { api, store, key, puts } = await leftJob(2 * 3600 * 1000);
+    const id = store.mem[key].id;
+    api.db.pollsUntilDone = Infinity;   // still copying (polls are instant here: no finite count is safe)
+    const first = await copier(api, store).resumePending();
+    a.eq(first.waiting.length, 1, 'offered');
+    const confirmed = await copier(api, store).resumePending({ confirm: [id] });
+    a.eq(confirmed.length, 0, 'still copying: nothing finished yet');
+    a.ok(store.mem[key] && store.mem[key].confirmedAt, 'the teacher\u2019s answer is kept with the job');
+    api.db.pollsUntilDone = 0;
+    const next = copier(api, store);
+    next.now = () => Date.now() + 3 * 60 * 1000;   // past the earlier claim
+    const later = await next.resumePending();
+    a.eq(later.waiting.length, 0, 'not asked again');
+    a.eq(later.length, 1, 'finished once Canvas is done');
+    a.eq(puts(), 1);
+  });
+
+  test('a job another tab finished after this tab listed it is not run again', async () => {
+    const { api, store, key, puts } = await leftJob(5 * 60 * 1000);
+    const c = copier(api, store);
+    const get = store.get;
+    let listed = false;
+    store.get = (k) => get(k).then((r) => {
+      // Right after this tab lists the jobs, another tab finishes and drops it.
+      if (k === null && !listed) { listed = true; delete store.mem[key]; }
+      return r;
+    });
+    const done = await c.resumePending();
+    a.eq(done.length, 0);
+    a.eq(puts(), 0, 'no dates set a second time');
+    a.not(store.mem[key], 'not written back into storage');
+  });
+
+  test('the page names a waiting copy and finishes it only on "Finish now"', async () => {
+    const { api, store, puts } = await leftJob(26 * 3600 * 1000);
+    if (!globalThis.CGP.SectionCopyController) vm.runInThisContext(fs.readFileSync(path.join(__dirname, '../src/sections/sync-dialog.js'), 'utf8'));
+    const said = [];
+    const ui = globalThis.CGP.ui;
+    globalThis.CGP.ui = {
+      toast: (m) => said.push({ text: String(m) }),
+      error: (m) => said.push({ text: String(m), error: true }),
+      notice: (m, o) => said.push({ text: String(m), notice: true, actions: o.actions, id: o.id })
+    };
+    try {
+      const ctl = Object.create(globalThis.CGP.SectionCopyController.prototype);
+      ctl.copier = copier(api, store);
+      await ctl.resume();
+      a.eq(puts(), 0, 'nothing done before the teacher answers');
+      const offer = said.find((x) => x.notice);
+      a.ok(offer, 'a notice that stays until answered, not a toast that the next message replaces');
+      a.deep(offer.actions.map((x) => x.label), ['Finish now', 'Not now']);
+      offer.action = offer.actions[0];
+      a.ok(offer.text.indexOf('“' + ASSIGNMENT.title + '”') >= 0, offer.text);
+      a.ok(/1 day ago/.test(offer.text), offer.text);
+      offer.action.run();
+      await new Promise((r) => setTimeout(r, 20));
+      a.eq(puts(), 1, 'finished on Finish now');
+      a.ok(said.some((x) => /^Finished copying/.test(x.text)), JSON.stringify(said));
+    } finally {
+      globalThis.CGP.ui = ui;
+    }
   });
 
   test('another Canvas’s jobs are left alone, and old ones are dropped', async () => {

@@ -3,20 +3,19 @@
  *
  * Studio (on <school>.instructuremedia.com, in a frame of this Canvas
  * page) knows who watched a video but not who is in the class. When the
- * extension's own script in that frame (studio/content.js) asks, this
- * reads the course's students - names and emails - with the teacher's
- * Canvas session and answers that frame only. It answers only a frame
- * inside this page, only from a Studio site, only for a course this
- * teacher teaches, and keeps nothing. */
+ * extension's own script in that frame (studio/content.js) asks, through
+ * the service worker, this reads the course's students - names and emails,
+ * which is how Studio's viewers are matched to them - with the teacher's
+ * Canvas session. It answers only for a course this teacher teaches, only
+ * by extension messaging (never window.postMessage), and keeps nothing. */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
   if (CGP.studioRelayStarted || typeof window === 'undefined' || window.self !== window.top) return;
   CGP.studioRelayStarted = true;
 
-  var ASK = 'cgp-studio-ask';
-  var RELAY = 'cgp-canvas-relay';
-  var STUDIO_ORIGIN = /^https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)*\.instructuremedia\.com$/i;
+  // Sent by background.js, which received cgp.studio.roster from a Studio frame.
+  var ROSTER_ASK = 'cgp.studio.roster.ask';
 
   var api = null;
   var courses = null;
@@ -65,26 +64,30 @@
     return rosters[courseId];
   }
 
-  window.addEventListener('message', function (e) {
-    var d = e.data;
-    if (!d || typeof d !== 'object' || d.source !== ASK || d.type !== 'roster') return;
-    if (!STUDIO_ORIGIN.test(e.origin) || !e.source || e.source === window || !CGP.util || !CGP.util.isFrameWithin(e.source, window)) return;
-    if (!CGP.CanvasApi) return;
+  /* Asked by the service worker on behalf of the extension's own script in
+   * a Studio frame of this tab (background.js checks that sender: a frame,
+   * not this page, on a Studio site, in this same tab). Page scripts can
+   * neither send this question nor read its answer, unlike the
+   * window.postMessage relay this replaces. */
+  if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.onMessage) return;
+  chrome.runtime.onMessage.addListener(function (msg, sender, respond) {
+    if (!msg || msg.type !== ROSTER_ASK) return false;
+    // From the service worker only: an extension sender with no tab.
+    if (!sender || sender.id !== chrome.runtime.id || sender.tab) return false;
+    if (!CGP.CanvasApi) return false;
     if (!api) api = new CGP.CanvasApi();
-    var reply = function (msg) {
-      try { e.source.postMessage(Object.assign({ source: RELAY, id: String(d.id || '') }, msg), e.origin); } catch (err) { /* frame gone */ }
-    };
-    var name = String(d.courseName || '').slice(0, 300);
-    findCourse(name, /^\d+$/.test(String(d.courseId || '')) ? String(d.courseId) : null).then(function (course) {
+    var name = String(msg.courseName || '').slice(0, 300);
+    findCourse(name, /^\d+$/.test(String(msg.courseId || '')) ? String(msg.courseId) : null).then(function (course) {
       if (!course) {
-        reply({ ok: false, error: name ? 'No course you teach in Canvas is called “' + name + '”' : 'Couldn’t tell which course this embed belongs to' });
+        respond({ ok: false, error: name ? 'No course you teach in Canvas is called “' + name + '”' : 'Couldn’t tell which course this embed belongs to' });
         return;
       }
       return roster(course.id).then(function (students) {
-        reply({ ok: true, courseId: String(course.id), courseName: course.name || name, students: students });
+        respond({ ok: true, courseId: String(course.id), courseName: course.name || name, students: students });
       });
     }).catch(function (err) {
-      reply({ ok: false, error: (CGP.util && CGP.util.describeApiError) ? CGP.util.describeApiError(err, { fallback: 'Canvas didn’t give the class list' }) : 'Canvas didn’t give the class list' });
+      respond({ ok: false, error: (CGP.util && CGP.util.describeApiError) ? CGP.util.describeApiError(err, { fallback: 'Canvas didn’t give the class list' }) : 'Canvas didn’t give the class list' });
     });
+    return true;   // answered asynchronously
   });
 })();

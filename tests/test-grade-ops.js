@@ -307,7 +307,7 @@ suite('settings sanitizing', (test) => {
 suite('describing a failed Canvas request', (test) => {
   test('a 401 is always a session expiry, worded so the teacher knows to log back in', () => {
     a.eq(CGP.util.isSessionExpiredError({ status: 401 }), true);
-    a.ok(/log back in/i.test(CGP.util.describeApiError({ status: 401 })));
+    a.ok(/sign back in/i.test(CGP.util.describeApiError({ status: 401 })));
   });
 
   test('other statuses are not mistaken for a session expiry', () => {
@@ -318,13 +318,13 @@ suite('describing a failed Canvas request', (test) => {
   });
 
   test('a network failure and a rate limit each get their own specific wording', () => {
-    a.ok(/network/i.test(CGP.util.describeApiError({ network: true })));
+    a.ok(/internet connection/i.test(CGP.util.describeApiError({ network: true })));
     a.ok(/slow down|rate limit/i.test(CGP.util.describeApiError({ status: 429 })));
   });
 
   test('anything else falls back to the caller’s own message, with the status folded in', () => {
     const msg = CGP.util.describeApiError({ status: 422 }, { fallback: 'Could not save this' });
-    a.eq(msg, 'Could not save this (Canvas 422).');
+    a.eq(msg, 'Could not save this (Canvas error 422).');
     const noStatus = CGP.util.describeApiError({ message: 'boom' }, { fallback: 'Could not save this' });
     a.eq(noStatus, 'Could not save this: boom.');
     a.eq(CGP.util.describeApiError(null), 'Canvas rejected this request.');

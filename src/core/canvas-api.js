@@ -151,7 +151,18 @@
     var self = this;
     opts = Object.assign({}, this._defaults || {}, opts || {});
     var method = (opts.method || 'GET').toUpperCase();
-    var timeoutMs = opts.timeoutMs > 0 && method === 'GET' ? opts.timeoutMs : 0;
+    // Reads wait as long as the caller allows (opts.timeoutMs, else forever).
+    // Writes always have a limit (WRITE_TIMEOUT_MS unless the caller gives
+    // one; 0 turns it off): a save stalled on a dropped connection would
+    // otherwise hold its slot in the writer's pool, and every later save to
+    // the same cell, indefinitely. A write that times out is a network
+    // failure like any other - never re-sent when not idempotent, and a
+    // submission write is then settled by reading the record back
+    // (writer.js settleUnconfirmed).
+    var isWrite = method !== 'GET' && method !== 'HEAD';
+    var timeoutMs = isWrite
+      ? (opts.timeoutMs === 0 ? 0 : (opts.timeoutMs > 0 ? opts.timeoutMs : CanvasApi.WRITE_TIMEOUT_MS))
+      : (opts.timeoutMs > 0 ? opts.timeoutMs : 0);
     // Once Canvas has answered, the body gets longer: a large list arriving
     // steadily over a slow connection is not a stall.
     var bodyTimeoutMs = timeoutMs ? (opts.bodyTimeoutMs > 0 ? opts.bodyTimeoutMs : Math.max(60000, timeoutMs * 3)) : 0;
@@ -174,7 +185,7 @@
       });
       body = sp.toString();
     }
-    if (method !== 'GET' && method !== 'HEAD') {
+    if (isWrite) {
       var token = this.csrfToken();
       if (token) headers['X-CSRF-Token'] = token;
       else CGP.diag.warn('csrf.missing', { method: method, path: u.pathname });
@@ -251,7 +262,9 @@
         // copy. Those are only retried for requests that are safe to repeat.
         var throttled = isThrottled(err);
         var transient = err.network === true || (err.status >= 500 && err.status < 600);
-        var retriable = throttled || (transient && opts.idempotent !== false);
+        // A write that timed out may simply be slow and still land: it is
+        // never sent again, whatever the request says about idempotence.
+        var retriable = throttled || (transient && opts.idempotent !== false && !(isWrite && err.timedOut));
         // Canvas's own Retry-After is honoured in full, up to a limit a
         // teacher can sensibly be kept waiting on. Asked to wait longer, the
         // request is not retried early (it would only be throttled again);
@@ -1108,6 +1121,10 @@
   };
 
   CGP.CanvasApi = CanvasApi;
+  // How long one attempt at a write may go without Canvas answering, unless
+  // the caller sets its own limit (see request()). A property, not a
+  // constant, so tests can shorten it.
+  CanvasApi.WRITE_TIMEOUT_MS = 60000;
   CGP.CanvasApiError = CanvasApiError;
   CGP.apiInternals = { parseBody: parseBody, nextLink: nextLink, isThrottled: isThrottled, retryAfterMs: retryAfterMs, formToJson: formToJson, numberedPages: numberedPages };
 })();

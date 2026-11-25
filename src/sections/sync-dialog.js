@@ -117,7 +117,7 @@
       var imp = side && side.querySelector('a[href*="/content_migrations"]');
       return {
         kind: 'home', label: 'Copy to other classes',
-        tip: 'Pick assignments, quizzes, pages… from this course and put a copy in your other classes of it',
+        tip: 'Pick assignments, quizzes, pages and more from this course and copy them to your other classes',
         at: imp || side, where: imp ? 'afterend' : 'afterbegin'
       };
     }
@@ -125,7 +125,7 @@
       var add = document.querySelector('#content .add_module_link, #content button[aria-label="Add Module"], #content button[aria-label="Module"]');
       return {
         kind: 'modules', label: 'Copy to other classes',
-        tip: 'Pick modules or items from this course and put a copy in your other classes of it',
+        tip: 'Pick modules or items from this course and copy them to your other classes',
         at: add, where: 'beforebegin'
       };
     }
@@ -758,10 +758,10 @@
 
   P.requestClose = function () {
     if (this.state && this.state.back && this.state.back.running) {
-      CGP.ui.toast('Still updating in the background — stay on this page until the message saying it is done.');
+      CGP.ui.toast('Still updating. Keep this page open until it says it’s done.');
     }
     if (this.state && this.state.running) {
-      CGP.ui.toast('Copying carries on in the background — stay on this page until the message saying it is done.');
+      CGP.ui.toast('Still copying. Keep this page open until it says it’s done.');
     }
     this.close();
   };
@@ -1103,7 +1103,7 @@
     var extra = [];
     st.items.forEach(function (it) {
       if (it.newQuiz) extra.push('“' + (it.title || '') + '” is a New Quiz: its questions take Canvas a few extra minutes.');
-      if (it.hasOverrides) extra.push('“' + (it.title || '') + '” has dates for particular students here; copies get only the dates shown.');
+      if (it.hasOverrides) extra.push('“' + (it.title || '') + '” has dates for some students here; copies get only the dates shown.');
     });
     if (extra.length) html += '<p class="cgp-stats__note">' + esc(extra.join(' ')) + '</p>';
 
@@ -1482,7 +1482,7 @@
       if (self.state !== st) return;
       st.dests = self.siblings();
       if (ids.length >= 2 && !st.dests.length) {
-        CGP.ui.error('Those classes could not be saved: the list of class groups is full. Remove old ones in the options page.');
+        CGP.ui.error('Those classes couldn’t be linked: you have too many linked groups. Remove old ones in Gradebook+ settings.');
       }
       st.linkDraft = null;
       st.view = !st.dests.length ? 'link' : (st.wantPick && !st.items.length ? 'pick' : 'main');
@@ -1742,19 +1742,65 @@
   P.resume = function () {
     var self = this;
     return this.copier.resumePending().then(function (done) {
-      if (!done.length) return;
-      var ok = done.filter(function (d) { return d.result.ok; });
-      var first = done[0];
-      if (ok.length === done.length) {
-        CGP.ui.toast('Finished copying ' + (done.length === 1 ? '“' + first.job.task.item.title + '” to ' + (first.job.task.destName || 'a class')
-          : done.length + ' items to your other classes') + '.');
-      } else {
-        var bad = done.filter(function (d) { return !d.result.ok; })[0];
-        CGP.ui.error('Copying “' + bad.job.task.item.title + '” to ' + (bad.job.task.destName || 'a class') + ' did not finish: ' + (bad.result.error || 'unknown error'));
-      }
-      CGP.diag.log('sections.resumed', { count: done.length, ok: ok.length });
-      self.lastResumed = done;
+      self.reportResumed(done);
+      if (!(done.waiting && done.waiting.length)) return;
+      // One toast at a time: a "Finished copying" message is left up for a
+      // moment before the offer replaces it.
+      if (done.length) setTimeout(function () { self.offerWaiting(done.waiting); }, 3500);
+      else self.offerWaiting(done.waiting);
     });
+  };
+
+  P.reportResumed = function (done) {
+    if (!done.length) return;
+    var ok = done.filter(function (d) { return d.result.ok; });
+    var first = done[0];
+    if (ok.length === done.length) {
+      CGP.ui.toast('Finished copying ' + (done.length === 1 ? '“' + first.job.task.item.title + '” to ' + (first.job.task.destName || 'a class')
+        : done.length + ' items to your other classes') + '.');
+    } else {
+      var bad = done.filter(function (d) { return !d.result.ok; })[0];
+      CGP.ui.error('Copying “' + bad.job.task.item.title + '” to ' + (bad.job.task.destName || 'a class') + ' did not finish: ' + (bad.result.error || 'unknown error'));
+    }
+    CGP.diag.log('sections.resumed', { count: done.length, ok: ok.length });
+    this.lastResumed = done;
+  };
+
+  /* Copies a closed tab left half set up long enough ago that the teacher
+   * may have changed them by hand: finishing would set their dates, note
+   * and published state again, so it waits for "Finish now". Left alone,
+   * they are offered again later and dropped after three days. */
+  P.offerWaiting = function (waiting) {
+    var self = this;
+    var tasks = [];
+    waiting.forEach(function (w) { tasks = tasks.concat(w.tasks || []); });
+    if (!tasks.length) return;
+    var oldest = Math.min.apply(null, waiting.map(function (w) { return w.startedAt || Date.now(); }));
+    var hours = Math.max(1, Math.round((Date.now() - oldest) / 3600000));
+    var when = hours < 24 ? hours + ' hour' + (hours === 1 ? '' : 's') + ' ago' : Math.round(hours / 24) + ' day' + (hours < 36 ? '' : 's') + ' ago';
+    var what = tasks.length === 1
+      ? '“' + ((tasks[0].item && tasks[0].item.title) || 'an item') + '” in ' + (tasks[0].destName || 'another class')
+      : tasks.length + ' copies in your other classes';
+    // A notice, not a toast: it stays until the teacher answers, so a
+    // grading message a moment later cannot replace it unseen (it is not
+    // offered again for hours once shown).
+    var finish = {
+        label: 'Finish now',
+        run: function () {
+          var ids = waiting.map(function (w) { return w.id; });
+          self.copier.resumePending({ confirm: ids }).then(function (done) {
+            var mine = done.filter(function (d) { return ids.indexOf(String(d.job.id)) >= 0; });
+            if (mine.length) self.reportResumed(mine);
+            else CGP.ui.toast('Canvas is still copying it. Gradebook+ will finish it on a later page.');
+          }, function () { CGP.ui.error('Gradebook+ couldn’t finish it just now. It will offer again later.'); });
+        }
+    };
+    CGP.ui.notice('Gradebook+ didn’t finish setting up ' + what + ' (copied ' + when + '): dates and publishing weren’t set yet. ' +
+      'Finish now, unless you’ve changed ' + (tasks.length === 1 ? 'it' : 'them') + ' by hand since.', {
+      id: 'sections-waiting',
+      actions: [finish, { label: 'Not now' }]
+    });
+    CGP.diag.log('sections.offeredWaiting', { count: tasks.length });
   };
 
   CGP.SectionCopyController = SectionCopyController;
