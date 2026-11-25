@@ -903,6 +903,10 @@ what students can see says that.
 - **A reload while Canvas is copying** brings the banner back and finishes that copy job (its dates
   included) instead of starting a second copy. A class whose copy had not started yet offers **Try
   again**; one whose request may have reached Canvas says to check that class first.
+- **A copy job a closed tab left unfinished** is finished on the next Canvas course page if it is under
+  half an hour old. An older one is not finished on its own, since you may have changed the copy by
+  hand since: a notice offers **Finish now** (again at most every six hours), and the job is dropped
+  after three days. When several tabs open at once, only one finishes a job.
 - **Saving an edit of an item that is already in your linked courses updates their versions.** A class
   whose version was edited there says so on its row, with **Pick a version…** beside it.
 - **A New Quiz** is copied with Copy to other classes once its questions are in.

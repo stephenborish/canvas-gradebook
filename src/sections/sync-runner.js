@@ -20,7 +20,9 @@
  * A job is written to this computer (chrome.storage.local) as soon as Canvas
  * has accepted it, and removed only once step 4 is done, so a tab closed
  * while Canvas is still copying finishes the job the next time a Canvas
- * course page opens (resumePending). */
+ * course page opens (resumePending) - at once if the job is recent, else
+ * only once the teacher says "Finish now", since they may have changed the
+ * copy by hand meanwhile. */
 (function () {
   'use strict';
   var CGP = (globalThis.CGP = globalThis.CGP || {});
@@ -30,6 +32,18 @@
   var FP_PREFIX = 'cgp.sections.fp.';
   var JOB_MAX_AGE_MS = 3 * 24 * 3600 * 1000;
   var CLAIM_MS = 2 * 60 * 1000;
+  // A job left by a closed tab is finished on the next course page without
+  // asking only while it is this fresh. An older one sets dates, a note and
+  // the published state on a copy the teacher may have changed by hand
+  // since, so they are asked first (resumePending's `waiting`), and asked
+  // again no more often than OFFER_AGAIN_MS until the job expires.
+  var ASK_AFTER_MS = 30 * 60 * 1000;
+  var OFFER_AGAIN_MS = 6 * 3600 * 1000;
+  // Claiming a job is "write the claim, wait, read it back": storage has no
+  // compare-and-set, and two tabs restored together would otherwise both
+  // read the job as free and both finish it. The last claim written wins,
+  // and both tabs read back the same winner.
+  var CLAIM_SETTLE_MS = 300;
 
   function S() { return CGP.sectionSync; }
 
@@ -1824,8 +1838,31 @@
 
   /* Jobs a closed tab left behind on this Canvas: finish them. Resolves the
    * results ([{job, result}]) of the ones it could finish or give up on. */
-  P.resumePending = function () {
+  /* Claim a job for this tab; resolves true only when the claim held. */
+  P.claimJob = function (job) {
     var self = this;
+    var key = JOB_PREFIX + job.id;
+    return this.saveJob(job).then(function () {
+      return self.sleep(CLAIM_SETTLE_MS);
+    }).then(function () {
+      return self.store.get(key);
+    }).then(function (got) {
+      var stored = got && got[key];
+      return !!(stored && stored.claimedBy === self.tabId);
+    }, function () { return false; });
+  };
+
+  /* Finish the jobs a closed tab left (see the file's header). Resolves
+   * the jobs finished here, [{job: {id, task}, result}], with `waiting`
+   * on that list: older jobs not run because the teacher should decide,
+   * [{id, startedAt, tasks}]. opts.confirm: ids of jobs the teacher has
+   * said to finish, whatever their age. */
+  P.resumePending = function (opts) {
+    var self = this;
+    var confirmed = {};
+    ((opts && opts.confirm) || []).forEach(function (id) { confirmed[String(id)] = true; });
+    var waiting = [];
+    var withWaiting = function (done) { done.waiting = waiting; return done; };
     return this.store.get(null).then(function (all) {
       var jobs = Object.keys(all || {}).filter(function (k) { return k.indexOf(JOB_PREFIX) === 0; }).map(function (k) { return all[k]; });
       var now = self.now();
@@ -1842,10 +1879,26 @@
         return k.indexOf(CACHE_PREFIX) === 0 && !(v && now - Number(v.at || 0) < MAP_TTL_MS);
       });
       if (expired.length) self.store.remove(expired).catch(function () { return null; });
+      var live = mine.filter(function (j) { return stale.indexOf(j) < 0; });
+      // Too old to finish without asking: offered (and remembered as
+      // offered, so a teacher who leaves it is not asked on every page).
+      var run = live.filter(function (j) {
+        if (confirmed[String(j.id)] || now - (j.startedAt || 0) <= ASK_AFTER_MS) return true;
+        if (!(j.offeredAt && now - j.offeredAt < OFFER_AGAIN_MS)) {
+          waiting.push({ id: String(j.id), startedAt: j.startedAt || 0, tasks: jobTasks(j).slice() });
+          j.offeredAt = now;
+          var v = {};
+          v[JOB_PREFIX + j.id] = j;
+          self.store.set(v).catch(function () { return null; });
+        }
+        return false;
+      });
       return Promise.all(stale.map(function (j) { return self.dropJob(j); })).then(function () {
-        return mine.filter(function (j) { return stale.indexOf(j) < 0; }).reduce(function (p, job) {
+        return run.reduce(function (p, job) {
           return p.then(function (done) {
-            return self.saveJob(job).then(function () {
+            return self.claimJob(job).then(function (held) {
+              // Another tab claimed it in the same moment: it finishes it.
+              if (!held) return done;
               // A job from an earlier version holds one task; a batch, several.
               var list = jobTasks(job).slice();
               var results = list.map(function () { return freshResult(); });
@@ -1859,11 +1912,12 @@
           });
         }, Promise.resolve([]));
       });
-    }, function () { return []; });
+    }, function () { return []; }).then(withWaiting);
   };
 
   CGP.SectionCopier = SectionCopier;
   CGP.SectionCopier.JOB_PREFIX = JOB_PREFIX;
   CGP.SectionCopier.FP_PREFIX = FP_PREFIX;
   CGP.SectionCopier.BACKUP_PREFIX = BACKUP_PREFIX;
+  CGP.SectionCopier.ASK_AFTER_MS = ASK_AFTER_MS;
 })();

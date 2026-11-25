@@ -1742,19 +1742,56 @@
   P.resume = function () {
     var self = this;
     return this.copier.resumePending().then(function (done) {
-      if (!done.length) return;
-      var ok = done.filter(function (d) { return d.result.ok; });
-      var first = done[0];
-      if (ok.length === done.length) {
-        CGP.ui.toast('Finished copying ' + (done.length === 1 ? '“' + first.job.task.item.title + '” to ' + (first.job.task.destName || 'a class')
-          : done.length + ' items to your other classes') + '.');
-      } else {
-        var bad = done.filter(function (d) { return !d.result.ok; })[0];
-        CGP.ui.error('Copying “' + bad.job.task.item.title + '” to ' + (bad.job.task.destName || 'a class') + ' did not finish: ' + (bad.result.error || 'unknown error'));
-      }
-      CGP.diag.log('sections.resumed', { count: done.length, ok: ok.length });
-      self.lastResumed = done;
+      self.reportResumed(done);
+      if (done.waiting && done.waiting.length) self.offerWaiting(done.waiting);
     });
+  };
+
+  P.reportResumed = function (done) {
+    if (!done.length) return;
+    var ok = done.filter(function (d) { return d.result.ok; });
+    var first = done[0];
+    if (ok.length === done.length) {
+      CGP.ui.toast('Finished copying ' + (done.length === 1 ? '“' + first.job.task.item.title + '” to ' + (first.job.task.destName || 'a class')
+        : done.length + ' items to your other classes') + '.');
+    } else {
+      var bad = done.filter(function (d) { return !d.result.ok; })[0];
+      CGP.ui.error('Copying “' + bad.job.task.item.title + '” to ' + (bad.job.task.destName || 'a class') + ' did not finish: ' + (bad.result.error || 'unknown error'));
+    }
+    CGP.diag.log('sections.resumed', { count: done.length, ok: ok.length });
+    this.lastResumed = done;
+  };
+
+  /* Copies a closed tab left half set up long enough ago that the teacher
+   * may have changed them by hand: finishing would set their dates, note
+   * and published state again, so it waits for "Finish now". Left alone,
+   * they are offered again later and dropped after three days. */
+  P.offerWaiting = function (waiting) {
+    var self = this;
+    var tasks = [];
+    waiting.forEach(function (w) { tasks = tasks.concat(w.tasks || []); });
+    if (!tasks.length) return;
+    var oldest = Math.min.apply(null, waiting.map(function (w) { return w.startedAt || Date.now(); }));
+    var hours = Math.max(1, Math.round((Date.now() - oldest) / 3600000));
+    var when = hours < 24 ? hours + ' hour' + (hours === 1 ? '' : 's') + ' ago' : Math.round(hours / 24) + ' day' + (hours < 36 ? '' : 's') + ' ago';
+    var what = tasks.length === 1
+      ? '“' + ((tasks[0].item && tasks[0].item.title) || 'an item') + '” in ' + (tasks[0].destName || 'another class')
+      : tasks.length + ' copies in your other classes';
+    CGP.ui.toast('Gradebook+ didn’t finish setting up ' + what + ' (copied ' + when + '): its dates, note and published ' +
+      'state were not set yet. Finish now, unless you have changed ' + (tasks.length === 1 ? 'it' : 'them') + ' by hand since.', {
+      action: {
+        label: 'Finish now',
+        run: function () {
+          var ids = waiting.map(function (w) { return w.id; });
+          self.copier.resumePending({ confirm: ids }).then(function (done) {
+            var mine = done.filter(function (d) { return ids.indexOf(String(d.job.id)) >= 0; });
+            if (mine.length) self.reportResumed(mine);
+            else CGP.ui.toast('Canvas is still copying it. Gradebook+ will finish it on a later page.');
+          }, function () { CGP.ui.error('Gradebook+ couldn’t finish it just now. It will offer again later.'); });
+        }
+      }
+    });
+    CGP.diag.log('sections.offeredWaiting', { count: tasks.length });
   };
 
   CGP.SectionCopyController = SectionCopyController;

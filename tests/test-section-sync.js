@@ -488,6 +488,86 @@ suite('copy to sections: the copy runner', (test) => {
     a.eq(Object.keys(store.mem).filter((k) => k.indexOf('cgp.sections.job.') === 0).length, 0);
   });
 
+  /* A job a tab left behind, its copy finished in Canvas, started `ageMs` ago. */
+  async function leftJob(ageMs) {
+    let api;
+    api = fakeCanvas({ pollsUntilDone: 1000, onComplete: (dest) => landCopy(api, dest, '705', '<p>Do the lab.</p>') });
+    const store = memStore();
+    const c = copier(api, store);
+    c.maxWaitMs = 0;
+    await c.run({ srcCourseId: '11', destCourseId: '22', item: ASSIGNMENT, mode: 'copy',
+      dates: { due_at: '2026-03-04T13:00:00.000Z', unlock_at: null, lock_at: null }, note: '', publish: 'match' });
+    api.db.pollsUntilDone = 0;
+    const key = Object.keys(store.mem).find((k) => k.indexOf('cgp.sections.job.') === 0);
+    store.mem[key].startedAt = Date.now() - ageMs;
+    store.mem[key].claimedAt = 0;
+    return { api, store, key, puts: () => api.calls.filter((x) => x[0] === 'putDates').length };
+  }
+
+  test('an old job is not finished on its own: it waits for the teacher, offered once in a while', async () => {
+    const { api, store, key, puts } = await leftJob(2 * 3600 * 1000);
+    const later = copier(api, store);
+    const done = await later.resumePending();
+    a.eq(done.length, 0, 'nothing finished without asking');
+    a.eq(puts(), 0, 'no dates set on a copy the teacher may have changed');
+    a.eq(done.waiting.length, 1);
+    a.eq(done.waiting[0].id, store.mem[key].id);
+    a.eq(done.waiting[0].tasks[0].item.title, ASSIGNMENT.title, 'enough to name it in the notice');
+    a.ok(store.mem[key], 'the job is kept');
+    const again = await copier(api, store).resumePending();
+    a.eq(again.waiting.length, 0, 'not offered again on the next page');
+    const confirmed = await copier(api, store).resumePending({ confirm: [store.mem[key].id] });
+    a.eq(confirmed.length, 1, 'finished once the teacher says so');
+    a.ok(confirmed[0].result.ok, confirmed[0].result.error);
+    a.eq(puts(), 1);
+    a.not(store.mem[key], 'and then dropped');
+  });
+
+  test('a recent job is still finished at once, with nothing waiting', async () => {
+    const { api, store, puts } = await leftJob(5 * 60 * 1000);
+    const done = await copier(api, store).resumePending();
+    a.eq(done.length, 1);
+    a.eq(done.waiting.length, 0);
+    a.eq(puts(), 1);
+  });
+
+  test('two tabs opening at once: only one finishes the job', async () => {
+    const { api, store, puts } = await leftJob(5 * 60 * 1000);
+    const one = copier(api, store);
+    const two = copier(api, store);
+    const [d1, d2] = await Promise.all([one.resumePending(), two.resumePending()]);
+    a.eq(d1.length + d2.length, 1, 'finished once between them');
+    a.eq(puts(), 1, 'its dates set once');
+  });
+
+  test('the page names a waiting copy and finishes it only on "Finish now"', async () => {
+    const { api, store, puts } = await leftJob(26 * 3600 * 1000);
+    if (!globalThis.CGP.SectionCopyController) vm.runInThisContext(fs.readFileSync(path.join(__dirname, '../src/sections/sync-dialog.js'), 'utf8'));
+    const said = [];
+    const ui = globalThis.CGP.ui;
+    globalThis.CGP.ui = {
+      toast: (m, o) => said.push({ text: String(m), action: o && o.action }),
+      error: (m) => said.push({ text: String(m), error: true })
+    };
+    try {
+      const ctl = Object.create(globalThis.CGP.SectionCopyController.prototype);
+      ctl.copier = copier(api, store);
+      await ctl.resume();
+      a.eq(puts(), 0, 'nothing done before the teacher answers');
+      const offer = said.find((x) => x.action);
+      a.ok(offer, 'a notice with an action');
+      a.eq(offer.action.label, 'Finish now');
+      a.ok(offer.text.indexOf('“' + ASSIGNMENT.title + '”') >= 0, offer.text);
+      a.ok(/1 day ago/.test(offer.text), offer.text);
+      offer.action.run();
+      await new Promise((r) => setTimeout(r, 20));
+      a.eq(puts(), 1, 'finished on Finish now');
+      a.ok(said.some((x) => /^Finished copying/.test(x.text)), JSON.stringify(said));
+    } finally {
+      globalThis.CGP.ui = ui;
+    }
+  });
+
   test('another Canvas’s jobs are left alone, and old ones are dropped', async () => {
     const api = fakeCanvas();
     const store = memStore();
