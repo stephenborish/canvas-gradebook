@@ -117,7 +117,7 @@
       var imp = side && side.querySelector('a[href*="/content_migrations"]');
       return {
         kind: 'home', label: 'Copy to other classes',
-        tip: 'Pick assignments, quizzes, pages… from this course and put a copy in your other classes of it',
+        tip: 'Pick assignments, quizzes, pages and more from this course and copy them to your other classes',
         at: imp || side, where: imp ? 'afterend' : 'afterbegin'
       };
     }
@@ -125,7 +125,7 @@
       var add = document.querySelector('#content .add_module_link, #content button[aria-label="Add Module"], #content button[aria-label="Module"]');
       return {
         kind: 'modules', label: 'Copy to other classes',
-        tip: 'Pick modules or items from this course and put a copy in your other classes of it',
+        tip: 'Pick modules or items from this course and copy them to your other classes',
         at: add, where: 'beforebegin'
       };
     }
@@ -758,10 +758,10 @@
 
   P.requestClose = function () {
     if (this.state && this.state.back && this.state.back.running) {
-      CGP.ui.toast('Still updating in the background — stay on this page until the message saying it is done.');
+      CGP.ui.toast('Still updating. Keep this page open until it says it’s done.');
     }
     if (this.state && this.state.running) {
-      CGP.ui.toast('Copying carries on in the background — stay on this page until the message saying it is done.');
+      CGP.ui.toast('Still copying. Keep this page open until it says it’s done.');
     }
     this.close();
   };
@@ -1103,7 +1103,7 @@
     var extra = [];
     st.items.forEach(function (it) {
       if (it.newQuiz) extra.push('“' + (it.title || '') + '” is a New Quiz: its questions take Canvas a few extra minutes.');
-      if (it.hasOverrides) extra.push('“' + (it.title || '') + '” has dates for particular students here; copies get only the dates shown.');
+      if (it.hasOverrides) extra.push('“' + (it.title || '') + '” has dates for some students here; copies get only the dates shown.');
     });
     if (extra.length) html += '<p class="cgp-stats__note">' + esc(extra.join(' ')) + '</p>';
 
@@ -1482,7 +1482,7 @@
       if (self.state !== st) return;
       st.dests = self.siblings();
       if (ids.length >= 2 && !st.dests.length) {
-        CGP.ui.error('Those classes could not be saved: the list of class groups is full. Remove old ones in the options page.');
+        CGP.ui.error('Those classes couldn’t be linked: you have too many linked groups. Remove old ones in Gradebook+ settings.');
       }
       st.linkDraft = null;
       st.view = !st.dests.length ? 'link' : (st.wantPick && !st.items.length ? 'pick' : 'main');
@@ -1781,8 +1781,8 @@
     var what = tasks.length === 1
       ? '“' + ((tasks[0].item && tasks[0].item.title) || 'an item') + '” in ' + (tasks[0].destName || 'another class')
       : tasks.length + ' copies in your other classes';
-    CGP.ui.toast('Gradebook+ didn’t finish setting up ' + what + ' (copied ' + when + '): its dates, note and published ' +
-      'state were not set yet. Finish now, unless you have changed ' + (tasks.length === 1 ? 'it' : 'them') + ' by hand since.', {
+    CGP.ui.toast('Gradebook+ didn’t finish setting up ' + what + ' (copied ' + when + '): dates and publishing weren’t set yet. ' +
+      'Finish now, unless you’ve changed ' + (tasks.length === 1 ? 'it' : 'them') + ' by hand since.', {
       action: {
         label: 'Finish now',
         run: function () {

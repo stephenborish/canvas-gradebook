@@ -182,7 +182,7 @@
       return out;
     }, function (err) {
       out.error = CGP.util.isPermissionDeniedError(err)
-        ? 'You can’t add content to this course in Canvas (your role there may not allow it, or the course has concluded).'
+        ? 'You can’t add content to this course in Canvas (your role there may not allow it, or the course may have ended).'
         : describe(err, 'Couldn’t read this class from Canvas');
       return out;
     });
@@ -755,7 +755,7 @@
             var step = function (s) { onStep(i, s); };
             var destId = S().destIdFor(mapping, task.item.type, task.item.id);
             if (!destId) {
-              result.error = 'Canvas finished, but did not report where the copy is. Check this class before copying again.';
+              result.error = 'Canvas finished, but didn’t say where the copy is. Check this class before copying again.';
               return settle(i, false);
             }
             return self.settled(task, destId, opts.maxWaitMs || self.maxWaitMs, job).then(function (ready) {
@@ -789,7 +789,7 @@
     }).then(null, function (err) {
       // Canvas could not be asked (a network failure, a throttle, the job's
       // state or mapping refused): the job stays saved to try again later.
-      var msg = describe(err, 'Lost track of Canvas’s copy job') + ' Gradebook+ will check on it again later.';
+      var msg = describe(err, 'Couldn’t check on Canvas’s copy') + ' Gradebook+ will check again later.';
       return all(function (r) {
         if (r.ok || r.error) return;
         r.pending = true;
@@ -1058,7 +1058,7 @@
       }
       return steps;
     }, function (err) {
-      result.warnings.push('Could not read the copy back to add the note and set publishing. ' + describe(err, 'Canvas refused'));
+      result.warnings.push('Couldn’t find the copy to add the note and set publishing. ' + describe(err, 'Canvas refused'));
     });
   };
 
@@ -1217,7 +1217,7 @@
         return out;
       }, function (err) {
         out.error = CGP.util.isPermissionDeniedError(err)
-          ? 'You can’t change this class’s modules in Canvas (your role there may not allow it, or the course has concluded).'
+          ? 'You can’t change this class’s modules in Canvas (your role there may not allow it, or the course may have ended).'
           : describe(err, 'Couldn’t read this class’s modules from Canvas');
         return out;
       });
@@ -1504,7 +1504,7 @@
       return out;
     }).then(null, function (err) {
       out.error = CGP.util.isPermissionDeniedError(err)
-        ? 'You can’t read this class’s content in Canvas (your role there may not allow it, or the course has concluded).'
+        ? 'You can’t read this class’s content in Canvas (your role there may not allow it, or the course may have ended).'
         : describe(err, 'Couldn’t read this class from Canvas');
       return out;
     });

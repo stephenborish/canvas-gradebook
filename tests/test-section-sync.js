@@ -461,7 +461,7 @@ suite('copy to sections: the copy runner', (test) => {
     const api = fakeCanvas({ onComplete: () => {} });
     const r = await copier(api).run({ srcCourseId: '11', destCourseId: '22', item: ASSIGNMENT, mode: 'copy', dates: {}, publish: 'match' });
     a.not(r.ok);
-    a.ok(/did not report where the copy is/.test(r.error));
+    a.ok(/didn’t say where the copy is/.test(r.error));
     a.not(api.calls.some((x) => x[0] === 'putDates'));
   });
 

@@ -436,8 +436,8 @@
     var copy = L.viewersOnly ? '' : '<button type="button" class="copy" data-act="copy" title="Names of students who haven’t watched, or haven’t finished, one per line">Copy who hasn’t finished</button>';
     var rows = L.rows.map(function (r) {
       var label = SC().labelOf(r);
-      var why = r.unknownReason === 'completion' ? 'Studio lists this student as a viewer but gave no completion for them'
-        : r.unknownReason === 'ambiguous' ? 'More than one student or viewer has this name, and no email settles which is which' : '';
+      var why = r.unknownReason === 'completion' ? 'Studio lists this student as a viewer but doesn’t say how much they watched'
+        : r.unknownReason === 'ambiguous' ? 'Another student or viewer has the same name, so Gradebook+ can’t tell them apart' : '';
       // Unknown shows no share at all; a student Studio never saw shows none.
       var pct = r.status === 'unknown' ? '<span class="muted">–</span>' : (r.viewer ? pctText(r.completion) : '<span class="muted">–</span>');
       return '<tr data-status="' + r.status + '"' + (filter === 'all' || filter === r.status ? '' : ' hidden') + '>' +
@@ -454,9 +454,9 @@
       : '') + (L.unclear && L.unclear.length
       ? '<p class="note">Couldn’t tell which student watched as: ' + L.unclear.map(function (v) { return esc(v.name) + (v.email ? ' (' + esc(v.email) + ')' : ''); }).join(', ') + '.</p>'
       : '');
-    var foot = '<p class="note">“Watched” is at least ' + Math.round(SC().WATCHED_AT * 100) + '% of the video, from Studio’s completion rate for this embed. ' +
-      'Students are matched to Studio’s viewers by email; by name only when the name fits exactly one student and one viewer.' +
-      (n.unknown ? ' “Completion unavailable”: Studio listed the viewer without a share. “Match unclear”: a shared name. Neither counts as not watched or in the average.' : '') + '</p>';
+    var foot = '<p class="note">“Watched” means at least ' + Math.round(SC().WATCHED_AT * 100) + '% of the video, according to Studio. ' +
+      'Students are matched to viewers by email, or by name when only one student has that name.' +
+      (n.unknown ? ' “Completion unavailable” and “Match unclear” rows aren’t counted as not watched or in the average.' : '') + '</p>';
     return head + '<div class="body">' + warn + tiles + chart + '<div class="bar">' + chips + copy + '</div>' + table + extra + foot + '</div>';
   }
 

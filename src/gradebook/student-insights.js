@@ -1107,7 +1107,7 @@
     }).join('');
     this.wireTabKeys();
     body.innerHTML =
-      (r.stale ? '<div class="cgp-si__retry cgp-si__retry--top" role="status"><span>Showing what was read earlier: Canvas didn’t answer just now.</span>' +
+      (r.stale ? '<div class="cgp-si__retry cgp-si__retry--top" role="status"><span>Canvas didn’t answer just now, so this shows what was loaded earlier.</span>' +
         '<button type="button" class="cgp-si__btn" data-si-retry>Try again</button></div>' : '') +
       this.panel('overview', this.overview(r)) +
       this.panel('work', this.work(r)) +
@@ -1183,9 +1183,9 @@
         { tone: c.late && r.rates.late >= 0.25 ? 'warn' : '', tab: 'work', filter: 'late' }),
       tile('On-time rate', '<b>' + (r.rates.completion === null ? '–' : fmtPct((c.onTime / (turnedIn + c.missing)) * 100, 0)) + '</b>',
         (turnedIn + c.missing) ? c.onTime + ' of ' + (turnedIn + c.missing) + ' due so far' : 'Nothing due yet',
-        { tip: 'Share of work that was due and arrived by the deadline. Excused work is left out.' }),
+        { tip: 'How much of the work that was due came in on time. Excused work isn’t counted.' }),
       tile('Average score', '<b>' + fmtPct(avg, 1) + '</b>', esc(vsClass),
-        { tip: 'Points earned over points possible on graded work, unweighted. The header shows Canvas’s official current score.' }),
+        { tip: 'Points earned out of points possible on graded work, without category weights. The header shows Canvas’s official score.' }),
       tile('Needs grading', '<b>' + r.lists.needsGrading.length + '</b>',
         r.lists.needsGrading.length ? 'Submitted, not graded' : 'All caught up',
         { tab: 'work', filter: 'needs' }),
@@ -1251,7 +1251,7 @@
         '<b>' + (v === null ? '–' : fmtPct(v, 1)) + '</b>' +
         (g.missing ? '<span class="cgp-si__pill cgp-si__pill--missing">' + g.missing + ' missing</span>' : '<span></span>') +
         '</li>';
-    }).join('') + '</ul><p class="cgp-si__note"><i class="cgp-si__key cgp-si__key--tick"></i> Class median for the category. Averages count graded work only and ignore drop rules.</p>';
+    }).join('') + '</ul><p class="cgp-si__note"><i class="cgp-si__key cgp-si__key--tick"></i> The class median for that category. Only graded work counts, and drop rules aren’t applied.</p>';
   };
 
   /* ------------------------------------------------------- assignments tab */
@@ -1324,7 +1324,7 @@
     if (!rep.count) { CGP.ui.error('Nothing is selected to copy - tick at least one assignment.'); return; }
     var n = rep.count;
     CGP.ui.copy(rep.text, rep.html).then(function () {
-      CGP.ui.toast(n + (n === 1 ? ' assignment' : ' assignments') + ' copied — paste into an email, message or document');
+      CGP.ui.toast(n + (n === 1 ? ' assignment' : ' assignments') + ' copied. Paste into an email, message or document.');
     }, function () { CGP.ui.error('Couldn’t copy to the clipboard.'); });
   };
 
@@ -1588,7 +1588,7 @@
         { tone: e.pageViewPercentile !== null && e.pageViewPercentile <= 20 ? 'warn' : '' }),
       tile('Participations', '<b>' + (e.participations === null ? '–' : e.participations) + '</b>',
         versus(e.participationPercentile, e.classMedianParticipations === null ? null : Math.round(e.classMedianParticipations)),
-        { tip: 'Submissions, discussion posts, quiz attempts and other actions Canvas counts as participating' })
+        { tip: 'Submissions, discussion posts, quiz attempts and other things Canvas counts as taking part' })
     ];
     if (a) {
       tiles.push(tile('Last 7 days', '<b>' + a.last7 + '</b>', 'page views'));
@@ -1603,8 +1603,8 @@
     } else if (r.analyticsFailed) {
       left = '<div class="cgp-si__card cgp-si__act-main">' + retryNote('Couldn’t reach Canvas analytics just now.', 'activity') + '</div>';
     } else if (!a) {
-      left = '<div class="cgp-si__card cgp-si__act-main"><p class="cgp-si__note">Canvas analytics isn’t available for this course, so page views by day and hour can’t be shown. ' +
-        'Last activity and time in the course come from the enrollment and are shown above.</p></div>';
+      left = '<div class="cgp-si__card cgp-si__act-main"><p class="cgp-si__note">Canvas analytics is off for this course, so page views by day and hour can’t be shown. ' +
+        'Last activity and total time in the course are shown above.</p></div>';
     } else {
       var trend30 = a.prior30 ? Math.round(((a.last30 - a.prior30) / a.prior30) * 100) : null;
       left = section('Daily page views', this.heatmap(a),
@@ -1698,10 +1698,10 @@
   function videoLabel(v) { return v.label || (CGP.studioClass ? CGP.studioClass.labelOf(v) : VIDEO_LABELS[v.status]) || VIDEO_LABELS[v.status]; }
   var UNKNOWN_WHY = {
     error: 'Studio didn’t give this video’s viewers',
-    completion: 'Studio lists this student as a viewer but gave no completion',
-    ambiguous: 'Another student or viewer has this name, and no email settles which is which',
-    noaccess: 'Studio won’t share this embed’s viewers: it belongs to another Studio course or someone else’s library. Re-embed the video from this course’s Studio to see who watched it',
-    notfound: 'This embed no longer exists in Studio (deleted or archived). Re-embed the video to track watching'
+    completion: 'Studio lists this student as a viewer but doesn’t say how much they watched',
+    ambiguous: 'Another student or viewer has the same name, so Gradebook+ can’t tell them apart',
+    noaccess: 'Studio won’t share who watched this video because it comes from another course or someone else’s library. Add it again from this course’s Studio to see who watched it',
+    notfound: 'This video was deleted or archived in Studio. Add it to the page again to see who watched it'
   };
 
   /* The Studio videos embedded in each assignment (its own description, or
@@ -1766,9 +1766,9 @@
     var notes = [];
     if (!r.contentKnown) notes.push('<span class="cgp-si__spinner cgp-si__spinner--sm" aria-hidden="true"></span> Reading this student’s Access Report…');
     else if (r.contentFailed) notes.push(retryNote('Couldn’t read this student’s Access Report just now.', 'content'));
-    else if (!r.content) notes.push('Canvas didn’t share this student’s Access Report with your account (it needs the “View usage reports” permission), so what they opened can’t be shown.');
+    else if (!r.content) notes.push('Your Canvas account can’t see this student’s Access Report (it needs the “View usage reports” permission), so what they opened can’t be shown.');
     if (s && s.loading) notes.push('<span class="cgp-si__spinner cgp-si__spinner--sm" aria-hidden="true"></span> Opening Studio in the background for video watching…');
-    else if (s && s.error && s.code !== 'noStudio') notes.push('Couldn’t read Studio: ' + esc(s.error) + '. Opening Studio once from Canvas’s left menu signs you in; then reopen this student.');
+    else if (s && s.error && s.code !== 'noStudio') notes.push('Couldn’t load Studio: ' + esc(s.error) + '. Open Studio once from Canvas’s left menu to sign in, then open this student again.');
     var noteHtml = notes.map(function (n) { return /^<div/.test(n) ? n : '<p class="cgp-si__note cgp-si__mnote">' + n + '</p>'; }).join('');
 
     if (!M.groups.length) {
@@ -1854,9 +1854,9 @@
       return row + e.videos.map(function (v) { return videoRow(v, g, id, g.label + ' | ' + e.title); }).join('');
     };
     var NOTES = {
-      loose: 'Opened by this student, or holding a Studio video, but not in any module.',
-      unposted: 'In Studio’s list for this course but not embedded anywhere students would find it. Not counted.',
-      student: 'Studio copies a video into the course’s list when a student embeds it in a submission or discussion reply, or records one in the browser (“Untitled” and a date). Not counted.' +
+      loose: 'Items this student opened, or that hold a Studio video, but that aren’t in any module.',
+      unposted: 'Videos in this course’s Studio that aren’t on any page students can reach. Not counted.',
+      student: 'Videos students added to their own submissions or discussion replies, which Studio also lists in your course. Not counted.' +
         (s && s.studentPending ? ' Still checking students’ submissions and replies…' : '')
     };
     var groupHtml = function (g) {
@@ -1908,18 +1908,18 @@
       '<p class="cgp-si__table-empty cgp-si__note" hidden>Nothing matches.</p></div>';
 
     var foot = [];
-    if (T.videos) foot.push('A video is “Watched” at ' + Math.round(CGP.studioClass.WATCHED_AT * 100) + '% or more, from Studio’s Insights.');
+    if (T.videos) foot.push('A video counts as “Watched” at ' + Math.round(CGP.studioClass.WATCHED_AT * 100) + '% or more, according to Studio.');
     if (studioRows && studioRows.some(function (v) { return v.unknownReason === 'notfound' || v.unknownReason === 'noaccess'; })) {
-      foot.push('“Not found in Studio” or “No access in Studio”: the page’s embed points to a Studio video this course can’t read (usually one copied from another class), and the course has no copy with the same title and length to read instead. Check that it plays on the page; re-embedding it from this course’s Studio makes watching visible.');
+      foot.push('“Not found in Studio” or “No access in Studio” usually means the video was copied from another class, so this course can’t see who watched it. Check that it plays on the page, then add it again from this course’s Studio to see who watched.');
     }
-    if (r.content && r.content.notOpenedKnown === false) foot.push('This student’s Access Report is too long to read in full, so an item missing from it shows “–” rather than “Not opened”.');
-    if (M.hiddenImages) foot.push(M.hiddenImages + (M.hiddenImages === 1 ? ' picture' : ' pictures') + ' shown inside pages (a banner or button on the course home, say) aren’t listed: Canvas logs one each time the page opens.');
+    if (r.content && r.content.notOpenedKnown === false) foot.push('This student’s Access Report is too long to load in full, so items it doesn’t list show “–” instead of “Not opened”.');
+    if (M.hiddenImages) foot.push(M.hiddenImages + (M.hiddenImages === 1 ? ' picture' : ' pictures') + ' shown inside pages (like a banner on the course home) aren’t listed.');
     if (r.content) {
       foot.push(hasTime
-        ? 'Time on an item is from Canvas page views ' + (r.content.pageViewsTruncated && r.content.pageViewsSince ? 'since ' + fmtDate(r.content.pageViewsSince) : 'over the last ' + PAGE_VIEW_DAYS + ' days') + '; views and last opened cover the whole course.'
-        : r.pageViewsLoading ? 'Reading page views for time on each item…' : 'Views and last opened come from the Access Report.');
+        ? 'Time on each item counts page views ' + (r.content.pageViewsTruncated && r.content.pageViewsSince ? 'since ' + fmtDate(r.content.pageViewsSince) : 'from the last ' + PAGE_VIEW_DAYS + ' days') + '; views and last opened cover the whole course.'
+        : r.pageViewsLoading ? 'Loading time spent on each item…' : 'Views and last opened come from the Access Report.');
     }
-    foot.push('Canvas doesn’t record whether a YouTube video embedded straight in a page was played.');
+    foot.push('Canvas can’t tell whether a YouTube video on a page was played.');
     var aside = [T.opened !== null ? T.opened + '/' + T.items + ' opened' : '', T.videos ? T.watched + '/' + T.videos + ' videos watched' : ''].filter(Boolean).join(' · ');
     return searchableSection(title, body + '<p class="cgp-si__note">' + esc(foot.join(' ')) + '</p>', esc(aside));
   };
@@ -2024,8 +2024,8 @@
     var guardians = p.observers ? SI().guardiansFor(p.observers, uid) : null;
     var withEmail = (guardians || []).filter(function (g) { return g.email; }).map(function (g) { return g.email; });
     var gBody;
-    if (guardians === null) gBody = '<p class="cgp-si__note">Canvas didn’t let you see this course’s parents and guardians (observers).</p>';
-    else if (!guardians.length) gBody = '<p class="cgp-si__note">No parent or guardian is paired with this student in Canvas. They appear here once paired as an observer.</p>';
+    if (guardians === null) gBody = '<p class="cgp-si__note">Your Canvas account can’t see this course’s parents and guardians (observers).</p>';
+    else if (!guardians.length) gBody = '<p class="cgp-si__note">No parent or guardian is linked to this student in Canvas yet.</p>';
     else {
       gBody = '<ul class="cgp-si__people">' + guardians.map(function (g) {
         return '<li><b>' + esc(g.name) + '</b>' + (g.pronouns ? ' <span class="cgp-si__muted">(' + esc(g.pronouns) + ')</span>' : '') +
@@ -2060,7 +2060,7 @@
     if (!c) return '';
     var notOpened = '';
     if (!c.notOpenedKnown) {
-      notOpened = section('Assignments never opened', '<p class="cgp-si__note">This student’s Access Report is too long to read in full, so which assignments they never opened can’t be said for sure.</p>');
+      notOpened = section('Assignments never opened', '<p class="cgp-si__note">This student’s Access Report is too long to load in full, so Gradebook+ can’t be sure which assignments they never opened.</p>');
     } else if (c.notOpened.length) {
       var shown = c.notOpened.slice(0, 12);
       notOpened = section('Assignments never opened', '<ul class="cgp-si__todo">' + shown.map(function (n) {
@@ -2068,7 +2068,7 @@
         return '<li><a href="' + esc(self.assignmentUrl(n.id)) + '" target="_blank" rel="noopener">' + esc(n.name) + '</a>' +
           '<span>' + (n.dueAt ? (past ? 'was due ' : 'due ') + esc(fmtDate(n.dueAt)) : 'No due date') + '</span><b></b></li>';
       }).join('') + '</ul>' + (c.notOpened.length > shown.length ? '<p class="cgp-si__note">and ' + (c.notOpened.length - shown.length) + ' more</p>' : '') +
-        '<p class="cgp-si__note">The instructions page (or the quiz or discussion) was never viewed. Work handed in on paper or graded without a submission shows here too.</p>',
+        '<p class="cgp-si__note">The student never opened the assignment page. Work turned in on paper can show here too.</p>',
         c.notOpenedPastDue ? c.notOpenedPastDue + ' past due' : '');
     }
     return notOpened ? '<div data-si-nosearch' + (this._query && this._query.trim() ? ' hidden' : '') + '>' + notOpened + '</div>' : '';
