@@ -316,18 +316,6 @@
 
     var state = { key: null, textarea: null, pendingSubmit: null, confirmTimer: null, pendingSave: null, focus: null };
     bindSnippetCapture();
-    // A comment being typed is kept as a draft in chrome.storage.local,
-    // which a reload of the extension would cut this tab off from: an
-    // update waits until the box is empty or the comment is sent.
-    if (CGP.busy) {
-      CGP.busy.register(function () {
-        // Only while Canvas could still be posting it: one it never
-        // confirmed stays pending (its draft is kept) but holds nothing up.
-        if (state.pendingSubmit && Date.now() - state.pendingSubmit.at < 30000) return 'sending a SpeedGrader comment';
-        var ta = state.textarea;
-        return ta && ta.isConnected !== false && String(ta.value || '').trim() ? 'typing a SpeedGrader comment' : '';
-      });
-    }
 
     function draftKey() {
       var studentId = studentIdFromHash();

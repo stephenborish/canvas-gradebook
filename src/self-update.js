@@ -13,14 +13,8 @@
  *     20-minute alarm (so a teacher who keeps one gradebook tab open all day
  *     still gets checked), at most once per 20 minutes; a throttled try costs
  *     nothing and does not push the next real check back;
- *   - a downloaded update is installed promptly (chrome.runtime.reload()),
- *     but only when that is safe: never while the settings page is open
- *     (the reload would close it, unsaved edits and all), and never while
- *     an open Canvas tab is busy - saving to Canvas, running Copy to other
- *     classes, making groups, or holding a SpeedGrader comment being typed
- *     (CGP.busy in core/util.js). A reload leaves such a tab's scripts
- *     running but cut off from chrome.storage, so its work would break
- *     halfway. Until it is safe, it is tried again every minute;
+ *   - a downloaded update is installed at once (chrome.runtime.reload()),
+ *     instead of whenever the service worker next goes idle;
  *   - after an update, the Canvas tabs that were already open - which keep
  *     running the old version until they are reloaded, and look "not
  *     updated" - are told so, with a Reload button;
@@ -35,11 +29,6 @@ export const CHROME_CHECK_INTERVAL_MS = 5 * 60 * 60 * 1000;
 export const UPDATE_STATE_KEY = 'cgp.update';
 export const CHECK_NOW = 'cgp.checkForUpdate';
 const ALARM = 'cgp.updateCheck';
-// While a downloaded update waits for a safe moment, it is retried this often.
-export const APPLY_ALARM = 'cgp.applyUpdate';
-export const BUSY_MESSAGE = 'cgp.busy?';
-// How long an open Canvas tab gets to answer "are you busy?".
-const BUSY_ANSWER_MS = 2000;
 const LAST_CHECK_KEY = 'cgp.lastUpdateCheck';
 const CANVAS_PATTERN = '*://*.instructure.com/courses/*';
 
@@ -102,8 +91,7 @@ export function showUpdatedNotice(version) {
   } catch (e) { /* never break the page */ }
 }
 
-export function createSelfUpdater(chrome, now = () => Date.now(), opts = {}) {
-  const busyAnswerMs = opts.busyAnswerMs || BUSY_ANSWER_MS;
+export function createSelfUpdater(chrome, now = () => Date.now()) {
   async function readState() {
     try {
       const got = await chrome.storage.local.get(UPDATE_STATE_KEY);
@@ -150,94 +138,16 @@ export function createSelfUpdater(chrome, now = () => Date.now(), opts = {}) {
     }
   }
 
-  /* Why reloading right now would break something, or '' when it is safe.
-   * An extension page open (the settings page) is closed by a reload. */
-  async function blocker() {
-    if (chrome.runtime.getContexts) {
-      try {
-        const pages = await chrome.runtime.getContexts({ contextTypes: ['TAB', 'POPUP', 'SIDE_PANEL'] });
-        if (pages && pages.length) return 'the Gradebook+ settings page is open';
-      } catch (e) { /* not supported: carry on with the tabs */ }
-    }
-    if (!chrome.tabs || !chrome.tabs.query || !chrome.tabs.sendMessage) return '';
-    let tabs = [];
-    try { tabs = await chrome.tabs.query({ url: await canvasPatterns(chrome) }); } catch (e) { return ''; }
-    const answers = await Promise.all((tabs || []).map((t) => askTab(t.id)));
-    const busy = answers.find((a) => a && a.busy);
-    return busy ? 'a Canvas tab is ' + (busy.reason || 'busy') : '';
-  }
-
-  /* A tab that does not answer (discarded, still loading, running a version
-   * from before this question existed) counts as idle. */
-  function askTab(tabId) {
-    return new Promise((resolve) => {
-      let done = false;
-      const finish = (v) => { if (!done) { done = true; clearTimeout(timer); resolve(v); } };
-      const timer = setTimeout(() => finish(null), busyAnswerMs);
-      try {
-        Promise.resolve(chrome.tabs.sendMessage(tabId, { type: BUSY_MESSAGE }, { frameId: 0 }))
-          .then((a) => finish(a || null), () => finish(null));
-      } catch (e) { finish(null); }
-    });
-  }
-
-  function currentVersion() {
-    return (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '';
-  }
-
-  /** Reload into a downloaded update if one is waiting and nothing would
-   *  break; otherwise try again in a minute. Resolves {applied, reason?}. */
-  async function applyWhenSafe() {
-    const state = await readState();
-    const pending = state.pendingVersion;
-    if (!pending || pending === currentVersion()) {
-      if (pending) await writeState({ pendingVersion: null, deferredReason: null });
-      clearApplyAlarm();
-      return { applied: false, reason: 'none' };
-    }
-    const why = await blocker();
-    if (why) {
-      await writeState({ deferredReason: why, deferredAt: now() });
-      if (chrome.alarms) {
-        try {
-          const existing = await chrome.alarms.get(APPLY_ALARM);
-          if (!existing) chrome.alarms.create(APPLY_ALARM, { periodInMinutes: 1 });
-        } catch (e) { /* the next Canvas page load or update check tries again */ }
-      }
-      return { applied: false, reason: why };
-    }
-    await writeState({ deferredReason: null, appliedAt: now() });
-    clearApplyAlarm();
-    chrome.runtime.reload();
-    return { applied: true };
-  }
-
-  function clearApplyAlarm() {
-    try {
-      if (chrome.alarms && chrome.alarms.clear) Promise.resolve(chrome.alarms.clear(APPLY_ALARM)).catch(() => {});
-    } catch (e) { /* nothing scheduled */ }
-  }
-
   async function onUpdateAvailable(details) {
-    const version = (details && details.version) || null;
-    const state = await readState();
-    await writeState({
-      foundVersion: version, foundAt: now(),
-      // Kept so a service worker that went to sleep meanwhile still knows.
-      pendingVersion: version || 'unknown',
-      pendingSince: state.pendingVersion ? (state.pendingSince || now()) : now()
-    });
-    return applyWhenSafe();
+    await writeState({ foundVersion: (details && details.version) || null, foundAt: now() });
+    chrome.runtime.reload();
   }
 
   async function onTabUpdated(tabId, changeInfo, tab) {
     if (!changeInfo || changeInfo.status !== 'complete') return;
     // tab.url is only visible for hosts this extension has access to, which
     // is every Canvas host it runs on.
-    if (tab && isCanvasCourseUrl(tab.url, await canvasPatterns(chrome))) {
-      await checkForUpdate();
-      if ((await readState()).pendingVersion) await applyWhenSafe();
-    }
+    if (tab && isCanvasCourseUrl(tab.url, await canvasPatterns(chrome))) await checkForUpdate();
   }
 
   /** After an update: record it, and tell the Canvas tabs still running the
@@ -246,8 +156,7 @@ export function createSelfUpdater(chrome, now = () => Date.now(), opts = {}) {
     const version = (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '';
     const previous = (details && details.previousVersion) || null;
     if (previous && previous === version) return 0;   // a reload, not an update
-    await writeState({ updatedFrom: previous, updatedTo: version, updatedAt: now(), pendingVersion: null, deferredReason: null });
-    clearApplyAlarm();
+    await writeState({ updatedFrom: previous, updatedTo: version, updatedAt: now() });
     if (!chrome.tabs || !chrome.tabs.query || !chrome.scripting) return 0;
     let tabs = [];
     try { tabs = await chrome.tabs.query({ url: await canvasPatterns(chrome) }); } catch (e) { return 0; }
@@ -267,10 +176,7 @@ export function createSelfUpdater(chrome, now = () => Date.now(), opts = {}) {
     chrome.runtime.onStartup.addListener(() => { checkForUpdate(); });
     chrome.tabs.onUpdated.addListener(onTabUpdated);
     if (chrome.alarms) {
-      chrome.alarms.onAlarm.addListener((alarm) => {
-        if (alarm && alarm.name === ALARM) checkForUpdate();
-        if (alarm && alarm.name === APPLY_ALARM) applyWhenSafe();
-      });
+      chrome.alarms.onAlarm.addListener((alarm) => { if (alarm && alarm.name === ALARM) checkForUpdate(); });
       // Created once; re-creating would restart its timer on every wake.
       Promise.resolve(chrome.alarms.get(ALARM)).then((existing) => {
         if (!existing) chrome.alarms.create(ALARM, { periodInMinutes: CHECK_INTERVAL_MS / 60000 });
@@ -278,5 +184,5 @@ export function createSelfUpdater(chrome, now = () => Date.now(), opts = {}) {
     }
   }
 
-  return { start, checkForUpdate, onUpdateAvailable, applyWhenSafe, onTabUpdated, afterUpdate, readState };
+  return { start, checkForUpdate, onUpdateAvailable, onTabUpdated, afterUpdate, readState };
 }

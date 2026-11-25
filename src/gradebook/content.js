@@ -815,11 +815,6 @@
       return CGP.settings.load().then(function () { return null; }, function () { return null; });
     }
 
-    // Answers "is this tab busy?" before an update is applied (self-update.js).
-    try {
-      if (CGP.busy && typeof chrome !== 'undefined' && chrome.runtime) CGP.busy.listen(chrome.runtime);
-    } catch (e) { /* extension context gone */ }
-
     return CGP.settings.load().then(function () {
       var path = location.pathname;
       var isSpeedGrader = /\/gradebook\/speed_grader/i.test(path);

@@ -1110,65 +1110,6 @@
   /* ------------------------------------------------------------ diagnostics */
 
   var flushTimer = null;
-  /* Is this page in the middle of something a reload of the extension would
-   * break? An extension reload (applying a downloaded update) leaves the
-   * tab's scripts running but cuts them off from chrome.storage and the
-   * service worker: a Copy to other classes job could no longer record its
-   * progress, a SpeedGrader draft could no longer be kept, a save would lose
-   * its follow-up. So before reloading, the service worker asks every open
-   * Canvas tab (self-update.js), and waits while any answers busy.
-   *
-   * Features register a check that returns a short reason ('' when idle).
-   * Canvas writes are counted by canvas-api.js through begin()/end(), and a
-   * write that just finished keeps the page busy for WRITE_GRACE_MS, so the
-   * gap between two steps of a multi-step change does not count as idle. */
-  var busyChecks = [];
-  var writesInFlight = 0;
-  var lastWriteEndedAt = 0;
-  CGP.busy = {
-    MESSAGE: 'cgp.busy?',
-    WRITE_GRACE_MS: 15000,
-    register: function (fn) {
-      if (typeof fn === 'function') busyChecks.push(fn);
-      return function () {
-        var i = busyChecks.indexOf(fn);
-        if (i >= 0) busyChecks.splice(i, 1);
-      };
-    },
-    beginWrite: function () { writesInFlight++; },
-    endWrite: function () {
-      writesInFlight = Math.max(0, writesInFlight - 1);
-      lastWriteEndedAt = Date.now();
-    },
-    /** '' when idle, else why this page should not be reloaded right now. */
-    reason: function (now) {
-      var t = now === undefined ? Date.now() : now;
-      if (writesInFlight > 0) return 'saving to Canvas';
-      if (lastWriteEndedAt && t - lastWriteEndedAt < CGP.busy.WRITE_GRACE_MS) return 'just saved to Canvas';
-      for (var i = 0; i < busyChecks.length; i++) {
-        var r = '';
-        try { r = busyChecks[i]() || ''; } catch (e) { r = ''; }
-        if (r) return String(r);
-      }
-      return '';
-    },
-    /* Answers the service worker's question. Called once by the page boot
-     * (top frame only), never at load time: this file must stay free of
-     * chrome.* calls when it is loaded. */
-    listen: function (runtime) {
-      if (CGP.busy._listening || !runtime || !runtime.onMessage) return false;
-      CGP.busy._listening = true;
-      runtime.onMessage.addListener(function (msg, sender, respond) {
-        if (!msg || msg.type !== CGP.busy.MESSAGE) return false;
-        var why = CGP.busy.reason();
-        respond({ busy: !!why, reason: why });
-        return false;
-      });
-      return true;
-    },
-    _reset: function () { busyChecks = []; writesInFlight = 0; lastWriteEndedAt = 0; }
-  };
-
   CGP.diag = {
     enabled: false,
     counters: Object.create(null),

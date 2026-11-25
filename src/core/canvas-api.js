@@ -283,18 +283,7 @@
         throw err;
       });
     }
-    if (!isWrite) return attempt(0);
-    // A write in progress (retries included) keeps the page from being
-    // reloaded under it when an update is applied (CGP.busy, self-update.js).
-    var busy = CGP.busy;
-    if (busy) busy.beginWrite();
-    return attempt(0).then(function (r) {
-      if (busy) busy.endWrite();
-      return r;
-    }, function (err) {
-      if (busy) busy.endWrite();
-      throw err;
-    });
+    return attempt(0);
   };
 
   CanvasApi.prototype.get = function (path, params) {
