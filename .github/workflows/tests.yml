@@ -1,0 +1,35 @@
+# Canvas Gradebook+ - tests on every push and pull request.
+#
+# Runs the whole test suite and the package check (versions match, every file
+# the extension loads is there), so a change that breaks either is caught on
+# its pull request rather than when the Web Store zip is built.
+# Packaging for the store stays a manual step (package-extension.yml).
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run the tests
+        run: node tests/run.js
+
+      - name: Check the package builds
+        run: node scripts/package-extension.js
