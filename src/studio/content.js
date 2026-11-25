@@ -20,8 +20,11 @@
   var SC = function () { return CGP.studioClass; };
 
   var WATCH = 'cgp-studio-watch';
-  var RELAY = 'cgp-canvas-relay';
-  var ASK = 'cgp-studio-ask';
+  // The class list is asked for through the extension (the service worker
+  // passes it to the Canvas page's own script, canvas-relay.js), never with
+  // window.postMessage: an answer posted to this window could be read, and
+  // a question forged, by any script on the Studio page.
+  var ROSTER_MESSAGE = 'cgp.studio.roster';
   var ROSTER_WAIT_MS = 12000;
 
   var state = {
@@ -60,7 +63,6 @@
     }
     if (e.source === window && d.source === STUDIO_ANSWER) { onAnswer(d); return; }
     if (e.origin !== canvasOrigin()) return;
-    if (d.source === RELAY) { onRoster(d); return; }
     if (d.source === CANVAS_ASK && e.source === window.top) onCanvasAsk(d);
   });
 
@@ -278,8 +280,13 @@
     var id = 'r' + (++asks) + '-' + Date.now();
     var p = state.current && state.perspectives[state.current];
     state.rosters[key] = { status: 'loading', id: id };
+    var runtime = typeof chrome !== 'undefined' && chrome.runtime;
+    if (!runtime || typeof runtime.sendMessage !== 'function') { state.rosters[key] = { status: 'none' }; return; }
     try {
-      window.top.postMessage({ source: ASK, type: 'roster', id: id, courseName: name, courseId: p && p.courseId }, origin);
+      runtime.sendMessage({ type: ROSTER_MESSAGE, courseName: name, courseId: p && p.courseId }, function (answer) {
+        void runtime.lastError;   // no Canvas page script to answer, or the extension was reloaded
+        onRoster(Object.assign({ ok: false, error: 'Canvas didn’t give the class list' }, answer || {}, { id: id }));
+      });
     } catch (e) { state.rosters[key] = { status: 'none' }; return; }
     setTimeout(function () {
       if (state.rosters[key] && state.rosters[key].id === id && state.rosters[key].status === 'loading') {

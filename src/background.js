@@ -6,7 +6,9 @@
  * (self-update.js), relays "this submission changed" announcements
  * between the open tabs of one course (live-sync.js) - ids only, never
  * stored - checks this computer in through Chrome sync (settings-times.js),
- * fetches the teacher's class-schedule calendar (calendar-sync.js), and asks
+ * fetches the teacher's class-schedule calendar (calendar-sync.js), passes
+ * Studio's request for a class list to the Canvas page in the same tab
+ * (studio-roster.js), and asks
  * whether it is snowing or raining around Philadelphia (weather.js). It
  * never reads or stores Canvas data itself. */
 
@@ -16,6 +18,7 @@ import { createLiveRelay, LIVE_SYNC_TYPE } from './live-relay.js';
 import { createSettingsTimes } from './settings-times.js';
 import { createCalendarSync, CALENDAR_REFRESH, CALENDAR_ADOPT } from './calendar-sync.js';
 import { createWeather, WEATHER_NOW } from './weather.js';
+import { createStudioRoster, STUDIO_ROSTER } from './studio-roster.js';
 // The welcome tour's record (a plain script that adds CGP.TourState to
 // globalThis), so its shape is defined in one place.
 import './tour/tour-state.js';
@@ -155,6 +158,7 @@ settingsTimes.start();
 const liveRelay = createLiveRelay(chrome);
 const calendarSync = createCalendarSync(chrome);
 const weather = createWeather(chrome);
+const studioRoster = createStudioRoster(chrome);
 
 chrome.action.onClicked.addListener(() => {
   chrome.runtime.openOptionsPage();
@@ -188,6 +192,12 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     }).then(() => respond({ ok: true }), (e) => respond({ ok: false, error: String(e && e.message) }));
     return true;
   }
+  // Studio's class list (studio/content.js in a Studio frame -> the Canvas
+  // page's canvas-relay.js in the same tab). Only the extension's own
+  // script in a frame on a Studio site may ask, and only its own tab's top
+  // frame is asked; the answer goes back the same way, never through the
+  // page, so no page script can request or read the roster.
+  if (msg && msg.type === STUDIO_ROSTER) return studioRoster.handle(msg, sender, respond);
   // Hidden Gems on a course page: is it snowing or raining around Philadelphia?
   if (msg && msg.type === WEATHER_NOW) {
     weather.now().then(respond, () => respond({ ok: false, code: 'error' }));

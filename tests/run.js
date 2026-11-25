@@ -49,6 +49,7 @@ require('./test-settings-sync');
 require('./test-settings-gear-totals');
 require('./test-self-update');
 require('./test-update-safety');
+require('./test-studio-roster');
 require('./test-section-sync');
 require('./test-quick-copy');
 require('./test-settings-mirror');
