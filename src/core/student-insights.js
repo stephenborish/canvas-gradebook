@@ -1175,7 +1175,14 @@
     }
 
     var groups = [];
-    // Unpublished modules and items: students can't see them.
+    // Unpublished modules and items: students can't see them, so they are
+    // left out here and never come back as "Not in a module" either.
+    var hidden = Object.create(null);
+    (idx.moduleItems || []).forEach(function (m) {
+      m.items.forEach(function (it) {
+        if ((m.published === false || it.published === false) && it.key) keysOf(it.key).forEach(function (k) { hidden[k] = true; });
+      });
+    });
     (idx.moduleItems || []).forEach(function (m, mi) {
       if (m.published === false) return;
       var entries = [];
@@ -1192,11 +1199,13 @@
     // opened (most recent first). Pictures shown inside pages are left out.
     var loose = [];
     var looseAt = Object.create(null);
+    // Every placement on its own, whether or not its video already sits
+    // somewhere else: two pages sharing a video are two pages.
     videos.forEach(function (v) {
-      if (usedVideos.has(v)) return;
       (v.places || []).forEach(function (p) {
         var k = p.key || ('url:' + (p.url || p.name));
-        if (usedKeys[k]) return;
+        if (usedKeys[k] && !looseAt[k]) return;
+        if (hidden[k]) return;
         if (!looseAt[k]) {
           var kind = { Assignment: 'assignment', Quiz: 'quiz', Discussion: 'discussion', Page: 'page', Module: 'link' }[p.kind] || 'other';
           // Every video embedded in that item comes along with it.
@@ -1208,7 +1217,7 @@
       });
     });
     (content ? content.items : []).forEach(function (i) {
-      if (i.kind === 'area' || i.kind === 'module' || usedKeys[i.key]) return;
+      if (i.kind === 'area' || i.kind === 'module' || usedKeys[i.key] || hidden[i.key]) return;
       if (i.image) { hiddenImages++; return; }
       loose.push(item(i.key, i.kind, i.name || '(untitled)', null, 0));
     });

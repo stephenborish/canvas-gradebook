@@ -486,6 +486,16 @@ suite('student overview: course content opened', (test) => {
     const extra = two.groups.find((g) => g.kind === 'loose').entries.find((e) => e.key === 'wiki_page_30');
     a.deep(extra.videos.map((v) => v.uuid), ['VID-B', 'VID-E'], 'every video in an item outside modules');
     a.eq(two.totals.videos, 3);
+    // Two pages outside modules sharing a video: both listed, whatever the order.
+    const shared = [vid('VID-X', 'X', 'wiki_page_30', 'none'), Object.assign(vid('VID-Y', 'Y', 'wiki_page_30', 'none'), { places: [{ kind: 'Page', name: 'p30', url: '/p30', key: 'wiki_page_30' }, { kind: 'Page', name: 'p31', url: '/p31', key: 'wiki_page_31' }] })];
+    const sh = si().courseMaterial({ index: idx, content, videos: shared });
+    const looseKeys = sh.groups.find((g) => g.kind === 'loose').entries.map((e) => e.key);
+    a.ok(looseKeys.includes('wiki_page_30') && looseKeys.includes('wiki_page_31'), 'the page holding only the shared video is still listed');
+    // A video in an unpublished item: never "Not in a module"; with no other place, not posted.
+    const draft = si().courseMaterial({ index: idx, content, videos: [vid('VID-D2', 'Draft video', 'wiki_page_99', 'none')] });
+    a.not(draft.groups.some((g) => g.kind === 'loose' && g.entries.some((e) => e.key === 'wiki_page_99')), 'the draft page doesn’t come back outside modules');
+    a.eq(draft.totals.videos, 0, 'nor does its video count');
+    a.ok(draft.groups.some((g) => g.kind === 'unposted' && g.entries[0].video.uuid === 'VID-D2'), 'it is listed as not posted');
     // A cut-short Access Report: what it shows was opened; the rest is unknown.
     const cut = si().courseMaterial({ index: idx, content: Object.assign({}, content, { notOpenedKnown: false }), videos: [] });
     a.eq(cut.groups[0].entries[1].opened, true);
