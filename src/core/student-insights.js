@@ -687,6 +687,8 @@
     conferences: 'Conferences', collaborations: 'Collaborations', external_tools: 'External tools'
   };
 
+  var IMAGE_FILE = /\.(jpe?g|png|gif|svg|webp|bmp|heic|ico|tiff?)$/i;
+
   function snake(s) {
     return String(s || '').split('::').pop().replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
   }
@@ -748,6 +750,9 @@
       if (!item) {
         item = byKey[k.key] = {
           key: k.key, id: k.id, type: k.type, kind: kind, name: name,
+          // A picture: nearly always one shown inside a page (a banner, a
+          // button on the course home), logged each time that page opens.
+          image: k.type === 'attachment' && IMAGE_FILE.test(name),
           views: 0, participations: 0, firstAt: null, lastAt: null,
           seconds: null, recentViews: 0, downloads: 0, previews: 0
         };
@@ -934,8 +939,11 @@
    * Item keys match the Access Report's: assignment_<id>, quiz_<id>,
    * discussion_topic_<id>, wiki_page_<id>, attachment_<id>.
    * Returns { modules: {key: [module names]}, moduleOrder: [module names],
+   * moduleItems: [{name, published, items: [{key, kind, title, url, indent,
+   * published, order}]}], sameAs: {key: [other keys for the same item]},
    * embeds: [{uuid, title, place}] } where place is {kind, name, url,
-   * modules, order} (order: where it first sits in the modules, if it does). */
+   * modules, order, key} (order: where it first sits in the modules, if it
+   * does; key: the item it is embedded in). */
   function courseIndex(input) {
     input = input || {};
     var SC = CGP.studioClass;
@@ -957,14 +965,39 @@
       if (order[key] === undefined && at !== null) order[key] = at;
     }
     var moduleEmbeds = [];
+    // Each module's items as students see them, in order: the outline the
+    // Activity tab is laid out by.
+    var moduleItems = [];
+    var ITEM_KINDS = { Assignment: 'assignment', Quiz: 'quiz', Discussion: 'discussion', File: 'file', Page: 'page',
+      ExternalTool: 'tool', ExternalUrl: 'link', SubHeader: 'header' };
     (input.modules || []).forEach(function (m, mi) {
       if (!m) return;
       var mname = String(m.name || '').trim();
       if (mname && moduleOrder.indexOf(mname) < 0) moduleOrder.push(mname);
+      var outline = { name: mname, published: m.published !== false, items: [] };
+      moduleItems.push(outline);
       (m.items || []).forEach(function (it, ii) {
         if (!it) return;
         at = mi * 10000 + ii;
         var cid = it.content_id === undefined || it.content_id === null ? null : String(it.content_id);
+        var ikey = null;
+        switch (it.type) {
+          case 'Assignment': ikey = cid && 'assignment_' + cid; break;
+          case 'Quiz': ikey = cid && 'quiz_' + cid; break;
+          case 'Discussion': ikey = cid && 'discussion_topic_' + cid; break;
+          case 'File': ikey = cid && 'attachment_' + cid; break;
+          case 'Page': ikey = ((it.page_url && pageIdBySlug[it.page_url]) || cid) ? 'wiki_page_' + ((it.page_url && pageIdBySlug[it.page_url]) || cid) : null; break;
+          default: ikey = it.id !== undefined && it.id !== null ? 'module_item_' + it.id : null;
+        }
+        outline.items.push({
+          key: ikey,
+          kind: ITEM_KINDS[it.type] || 'other',
+          title: String(it.title || ''),
+          url: it.html_url ? String(it.html_url).replace(/^https?:\/\/[^/]+/, '') : (it.id !== undefined && it.id !== null ? base + '/modules/items/' + it.id : null),
+          indent: Number(it.indent) || 0,
+          published: it.published !== false,
+          order: at
+        });
         switch (it.type) {
           case 'Assignment': addModule(cid && 'assignment_' + cid, mname); break;
           case 'Quiz': addModule(cid && 'quiz_' + cid, mname); break;
@@ -978,7 +1011,7 @@
           case 'ExternalTool':
           case 'ExternalUrl':
             var id = SC && SC.embedIdFromUrl(it.external_url || it.url || it.html_url || '');
-            if (id) moduleEmbeds.push({ uuid: id, title: String(it.title || ''), place: { kind: 'Module', name: String(it.title || '') || mname, url: base + '/modules' + (it.id !== undefined && it.id !== null ? '/items/' + it.id : ''), modules: mname ? [mname] : [], order: at } });
+            if (id) moduleEmbeds.push({ uuid: id, title: String(it.title || ''), place: { kind: 'Module', name: String(it.title || '') || mname, url: base + '/modules' + (it.id !== undefined && it.id !== null ? '/items/' + it.id : ''), modules: mname ? [mname] : [], order: at, key: ikey } });
             break;
           default: break;
         }
@@ -993,7 +1026,7 @@
         var k = e.uuid + '|' + url;
         if (placed[k]) return;
         placed[k] = true;
-        var place = { kind: kind, name: String(name || ''), url: url, modules: (key && modules[key]) || [] };
+        var place = { kind: kind, name: String(name || ''), url: url, modules: (key && modules[key]) || [], key: key || null };
         if (key && order[key] !== undefined) place.order = order[key];
         embeds.push({ uuid: e.uuid, title: e.title, place: place });
       });
@@ -1002,9 +1035,18 @@
     // address; its own text (which may differ from the assignment's) is
     // read too.
     var quizAt = Object.create(null), topicAt = Object.create(null);
+    // The other names one item goes by: a quiz or graded discussion is also
+    // its assignment, in the Access Report and in where a video sits.
+    var sameAs = Object.create(null);
+    function same(k1, k2) {
+      (sameAs[k1] = sameAs[k1] || []).push(k2);
+      (sameAs[k2] = sameAs[k2] || []).push(k1);
+    }
     (input.assignments || []).forEach(function (a) {
       if (!a || a.id === undefined) return;
       var key = 'assignment_' + a.id;
+      if (a.quiz_id) same(key, 'quiz_' + a.quiz_id);
+      if (a.discussion_topic && a.discussion_topic.id) same(key, 'discussion_topic_' + a.discussion_topic.id);
       // A quiz's or graded discussion's assignment sits in the module as the quiz or discussion.
       if (a.quiz_id) { (modules['quiz_' + a.quiz_id] || []).forEach(function (n) { addModule(key, n); }); quizAt[a.quiz_id] = base + '/assignments/' + a.id; }
       var tid = a.discussion_topic && a.discussion_topic.id;
@@ -1027,7 +1069,184 @@
       if (!p || !p.url) return;
       scan(p.body, 'Page', p.title, base + '/pages/' + encodeURIComponent(p.url), p.page_id !== undefined ? 'wiki_page_' + p.page_id : 'page_url:' + p.url);
     });
-    return { modules: modules, moduleOrder: moduleOrder, embeds: embeds.concat(moduleEmbeds) };
+    return { modules: modules, moduleOrder: moduleOrder, moduleItems: moduleItems, sameAs: sameAs, embeds: embeds.concat(moduleEmbeds) };
+  }
+
+  /* ------------------------------------- the course, module by module */
+
+  /* What a student did with the course, laid out the way the course is:
+   * each module's items in order, each with whether the student opened it
+   * (Access Report) and the Studio videos embedded in it, with how much of
+   * each they watched. Then what sits outside any module: items the
+   * student opened there and videos posted there; course areas (home,
+   * grades...) on their own; and, apart and not counted, Studio videos
+   * nobody posted and students' own recordings.
+   *
+   * input: { index: courseIndex(), content: contentActivity() or null
+   *          (Access Report unknown), videos: studentVideos().rows or null
+   *          (Studio unknown) }
+   * Returns { groups: [{key, label, kind, entries, counts}], areas,
+   *   hiddenImages, totals } where kind is 'module' | 'loose' | 'unposted' |
+   *   'student', an entry is {type: 'item', key, kind, title, url, indent,
+   *   access, opened, videos} or {type: 'header', title} or {type: 'video',
+   *   video}, and counts / totals are {items, opened, videos, watched,
+   *   partial, none, unknown} (items: those whose opening is known; opened
+   *   null when the Access Report is unknown). */
+  function courseMaterial(input) {
+    input = input || {};
+    var idx = input.index || { moduleItems: [], sameAs: {} };
+    var sameAs = idx.sameAs || {};
+    var content = input.content || null;
+    var videos = Array.isArray(input.videos) ? input.videos : [];
+    var accessKnown = !!content;
+
+    var accessBy = Object.create(null), areas = [], hiddenImages = 0;
+    (content ? content.items : []).forEach(function (i) {
+      if (i.kind === 'area') { areas.push(i); return; }
+      accessBy[i.key] = i;
+    });
+    function keysOf(key) { return key ? [key].concat(sameAs[key] || []) : []; }
+    // One item's opening, across the names it goes by (a quiz is also its assignment).
+    function accessOf(key) {
+      var hits = keysOf(key).map(function (k) { return accessBy[k]; }).filter(Boolean);
+      if (!hits.length) return null;
+      if (hits.length === 1) return hits[0];
+      var out = { views: 0, seconds: null, firstAt: null, lastAt: null, downloads: 0, previews: 0 };
+      hits.forEach(function (h) {
+        out.views += h.views || 0;
+        if (h.seconds !== null && h.seconds !== undefined) out.seconds = (out.seconds || 0) + h.seconds;
+        if (h.firstAt && (!out.firstAt || h.firstAt < out.firstAt)) out.firstAt = h.firstAt;
+        if (h.lastAt && (!out.lastAt || h.lastAt > out.lastAt)) out.lastAt = h.lastAt;
+        out.downloads += h.downloads || 0;
+        out.previews += h.previews || 0;
+      });
+      return out;
+    }
+
+    // Each posted video under the items it is embedded in.
+    var videosBy = Object.create(null);
+    videos.forEach(function (v) {
+      (v.places || []).forEach(function (p) {
+        keysOf(p.key).forEach(function (k) {
+          var list = videosBy[k] = videosBy[k] || [];
+          if (list.indexOf(v) < 0) list.push(v);
+        });
+      });
+    });
+    function videosOf(key) {
+      var out = [];
+      keysOf(key).forEach(function (k) { (videosBy[k] || []).forEach(function (v) { if (out.indexOf(v) < 0) out.push(v); }); });
+      return out;
+    }
+
+    var usedKeys = Object.create(null), usedVideos = new Set();
+    function mark(key) { keysOf(key).forEach(function (k) { usedKeys[k] = true; }); }
+    // The kinds the Access Report records by item; a link or an external
+    // tool in a module it doesn't tie to that module item, so whether it
+    // was opened is unknown, never "not opened".
+    var TRACKED = { page: 1, assignment: 1, quiz: 1, discussion: 1, file: 1 };
+    var partial = !!(content && content.notOpenedKnown === false);
+    function item(key, kind, title, url, indent) {
+      var access = key ? accessOf(key) : null;
+      var vids = key ? videosOf(key) : [];
+      vids.forEach(function (v) { usedVideos.add(v); });
+      mark(key);
+      // A cut-short Access Report proves what was opened, not what wasn't.
+      var opened = !accessKnown ? null : access && access.views > 0 ? true : TRACKED[kind] && !partial ? false : null;
+      return { type: 'item', key: key, kind: kind, title: title, url: url, indent: indent || 0, access: access,
+        opened: opened, videos: vids };
+    }
+    function tally(entries) {
+      var c = { items: 0, opened: accessKnown ? 0 : null, videos: 0, watched: 0, partial: 0, none: 0, unknown: 0 };
+      var seen = new Set();
+      entries.forEach(function (e) {
+        if (e.type === 'item' && (e.opened !== null || !accessKnown)) {
+          c.items++;
+          if (e.opened) c.opened++;
+        }
+        (e.type === 'video' ? [e.video] : e.videos || []).forEach(function (v) {
+          if (seen.has(v)) return;
+          seen.add(v);
+          c.videos++;
+          c[v.status]++;
+        });
+      });
+      return c;
+    }
+
+    var groups = [];
+    // Unpublished modules and items: students can't see them, so they are
+    // left out here and never come back as "Not in a module" either.
+    var hidden = Object.create(null);
+    (idx.moduleItems || []).forEach(function (m) {
+      m.items.forEach(function (it) {
+        if ((m.published === false || it.published === false) && it.key) keysOf(it.key).forEach(function (k) { hidden[k] = true; });
+      });
+    });
+    (idx.moduleItems || []).forEach(function (m, mi) {
+      if (m.published === false) return;
+      var entries = [];
+      m.items.forEach(function (it) {
+        if (it.published === false) return;
+        if (it.kind === 'header') { if (it.title) entries.push({ type: 'header', title: it.title }); return; }
+        entries.push(item(it.key, it.kind, it.title, it.url, it.indent));
+      });
+      if (!entries.some(function (e) { return e.type === 'item'; })) return;
+      groups.push({ key: 'm' + mi + ':' + m.name, label: m.name || 'Untitled module', kind: 'module', entries: entries });
+    });
+
+    // Outside every module: where posted videos sit, then what the student
+    // opened (most recent first). Pictures shown inside pages are left out.
+    var loose = [];
+    var looseAt = Object.create(null);
+    // Every placement on its own, whether or not its video already sits
+    // somewhere else: two pages sharing a video are two pages.
+    videos.forEach(function (v) {
+      (v.places || []).forEach(function (p) {
+        var k = p.key || ('url:' + (p.url || p.name));
+        if (usedKeys[k] && !looseAt[k]) return;
+        if (hidden[k]) return;
+        if (!looseAt[k]) {
+          var kind = { Assignment: 'assignment', Quiz: 'quiz', Discussion: 'discussion', Page: 'page', Module: 'link' }[p.kind] || 'other';
+          // Every video embedded in that item comes along with it.
+          looseAt[k] = item(p.key || null, kind, p.name || p.kind, p.url || null, 0);
+          loose.push(looseAt[k]);
+        }
+        if (looseAt[k].videos.indexOf(v) < 0) looseAt[k].videos.push(v);
+        usedVideos.add(v);
+      });
+    });
+    (content ? content.items : []).forEach(function (i) {
+      if (i.kind === 'area' || i.kind === 'module' || usedKeys[i.key] || hidden[i.key]) return;
+      if (i.image) { hiddenImages++; return; }
+      loose.push(item(i.key, i.kind, i.name || '(untitled)', null, 0));
+    });
+    loose.sort(function (a, b) {
+      return ((b.access && b.access.lastAt) || 0) - ((a.access && a.access.lastAt) || 0) || String(a.title).localeCompare(String(b.title));
+    });
+    if (loose.length) groups.push({ key: 'loose', label: 'Not in a module', kind: 'loose', entries: loose });
+
+    var unposted = [], student = [];
+    videos.forEach(function (v) {
+      if (usedVideos.has(v)) return;
+      if (v.origin === 'student') student.push({ type: 'video', video: v });
+      else unposted.push({ type: 'video', video: v });
+    });
+    if (unposted.length) groups.push({ key: 'unposted', label: 'Studio videos not posted in Canvas', kind: 'unposted', entries: unposted });
+    if (student.length) groups.push({ key: 'student', label: 'Students’ own recordings', kind: 'student', entries: student });
+
+    groups.forEach(function (g) { g.counts = tally(g.entries); });
+    // Items: the modules' (what was assigned to be opened); videos: every
+    // posted one, in a module or not.
+    var inModules = [], posted = [];
+    groups.forEach(function (g) {
+      if (g.kind === 'module') inModules = inModules.concat(g.entries);
+      if (g.kind === 'module' || g.kind === 'loose') posted = posted.concat(g.entries);
+    });
+    var totals = tally(inModules), tv = tally(posted);
+    ['videos', 'watched', 'partial', 'none', 'unknown'].forEach(function (k) { totals[k] = tv[k]; });
+    areas.sort(function (a, b) { return b.views - a.views; });
+    return { groups: groups, areas: areas, hiddenImages: hiddenImages, totals: totals, accessKnown: accessKnown };
   }
 
   /* Every way a teacher might type a date, so a search for "10/12",
@@ -1119,6 +1338,7 @@
     activity: activity,
     contentActivity: contentActivity,
     courseIndex: courseIndex,
+    courseMaterial: courseMaterial,
     classMedians: classMedians,
     classGroupMedians: classGroupMedians,
     duration: duration,

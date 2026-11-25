@@ -272,7 +272,7 @@ suite('student overview loading: the panel’s data', (test) => {
     const off = c.activityPanel(Object.assign(base(), { analyticsOff: true }));
     a.ok(off.includes('isn’t available for this course'));
     a.not(off.includes('data-si-retry-part="activity"'));
-    const content = c.contentPanel(Object.assign(base(), { contentFailed: true }));
+    const content = c.materialPanel(Object.assign(base(), { contentFailed: true }));
     a.ok(content.includes('data-si-retry-part="content"'), 'Access Report: Try again');
   });
 

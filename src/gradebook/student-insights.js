@@ -752,19 +752,11 @@
       this.refreshShare();
       return;
     }
-    var kind = t.closest('[data-si-kind]');
-    if (kind) {
-      var k = kind.getAttribute('data-si-kind');
-      this._contentKind = k;
-      this._root.querySelectorAll('[data-si-kind]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-si-kind') === k)); });
-      this.applyActivitySearch();
-      return;
-    }
-    var vst = t.closest('[data-si-vstatus]');
-    if (vst) {
-      var vs = vst.getAttribute('data-si-vstatus');
-      this._videoStatus = vs;
-      this._root.querySelectorAll('[data-si-vstatus]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-si-vstatus') === vs)); });
+    var mf = t.closest('[data-si-mfilter]');
+    if (mf) {
+      var mv = mf.getAttribute('data-si-mfilter');
+      this._materialFilter = mv;
+      this._root.querySelectorAll('[data-si-mfilter]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-si-mfilter') === mv)); });
       this.applyActivitySearch();
       return;
     }
@@ -864,34 +856,43 @@
     this.applyActivitySearch();
   };
 
-  /* The Activity tab's search, right above the Studio videos and course
-   * content it filters: by name, type, module or where a video is
-   * embedded. While searching, the cards below the matches step aside. */
+  /* The Activity tab's search, right above the course outline it filters:
+   * by name, type or module. With the "Show only" chips: an item row shows
+   * when it matches; a video shows when it matches, and brings the item
+   * it sits in along (dimmed) for context. While searching, the cards
+   * below the matches step aside. */
   P.applyActivitySearch = function () {
     if (!this._root) return;
     var q = this._query || '';
-    var kind = this._contentKind || 'all';
-    var vstatus = this._videoStatus || 'all';
+    var mfilter = this._materialFilter || 'all';
     var panel = this._root.querySelector('[data-si-panel="activity"]');
     if (!panel) return;
     panel.querySelectorAll('[data-si-nosearch]').forEach(function (el) { el.hidden = !!q.trim(); });
     panel.querySelectorAll('[data-si-searchable]').forEach(function (card) {
       var shown = 0;
-      card.querySelectorAll('tbody tr[data-search]').forEach(function (tr) {
-        var k = tr.getAttribute('data-kind');
-        var vs = tr.getAttribute('data-vstatus');
-        var on = (!k || kind === 'all' || k === kind) && (vs === null || vstatus === 'all' || vs === vstatus) &&
-          SI().matchesSearch(tr.getAttribute('data-search'), q);
+      var rows = card.querySelectorAll('tbody tr[data-search]');
+      var byId = {};
+      rows.forEach(function (tr) {
+        var st = tr.getAttribute('data-mstate');
+        var on = (st === null || mfilter === 'all' || st === mfilter) && SI().matchesSearch(tr.getAttribute('data-search'), q);
         tr.hidden = !on;
+        tr.classList.remove('cgp-si__mrow--context');
+        var id = tr.getAttribute('data-mrow');
+        if (id) byId[id] = tr;
         if (on) shown++;
       });
-      // Video groups: one with nothing left to show steps aside, and a
-      // search opens the groups its matches are in.
-      var filtering = !!q.trim() || vstatus !== 'all';
+      rows.forEach(function (tr) {
+        var parent = tr.getAttribute('data-mparent');
+        var p = !tr.hidden && parent && byId[parent];
+        if (p && p.hidden) { p.hidden = false; p.classList.add('cgp-si__mrow--context'); }
+      });
+      // Groups: one with nothing left to show steps aside, and a search
+      // opens the groups its matches are in.
+      var filtering = !!q.trim() || mfilter !== 'all';
       card.querySelectorAll('[data-si-vgroup-box]').forEach(function (g) {
         var any = !!g.querySelector('tbody tr[data-search]:not([hidden])');
         g.hidden = filtering && !any;
-        if (q.trim() && any) g.open = true;
+        if (filtering && any) g.open = true;
       });
       var empty = card.querySelector('.cgp-si__table-empty');
       if (empty) empty.hidden = shown > 0 || !card.querySelector('tbody tr[data-search]');
@@ -1627,8 +1628,8 @@
       (charts.length ? '<div class="cgp-si__act-charts">' + charts.join('') + '</div>' : '') + '</div>';
     // The search sits right above what it searches.
     out += this.activitySearch(r);
-    out += this.studioPanel(r);
-    out += this.contentPanel(r);
+    out += this.materialPanel(r);
+    out += this.notOpenedCard(r);
     return out;
   };
 
@@ -1720,192 +1721,207 @@
     return out;
   };
 
-  /* The Studio videos, the way the course is laid out: one group per
-   * module, in the modules' order, each video where students first meet
-   * it, with the module's own tally. Videos posted outside any module come
-   * next; then, folded away and left out of every count, videos Studio
-   * lists for the course but nobody posted, and recordings students made
-   * for their own work (Studio copies those into the course's list). */
-  var VSTATUS_CHIPS = [['all', 'All'], ['none', 'Not watched'], ['partial', 'Partly watched'], ['watched', 'Watched'], ['unknown', 'No data']];
+  /* The course, module by module (core courseMaterial): every item in each
+   * module, whether this student opened it, and the Studio videos inside
+   * it with how much of each they watched - one place to check a student
+   * against the course's own outline. Each module's header carries its
+   * tally; modules fold, and remember being opened or closed. */
+  var MFILTERS = [['all', 'All'], ['unopened', 'Not opened'], ['unwatched', 'Videos not watched'], ['nodata', 'No video data']];
+  var ITEM_LABELS = { page: 'Page', file: 'File', assignment: 'Assignment', quiz: 'Quiz', discussion: 'Discussion',
+    tool: 'External tool', link: 'Link', event: 'Event', module: 'Module', other: 'Item' };
 
-  /* A row of segments for watched / partly / not watched / no data. */
-  function vstack(c) {
-    var total = c.watched + c.partial + c.none + c.unknown;
+  /* A row of segments: green / amber / red / grey, by count. */
+  function vstack(c, labels) {
+    labels = labels || ['watched', 'partly watched', 'not watched', 'no data'];
+    var parts = [['watched', c.watched], ['partial', c.partial], ['none', c.none], ['unknown', c.unknown]];
+    var total = parts.reduce(function (n, p) { return n + (p[1] || 0); }, 0);
     if (!total) return '';
-    var seg = function (k, n, label) {
-      return n ? '<span class="cgp-si__vseg cgp-si__vseg--' + k + '" style="flex-grow:' + n + '" data-tip="' + esc(n + ' ' + label) + '"></span>' : '';
-    };
-    return '<span class="cgp-si__vstack" role="img" aria-label="' + esc(c.watched + ' watched, ' + c.partial + ' partly watched, ' + c.none + ' not watched' + (c.unknown ? ', ' + c.unknown + ' no data' : '')) + '">' +
-      seg('watched', c.watched, 'watched') + seg('partial', c.partial, 'partly watched') + seg('none', c.none, 'not watched') + seg('unknown', c.unknown, 'no data') + '</span>';
+    return '<span class="cgp-si__vstack" role="img" aria-label="' + esc(parts.map(function (p, i) { return (p[1] || 0) + ' ' + labels[i]; }).join(', ')) + '">' +
+      parts.map(function (p, i) {
+        return p[1] ? '<span class="cgp-si__vseg cgp-si__vseg--' + p[0] + '" style="flex-grow:' + p[1] + '" data-tip="' + esc(p[1] + ' ' + labels[i]) + '"></span>' : '';
+      }).join('') + '</span>';
   }
 
-  P.studioPanel = function (r) {
-    var s = r.studio;
-    if (!s) return '';
+  /* Canvas's address for an item the Access Report names by key. */
+  P.urlForKey = function (key) {
+    var m = /^(assignment|quiz|discussion_topic|attachment)_(\d+)$/.exec(String(key || ''));
+    if (!m) return null;
+    var base = '/courses/' + this.courseId;
+    return base + { assignment: '/assignments/', quiz: '/quizzes/', discussion_topic: '/discussion_topics/', attachment: '/files/' }[m[1]] + m[2];
+  };
+
+  P.materialPanel = function (r) {
     var self = this;
-    var title = 'Studio videos';
-    if (s.loading) {
+    var title = 'Course material by module';
+    var s = r.studio;
+    if (!r.indexKnown) {
       return '<div class="cgp-si__card"><div class="cgp-si__card-head"><h3>' + title + '</h3></div>' +
-        '<div class="cgp-si__loading cgp-si__loading--inline" role="status"><span class="cgp-si__spinner" aria-hidden="true"></span>Opening Studio in the background…</div></div>';
+        '<div class="cgp-si__loading cgp-si__loading--inline" role="status"><span class="cgp-si__spinner" aria-hidden="true"></span>Reading the course’s modules…</div></div>';
     }
-    if (s.error) {
-      if (s.code === 'noStudio') return '';
-      return section(title, '<p class="cgp-si__note">Couldn’t read Studio: ' + esc(s.error) +
-        '. Opening Studio once from Canvas’s left menu signs you in; then reopen this student.</p>');
+    var studioRows = s && s.rows ? s.rows : null;
+    var M = SI().courseMaterial({ index: r.index, content: r.content, videos: studioRows });
+    var T = M.totals;
+
+    // What's still coming, or couldn't be read.
+    var notes = [];
+    if (!r.contentKnown) notes.push('<span class="cgp-si__spinner cgp-si__spinner--sm" aria-hidden="true"></span> Reading this student’s Access Report…');
+    else if (r.contentFailed) notes.push(retryNote('Couldn’t read this student’s Access Report just now.', 'content'));
+    else if (!r.content) notes.push('Canvas didn’t share this student’s Access Report with your account (it needs the “View usage reports” permission), so what they opened can’t be shown.');
+    if (s && s.loading) notes.push('<span class="cgp-si__spinner cgp-si__spinner--sm" aria-hidden="true"></span> Opening Studio in the background for video watching…');
+    else if (s && s.error && s.code !== 'noStudio') notes.push('Couldn’t read Studio: ' + esc(s.error) + '. Opening Studio once from Canvas’s left menu signs you in; then reopen this student.');
+    var noteHtml = notes.map(function (n) { return /^<div/.test(n) ? n : '<p class="cgp-si__note cgp-si__mnote">' + n + '</p>'; }).join('');
+
+    if (!M.groups.length) {
+      return section(title, noteHtml + '<p class="cgp-si__note">This course has no modules yet, and this student hasn’t opened anything outside them.</p>');
     }
-    var names = (this._courseNames || [this._courseName]).map(function (n) { return '“' + esc(n) + '”'; }).join(' or ');
-    if (s.none) return section(title, '<p class="cgp-si__note">Studio has no course named ' + names + ', so there are no Studio videos to show.</p>');
-    if (!s.rows.length) return section(title, '<p class="cgp-si__note">No Studio videos have been added to this course.</p>');
 
-    var moduleOrder = s.moduleOrder || [];
-    var rank = function (m) { var i = moduleOrder.indexOf(m); return i < 0 ? 1e6 : i; };
-    var orderOf = function (v) {
-      var o = Infinity;
-      (v.places || []).forEach(function (p) { if (p.order !== undefined && p.order < o) o = p.order; });
-      return o;
-    };
-    var modulesOf = function (v) {
-      var out = [];
-      (v.places || []).forEach(function (p) { (p.modules || []).forEach(function (m) { if (m && out.indexOf(m) < 0) out.push(m); }); });
-      return out.sort(function (a, b) { return rank(a) - rank(b); });
-    };
-
-    // Each video to one group.
-    var groups = [], byKey = {};
-    var groupFor = function (key, label, kind, sortKey) {
-      if (!byKey[key]) {
-        byKey[key] = { key: key, label: label, kind: kind, sortKey: sortKey, rows: [], counts: { watched: 0, partial: 0, none: 0, unknown: 0 } };
-        groups.push(byKey[key]);
-      }
-      return byKey[key];
-    };
-    s.rows.forEach(function (v) {
-      var g;
-      var origin = v.origin || (v.places && v.places.length ? 'posted' : 'unposted');
-      if (origin === 'posted') {
-        var mods = modulesOf(v);
-        g = mods.length ? groupFor('m:' + mods[0], mods[0], 'module', rank(mods[0])) : groupFor('loose', 'Posted outside any module', 'loose', 1e7);
-      } else if (!r.indexKnown) {
-        g = groupFor('pending', 'Looking for where these are posted…', 'pending', 1e7 + 1);
-      } else if (origin === 'student') {
-        g = groupFor('student', 'Students’ own recordings', 'student', 1e7 + 3);
-      } else {
-        g = groupFor('unposted', 'Not posted in Canvas', 'unposted', 1e7 + 2);
-      }
-      g.rows.push(v);
-      g.counts[v.status]++;
-    });
-    groups.sort(function (a, b) { return a.sortKey - b.sortKey || a.label.localeCompare(b.label); });
-    groups.forEach(function (g) {
-      g.rows.sort(function (a, b) {
-        return (orderOf(a) - orderOf(b)) || String(a.title || '').localeCompare(String(b.title || ''), undefined, { numeric: true });
+    var hasTime = !!(r.content && r.content.pageViewsKnown);
+    var filter = this._materialFilter || 'all';
+    var fcount = { all: 0, unopened: 0, unwatched: 0, nodata: 0 };
+    var countedGroup = function (g) { return g.kind === 'module' || g.kind === 'loose'; };
+    M.groups.forEach(function (g) {
+      if (!countedGroup(g)) return;
+      var seen = new Set();
+      g.entries.forEach(function (e) {
+        if (e.type !== 'item') return;
+        fcount.all++;
+        if (e.opened === false) fcount.unopened++;
+        e.videos.forEach(function (v) {
+          if (seen.has(v)) return;
+          seen.add(v);
+          if (v.status === 'none' || v.status === 'partial') fcount.unwatched++;
+          if (v.status === 'unknown') fcount.nodata++;
+        });
       });
     });
-
-    var counted = function (g) { return g.kind === 'module' || g.kind === 'loose'; };
-    var pc = s.postedCounts || s.counts;
-    var tallyAll = { all: 0, none: 0, partial: 0, watched: 0, unknown: 0 };
-    groups.forEach(function (g) { if (!counted(g)) return; g.rows.forEach(function (v) { tallyAll.all++; tallyAll[v.status]++; }); });
-    var vstatus = this._videoStatus || 'all';
-    if (vstatus !== 'all' && !tallyAll[vstatus]) vstatus = this._videoStatus = 'all';
+    if (filter !== 'all' && !fcount[filter]) filter = this._materialFilter = 'all';
     var openState = this._vgroups || (this._vgroups = {});
+    var rowSeq = 0;
 
-    var placeHtml = function (v, g) {
-      if (g.kind === 'student') {
-        var who = v.submittedByName ? esc(v.submittedByName) : v.submittedBy ? 'a student' : null;
-        if (who) return '<span class="cgp-si__vplace">Submitted by ' + who + (v.submittedIn ? ' <span class="cgp-si__where">' + esc(v.submittedIn) + '</span>' : '') + '</span>';
-        return '<span class="cgp-si__muted" title="Studio’s default title for a recording made in the browser">Quick recording, not posted</span>';
-      }
-      if (!v.places || !v.places.length) {
-        return g.kind === 'pending' ? '<span class="cgp-si__muted">Looking…</span>'
-          : '<span class="cgp-si__muted" title="In Studio’s list for this course, but not embedded in any assignment, quiz, discussion, page or module">Not posted in Canvas</span>';
-      }
-      var inGroup = g.kind === 'module' ? g.label : null;
-      return v.places.slice(0, 3).map(function (p) {
-        var name = esc(p.name || p.kind);
-        var other = (p.modules || []).filter(function (m) { return m !== inGroup; });
-        return '<span class="cgp-si__vplace"><span class="cgp-si__vkind">' + esc(p.kind) + '</span> ' +
-          (p.url ? '<a href="' + esc(p.url) + '" target="_blank" rel="noopener">' + name + '</a>' : name) +
-          (other.length && !(p.kind === 'Module' && other.join(', ') === p.name) ? '<span class="cgp-si__where">Also in ' + esc(other.join(', ')) + '</span>' : '') +
-          '</span>';
-      }).join('') + (v.places.length > 3 ? '<span class="cgp-si__muted">+' + (v.places.length - 3) + ' more</span>' : '');
+    var openedCell = function (e) {
+      if (e.opened === null) return '<span class="cgp-si__muted">–</span>';
+      if (!e.opened) return '<span class="cgp-si__mstate cgp-si__mstate--no">Not opened</span>';
+      var a = e.access;
+      var bits = [a.views + (a.views === 1 ? ' view' : ' views')];
+      if (hasTime && a.seconds) bits.push(SI().duration(a.seconds));
+      if (a.downloads) bits.push('downloaded');
+      return '<span class="cgp-si__mstate cgp-si__mstate--yes">Opened</span> <span class="cgp-si__muted">' + esc(bits.join(' · ')) + '</span>';
     };
-    var searchOf = function (v, g) {
-      var bits = [v.title, 'video', 'studio', videoLabel(v), g.label];
-      (v.places || []).forEach(function (p) { bits.push(p.kind, p.name, (p.modules || []).join(' | ')); });
-      if (g.kind === 'unposted') bits.push('not posted');
-      if (g.kind === 'student') bits.push('student recording', v.submittedByName || '');
-      return esc(bits.join(' | ').toLowerCase());
-    };
-    var rowHtml = function (v, g) {
-      // The status chips count posted videos only; the rest show under All.
-      var st = counted(g) ? v.status : 'other';
-      var on = vstatus === 'all' || vstatus === st;
-      var open = '<tr data-vstatus="' + st + '" data-search="' + searchOf(v, g) + '"' + (on ? '' : ' hidden') + '>';
-      var name = '<td class="cgp-si__name-cell">' + esc(v.title) + (v.duration ? ' <span class="cgp-si__muted">' + esc(SI().duration(v.duration)) + '</span>' : '') + '</td>';
-      var where = '<td class="cgp-si__vplaces">' + placeHtml(v, g) + '</td>';
-      var cls = v.classWatched === null || v.classWatched === undefined ? '<td class="cgp-si__muted">–</td>'
-        : '<td class="cgp-si__muted" title="Students in the class who watched any of it">' + v.classWatched + ' in class</td>';
+    var videoCells = function (v, g) {
       if (g.kind === 'student') {
         var own = v.submittedBy && v.submittedBy === String(self._uid);
-        return open + name + where + '<td>' + (own ? '<span class="cgp-si__vstatus cgp-si__vstatus--own">Their recording</span>' : '<span class="cgp-si__muted">–</span>') + '</td><td class="cgp-si__muted">–</td>' + cls + '</tr>';
+        var who = v.submittedByName ? 'Submitted by ' + esc(v.submittedByName) + (v.submittedIn ? ' · ' + esc(v.submittedIn) : '')
+          : v.submittedBy ? 'Submitted by a student' : 'Quick recording, not posted';
+        return '<td>' + (own ? '<span class="cgp-si__vstatus cgp-si__vstatus--own">Their recording</span>' : '<span class="cgp-si__muted">' + who + '</span>') + '</td><td></td>';
       }
       if (v.status === 'unknown') {
-        return open + name + where +
-          '<td><span class="cgp-si__vstatus cgp-si__vstatus--unknown" title="' + esc(UNKNOWN_WHY[v.unknownReason] || UNKNOWN_WHY.error) + (v.errorStatus ? ' (Studio answered ' + esc(v.errorStatus) + ')' : '') + '">' + esc(videoLabel(v)) + '</span></td>' +
-          '<td class="cgp-si__muted">–</td>' + cls + '</tr>';
+        return '<td><span class="cgp-si__vstatus cgp-si__vstatus--unknown" title="' + esc(UNKNOWN_WHY[v.unknownReason] || UNKNOWN_WHY.error) + (v.errorStatus ? ' (Studio answered ' + esc(v.errorStatus) + ')' : '') + '">' + esc(videoLabel(v)) + '</span></td><td></td>';
       }
-      var pct = v.completion === null ? 0 : Math.round(v.completion * 100);
-      return open + name + where +
-        '<td><span class="cgp-si__vstatus cgp-si__vstatus--' + v.status + '">' + esc(videoLabel(v)) + '</span></td>' +
-        '<td><div class="cgp-si__vmeter"><div class="cgp-si__track"><span class="cgp-si__fill" style="width:' + pct + '%"></span></div><b>' + pct + '%</b></div></td>' +
-        cls + '</tr>';
+      var pct = v.completion === null || v.completion === undefined ? 0 : Math.round(v.completion * 100);
+      return '<td><span class="cgp-si__vstatus cgp-si__vstatus--' + v.status + '">' + esc(videoLabel(v)) + '</span></td>' +
+        '<td><div class="cgp-si__vmeter"><div class="cgp-si__track"><span class="cgp-si__fill" style="width:' + pct + '%"></span></div><b>' + pct + '%</b></div></td>';
+    };
+    var classCell = function (v) {
+      return v.classWatched === null || v.classWatched === undefined ? '<td class="cgp-si__muted"></td>'
+        : '<td class="cgp-si__muted" title="Students in the class who watched any of it">' + v.classWatched + ' in class</td>';
+    };
+    var videoState = function (v, g) {
+      if (!countedGroup(g)) return 'other';
+      return v.status === 'unknown' ? 'nodata' : v.status === 'watched' ? 'watched' : 'unwatched';
+    };
+    var videoRow = function (v, g, parent, groupLabel) {
+      var st = videoState(v, g);
+      var hay = esc([v.title, 'video', 'studio', videoLabel(v), groupLabel, v.submittedByName || ''].join(' | ').toLowerCase());
+      var on = filter === 'all' || filter === st;
+      return '<tr class="cgp-si__mrow cgp-si__mrow--video' + (parent ? ' cgp-si__mrow--child' : '') + '" data-mstate="' + st + '"' +
+        (parent ? ' data-mparent="' + parent + '"' : '') + ' data-search="' + hay + '"' + (on ? '' : ' hidden') + '>' +
+        '<td class="cgp-si__name-cell"><span class="cgp-si__micon cgp-si__micon--video" aria-hidden="true"></span>' + esc(v.title) +
+        (v.duration ? ' <span class="cgp-si__muted">' + esc(SI().duration(v.duration)) + '</span>' : '') + '</td>' +
+        videoCells(v, g) + classCell(v) + '</tr>';
+    };
+    var itemRow = function (e, g) {
+      var id = 'm' + (++rowSeq);
+      var st = e.opened === false ? 'unopened' : 'opened';
+      var url = e.url || self.urlForKey(e.key);
+      var name = esc(e.title || '(untitled)');
+      var hay = esc([e.title, ITEM_LABELS[e.kind] || '', g.label].concat(e.videos.map(function (v) { return v.title; })).join(' | ').toLowerCase());
+      var on = filter === 'all' || filter === st;
+      var last = e.access && e.access.lastAt ? ' <span class="cgp-si__muted" title="Last opened ' + esc(fmtDate(e.access.lastAt, true)) + '">· last ' + esc(SI().relativeDay(e.access.lastAt, r.now)) + '</span>' : '';
+      var row = '<tr class="cgp-si__mrow cgp-si__mrow--item" data-mrow="' + id + '" data-mstate="' + st + '" data-search="' + hay + '"' + (on ? '' : ' hidden') + '>' +
+        '<td class="cgp-si__name-cell"' + (e.indent ? ' style="padding-left:' + (32 + Math.min(e.indent, 4) * 16) + 'px"' : '') + '><span class="cgp-si__vkind">' + esc(ITEM_LABELS[e.kind] || 'Item') + '</span> ' +
+        (url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener">' + name + '</a>' : name) + '</td>' +
+        '<td colspan="2">' + openedCell(e) + last + '</td><td></td></tr>';
+      return row + e.videos.map(function (v) { return videoRow(v, g, id, g.label + ' | ' + e.title); }).join('');
     };
     var NOTES = {
-      unposted: 'In Studio’s list for this course but not embedded anywhere students would find it. Not counted above.' +
-        (s.studentPending ? ' Still checking students’ submissions and replies for their own recordings…' : ''),
-      student: 'Studio copies a video into the course’s list when a student embeds it in a submission or discussion reply, or records one in the browser (“Untitled” and a date). These aren’t videos assigned to the class, so they aren’t counted above.',
-      pending: 'Still reading the course’s assignments, pages and modules.'
+      loose: 'Opened by this student, or holding a Studio video, but not in any module.',
+      unposted: 'In Studio’s list for this course but not embedded anywhere students would find it. Not counted.',
+      student: 'Studio copies a video into the course’s list when a student embeds it in a submission or discussion reply, or records one in the browser (“Untitled” and a date). Not counted.' +
+        (s && s.studentPending ? ' Still checking students’ submissions and replies…' : '')
     };
     var groupHtml = function (g) {
       var c = g.counts;
-      var n = g.rows.length;
-      var isOpen = openState[g.key] !== undefined ? openState[g.key]
-        : counted(g) ? (c.none + c.partial > 0 || groups.filter(counted).length <= 2) : g.kind === 'pending';
-      var summary = counted(g)
-        ? '<span class="cgp-si__vgroup-tally">' + vstack(c) + '<span><b>' + c.watched + '</b> of ' + n + ' watched' +
-          (c.none ? ' · <span class="cgp-si__vgroup-gap">' + c.none + ' not watched</span>' : '') + (c.partial ? ' · ' + c.partial + ' partly' : '') + '</span></span>'
-        : '<span class="cgp-si__vgroup-tally cgp-si__muted">' + n + (n === 1 ? ' video' : ' videos') + ' · not counted</span>';
-      var head = g.kind === 'student' ? '<th>Recording</th><th>From</th><th></th><th></th><th>Class</th>'
-        : '<th>Video</th><th>Posted in</th><th>Status</th><th>Watched</th><th>Class</th>';
+      var gaps = (c.opened !== null ? c.items - c.opened : 0) + c.none + c.partial;
+      var isOpen = openState[g.key] !== undefined ? openState[g.key] : (M.groups.filter(countedGroup).length <= 3 && countedGroup(g) && gaps > 0);
+      var tally = '';
+      if (g.kind === 'module') {
+        tally = (c.opened !== null ? '<span class="cgp-si__mtally"><span><b>' + c.opened + '</b>/' + c.items + ' opened</span></span>' : '<span class="cgp-si__mtally">' + c.items + ' items</span>') +
+          (c.videos ? '<span class="cgp-si__mtally">' + vstack(c) + '<span><b>' + c.watched + '</b>/' + c.videos + ' videos watched</span></span>' : '');
+      } else if (g.kind === 'loose') {
+        tally = '<span class="cgp-si__mtally">' + c.items + (c.items === 1 ? ' item' : ' items') + '</span>' +
+          (c.videos ? '<span class="cgp-si__mtally">' + vstack(c) + '<span><b>' + c.watched + '</b>/' + c.videos + ' videos watched</span></span>' : '');
+      } else {
+        tally = '<span class="cgp-si__mtally cgp-si__muted">' + c.videos + (c.videos === 1 ? ' video' : ' videos') + ' · not counted</span>';
+      }
+      var gapNote = g.kind === 'module' && c.opened !== null && c.items - c.opened > 0 ? '<span class="cgp-si__vgroup-gap">' + (c.items - c.opened) + ' not opened</span>' : '';
+      var body = g.entries.map(function (e) {
+        if (e.type === 'header') return '<tr class="cgp-si__mrow cgp-si__mrow--header"><td colspan="4">' + esc(e.title) + '</td></tr>';
+        if (e.type === 'video') return videoRow(e.video, g, null, g.label);
+        return itemRow(e, g);
+      }).join('');
       return '<details class="cgp-si__vgroup cgp-si__vgroup--' + g.kind + '" data-si-vgroup-box' + (isOpen ? ' open' : '') + '>' +
-        '<summary data-si-vgroup="' + esc(g.key) + '"><span class="cgp-si__vgroup-name">' + esc(g.label) + '</span>' + summary + '</summary>' +
+        '<summary data-si-vgroup="' + esc(g.key) + '"><span class="cgp-si__vgroup-name">' + esc(g.label) + '</span>' +
+        '<span class="cgp-si__vgroup-tally">' + gapNote + tally + '</span></summary>' +
         (NOTES[g.kind] ? '<p class="cgp-si__note cgp-si__vgroup-note">' + esc(NOTES[g.kind]) + '</p>' : '') +
-        '<table class="cgp-si__table cgp-si__table--content cgp-si__table--videos"><thead><tr>' + head + '</tr></thead><tbody>' +
-        g.rows.map(function (v) { return rowHtml(v, g); }).join('') + '</tbody></table></details>';
+        '<table class="cgp-si__table cgp-si__table--content cgp-si__table--material"><colgroup><col class="cgp-si__mc1"><col class="cgp-si__mc2"><col class="cgp-si__mc3"><col class="cgp-si__mc4"></colgroup><thead class="cgp-si__sr"><tr><th>Item</th><th>This student</th><th>Share watched</th><th>Class</th></tr></thead><tbody>' +
+        body + '</tbody></table></details>';
     };
 
-    var chips = VSTATUS_CHIPS.filter(function (ch) { return ch[0] === 'all' || tallyAll[ch[0]]; });
-    var chipHtml = '<div class="cgp-si__vtools"><div class="cgp-si__chips cgp-si__chips--content" role="group" aria-label="Show videos by whether this student watched them">' + chips.map(function (ch) {
-      return '<button type="button" class="cgp-si__chip" data-si-vstatus="' + ch[0] + '" aria-pressed="' + (vstatus === ch[0]) + '">' + esc(ch[1]) + ' <b>' + tallyAll[ch[0]] + '</b></button>';
+    // The whole course in two lines: items opened, videos watched.
+    var overall = '<div class="cgp-si__moverall">' +
+      (T.opened !== null ? '<div><span class="cgp-si__vstack" role="img" aria-label="' + T.opened + ' of ' + T.items + ' module items opened">' +
+        (T.opened ? '<span class="cgp-si__vseg cgp-si__vseg--watched" style="flex-grow:' + T.opened + '"></span>' : '') +
+        (T.items - T.opened ? '<span class="cgp-si__vseg cgp-si__vseg--none" style="flex-grow:' + (T.items - T.opened) + '"></span>' : '') + '</span>' +
+        '<span><b>' + T.opened + '</b> of ' + T.items + ' module items opened</span></div>' : '') +
+      (T.videos ? '<div>' + vstack(T) + '<span><b>' + T.watched + '</b> of ' + T.videos + ' Studio videos watched' +
+        (T.partial ? ' · ' + T.partial + ' partly' : '') + (T.unknown ? ' · ' + T.unknown + ' no data' : '') + '</span></div>' : '') +
+      '</div>';
+    var areas = M.areas.length ? '<p class="cgp-si__note cgp-si__mareas">Also visited: ' + M.areas.slice(0, 8).map(function (a) {
+      return esc(a.name) + ' <b>' + a.views + '×</b>';
+    }).join(' · ') + '</p>' : '';
+    var chips = MFILTERS.filter(function (ch) { return ch[0] === 'all' || fcount[ch[0]]; });
+    var tools = '<div class="cgp-si__vtools"><div class="cgp-si__chips cgp-si__chips--content" role="group" aria-label="Show only">' + chips.map(function (ch) {
+      return '<button type="button" class="cgp-si__chip" data-si-mfilter="' + ch[0] + '" aria-pressed="' + (filter === ch[0]) + '">' + esc(ch[1]) + ' <b>' + fcount[ch[0]] + '</b></button>';
     }).join('') + '</div>' +
-      (groups.length > 1 ? '<span class="cgp-si__vall"><button type="button" class="cgp-si__linkbtn" data-si-vall="open">Expand all</button> · <button type="button" class="cgp-si__linkbtn" data-si-vall="close">Collapse all</button></span>' : '') + '</div>';
-    var overall = pc.total ? '<div class="cgp-si__voverall">' + vstack(pc) + '<span><b>' + pc.watched + '</b> of ' + pc.total + ' posted videos watched' +
-      (pc.partial ? ' · ' + pc.partial + ' partly' : '') + (pc.none ? ' · ' + pc.none + ' not watched' : '') + (pc.unknown ? ' · ' + pc.unknown + ' no data' : '') + '</span></div>' : '';
-    var body = overall + chipHtml + '<div class="cgp-si__vgroups">' + groups.map(groupHtml).join('') +
-      '<p class="cgp-si__table-empty cgp-si__note" hidden>No videos match.</p></div>';
+      (M.groups.length > 1 ? '<span class="cgp-si__vall"><button type="button" class="cgp-si__linkbtn" data-si-vall="open">Expand all</button> · <button type="button" class="cgp-si__linkbtn" data-si-vall="close">Collapse all</button></span>' : '') + '</div>';
+    var body = noteHtml + overall + areas + tools + '<div class="cgp-si__vgroups">' + M.groups.map(groupHtml).join('') +
+      '<p class="cgp-si__table-empty cgp-si__note" hidden>Nothing matches.</p></div>';
 
-    var aside = pc.total ? pc.watched + ' of ' + pc.total + ' watched'
-      : !r.indexKnown ? 'Looking for where videos are posted…' : s.rows.length + ' videos, none posted';
-    var embedded = s.rows.filter(function (v) { return v.embeddedOnly; }).length;
-    var noData = s.rows.some(function (v) { return v.status === 'unknown' && v.places && v.places.length; });
-    var indexNote = !r.indexKnown ? ' Looking for videos embedded in assignments and pages…' : '';
-    return searchableSection(title, body + '<p class="cgp-si__note">From Studio’s Insights for each video, grouped by the module students find it in. ' +
-      '“Watched” is at least ' + Math.round(CGP.studioClass.WATCHED_AT * 100) + '% of the video.' +
-      (embedded ? ' ' + embedded + (embedded === 1 ? ' video is' : ' videos are') + ' embedded from outside this course’s Studio list (copied from another class, say).' : '') +
-      (noData ? ' “No access in Studio”: the embed belongs to another Studio course or someone else’s library, so Studio shares its viewers only with them; re-embedding the video from this course’s Studio makes its watching visible here. “No data” never counts as not watched.' : '') +
-      (s.noCollection ? ' Studio has no course named ' + names + ', so only the embedded videos are listed.' : '') +
-      esc(indexNote) + '</p>', esc(aside));
+    var foot = [];
+    if (T.videos) foot.push('A video is “Watched” at ' + Math.round(CGP.studioClass.WATCHED_AT * 100) + '% or more, from Studio’s Insights.');
+    if (studioRows && studioRows.some(function (v) { return v.unknownReason === 'notfound' || v.unknownReason === 'noaccess'; })) {
+      foot.push('“Not found in Studio” or “No access in Studio”: the page’s embed points to a Studio video this course can’t read (usually one copied from another class), and the course has no copy with the same title and length to read instead. Check that it plays on the page; re-embedding it from this course’s Studio makes watching visible.');
+    }
+    if (r.content && r.content.notOpenedKnown === false) foot.push('This student’s Access Report is too long to read in full, so an item missing from it shows “–” rather than “Not opened”.');
+    if (M.hiddenImages) foot.push(M.hiddenImages + (M.hiddenImages === 1 ? ' picture' : ' pictures') + ' shown inside pages (a banner or button on the course home, say) aren’t listed: Canvas logs one each time the page opens.');
+    if (r.content) {
+      foot.push(hasTime
+        ? 'Time on an item is from Canvas page views ' + (r.content.pageViewsTruncated && r.content.pageViewsSince ? 'since ' + fmtDate(r.content.pageViewsSince) : 'over the last ' + PAGE_VIEW_DAYS + ' days') + '; views and last opened cover the whole course.'
+        : r.pageViewsLoading ? 'Reading page views for time on each item…' : 'Views and last opened come from the Access Report.');
+    }
+    foot.push('Canvas doesn’t record whether a YouTube video embedded straight in a page was played.');
+    var aside = [T.opened !== null ? T.opened + '/' + T.items + ' opened' : '', T.videos ? T.watched + '/' + T.videos + ' videos watched' : ''].filter(Boolean).join(' · ');
+    return searchableSection(title, body + '<p class="cgp-si__note">' + esc(foot.join(' ')) + '</p>', esc(aside));
   };
 
   /* ------------------------------------------------------ profile tab */
@@ -2036,88 +2052,12 @@
 
   /* ----------------------------------------- what the student opened */
 
-  var KIND_PLURALS = { page: 'Pages', file: 'Files', assignment: 'Assignments', quiz: 'Quizzes', discussion: 'Discussions',
-    tool: 'External tools', module: 'Modules', area: 'Course areas', event: 'Events', other: 'Other' };
-
-  P.contentUrl = function (i) {
-    var base = '/courses/' + this.courseId;
-    switch (i.type) {
-      case 'wiki_page': return null; // Canvas links pages by slug, which the report doesn't carry
-      case 'attachment': return base + '/files/' + i.id;
-      case 'assignment': return base + '/assignments/' + i.id;
-      case 'quiz': return base + '/quizzes/' + i.id;
-      case 'discussion_topic': return base + '/discussion_topics/' + i.id;
-      default: return null;
-    }
-  };
-
-  P.contentPanel = function (r) {
-    if (!r.contentKnown) {
-      return '<div class="cgp-si__card"><div class="cgp-si__card-head"><h3>Course content opened</h3></div>' +
-        '<div class="cgp-si__loading cgp-si__loading--inline" role="status"><span class="cgp-si__spinner" aria-hidden="true"></span>Reading this student’s Access Report…</div></div>';
-    }
-    var c = r.content;
-    if (r.contentFailed) {
-      return section('Course content opened', retryNote('Couldn’t read this student’s Access Report just now.', 'content'));
-    }
-    if (!c) {
-      return section('Course content opened', '<p class="cgp-si__note">Canvas didn’t share this student’s Access Report with your account ' +
-        '(it needs the “View usage reports” permission), so the pages, files and assignments they opened can’t be shown.</p>');
-    }
+  /* Assignments, quizzes and graded discussions the student never opened,
+   * most urgent first: its own card, under the course outline. */
+  P.notOpenedCard = function (r) {
     var self = this;
-    var kinds = c.byKind.filter(function (k) { return k.kind !== 'area'; });
-    // The last student's filter, unless this student has nothing of that kind.
-    var filter = this._contentKind || 'all';
-    if (filter !== 'all' && !c.byKind.some(function (k) { return k.kind === filter; })) filter = 'all';
-    var chips = [['all', 'All', c.items.length]].concat(c.byKind.map(function (k) { return [k.kind, KIND_PLURALS[k.kind] || k.label, k.items]; }));
-    var hasTime = c.pageViewsKnown;
-    var idx = r.index;
-    var rows = c.items.map(function (i) {
-      var mods = idx ? (idx.modules[i.key] || []) : [];
-      var hay = esc([i.name, c.kindLabels[i.kind] || '', KIND_PLURALS[i.kind] || '', mods.join(' | ')].join(' | ').toLowerCase());
-      var modHtml = mods.length ? '<span class="cgp-si__where" title="Module">' + esc(mods.join(', ')) + '</span>' : '';
-      var url = self.contentUrl(i);
-      var name = esc(i.name || '(untitled)');
-      var fileBits = i.type === 'attachment' && hasTime && (i.downloads || i.previews)
-        ? '<span class="cgp-si__pill" title="From page views in the last ' + PAGE_VIEW_DAYS + ' days">' +
-          (i.downloads ? 'downloaded' + (i.downloads > 1 ? ' ×' + i.downloads : '') : '') + (i.downloads && i.previews ? ' · ' : '') +
-          (i.previews ? 'previewed' + (i.previews > 1 ? ' ×' + i.previews : '') : '') + '</span>' : '';
-      var on = (filter === 'all' || filter === i.kind) && SI().matchesSearch(hay, self._query);
-      return '<tr data-kind="' + esc(i.kind) + '" data-search="' + hay + '"' + (on ? '' : ' hidden') + '>' +
-        '<td class="cgp-si__name-cell">' + (url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener">' + name + '</a>' : name) + fileBits + modHtml + '</td>' +
-        '<td>' + esc(c.kindLabels[i.kind] || '') + '</td>' +
-        '<td class="cgp-si__num">' + i.views + '</td>' +
-        (hasTime ? '<td class="cgp-si__num">' + (i.seconds ? esc(SI().duration(i.seconds)) : i.recentViews ? '&lt; 1 min' : '–') + '</td>' : '') +
-        '<td>' + (i.firstAt ? esc(fmtDate(i.firstAt, true)) : '–') + '</td>' +
-        '<td>' + (i.lastAt ? esc(SI().relativeDay(i.lastAt, r.now)) : '–') + '</td>' +
-        '</tr>';
-    }).join('');
-    var head = '<div class="cgp-si__chips cgp-si__chips--content" role="group" aria-label="Show content of one kind">' + chips.map(function (ch) {
-      return '<button type="button" class="cgp-si__chip" data-si-kind="' + ch[0] + '" aria-pressed="' + (filter === ch[0]) + '">' + esc(ch[1]) + ' <b>' + ch[2] + '</b></button>';
-    }).join('') + '</div>';
-    var table = c.items.length
-      ? '<div class="cgp-si__table-wrap cgp-si__table-wrap--content"><table class="cgp-si__table cgp-si__table--content"><thead><tr><th>Item</th><th>Type</th>' +
-        '<th class="cgp-si__num" title="Times opened, all time (Access Report)">Views</th>' +
-        (hasTime ? '<th class="cgp-si__num" title="Time with the page open and in use, from page views in the last ' + PAGE_VIEW_DAYS + ' days">Time</th>' : '') +
-        '<th>First opened</th><th>Last opened</th></tr></thead><tbody>' + rows + '</tbody></table>' +
-        '<p class="cgp-si__table-empty cgp-si__note" hidden>Nothing matches.</p></div>'
-      : '<p class="cgp-si__note">This student hasn’t opened anything in the course yet.</p>';
-
-    var pages = kinds.filter(function (k) { return k.kind === 'page'; })[0];
-    var files = kinds.filter(function (k) { return k.kind === 'file'; })[0];
-    var summary = [
-      pages ? pages.items + (pages.items === 1 ? ' page' : ' pages') : '', files ? files.items + (files.items === 1 ? ' file' : ' files') : ''
-    ].filter(Boolean).join(' · ');
-    var timeNote = hasTime
-      ? '<p class="cgp-si__note">Time is how long a page was open and in use, from Canvas page views ' +
-        (c.pageViewsTruncated && c.pageViewsSince ? 'since ' + esc(fmtDate(c.pageViewsSince)) + ' (the most Canvas gives at once)' : 'over the last ' + PAGE_VIEW_DAYS + ' days') +
-        (c.totalSeconds ? ' (' + esc(SI().duration(c.totalSeconds)) + ' in this course in all)' : '') + '. Views and first/last opened cover the whole course.</p>'
-      : r.pageViewsLoading
-        ? '<p class="cgp-si__note"><span class="cgp-si__spinner cgp-si__spinner--sm" aria-hidden="true"></span> Reading page views for time on each item…</p>'
-        : '<p class="cgp-si__note">Canvas doesn’t let your account read this student’s page views, so time on each item and file downloads can’t be shown; views and first/last opened come from the Access Report.</p>';
-    var videoNote = '<p class="cgp-si__note">Canvas doesn’t record whether a video embedded straight from YouTube or another site was played; ' +
-      'Studio videos are shown under “Studio videos”.</p>';
-
+    var c = r.content;
+    if (!c) return '';
     var notOpened = '';
     if (!c.notOpenedKnown) {
       notOpened = section('Assignments never opened', '<p class="cgp-si__note">This student’s Access Report is too long to read in full, so which assignments they never opened can’t be said for sure.</p>');
@@ -2131,8 +2071,7 @@
         '<p class="cgp-si__note">The instructions page (or the quiz or discussion) was never viewed. Work handed in on paper or graded without a submission shows here too.</p>',
         c.notOpenedPastDue ? c.notOpenedPastDue + ' past due' : '');
     }
-    return searchableSection('Course content opened', head + table + timeNote + videoNote, esc(summary)) +
-      (notOpened ? '<div data-si-nosearch' + (this._query && this._query.trim() ? ' hidden' : '') + '>' + notOpened + '</div>' : '');
+    return notOpened ? '<div data-si-nosearch' + (this._query && this._query.trim() ? ' hidden' : '') + '>' + notOpened + '</div>' : '';
   };
 
   function hourLabels() {
