@@ -139,6 +139,49 @@ suite('SpeedGrader tidy sidebar', (test) => {
     a.not(has(mount, 'data-cgp-sg-empty'), 'mount now holds the box');
   });
 
+  test('a comment list holding only Canvas\'s hidden templates counts as empty (no gap under the heading)', () => {
+    const doc = load();
+    const t = classic(doc);
+    const list = doc.querySelector('#comments');
+    const avatar = el('img', { class: 'avatar' });
+    const edit = el('a', { class: 'edit_comment_link icon-edit' });
+    const blank = el('div', { id: 'comment_blank', class: 'comment', style: 'display: none;' }, [avatar, edit]);
+    // Not drawn: what a browser says of anything inside display:none.
+    [blank, avatar, edit].forEach((n) => { n.getClientRects = () => []; });
+    list.appendChild(blank);
+    ctl().start();
+    a.ok(has(list, 'data-cgp-sg-empty'), 'hidden templates are not content');
+    avatar.getClientRects = () => [{ width: 24, height: 24 }];
+    ctl().scan();
+    a.not(has(list, 'data-cgp-sg-empty'), 'a drawn picture is');
+    a.ok(t.comments, 'card still there');
+  });
+
+  test('a control running past its card: the boxes it overflows shrink, and its row shares the width', () => {
+    const doc = load();
+    const t = idless(doc);
+    const status = t.assess.querySelector('[role="combobox"]');
+    const statusField = t.statusLabel.parentElement;
+    const row = statusField.parentElement;
+    const rect = (right) => () => ({ left: right - 100, right, top: 0, bottom: 20, width: 100, height: 20 });
+    t.assess.getBoundingClientRect = rect(300);
+    status.getBoundingClientRect = rect(340);
+    statusField.getBoundingClientRect = rect(340);
+    row.getBoundingClientRect = rect(340);
+    const saved = globalThis.getComputedStyle;
+    globalThis.getComputedStyle = (n) => (n === row
+      ? { display: 'flex', flexDirection: 'row' }
+      : { display: 'block', flexDirection: 'row', paddingRight: '16px', borderRightWidth: '1px' });
+    try {
+      ctl().start();
+      a.ok(has(status, 'data-cgp-sg-squeeze') && has(statusField, 'data-cgp-sg-squeeze'), 'the control and its field');
+      a.eq(row.getAttribute('data-cgp-sg-share'), 'wrap', 'still too wide with the rect stubs: the row wraps');
+      a.not(has(t.assess, 'data-cgp-sg-squeeze'), 'never the card itself');
+    } finally {
+      if (saved) globalThis.getComputedStyle = saved; else delete globalThis.getComputedStyle;
+    }
+  });
+
   test('setting off: every tag removed; no sidebar: nothing tagged', () => {
     const doc = load();
     const t = classic(doc);
