@@ -628,9 +628,9 @@ suite('student overview: profile tab', (test) => {
     a.ok(/<span class="cgp-si__aside"><button[^>]*data-si-copytext="pat@home.net, sam@home.net"[^>]*>Copy all<\/button><\/span>/.test(html), 'Copy all guardians, in the card’s corner');
     a.ok(!html.includes('Phone numbers and home addresses'), 'no SIS note');
     a.ok(html.includes('Block 3') && html.includes('S1001') && html.includes('he/him'), 'section, SIS id, pronouns');
-    a.ok(html.includes('Current grade</dt><dd>86% · B'), 'current grade with its letter');
+    a.ok(!html.includes('>Current grade<') && !html.includes('>In course since<'), 'no Current grade or In course since rows (the header shows the grade)');
     a.ok(!html.includes('Counting ungraded') && !html.includes('71.2%'), 'no grade counting ungraded work as 0');
-    const order = ['>Name<', '>Email<', '>Section<', '>In course since<', '>Last Canvas login<', '>Current grade<'].map((k) => html.indexOf(k));
+    const order = ['>Name<', '>Email<', '>Section<', '>Last Canvas login<', '>SIS ID<'].map((k) => html.indexOf(k));
     a.ok(order.every((x, i) => x > 0 && (i === 0 || x > order[i - 1])), 'facts in the teacher’s order');
     a.ok(!html.includes('(Billings, Andrew)'), 'no sortable name after the name');
     a.ok(c.profilePanel('7', { name: 'Drew Billings', fullName: 'Andrew Billings' }, parts).includes('Andrew Billings <span class="cgp-si__muted">(Drew Billings)</span>'), 'the name they go by, when it differs');
