@@ -163,6 +163,21 @@ suite('load speed: the gradebook model', (test) => {
     a.ok(model.commentVerifiedAssignments.has('50'), 'the loaded column counts as checked, so paint asks no more');
   });
 
+  test('a column loaded without comments is still double-checked, even once comments are proven', async () => {
+    const { api, reads } = recordingApi();
+    api.submissionsForAssignments = function (courseId, ids) {
+      reads.push({ name: 'submissions', ids: ids.slice() });
+      return Promise.resolve([{ assignment_id: '50', user_id: '10', submission_comments: [{ id: 'c1', author_id: '1', comment: 'hi' }] }]);
+    };
+    const model = new CGP.GradebookModel(api, '7');
+    await model.init();
+    await model.ensureAssignments(['51'], { includeComments: false });   // Analyze Scores, say
+    await model.ensureAssignments(['50']);
+    a.ok(model.bulkCommentsProven);
+    await model.verifyVisibleComments(['50', '51']);
+    a.deep(reads.filter((r) => r.name === 'verify').map((r) => r.id), ['51'], 'its comments were never read, so it is read now');
+  });
+
   test('a Canvas whose bulk read carries no comments is still double-checked', async () => {
     const { api, reads } = recordingApi();
     const model = new CGP.GradebookModel(api, '7');

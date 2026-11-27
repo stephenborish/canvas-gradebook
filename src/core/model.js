@@ -50,6 +50,11 @@
     // Columns whose pending read is background warming (low priority).
     this._lowPending = new Set();
     this.commentVerifiedAssignments = new Set();
+    // Columns at least one read WITH comments has loaded (most column reads;
+    // not Analyze Scores', the student overview's class figures or a Post
+    // button's re-checks, which skip them). Only these may skip the comment
+    // double-check - see verifyVisibleComments.
+    this.commentsLoadedAssignments = new Set();
     // "assignmentId:userId" -> Date.now() when a local write (a keyboard
     // shortcut, bulk paste, or an added comment) most recently started on
     // that cell. See markLocalWrite / applySubmission below.
@@ -418,9 +423,11 @@
           self.applySubmission(s, { silent: true, staleIfWrittenAfter: fetchStartedAt });
         });
         var current = batch.filter(function (id) { return gens[id] === self._gen(id); });
+        var withComments = !(opts && opts.includeComments === false);
         current.forEach(function (id) {
           self.loadedAssignments.add(id);
           self.everLoadedAssignments.add(id);
+          if (withComments) self.commentsLoadedAssignments.add(id);
         });
         release();
         // A comment in this answer shows this Canvas puts comments on the
@@ -513,11 +520,13 @@
     // This Canvas already returned comments on the bulk read (see
     // ensureAssignments), so it serializes them there: a second read of each
     // column on screen would only fetch the same threads again, and used to
-    // double the work behind the first screenful. Columns not loaded yet are
-    // left for their own load. A Canvas whose bulk answers never carry a
+    // double the work behind the first screenful. Only a column a read WITH
+    // comments has loaded is skipped: one loaded without them (Analyze
+    // Scores, the student overview's class figures) is still read here, as
+    // is a column not loaded yet. A Canvas whose bulk answers never carry a
     // comment is still double-checked, exactly as before.
     if (this.bulkCommentsProven) {
-      var covered = wanted.filter(function (id) { return self.everLoadedAssignments.has(id); });
+      var covered = wanted.filter(function (id) { return self.commentsLoadedAssignments.has(id); });
       covered.forEach(function (id) { self.commentVerifiedAssignments.add(id); });
       CGP.diag.bump('comments.verifySkipped', covered.length);
       wanted = wanted.filter(function (id) { return covered.indexOf(id) < 0; });
