@@ -74,18 +74,23 @@
       if (spot.kind !== 'item') return;
       spot.at = this.fallbackBar();
       spot.where = 'beforeend';
+      spot.bar = true;
     }
     var btn = document.createElement(spot.kind === 'home' ? 'a' : 'button');
     if (spot.kind === 'home') { btn.href = '#'; btn.setAttribute('role', 'button'); } else btn.type = 'button';
-    btn.className = 'cgp-copyto cgp-copyto--' + spot.kind + (spot.kind === 'home' ? ' btn button-sidebar-wide' : '');
+    var wide = spot.kind === 'home' || spot.side;
+    btn.className = 'cgp-copyto cgp-copyto--' + spot.kind + (spot.side ? ' cgp-copyto--side' : '') +
+      (spot.bar ? ' cgp-copyto--bar' : '') + (wide ? ' btn button-sidebar-wide' : '');
     btn.title = spot.tip;
     btn.innerHTML = COPY_GLYPH + '<span class="cgp-copyto__label">' + esc(spot.label) + '</span>';
-    // Beside an item's Edit it is icon-only (gradebook.css), so its name
-    // goes on the button itself as well.
-    if (spot.kind === 'item') { btn.setAttribute('aria-label', spot.label); btn.title = spot.label + ': ' + spot.tip; }
+    // Beside an item's Edit in its title row it is icon-only (gradebook.css),
+    // so its name goes on the button itself as well. In the sidebar, or in
+    // the bar of last resort, its name shows.
+    var iconOnly = spot.kind === 'item' && !spot.side && !spot.bar;
+    if (iconOnly) { btn.setAttribute('aria-label', spot.label); btn.title = spot.label + ': ' + spot.tip; }
     spot.at.insertAdjacentElement(spot.where, btn);
     this.button = btn;
-    if (spot.kind === 'item') this.spareTitle(btn);
+    if (iconOnly) this.spareTitle(btn);
     var self2 = this;
     btn.addEventListener('click', function (e) {
       e.preventDefault();
@@ -133,11 +138,34 @@
     if (!here || here.courseId !== this.courseId || /\/edit\/?$/.test(path)) return null;
     var thing = S().TYPES[here.type].label.toLowerCase();
     var edit = this.findEdit(here);
+    // Classic pages (an assignment's, a quiz's) put Edit in the right-hand
+    // sidebar, as a full-width button above SpeedGrader: the button goes
+    // under it there, looking like its neighbours.
+    var side = !edit && this.findSidebarEdit(here);
     return {
       kind: 'item', label: 'Copy to other classes',
       tip: 'Put a copy of this ' + thing + ' in your other classes of this course',
-      at: edit, where: 'afterend'
+      at: edit || side || null, where: 'afterend', side: !!side
     };
+  };
+
+  /* Canvas's Edit for this item in the right-hand sidebar (#right-side),
+   * e.g. "Edit Assignment Settings": the outermost element wrapping only it. */
+  P.findSidebarEdit = function (here) {
+    var side = document.querySelector('#right-side, #right-side-wrapper, #sidebar_content');
+    if (!side) return null;
+    var visible = function (el) { return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length); };
+    var links = side.querySelectorAll('a[href*="/edit"]');
+    for (var i = 0; i < links.length; i++) {
+      var p = '';
+      try { p = new URL(links[i].getAttribute('href'), location.href).pathname; } catch (e) { continue; }
+      var it = /\/edit\/?$/.test(p) ? S().itemFromPath(p) : null;
+      if (!it || it.type !== here.type || String(it.id || it.slug) !== String(here.id || here.slug) || !visible(links[i])) continue;
+      var at = links[i];
+      for (var k = 0; k < 3 && at.parentElement && at.parentElement !== side && at.parentElement.children.length === 1; k++) at = at.parentElement;
+      return at;
+    }
+    return null;
   };
 
   /* Canvas's own Edit for this item: a link to its edit page, or a visible

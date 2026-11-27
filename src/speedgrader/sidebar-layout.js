@@ -43,7 +43,8 @@
   var STATUS_LABEL = /^\s*status\s*$/i;
 
   var ATTRS = ['data-cgp-sg-panel', 'data-cgp-sg-card', 'data-cgp-sg-heading', 'data-cgp-sg-label',
-    'data-cgp-sg-file', 'data-cgp-sg-foot', 'data-cgp-sg-fields', 'data-cgp-sg-field', 'data-cgp-sg-empty'];
+    'data-cgp-sg-file', 'data-cgp-sg-foot', 'data-cgp-sg-fields', 'data-cgp-sg-field', 'data-cgp-sg-empty',
+    'data-cgp-sg-squeeze', 'data-cgp-sg-share'];
 
   function SpeedGraderSidebarLayout(ctx) {
     this.settings = ctx && ctx.settings;
@@ -72,6 +73,9 @@
     } else {
       if (this.observer) this.observer.disconnect();
       this.observer = null;
+      if (this.sizer) this.sizer.disconnect();
+      this.sizer = null;
+      this.sized = null;
       clearAll(document);
     }
   };
@@ -104,15 +108,35 @@
       }
     });
     setAttr(panel, 'data-cgp-sg-panel', '');
+    this.watchSize(panel);
     found.cards.forEach(function (c) {
       setAttr(c.el, 'data-cgp-sg-card', c.kind);
       if (c.heading && c.el.contains(c.heading)) setAttr(c.heading, 'data-cgp-sg-heading', '');
       if (c.kind === 'submission') tagFiles(c.el);
-      if (c.kind === 'assessment') { tagLabels(c.el); tagFields(c.el); }
+      if (c.kind === 'assessment') { tagLabels(c.el); tagFields(c.el); fitControls(c.el); }
     });
     tagFoot(panel, found.cards);
     tagEmpty(panel, found.cards);
     return panel;
+  };
+
+  /** Dragging the sidebar's divider changes its width but no markup, so
+   * the observer above never hears of it: the panel's size is watched too,
+   * and fitControls measured again. */
+  P.watchSize = function (panel) {
+    if (this.sized === panel || typeof ResizeObserver === 'undefined') return;
+    var self = this;
+    if (this.sizer) this.sizer.disconnect();
+    this.sized = panel;
+    var last = -1;
+    this.sizer = new ResizeObserver(function (entries) {
+      var w = entries && entries[0] && entries[0].contentRect ? Math.round(entries[0].contentRect.width) : 0;
+      if (w === last) return;
+      last = w;
+      if (self.timer) return;
+      self.timer = setTimeout(function () { self.timer = null; self.scan(); }, SCAN_MS);
+    });
+    this.sizer.observe(panel);
   };
 
   /* ------------------------------------------------------------ finding */
@@ -248,6 +272,69 @@
     fields.forEach(function (f) { setAttr(f, 'data-cgp-sg-field', ''); });
   }
 
+  /** Every control in the card stays inside it, whatever Canvas's markup.
+   * Tagging the Grade / Status row by its labels (tagFields) misses on
+   * Canvas builds whose markup differs, and Status then ran past the card
+   * and the panel's edge, its menu cut off with it. So this measures. For
+   * each control whose right edge passes the card's:
+   *   - every box from it up to the card that also passes is tagged
+   *     [data-cgp-sg-squeeze]: no wider than its parent, free to shrink;
+   *   - a flex row or grid on that path, laying it beside something else
+   *     (the grade box), is tagged [data-cgp-sg-share]: its items share
+   *     the card's width, side by side as before;
+   *   - only if that is still too wide does a flex row wrap
+   *     ([data-cgp-sg-share="wrap"]), the control taking a line of its own.
+   * Tags from the last pass are cleared first, so a panel made wider gets
+   * its layout back. Needs layout; does nothing without it. */
+  function fitControls(card) {
+    if (typeof getComputedStyle !== 'function' || !card.getBoundingClientRect) return;
+    toArray(card.querySelectorAll('[data-cgp-sg-squeeze], [data-cgp-sg-share]')).forEach(unfit);
+    var box = card.getBoundingClientRect();
+    if (!box || !box.width) return;
+    var cs = getComputedStyle(card);
+    var right = box.right - (parseFloat(cs.paddingRight) || 0) - (parseFloat(cs.borderRightWidth) || 0) + 1;
+    var sel = 'input:not([type="hidden"]), select, textarea, [role="combobox"], button';
+    var over = function () {
+      return toArray(card.querySelectorAll(sel)).filter(function (ctl) {
+        var r = ctl.getBoundingClientRect();
+        return r.width > 0 && r.right > right;
+      });
+    };
+    var first = over();
+    if (!first.length) return;
+    var rows = [];
+    first.forEach(function (ctl) {
+      for (var n = ctl; n && n !== card; n = n.parentElement) {
+        if (n.getBoundingClientRect().right > right) setAttr(n, 'data-cgp-sg-squeeze', '');
+        var parent = n.parentElement;
+        if (!parent || parent === card || parent.children.length < 2 || rows.indexOf(parent) >= 0) continue;
+        var pcs = getComputedStyle(parent);
+        if (/grid/.test(pcs.display)) {
+          var tracks = String(pcs.gridTemplateColumns || '').trim().split(/\s+/).filter(Boolean).length || 1;
+          parent.style.setProperty('--cgp-sg-cols', String(tracks));
+          setAttr(parent, 'data-cgp-sg-share', 'grid');
+          rows.push(parent);
+        } else if (/flex/.test(pcs.display) && pcs.flexDirection.indexOf('column') !== 0) {
+          setAttr(parent, 'data-cgp-sg-share', 'flex');
+          rows.push(parent);
+        }
+      }
+    });
+    // Still too wide: wrap the rows one at a time, the innermost (the one
+    // holding the fields) first, so Canvas's outer rows (the heading beside
+    // a sticker, grading beside the rubric) stay as they are when they can.
+    for (var i = 0; i < rows.length && over().length; i++) {
+      if (rows[i].getAttribute('data-cgp-sg-share') === 'flex') setAttr(rows[i], 'data-cgp-sg-share', 'wrap');
+    }
+  }
+
+  /** Takes off what fitControls put on an element. */
+  function unfit(el) {
+    el.removeAttribute('data-cgp-sg-squeeze');
+    el.removeAttribute('data-cgp-sg-share');
+    if (el.style && el.style.removeProperty) el.style.removeProperty('--cgp-sg-cols');
+  }
+
   /** Boxes in the panel with nothing in them - an empty comment list, a
    * mount point Canvas has not filled, a spacer - keep no margin or padding,
    * so they leave no gap. The tag comes off as soon as one holds something. */
@@ -272,7 +359,10 @@
     var text = typeof el.innerText === 'string' && el.isConnected ? el.innerText : el.textContent;
     if (/\S/.test(String(text || ''))) return false;
     if (el.closest && el.closest(VISIBLE)) return false;
-    if (el.querySelector && el.querySelector(VISIBLE)) return false;
+    // Only what is drawn counts: Canvas's comment list always holds its
+    // hidden templates (an avatar, edit and delete icons), which kept the
+    // empty list's margins and left a gap under "Assignment Comments".
+    if (el.querySelectorAll && toArray(el.querySelectorAll(VISIBLE)).some(rendered)) return false;
     if (el.getAttribute('data-cgp-sg-foot') !== null || el.getAttribute('data-cgp-sg-heading') !== null) return false;
     // Taken out of the flow already: it makes no gap.
     if (typeof getComputedStyle === 'function') {
@@ -284,6 +374,13 @@
       if (bg && bg !== 'none') return false;
     }
     return true;
+  }
+
+  /** Whether the browser draws the element at all (display:none, or inside
+   * something that is, draws nothing). Without layout (tests) it counts. */
+  function rendered(el) {
+    if (!el.getClientRects || el.isConnected === false) return true;
+    try { return el.getClientRects().length > 0; } catch (e) { return true; }
   }
 
   function textOf(el) {
@@ -309,6 +406,7 @@
   function clearAll(doc) {
     var sel = ATTRS.map(function (a) { return '[' + a + ']'; }).join(', ');
     toArray(doc.querySelectorAll(sel)).forEach(function (el) {
+      unfit(el);
       ATTRS.forEach(function (a) { el.removeAttribute(a); });
     });
   }

@@ -459,6 +459,37 @@ html.cgp-sg-tidy [data-cgp-sg-card] {
   min-width: 0;
   max-width: 100%;
 }
+/* Measured, whatever Canvas's markup (sidebar-layout.js fitControls): a
+ * control that ran past the card - Canvas's Status menu beside the grade
+ * box - and every box around it that did too, is no wider than its parent,
+ * and the row holding it beside the grade box shares the card's width
+ * between them. Only when even that cannot fit does the row wrap. */
+html.cgp-sg-tidy [data-cgp-sg-squeeze] {
+  box-sizing: border-box !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  flex-shrink: 1 !important;
+}
+html.cgp-sg-tidy [data-cgp-sg-share] {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+html.cgp-sg-tidy [data-cgp-sg-share] > * {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  flex-shrink: 1 !important;
+  box-sizing: border-box !important;
+}
+html.cgp-sg-tidy [data-cgp-sg-share] > * :is(div, span, label, input, select, [role="combobox"]) {
+  max-width: 100% !important;
+}
+html.cgp-sg-tidy [data-cgp-sg-share="grid"] {
+  grid-template-columns: repeat(var(--cgp-sg-cols, 2), minmax(0, 1fr)) !important;
+}
+html.cgp-sg-tidy [data-cgp-sg-share="wrap"] {
+  flex-wrap: wrap !important;
+  row-gap: 10px !important;
+}
 
 /* Boxes with nothing in them (sidebar-layout.js tags [data-cgp-sg-empty]):
  * an empty comment list, an unfilled mount point, a spacer. They take no

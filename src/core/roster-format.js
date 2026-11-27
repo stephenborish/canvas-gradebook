@@ -68,34 +68,64 @@
   }
 
   /* Column headers and cell values for the chosen options:
-   *   opts.nameFormat  one of NAME_FORMATS
-   *   opts.email       include an Email column */
+   *   opts.nameFormat      one of NAME_FORMATS
+   *   opts.email           include an Email column
+   *   opts.guardians       guardianMap() result: {studentId: [{name, email}]}
+   *   opts.guardianNames   add each student's parents/guardians' names
+   *   opts.guardianEmails  ... and their addresses
+   * Parents and guardians get numbered columns (Parent/Guardian 1, its
+   * Email, Parent/Guardian 2, ...), as many as the student with the most
+   * has, so every family lines up in the same columns of a spreadsheet. */
   function table(rows, opts) {
     opts = opts || {};
+    rows = rows || [];
     var fmt = NAME_FORMATS.indexOf(opts.nameFormat) >= 0 ? opts.nameFormat : 'first-last';
-    var header = [];
-    if (fmt === 'first-last' || fmt === 'last-first') header.push('Name');
+    var gMap = opts.guardians || null;
+    var gNames = !!(gMap && opts.guardianNames);
+    var gEmails = !!(gMap && opts.guardianEmails);
+    var gCount = 0;
+    if (gNames || gEmails) {
+      rows.forEach(function (r) { gCount = Math.max(gCount, (gMap[r.id] || []).length); });
+    }
+    var gHeader = [];
+    for (var gi = 1; gi <= gCount; gi++) {
+      if (gNames) gHeader.push('Parent/Guardian ' + gi);
+      if (gEmails) gHeader.push('Parent/Guardian ' + gi + ' Email');
+    }
+    function gCells(r) {
+      var list = gMap ? gMap[r.id] || [] : [];
+      var cells = [];
+      for (var i = 0; i < gCount; i++) {
+        var g = list[i] || { name: '', email: '' };
+        if (gNames) cells.push(g.name);
+        if (gEmails) cells.push(g.email);
+      }
+      return cells;
+    }
     if (fmt === 'comma-line') {
       return {
-        header: [['First Name', 'Last Name'].concat(opts.email ? ['Email'] : []).join(', ')],
-        body: (rows || []).map(function (r) {
+        header: [['First Name', 'Last Name'].concat(opts.email ? ['Email'] : [], gHeader).join(', ')],
+        body: rows.map(function (r) {
           // A comma inside a part ("John, Jr.") would read as another
           // field, so it becomes a space there.
-          var parts = [r.first, r.last].concat(opts.email ? [r.email] : []);
+          var parts = [r.first, r.last].concat(opts.email ? [r.email] : [], gCells(r));
           return [parts.map(function (x) { return clean(String(x || '').replace(/,/g, ' ')); }).join(', ')];
         }),
         oneLine: true
       };
     }
+    var header = [];
+    if (fmt === 'first-last' || fmt === 'last-first') header.push('Name');
     if (fmt === 'split') header.push('First Name', 'Last Name');
     if (opts.email) header.push('Email');
-    var body = (rows || []).map(function (r) {
+    header = header.concat(gHeader);
+    var body = rows.map(function (r) {
       var cells = [];
       if (fmt === 'first-last') cells.push(clean(r.first + ' ' + r.last));
       if (fmt === 'last-first') cells.push(r.last && r.first ? r.last + ', ' + r.first : (r.last || r.first));
       if (fmt === 'split') cells.push(r.first, r.last);
       if (opts.email) cells.push(r.email);
-      return cells;
+      return cells.concat(gCells(r));
     });
     return { header: header, body: body };
   }
@@ -142,44 +172,59 @@
   /* Parents and guardians: the course's observers (Canvas's word, read by
    * CanvasApi.courseObservers) who are linked to one of these students. An
    * observer with no student link is left out - that is a colleague or
-   * administrator watching the course, not a family member. Returns
-   *   emails       each address once, in the students' order
-   *   count        how many addresses that is
-   *   uncovered    students with no linked parent/guardian address */
-  function guardians(observers, rows) {
+   * administrator watching the course, not a family member.
+   * Returns {studentId: [{name, email}]}, each person once per student, in
+   * the order Canvas lists them. */
+  function guardianMap(observers) {
     var byStudent = {};
     (observers || []).forEach(function (u) {
+      if (!u) return;
       var email = emailOf(u);
-      if (!email) return;
+      var n = splitName(u);
+      var name = clean(u.name) || clean(n.first + ' ' + n.last);
+      if (!email && !name) return;
       // Canvas gives the link either way (the student overview's
       // guardiansFor reads both): each observer enrollment's
       // associated_user_id, or the observed_users list.
       var linked = {};
-      (u && u.enrollments || []).forEach(function (en) {
+      (u.enrollments || []).forEach(function (en) {
         var sid = en && en.associated_user_id;
         if (sid !== undefined && sid !== null) linked[String(sid)] = true;
       });
-      (u && u.observed_users || []).forEach(function (o) {
+      (u.observed_users || []).forEach(function (o) {
         if (o && o.id !== undefined && o.id !== null) linked[String(o.id)] = true;
       });
       Object.keys(linked).forEach(function (sid) {
-        (byStudent[sid] = byStudent[sid] || []).push(email);
+        var list = (byStudent[sid] = byStudent[sid] || []);
+        var key = (name + '|' + email).toLowerCase();
+        if (list.some(function (g) { return (g.name + '|' + g.email).toLowerCase() === key; })) return;
+        list.push({ name: name, email: email });
       });
     });
+    return byStudent;
+  }
+
+  /* The parent/guardian addresses for these students:
+   *   emails       each address once, in the students' order
+   *   count        how many addresses that is
+   *   uncovered    students with no linked parent/guardian address
+   *   byStudent    guardianMap() of the same observers */
+  function guardians(observers, rows) {
+    var byStudent = guardianMap(observers);
     var seen = {};
     var emails = [];
     var uncovered = 0;
     (rows || []).forEach(function (r) {
-      var list = byStudent[r.id] || [];
+      var list = (byStudent[r.id] || []).filter(function (g) { return g.email; });
       if (!list.length) uncovered++;
-      list.forEach(function (e) {
-        var k = e.toLowerCase();
+      list.forEach(function (g) {
+        var k = g.email.toLowerCase();
         if (seen[k]) return;
         seen[k] = true;
-        emails.push(e);
+        emails.push(g.email);
       });
     });
-    return { emails: emails, count: emails.length, uncovered: uncovered };
+    return { emails: emails, count: emails.length, uncovered: uncovered, byStudent: byStudent };
   }
 
   /* Every address on one line (or one per line), ready for a To: or Bcc:
@@ -218,6 +263,7 @@
     toCsv: toCsv,
     toHtml: toHtml,
     guardians: guardians,
+    guardianMap: guardianMap,
     emailAddresses: emailAddresses,
     joinEmails: joinEmails,
     emailList: emailList

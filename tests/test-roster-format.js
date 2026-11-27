@@ -119,6 +119,33 @@ suite('roster export: parents and guardians', (test) => {
       'an address already on the list is not copied twice');
     a.eq(fmt().emailList(rows, 'comma', { students: false }), '', 'nobody chosen');
   });
+
+  test('each student\'s parents and guardians, by name and address, each person once', () => {
+    const m = fmt().guardianMap(OBSERVERS);
+    a.deep(m['1'], [{ name: 'Pat Bonko', email: 'pat@home.org' }, { name: 'Lee Burke', email: 'LEE@home.org' }]);
+    a.deep(m['2'], [{ name: 'Lee Burke', email: 'LEE@home.org' }, { name: 'Sam Burke', email: 'lee@home.org' }],
+      'two people sharing an address are still two names');
+    a.deep(m['3'], [{ name: 'No Email', email: '' }, { name: 'Kim Sutton', email: 'kim@home.org' }],
+      'a parent with no address still has a name');
+    a.eq(m['4'], undefined);
+  });
+
+  test('the table takes numbered parent/guardian columns, as many as the largest family', () => {
+    const rows = fmt().normalize(USERS, 'last');
+    const g = fmt().guardianMap(OBSERVERS);
+    const t = fmt().table(rows, { nameFormat: 'first-last', email: false, guardians: g, guardianNames: true, guardianEmails: true });
+    a.deep(t.header, ['Name', 'Parent/Guardian 1', 'Parent/Guardian 1 Email', 'Parent/Guardian 2', 'Parent/Guardian 2 Email']);
+    const row = (name) => t.body.find((cells) => cells[0] === name);
+    a.deep(row('Jake Bonko'), ['Jake Bonko', 'Pat Bonko', 'pat@home.org', 'Lee Burke', 'LEE@home.org']);
+    a.deep(row('Cher'), ['Cher', '', '', '', ''], 'no family linked: blank cells, same positions');
+    const names = fmt().table(rows, { nameFormat: 'split', email: true, guardians: g, guardianNames: true });
+    a.deep(names.header, ['First Name', 'Last Name', 'Email', 'Parent/Guardian 1', 'Parent/Guardian 2']);
+    const line = fmt().table(rows.filter((r) => r.id === '1'), { nameFormat: 'comma-line', email: true, guardians: g, guardianEmails: true });
+    a.deep(line.header, ['First Name, Last Name, Email, Parent/Guardian 1 Email, Parent/Guardian 2 Email']);
+    a.deep(line.body, [['Jake, Bonko, jbonko@school.org, pat@home.org, LEE@home.org']]);
+    a.deep(fmt().table(rows, { nameFormat: 'first-last', guardianNames: true }).header, ['Name'],
+      'no parent list loaded: no parent columns');
+  });
 });
 
 suite('roster export: Student Name menu', (test) => {
