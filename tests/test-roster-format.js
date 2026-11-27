@@ -241,6 +241,43 @@ suite('roster export: Student Name menu', (test) => {
     }
   });
 
+  // A Canvas tab left open across an extension update can't save settings:
+  // every chrome.* call throws. The panel saved before redrawing, so the list,
+  // the Copy count and the table stayed stale and a tab needed two clicks.
+  test('the panel redraws first, and a save that throws stops nothing', () => {
+    const C = loadRoster();
+    const ctrl = new C({ api: {}, courseId: '379', adapter: {} });
+    const toggled = [];
+    ctrl._dialog = {
+      classList: { toggle: (c, on) => toggled.push([c, on]) },
+      querySelectorAll: () => [],
+      querySelector: () => null
+    };
+    const order = [];
+    ctrl.refresh = () => order.push('refresh');
+    const save = ctrl.savePrefs.bind(ctrl);
+    ctrl.savePrefs = () => { order.push('save'); save(); };
+    const settings = globalThis.CGP.settings;
+    const realSave = settings.save;
+    settings.save = () => { throw new Error('Extension context invalidated.'); };
+    try {
+      ctrl.onChange({ name: 'cgp-roster-sep', value: 'semicolon', type: 'radio', getAttribute: () => null });
+      a.deep(order, ['refresh', 'save'], 'redrawn before the save');
+      a.eq(ctrl.prefs.separator, 'semicolon');
+      ctrl.flushPrefs();   // the throwing save stays inside the panel
+
+      ctrl.prefs.view = 'emails';
+      ctrl.showView('table', true);
+      a.eq(ctrl.prefs.view, 'table');
+      a.ok(toggled.some(([c, on]) => c === 'cgp-roster--table' && on), 'switched on the first click');
+      ctrl.flushPrefs();
+      a.eq(ctrl._saveTimer, null, 'nothing left waiting');
+    } finally {
+      settings.save = realSave;
+      if (ctrl._saveTimer) clearTimeout(ctrl._saveTimer);
+    }
+  });
+
   test('a menu opened from anywhere else is left alone', () => {
     const C = loadRoster();
     const doc = domshim.install();

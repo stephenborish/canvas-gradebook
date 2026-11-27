@@ -147,6 +147,8 @@
       }
     });
     this._observer.observe(document.body, { childList: true, subtree: true });
+    // A choice made just before leaving the page is still saved.
+    window.addEventListener('pagehide', function () { self.flushPrefs(); });
   };
 
   P.rememberTrigger = function (target) {

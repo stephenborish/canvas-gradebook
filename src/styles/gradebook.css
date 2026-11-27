@@ -1418,9 +1418,9 @@ html.cgp-on .slick-cell .Grid__GradeCell__Content :has(input:not([type="hidden"]
   display: none !important;
 }
 /* The input: no frame, the committed grade's type. Its width follows what is
- * typed (field-sizing), so the value and its "/7" stay centred together;
- * a browser without field-sizing gets a fixed width with the value set
- * against the "/7". */
+ * typed (field-sizing, below), so the value and its "/7" stay centred
+ * together; a browser without field-sizing gets a fixed width with the
+ * value set against the "/7". */
 html.cgp-on .slick-cell input[type="text"],
 html.cgp-on .slick-cell input[type="number"],
 html.cgp-on .slick-cell input:not([type]),
@@ -1436,8 +1436,7 @@ html.cgp-on .slick-cell textarea {
   color: var(--cgp-ink-strong) !important;
 }
 html.cgp-on .slick-cell .Grid__GradeCell input:not([type="hidden"]) {
-  width: 4.2ch !important;
-  field-sizing: content;
+  width: 6ch !important;
   min-width: 1ch !important;
   max-width: 100% !important;
   height: 26px !important;
@@ -1454,6 +1453,15 @@ html.cgp-on .slick-cell .Grid__GradeCell input:not([type="hidden"]) {
 html.cgp-on .slick-cell .Grid__GradeCell input:not([type="hidden"])::selection {
   background: rgba(3, 116, 181, 0.22);
   color: var(--cgp-ink-strong);
+}
+/* An explicit width beats field-sizing, so it is only set where
+ * field-sizing is not understood: there the box is wide enough for
+ * "Excused" or "93.15%". */
+@supports (field-sizing: content) {
+  html.cgp-on .slick-cell .Grid__GradeCell input:not([type="hidden"]) {
+    width: auto !important;
+    field-sizing: content;
+  }
 }
 /* Out of how many: right after the value, smaller and quieter. The
  * container that holds it (and Canvas's tray arrow) stops being pinned to
