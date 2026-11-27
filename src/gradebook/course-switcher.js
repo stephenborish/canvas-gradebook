@@ -402,6 +402,7 @@
   }
   CGP.tidyCrumbs = function () {
     var items = document.querySelectorAll('#breadcrumbs li, .ic-app-crumbs li');
+    if (!items.length) items = document.querySelectorAll('nav[aria-label*="crumb" i] li');
     if (items.length < 3) return 0;
     var last = items[items.length - 1];
     var lastText = crumbText(last);

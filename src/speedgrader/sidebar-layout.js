@@ -288,10 +288,7 @@
    * its layout back. Needs layout; does nothing without it. */
   function fitControls(card) {
     if (typeof getComputedStyle !== 'function' || !card.getBoundingClientRect) return;
-    toArray(card.querySelectorAll('[data-cgp-sg-squeeze], [data-cgp-sg-share]')).forEach(function (el) {
-      el.removeAttribute('data-cgp-sg-squeeze');
-      el.removeAttribute('data-cgp-sg-share');
-    });
+    toArray(card.querySelectorAll('[data-cgp-sg-squeeze], [data-cgp-sg-share]')).forEach(unfit);
     var box = card.getBoundingClientRect();
     if (!box || !box.width) return;
     var cs = getComputedStyle(card);
@@ -323,10 +320,19 @@
         }
       }
     });
-    if (!over().length) return;
-    rows.forEach(function (row) {
-      if (row.getAttribute('data-cgp-sg-share') === 'flex') setAttr(row, 'data-cgp-sg-share', 'wrap');
-    });
+    // Still too wide: wrap the rows one at a time, the innermost (the one
+    // holding the fields) first, so Canvas's outer rows (the heading beside
+    // a sticker, grading beside the rubric) stay as they are when they can.
+    for (var i = 0; i < rows.length && over().length; i++) {
+      if (rows[i].getAttribute('data-cgp-sg-share') === 'flex') setAttr(rows[i], 'data-cgp-sg-share', 'wrap');
+    }
+  }
+
+  /** Takes off what fitControls put on an element. */
+  function unfit(el) {
+    el.removeAttribute('data-cgp-sg-squeeze');
+    el.removeAttribute('data-cgp-sg-share');
+    if (el.style && el.style.removeProperty) el.style.removeProperty('--cgp-sg-cols');
   }
 
   /** Boxes in the panel with nothing in them - an empty comment list, a
@@ -400,6 +406,7 @@
   function clearAll(doc) {
     var sel = ATTRS.map(function (a) { return '[' + a + ']'; }).join(', ');
     toArray(doc.querySelectorAll(sel)).forEach(function (el) {
+      unfit(el);
       ATTRS.forEach(function (a) { el.removeAttribute(a); });
     });
   }

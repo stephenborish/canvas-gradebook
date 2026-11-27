@@ -468,8 +468,9 @@
     if (key) this.prefs[key] = el.type === 'checkbox' ? !!el.checked : el.value;
     if (this.needsGuardians()) {
       // A failed read is tried again when a parent/guardian choice is
-      // switched on afresh.
-      if (this._guardianState === 'error' && el.checked) this._guardianState = 'idle';
+      // switched on afresh - not by any other change.
+      var guardianKey = key === 'emailGuardians' || key === 'guardianNames' || key === 'guardianEmails';
+      if (this._guardianState === 'error' && guardianKey && el.checked) this._guardianState = 'idle';
       this.loadGuardians();
     }
     this.savePrefs();
@@ -529,9 +530,13 @@
     else if (wantsG && this._guardianState === 'error') gNote = 'Couldn’t load parents and guardians from Canvas. ' + (this._guardianError || 'Try again in a moment.');
     else if (wantsG && this._guardianState === 'ready') {
       var g = this.guardianInfo();
-      var none = this._rows.filter(function (r) { return !(g.byStudent[r.id] || []).length; }).length;
+      var pr = this.prefs;
+      // A guardian counts only if they have something for the columns shown.
+      var usable = function (x) { return (pr.guardianNames && x.name) || (pr.guardianEmails && x.email); };
+      var none = this._rows.filter(function (r) { return !(g.byStudent[r.id] || []).some(usable); }).length;
       if (none && this._rows.length) {
-        gNote = plural(none, 'student has', 'students have') + ' no parent or guardian linked in Canvas; ' +
+        gNote = plural(none, 'student has', 'students have') + ' no parent or guardian ' +
+          (pr.guardianNames ? 'linked' : 'email address') + ' in Canvas; ' +
           (none === 1 ? 'that row’s' : 'those rows’') + ' parent columns are blank.';
       }
     }
@@ -620,6 +625,8 @@
       if (!this._users) box.innerHTML = '<span class="cgp-roster__empty">Loading…</span>';
       else if (!p.emailStudents && !p.emailGuardians) box.innerHTML = '<span class="cgp-roster__empty">Choose Students, Parents &amp; guardians, or both.</span>';
       else if (waiting && this._guardianState === 'loading') box.innerHTML = '<span class="cgp-roster__empty">Loading parents and guardians…</span>';
+      // Not the students' list alone, which would look like the whole one.
+      else if (waiting) box.innerHTML = '<span class="cgp-roster__empty">Parents and guardians couldn’t be loaded, so there is nothing to copy yet. Uncheck them to copy students only.</span>';
       else if (!count) box.innerHTML = '<span class="cgp-roster__empty">No email addresses for the people chosen.</span>';
       else box.textContent = CGP.rosterFormat.joinEmails(list, p.separator);
       box.classList.toggle('cgp-roster__addresses--lines', p.separator === 'newline');
