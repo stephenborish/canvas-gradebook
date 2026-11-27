@@ -5380,3 +5380,30 @@ html.cgp-on .cgp-g-result.is-error .cgp-g-result__mark { background: #c4372b; }
   html.cgp-on .cgp-g-tiles { grid-template-columns: 1fr 1fr; }
   html.cgp-on .cgp-g-tile__btn { padding: 8px 10px; }
 }
+
+/* Copy Roster: what is still loading (the class list, or the parents and
+ * guardians for the table's columns) shows a small spinner - in the message
+ * itself, and on the Roster table tab while that table is incomplete. */
+html.cgp-on .cgp-roster__spinner {
+  display: inline-block;
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--cgp-hairline-strong);
+  border-top-color: var(--cgp-brand);
+  animation: cgp-roster-spin 0.8s linear infinite;
+}
+@keyframes cgp-roster-spin { to { transform: rotate(360deg); } }
+html.cgp-on .cgp-roster .cgp-roster__loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+html.cgp-on .cgp-roster__table-wrap > .cgp-roster__loading { display: flex; }
+html.cgp-on .cgp-roster .cgp-roster__table-status.cgp-roster__loading[hidden] { display: none; }
+html.cgp-on .cgp-roster__tab .cgp-roster__tab-busy { display: none; }
+html.cgp-on .cgp-roster__tab--busy .cgp-roster__tab-busy { display: inline-block; }
+@media (prefers-reduced-motion: reduce) {
+  html.cgp-on .cgp-roster__spinner { animation-duration: 2.4s; }
+}

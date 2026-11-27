@@ -223,6 +223,41 @@ suite('settings sync: two computers', (test) => {
       a.deep(settings.values.snippets, [snip('a', 'A'), snip('b', 'B')]);
     });
   });
+
+  test('listeners are told what changed, so a panel\u2019s own choices skip the grid', async () => {
+    const fake = fakeChrome({});
+    await withChrome(fake, async () => {
+      const settings = CGP().settings;
+      settings._bound = false;
+      settings._cbs = [];
+      await settings.load();
+      let changed = null;
+      settings.onChange((v, before) => { changed = settings.changedKeys(v, before); });
+      const roster = Object.assign({}, settings.values.rosterPrefs, { view: 'table' });
+      await settings.save({ rosterPrefs: roster });
+      await new Promise((r) => setTimeout(r, 0));
+      a.deep(changed, ['rosterPrefs']);
+    });
+  });
+
+  test('a tab orphaned by an extension update: save rejects, never throws', async () => {
+    // After an update every chrome.* call in a tab opened before it throws
+    // synchronously. The Copy Roster panel saved its choices before
+    // redrawing, so that throw left the list, the Copy button and the table
+    // showing the old choices (and a tab needed a second click).
+    const dead = () => { throw new Error('Extension context invalidated.'); };
+    const fake = { runtime: {}, storage: { sync: { get: dead, set: dead, remove: dead }, local: { get: dead } } };
+    await withChrome(fake, async () => {
+      const settings = CGP().settings;
+      const before = settings.values;
+      let result;
+      try { result = settings.save({ gradeFontSize: 18 }); } catch (e) { a.fail('save threw: ' + e.message); }
+      let rejected = false;
+      await result.catch(() => { rejected = true; });
+      a.ok(rejected, 'the save is refused');
+      a.eq(settings.values, before, 'nothing changes in this tab');
+    });
+  });
 });
 
 /* The promise to teachers: every setting saved on one computer is there on

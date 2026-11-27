@@ -11,6 +11,8 @@
   CGP._booted = true;
 
   var OURS = /(^|\s)cgp-/;
+  // Settings that only remember how a panel was last laid out.
+  var PANEL_ONLY_SETTINGS = ['rosterPrefs', 'groupPrefs'];
 
   function isOurNode(node) {
     if (!node) return false;
@@ -695,7 +697,12 @@
           ' Canvas itself works as usual.');
       });
     }).then(function () {
-      CGP.settings.onChange(function () {
+      CGP.settings.onChange(function (values, before) {
+        // A panel's own layout choices (Copy Roster's, Make groups') change
+        // nothing in the grid. Repainting the whole gradebook for each
+        // click in those panels only stalled the page they were open on.
+        var changed = CGP.settings.changedKeys ? CGP.settings.changedKeys(values, before) : null;
+        if (changed && changed.length && changed.every(function (k) { return PANEL_ONLY_SETTINGS.indexOf(k) >= 0; })) return;
         registry.invalidateAll();
         layout.start();
         // The frozen Total follows the setting on the next paint
