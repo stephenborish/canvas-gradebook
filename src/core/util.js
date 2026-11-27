@@ -1068,6 +1068,7 @@
       }
       return CGP.settingsStorage.read().then(function (r) {
         self.values = r.values;
+        self._heard = r.values;
         CGP.diag.enabled = !!self.values.diagnostics;
         if (chrome.storage.onChanged && !self._bound) {
           self._bound = true;
@@ -1076,9 +1077,13 @@
             // A change can span several items (a snippet and the settings
             // object, say), so the whole set is read back rather than patched.
             CGP.settingsStorage.read().then(function (fresh) {
+              // Listeners also get the values from before, so one can skip
+              // work a change cannot affect (changedKeys).
+              var before = self._heard || self.values;
               self.values = fresh.values;
+              self._heard = fresh.values;
               CGP.diag.enabled = !!self.values.diagnostics;
-              self._cbs.forEach(function (cb) { try { cb(self.values); } catch (e) { /* ignore */ } });
+              self._cbs.forEach(function (cb) { try { cb(self.values, before); } catch (e) { /* ignore */ } });
             }, function () { /* keep what we have */ });
           });
         }
@@ -1091,7 +1096,19 @@
       var next = sanitizeSettings(Object.assign({}, this.values, patch || {}));
       this.values = next;
       if (typeof chrome === 'undefined' || !chrome.storage) return Promise.resolve(next);
-      return CGP.settingsStorage.write(prior, next).then(function (stored) {
+      // After the extension is updated or reloaded, a tab opened before
+      // still runs this (orphaned) copy, and every chrome.* call throws
+      // "Extension context invalidated" synchronously. A save must never
+      // throw out of its caller - a panel that saves a choice and then
+      // redraws would stop redrawing - so that becomes a rejection too.
+      var written;
+      try {
+        if (chrome.runtime && !chrome.runtime.id) throw new Error('Extension context invalidated.');
+        written = CGP.settingsStorage.write(prior, next);
+      } catch (e) {
+        written = Promise.reject(e);
+      }
+      return written.then(function (stored) {
         self.values = stored;
         return stored;
       }, function (err) {
@@ -1104,7 +1121,14 @@
         throw err;
       });
     },
-    onChange: function (cb) { this._cbs.push(cb); }
+    onChange: function (cb) { this._cbs.push(cb); },
+    /* The top-level settings that differ between two values objects (an
+     * onChange listener's two arguments). */
+    changedKeys: function (next, prev) {
+      if (!prev || !next) return Object.keys(next || prev || {});
+      var keys = Object.keys(Object.assign({}, prev, next));
+      return keys.filter(function (k) { return JSON.stringify(next[k]) !== JSON.stringify(prev[k]); });
+    }
   };
 
   /* ------------------------------------------------------------ diagnostics */

@@ -23,6 +23,9 @@ html.cgp-on {
   --cgp-submitted-dark: #095f36;
   --cgp-nosub: #98a3ab;
   --cgp-sel: #0374b5;
+  /* The active cell (Canvas's cursor): deep navy, so it reads apart from the
+   * selection's bright blue at a glance. */
+  --cgp-active: #17324d;
   --cgp-surface: #fff;
   --cgp-shadow: 0 4px 16px rgba(19, 33, 44, 0.16), 0 1px 3px rgba(19, 33, 44, 0.08);
   --cgp-radius: 8px;
@@ -567,14 +570,8 @@ html.cgp-on .slick-row.cgp-row-hover > .slick-cell.cgp-sel {
   background-image: linear-gradient(var(--cgp-row-sel), var(--cgp-row-sel)) !important;
   outline: 2px solid var(--cgp-sel) !important;
   outline-offset: -2px !important;
-  border-radius: 3px;
+  border-radius: 0;
   z-index: 4;
-}
-/* Selected AND active: the blue selection outline on the outer 2px, then a
- * white gap and the charcoal active ring just inside it - both readable. */
-html.cgp-on .slick-row > .slick-cell.cgp-sel.active {
-  box-shadow: inset 0 0 0 3px #fff, inset 0 0 0 5px var(--cgp-ink-strong), 0 2px 8px rgba(19, 33, 44, 0.14) !important;
-  z-index: 5 !important;
 }
 html.cgp-on .slick-cell.cgp-has-pending::after {
   content: attr(data-cgp-pending);
@@ -654,39 +651,6 @@ html.cgp-on .slick-cell .gradebook-cell,
 html.cgp-on .slick-cell .gradebook-cell * {
   text-align: center !important;
 }
-html.cgp-on .slick-cell .Grid__GradeCell__Content input,
-html.cgp-on .slick-cell .Grid__GradeCell__Content textarea {
-  width: auto !important;
-  min-width: 32px !important;
-  max-width: 48px !important;
-  flex: 0 0 auto !important;
-  box-sizing: border-box !important;
-  text-align: center !important;
-  background: #ffffff !important;
-  position: relative !important;
-  z-index: 2 !important;
-}
-/* Display the out-of-total-points denominator cleanly beside the input instead of covering it up */
-html.cgp-on .slick-cell:has(input:not([type="hidden"])) .Grid__GradeCell__Content {
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 4px !important;
-  white-space: nowrap !important;
-}
-html.cgp-on .slick-cell:has(input:not([type="hidden"])) .Grid__GradeCell__Content > :not(input):not(textarea):not(:has(input)):not(:has(textarea)) {
-  display: inline-flex !important;
-  align-items: center !important;
-  font-size: 12px !important;
-  font-weight: 500 !important;
-  color: var(--cgp-muted, #64748b) !important;
-  white-space: nowrap !important;
-  pointer-events: none !important;
-  line-height: 1 !important;
-  flex: 0 0 auto !important;
-  margin-left: 2px !important;
-}
 /* While a cell is being EDITED, hide the synthetic score overlay so the
  * editor has the full cell. Only while editing: a cell that is merely
  * active (selected, or the Shift-clicked end of a range) must keep showing
@@ -699,51 +663,6 @@ html.cgp-on .slick-cell:has(input:not([type="hidden"])) > .cgp-val {
 }
 html.cgp-on .slick-cell:has(input:not([type="hidden"])) .Grid__GradeCell__Content {
   visibility: visible !important;
-}
-
-/* What you type looks like what you get.
- *
- * Canvas's editor input inherits none of the cell's typography: it renders the
- * number in the browser's default input font, at its own size, left aligned -
- * so a grade visibly jumped and changed shape at the moment it was committed,
- * and the value being typed was the smallest text on screen. These rules give
- * the input the exact face, size, weight, figures and alignment the committed
- * grade has, so the only thing that changes on Enter is that the caret goes
- * away. Alignment follows the same setting the cell's does (html.cgp-center)
- * rather than being centred unconditionally. */
-html.cgp-on .slick-cell input:not([type="hidden"]),
-html.cgp-on .slick-cell textarea,
-html.cgp-on .Grid__GradeCell input,
-html.cgp-on .Grid__GradeCell textarea,
-html.cgp-on .slick-cell[data-cgp-col="assignment"] input:not([type="hidden"]),
-html.cgp-on .slick-cell[data-cgp-col="assignment"] textarea,
-html.cgp-on .slick-cell[data-cgp-col="total"] input:not([type="hidden"]) {
-  font-family: var(--cgp-font) !important;
-  font-size: var(--cgp-grade-font, 16px) !important;
-  font-weight: 600 !important;
-  line-height: 1.25 !important;
-  color: var(--cgp-ink-strong) !important;
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1;
-  padding: 1px 4px !important;
-  height: auto !important;
-  background: #ffffff !important;
-  border: 1px solid var(--cgp-brand) !important;
-  border-radius: 4px !important;
-  box-shadow: 0 0 0 1px var(--cgp-brand) !important;
-  text-align: center !important;
-}
-html.cgp-center .slick-cell[data-cgp-col="assignment"] input:not([type="hidden"]),
-html.cgp-center .slick-cell[data-cgp-col="assignment"] textarea,
-html.cgp-center .slick-cell[data-cgp-col="total"] input:not([type="hidden"]) {
-  text-align: center !important;
-}
-/* The cell itself already shows it is being edited (.slick-cell.active), so
- * the input does not need a second box drawn inside that one. Focus stays
- * visible: the active cell's own ring is what marks it. */
-html.cgp-on .slick-cell[data-cgp-col="assignment"] input:focus,
-html.cgp-on .slick-cell[data-cgp-col="assignment"] textarea:focus {
-  outline: none !important;
 }
 
 /* Fallback for any grade-cell markup without that named hook: whenever an
@@ -1421,74 +1340,187 @@ html.cgp-on .slick-row.cgp-row-hover > .slick-cell[data-cgp-col="student"] {
 
 /* ------------------------------------------------------- the active cell */
 
-/* Deliberately NOT the selection's blue: the active cell (where Canvas's
- * cursor is) is a dark charcoal ring with a thin white keyline inside, the
- * way a spreadsheet draws its current cell, while selected cells are blue
- * with a blue tint. A teacher can tell at a glance whether a cell will be
- * included in M / E / L or a bulk comment. */
-html.cgp-on .slick-cell.active {
-  box-shadow: inset 0 0 0 2px var(--cgp-ink-strong), inset 0 0 0 3px #fff, 0 2px 8px rgba(19, 33, 44, 0.14) !important;
-  border-radius: 4px;
+/* One ring, drawn once. Canvas already gives the active cell a 2px bright
+ * blue BORDER (and the active row blue top/bottom borders); this used to add
+ * a charcoal ring, a white keyline and a drop shadow inside that, so the cell
+ * under the cursor wore three outlines. The ring is now an outline laid over
+ * Canvas's border (offset -2px covers it exactly), in deep navy rather than
+ * the selection's bright blue, so a teacher still tells at a glance which
+ * cells M / E / L or a bulk comment will touch (those are tinted). */
+html.cgp-on .slick-row > .slick-cell.active {
+  outline: 2px solid var(--cgp-active) !important;
+  outline-offset: -2px !important;
+  box-shadow: none !important;
+  border-radius: 0;
   z-index: 5 !important;
+}
+/* Active and selected: the selection's tint (from the rule above) under the
+ * active ring - not a blue ring, a gap and a navy ring nested together. */
+html.cgp-on .slick-row > .slick-cell.cgp-sel.active,
+html.cgp-on .slick-row.cgp-row-hover > .slick-cell.cgp-sel.active {
+  outline-color: var(--cgp-active) !important;
+}
+/* Canvas lines the whole active row in blue, top and bottom, which drew a
+ * second set of rules through the grid beside the ring. The row is already
+ * marked: its name cell and the ring. */
+html.cgp-on .slick-row.active > .slick-cell:not(.active) {
+  border-top-color: transparent !important;
+}
+html.cgp-on .slick-row.active > .slick-cell:not(.active):not(.primary-column) {
+  border-bottom-color: var(--cgp-hairline) !important;
 }
 
 /* ------------------------------------------------------- the grade editor */
 
-/* Canvas's editor is a bare, browser-default text box wedged against the
- * cell's edges next to its arrow button, which is why a selected cell looked
- * broken rather than focused. Give it the cell's own geometry: inset from
- * the borders, centered like the value it is replacing, and carrying the
- * focus ring instead of the browser's default outline. */
+/* Typing into a cell looks like typing into a spreadsheet cell: the cell
+ * turns white inside its ring and the value sits where it always sits, in
+ * the grid's own type, with the points possible ("/7") right after it.
+ *
+ * Canvas's editor is an InstUI text field - a framed, rounded box with its
+ * own focus ring - around a bare <input>, 78px wide, inside the cell; the
+ * "/7" is a separate element at the cell's far end. Styling the input as
+ * well gave a box in a box in the ring, and the "/7" either floated at the
+ * edge or ran over the value. Every frame around the input is flattened
+ * here, the input is as wide as what is typed in it, and the "/7" follows
+ * it in the same centred row. */
+html.cgp-on .slick-row > .slick-cell.active:has(input:not([type="hidden"]), textarea) {
+  background-color: #fff !important;
+  background-image: none !important;
+  box-shadow: 0 2px 10px rgba(19, 33, 44, 0.16) !important;
+}
+html.cgp-on .slick-cell .Grid__GradeCell:has(input:not([type="hidden"])) {
+  justify-content: center !important;
+  gap: 1px !important;
+  padding: 0 6px !important;
+}
+html.cgp-on .slick-cell .Grid__GradeCell:has(input:not([type="hidden"])) > .Grid__GradeCell__Content {
+  flex: 0 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+/* Canvas's 78px wrapper and InstUI's frame (and its ::before focus ring). */
+html.cgp-on .slick-cell .Grid__GradeCell__Content :has(input:not([type="hidden"])) {
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+html.cgp-on .slick-cell .Grid__GradeCell__Content :has(input:not([type="hidden"]))::before,
+html.cgp-on .slick-cell .Grid__GradeCell__Content :has(input:not([type="hidden"]))::after {
+  display: none !important;
+}
+/* The input: no frame, the committed grade's type. Its width follows what is
+ * typed (field-sizing, below), so the value and its "/7" stay centred
+ * together; a browser without field-sizing gets a fixed width with the
+ * value set against the "/7". */
 html.cgp-on .slick-cell input[type="text"],
 html.cgp-on .slick-cell input[type="number"],
 html.cgp-on .slick-cell input:not([type]),
-html.cgp-on .slick-cell textarea,
-html.cgp-on .Grid__GradeCell input:not([type="hidden"]),
-html.cgp-on .Grid__GradeCell textarea {
+html.cgp-on .slick-cell textarea {
   box-sizing: border-box !important;
-  height: 24px !important;
-  min-height: 24px !important;
   margin: 0 !important;
-  padding: 0 4px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
   font-family: var(--cgp-font) !important;
+  color: var(--cgp-ink-strong) !important;
+}
+html.cgp-on .slick-cell .Grid__GradeCell input:not([type="hidden"]) {
+  width: 6ch !important;
+  min-width: 1ch !important;
+  max-width: 100% !important;
+  height: 26px !important;
+  min-height: 0 !important;
+  padding: 0 1px !important;
   font-size: var(--cgp-grade-font, 16px) !important;
   font-weight: 600 !important;
-  line-height: 22px !important;
-  color: var(--cgp-ink-strong) !important;
-  background: #fff !important;
-  border: 1px solid var(--cgp-brand) !important;
-  border-radius: 4px !important;
-  box-shadow: none !important;
-  outline: none !important;
-  text-align: center !important;
+  line-height: 26px !important;
+  text-align: right !important;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
+  caret-color: var(--cgp-brand);
 }
-html.cgp-on .slick-cell[data-cgp-col="assignment"] input,
-html.cgp-on .slick-cell[data-cgp-col="assignment"] textarea,
-html.cgp-on .slick-cell[data-cgp-col="total"] input,
-html.cgp-center .slick-cell[data-cgp-col="assignment"] input,
-html.cgp-center .slick-cell[data-cgp-col="assignment"] textarea {
-  text-align: center !important;
+html.cgp-on .slick-cell .Grid__GradeCell input:not([type="hidden"])::selection {
+  background: rgba(3, 116, 181, 0.22);
+  color: var(--cgp-ink-strong);
 }
-html.cgp-on .slick-cell input:focus,
-html.cgp-on .slick-cell textarea:focus {
-  border-color: var(--cgp-brand) !important;
-  box-shadow: var(--cgp-focus-ring) !important;
+/* An explicit width beats field-sizing, so it is only set where
+ * field-sizing is not understood: there the box is wide enough for
+ * "Excused" or "93.15%". */
+@supports (field-sizing: content) {
+  html.cgp-on .slick-cell .Grid__GradeCell input:not([type="hidden"]) {
+    width: auto !important;
+    field-sizing: content;
+  }
 }
-/* Note: The out-of-total denominator while editing is handled specifically above by .slick-cell:has(input) selectors */
-/* Canvas's trailing arrow button: a proper, reachable target rather than a
- * glyph pressed against the cell border. Double-clicking anywhere in the
- * cell now presses this same button (cell-actions.js). */
-html.cgp-on .slick-cell .Grid__GradeCell__EndContainer button,
-html.cgp-on .slick-cell .Grid__GradeCell__Options button {
-  border-radius: 4px;
+/* Out of how many: right after the value, smaller and quieter. The
+ * container that holds it (and Canvas's tray arrow) stops being pinned to
+ * the cell's edge; the arrow, when shown, keeps the edge to itself. */
+html.cgp-on .slick-cell .Grid__GradeCell:has(input:not([type="hidden"])) > .Grid__GradeCell__EndContainer {
+  position: static !important;
+  transform: none !important;
+  display: contents !important;
+}
+html.cgp-on .slick-cell .Grid__GradeCell__EndText {
+  flex: 0 0 auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  font-family: var(--cgp-font) !important;
+  font-size: calc(var(--cgp-grade-font, 16px) * 0.8) !important;
+  font-weight: 500 !important;
+  color: var(--cgp-muted) !important;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap !important;
+  pointer-events: none !important;
+  /* Centred, the smaller text sits a hair above the value's baseline. */
+  transform: translateY(0.1em);
+}
+html.cgp-on .slick-cell .Grid__GradeCell__EndText * {
+  font: inherit !important;
+  color: inherit !important;
+}
+html.cgp-on .slick-cell .Grid__GradeCell:has(input:not([type="hidden"])) .Grid__GradeCell__Options {
+  position: absolute !important;
+  right: 3px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  z-index: 4 !important;
+}
+/* Canvas's tray arrow, when it is shown: a quiet square button, not a grey
+ * box with a border pressed against the cell's edge. Double-clicking anywhere
+ * in the cell presses this same button (cell-actions.js). */
+html.cgp-on:not(.cgp-hide-arrow) .slick-cell .Grid__GradeCell__Options button {
+  width: 22px !important;
+  height: 22px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 4px !important;
+  background: transparent !important;
+  color: var(--cgp-muted) !important;
+  box-shadow: none !important;
   transition: background 90ms ease, color 90ms ease;
 }
-html.cgp-on .slick-cell .Grid__GradeCell__EndContainer button:hover,
-html.cgp-on .slick-cell .Grid__GradeCell__Options button:hover {
-  background: var(--cgp-brand-wash);
-  color: var(--cgp-brand-dark);
+html.cgp-on:not(.cgp-hide-arrow) .slick-cell .Grid__GradeCell__Options button *,
+html.cgp-on:not(.cgp-hide-arrow) .slick-cell .Grid__GradeCell__Options button *::before {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+html.cgp-on:not(.cgp-hide-arrow) .slick-cell .Grid__GradeCell__Options button:hover {
+  background: var(--cgp-brand-wash) !important;
+  color: var(--cgp-brand-dark) !important;
 }
 
 /* ------------------------------------------------------- header surface */
@@ -5379,4 +5411,31 @@ html.cgp-on .cgp-g-result.is-error .cgp-g-result__mark { background: #c4372b; }
   html.cgp-on .cgp-g-foot__copy { display: none; }
   html.cgp-on .cgp-g-tiles { grid-template-columns: 1fr 1fr; }
   html.cgp-on .cgp-g-tile__btn { padding: 8px 10px; }
+}
+
+/* Copy Roster: what is still loading (the class list, or the parents and
+ * guardians for the table's columns) shows a small spinner - in the message
+ * itself, and on the Roster table tab while that table is incomplete. */
+html.cgp-on .cgp-roster__spinner {
+  display: inline-block;
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--cgp-hairline-strong);
+  border-top-color: var(--cgp-brand);
+  animation: cgp-roster-spin 0.8s linear infinite;
+}
+@keyframes cgp-roster-spin { to { transform: rotate(360deg); } }
+html.cgp-on .cgp-roster .cgp-roster__loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+html.cgp-on .cgp-roster__table-wrap > .cgp-roster__loading { display: flex; }
+html.cgp-on .cgp-roster .cgp-roster__table-status.cgp-roster__loading[hidden] { display: none; }
+html.cgp-on .cgp-roster__tab .cgp-roster__tab-busy { display: none; }
+html.cgp-on .cgp-roster__tab--busy .cgp-roster__tab-busy { display: inline-block; }
+@media (prefers-reduced-motion: reduce) {
+  html.cgp-on .cgp-roster__spinner { animation-duration: 2.4s; }
 }

@@ -302,8 +302,9 @@ suite('SelectionController & multi-cell bulk comment', (test) => {
 
   test('active-cell ring is not the selection blue', () => {
     const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'styles', 'gradebook.css'), 'utf8');
-    const block = /html\.cgp-on \.slick-cell\.active \{[^}]*\}/.exec(css)[0];
+    const block = /html\.cgp-on \.slick-row > \.slick-cell\.active \{[^}]*\}/.exec(css)[0];
     a.ok(!/var\(--cgp-brand\)|var\(--cgp-sel\)/.test(block), 'active ring uses a different colour');
+    a.ok(/outline: 2px solid var\(--cgp-active\)/.test(block) && /box-shadow: none/.test(block), 'one ring, not rings stacked with shadows');
   });
 
   test('modifier clicks on our own in-cell controls are not taken over', () => {

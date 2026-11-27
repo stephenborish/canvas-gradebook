@@ -1987,7 +1987,6 @@
     var here = (user.enrollments || []).filter(function (e) { return e && String(e.course_id) === cid && e.type === 'StudentEnrollment'; });
     var sections = here.map(function (e) { return sectionName[String(e.course_section_id)]; })
       .filter(function (n, i, all) { return n && all.indexOf(n) === i; });
-    var since = here.map(function (e) { return e.created_at; }).filter(Boolean).sort()[0];
     var fmtDate = function (iso) {
       var t = Date.parse(iso);
       return isFinite(t) ? new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
@@ -2002,17 +2001,14 @@
     var fullWords = norm(fullName).split(' ');
     var showNick = !!norm(nick) && !norm(nick).split(' ').every(function (w) { return fullWords.indexOf(w) >= 0; });
 
-    var g = (parts.enrollment && parts.enrollment.grades) || (here[0] && here[0].grades) || {};
     var active = student.lastActivityAt ? SI().lastActiveText(Date.parse(student.lastActivityAt), Date.now()) : '';
     var studentCard = section('Student', facts([
       ['Name', esc(fullName) + (showNick ? ' <span class="cgp-si__muted">(' + esc(nick) + ')</span>' : '')],
       ['Email', email ? mailLink(email) : ''],
       ['Section', esc(sections.join(', '))],
-      ['In course since', esc(fmtDate(since))],
       ['Time zone', esc(prof.time_zone || '')],
       ['Last Canvas login', studentLogin === undefined ? '<span class="cgp-si__muted">Not shared with you by Canvas</span>' : esc(loginText(studentLogin))],
       ['Last active in course', esc(active || '')],
-      ['Current grade', g.current_score !== undefined && g.current_score !== null ? esc(pct(g.current_score)) + (g.current_grade ? ' · ' + esc(CGP.dashLetter(g.current_grade)) : '') : ''],
       ['Total time in course', student.totalActivityTime ? esc(SI().duration(student.totalActivityTime)) : ''],
       ['Pronouns', esc(user.pronouns || prof.pronouns || '')],
       ['Grade level', year ? 'Grade ' + year.grade + ' · Class of ' + year.classYear + ' <span class="cgp-si__muted">(read from ' + esc(year.from) + ')</span>' : ''],

@@ -96,12 +96,33 @@
     return prefs;
   }
 
+  /* Saving waits until the clicking stops, and always comes after the panel
+   * has redrawn: a save never holds up (or, failing, stops) what the
+   * teacher sees. Each saved setting is also a write to Chrome sync and a
+   * note to every open Canvas tab, so a burst of clicks is one save. */
+  var SAVE_DELAY_MS = 500;
+
   P.savePrefs = function () {
+    var self = this;
+    if (this._saveTimer) clearTimeout(this._saveTimer);
+    this._saveTimer = setTimeout(function () { self.flushPrefs(); }, SAVE_DELAY_MS);
+  };
+
+  /* Writes a waiting save now (closing the panel does this). */
+  P.flushPrefs = function () {
+    if (!this._saveTimer) return;
+    clearTimeout(this._saveTimer);
+    this._saveTimer = null;
     var prefs = Object.assign({}, this.prefs);
-    if (CGP.settings && CGP.settings.save) {
-      CGP.settings.save({ rosterPrefs: prefs }).then(function () {
-        try { localStorage.removeItem(PREFS_KEY); } catch (e) { /* ignore */ }
-      }, function () { /* kept for this page; reported in diagnostics */ });
+    try {
+      if (CGP.settings && CGP.settings.save) {
+        CGP.settings.save({ rosterPrefs: prefs }).then(function () {
+          try { localStorage.removeItem(PREFS_KEY); } catch (e) { /* ignore */ }
+        }, function () { /* kept for this page; reported in diagnostics */ });
+      }
+    } catch (e) {
+      // A tab left open across an extension update can no longer save
+      // settings at all; the choices still apply for as long as it is open.
     }
   };
 
@@ -126,6 +147,8 @@
       }
     });
     this._observer.observe(document.body, { childList: true, subtree: true });
+    // A choice made just before leaving the page is still saved.
+    window.addEventListener('pagehide', function () { self.flushPrefs(); });
   };
 
   P.rememberTrigger = function (target) {
@@ -267,6 +290,14 @@
 
   function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
 
+  var SPINNER = '<span class="cgp-roster__spinner" aria-hidden="true"></span>';
+
+  /* A "still loading" message with a spinner beside it. */
+  function loadingHtml(text, tag) {
+    tag = tag || 'p';
+    return '<' + tag + ' class="cgp-roster__empty cgp-roster__loading">' + SPINNER + '<span>' + esc(text) + '</span></' + tag + '>';
+  }
+
   P.courseName = function () {
     var crumb = document.querySelector('.cgp-crumb-link, #breadcrumbs a[href*="/courses/"]');
     var name = crumb ? itemText(crumb) : '';
@@ -292,7 +323,8 @@
       '<div class="cgp-roster__tabs" role="tablist" aria-label="Roster">' +
         VIEWS.map(function (v) {
           return '<button type="button" role="tab" class="cgp-roster__tab" id="cgp-roster-tab-' + v[0] + '" data-view="' + v[0] + '"' +
-            ' aria-controls="cgp-roster-pane-' + v[0] + '">' + v[2] + '<span>' + v[1] + '</span></button>';
+            ' aria-controls="cgp-roster-pane-' + v[0] + '">' + v[2] + '<span>' + v[1] + '</span>' +
+            '<span class="cgp-roster__spinner cgp-roster__tab-busy" aria-hidden="true"></span></button>';
         }).join('') +
       '</div>' +
       '<div class="cgp-roster__body">' +
@@ -376,6 +408,7 @@
 
     this._rows = null;
     this._users = null;
+    this._loadFailed = false;
     this._guardians = null;
     this._guardianState = 'idle';
     if (this.needsGuardians()) this.loadGuardians();
@@ -386,6 +419,8 @@
       self.refresh();
     }, function (err) {
       if (self._dialog !== root) return;
+      self._loadFailed = true;
+      self.refresh();
       self.setStatus('Couldn’t load the roster from Canvas. ' +
         CGP.util.describeApiError(err, { fallback: 'Try again in a moment.' }));
     });
@@ -396,12 +431,8 @@
     var root = this._dialog;
     if (!root) return;
     view = view === 'table' ? 'table' : 'emails';
-    if (remember && this.prefs.view !== view) {
-      this.prefs.view = view;
-      this.savePrefs();
-    } else {
-      this.prefs.view = view;
-    }
+    var changed = this.prefs.view !== view;
+    this.prefs.view = view;
     root.classList.toggle('cgp-roster--table', view === 'table');
     Array.prototype.slice.call(root.querySelectorAll('[role="tab"][data-view]')).forEach(function (t) {
       var on = t.getAttribute('data-view') === view;
@@ -412,6 +443,7 @@
       el.hidden = el.getAttribute('data-pane') !== view;
     });
     this.renderFootNote();
+    if (remember && changed) this.savePrefs();
   };
 
   /* Whether any choice needs the parents' and guardians' list. */
@@ -473,8 +505,10 @@
       if (this._guardianState === 'error' && guardianKey && el.checked) this._guardianState = 'idle';
       this.loadGuardians();
     }
-    this.savePrefs();
+    // Redrawn first: the list, the counts, the Copy button and the table
+    // always match the choices on screen, whatever happens to the save.
     this.refresh();
+    this.savePrefs();
   };
 
   /* The table for the current choices. Parent/guardian columns are left
@@ -540,11 +574,22 @@
           (none === 1 ? 'that row’s' : 'those rows’') + ' parent columns are blank.';
       }
     }
-    status.textContent = gNote;
+    var gLoading = wantsG && this._guardianState === 'loading';
+    if (gLoading) status.innerHTML = SPINNER + '<span>' + esc(gNote) + '</span>';
+    else status.textContent = gNote;
+    status.classList.toggle('cgp-roster__loading', gLoading);
     status.hidden = !gNote;
+    // The tab shows it is still working, so a teacher who switches to it
+    // straight away sees why the table isn't complete yet.
+    var busy = (!loaded && !this._loadFailed) || gLoading;
+    box.setAttribute('aria-busy', busy ? 'true' : 'false');
+    var tab = root.querySelector('#cgp-roster-tab-table');
+    if (tab) tab.classList.toggle('cgp-roster__tab--busy', busy);
 
     if (!loaded) {
-      box.innerHTML = '<p class="cgp-roster__empty">Loading students…</p>';
+      box.innerHTML = this._loadFailed
+        ? '<p class="cgp-roster__empty">The class list couldn’t be loaded. Close this and choose Copy Roster again.</p>'
+        : loadingHtml('Loading students from Canvas…');
       return false;
     }
     var t = this.currentTable();
@@ -593,7 +638,7 @@
     var g = this.guardianInfo();
     var set = function (sel, text) { var el = root.querySelector(sel); if (el) el.textContent = text; };
 
-    set('[data-count="students"]', studentEmails === null ? 'Loading…' : plural(studentEmails, 'email', 'emails'));
+    set('[data-count="students"]', studentEmails === null ? (this._loadFailed ? 'Unavailable' : 'Loading…') : plural(studentEmails, 'email', 'emails'));
     var note;
     if (this._guardianState === 'loading') {
       set('[data-count="guardians"]', 'Loading…');
@@ -622,9 +667,10 @@
     var waiting = p.emailGuardians && this._guardianState !== 'ready';
     var box = root.querySelector('.cgp-roster__addresses');
     if (box) {
-      if (!this._users) box.innerHTML = '<span class="cgp-roster__empty">Loading…</span>';
+      if (!this._users && this._loadFailed) box.innerHTML = '<span class="cgp-roster__empty">The class list couldn’t be loaded. Close this and choose Copy Roster again.</span>';
+      else if (!this._users) box.innerHTML = loadingHtml('Loading students from Canvas…', 'span');
       else if (!p.emailStudents && !p.emailGuardians) box.innerHTML = '<span class="cgp-roster__empty">Choose Students, Parents &amp; guardians, or both.</span>';
-      else if (waiting && this._guardianState === 'loading') box.innerHTML = '<span class="cgp-roster__empty">Loading parents and guardians…</span>';
+      else if (waiting && this._guardianState === 'loading') box.innerHTML = loadingHtml('Loading parents and guardians…', 'span');
       // Not the students' list alone, which would look like the whole one.
       else if (waiting) box.innerHTML = '<span class="cgp-roster__empty">Parents and guardians couldn’t be loaded, so there is nothing to copy yet. Uncheck them to copy students only.</span>';
       else if (!count) box.innerHTML = '<span class="cgp-roster__empty">No email addresses for the people chosen.</span>';
@@ -697,6 +743,7 @@
   }
 
   P.close = function () {
+    this.flushPrefs();
     if (this._onKey) document.removeEventListener('keydown', this._onKey, true);
     this._onKey = null;
     if (this._dialog && this._dialog.parentNode) this._dialog.parentNode.removeChild(this._dialog);
