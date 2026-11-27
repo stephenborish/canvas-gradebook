@@ -52,7 +52,8 @@ suite('page-context SlickGrid bridge', (test) => {
     a.deep(response.result, { ok: true, changed: 2 });
     a.deep(model.map((column) => column.width), [180, 72, 110]);
     a.eq(calls.filter((name) => name === 'setColumns').length, 1, 'one complete model write');
-    a.deep(calls.slice(-4), ['setColumns', 'invalidate', 'render', 'resizeCanvas']);
+    a.deep(calls.slice(-3), ['setColumns', 'resizeCanvas', 'invalidate'], 'one rebuild: the canvas is resized, then the rows are drawn once');
+    a.ok(calls.indexOf('render') < 0, 'invalidate() draws the rows itself; no second render');
   });
 
   /* Canvas's own Gradebook, reduced to what "Move to Front" touches: its

@@ -453,11 +453,18 @@
     return changed;
   }
 
+  /* One rebuild of the rows on screen. invalidate() is SlickGrid's own
+   * "drop every row and draw again"; calling invalidateAllRows() after it
+   * (as this used to) threw those freshly drawn rows away and had
+   * resizeCanvas() draw them all a second time - and every rebuild wipes the
+   * marks Gradebook+ painted into the cells, which then have to be painted
+   * again. The canvas is resized first, so the one rebuild uses the new
+   * widths. */
   function redraw(grid) {
-    if (typeof grid.invalidate === 'function') grid.invalidate();
-    if (typeof grid.render === 'function') grid.render();
-    if (typeof grid.invalidateAllRows === 'function') grid.invalidateAllRows();
     if (typeof grid.resizeCanvas === 'function') grid.resizeCanvas();
+    if (typeof grid.invalidate === 'function') { grid.invalidate(); return; }
+    if (typeof grid.invalidateAllRows === 'function') grid.invalidateAllRows();
+    if (typeof grid.render === 'function') grid.render();
   }
 
   function enforceColumnWidths(grid) {

@@ -1142,6 +1142,16 @@
     maxEvents: 160,
     bump: function (k, n) { this.counters[k] = (this.counters[k] || 0) + (n === undefined ? 1 : n); this._flushSoon(); },
     set: function (k, v) { this.facts[k] = v; this._flushSoon(); },
+    /* A page-load milestone: ms since the page started loading, recorded the
+     * first time only, as fact "load.<k>" - so a snapshot shows where a slow
+     * gradebook load spent its time. */
+    mark: function (k) {
+      var key = 'load.' + k;
+      if (this.facts[key] !== undefined) return;
+      var ms = 0;
+      try { ms = Math.round(performance.now()); } catch (e) { ms = 0; }
+      this.set(key, ms);
+    },
     log: function (k, data) { this._push('info', k, data); },
     warn: function (k, data) { this._push('warn', k, data); },
     error: function (k, data) { this.counters.errors = (this.counters.errors || 0) + 1; this._push('error', k, data); },

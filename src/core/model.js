@@ -131,24 +131,20 @@
     // paint-signature check in indicators.js already skips unchanged cells
     // correctly) but pure unforced latency sitting in front of the first
     // paint that could show anything at all. All three requests now start
-    // at once; instructorId/instructorNames are only ever read once this
-    // whole Promise.all has settled, same as before.
+    // at once.
     var userPromise = this.api.currentUser();
     var totalsGen = ++this._totalsGen;
     var reader = this._reader();
-    var dataPromise = Promise.all([
-      reader.assignments(self.courseId),
-      reader.studentEnrollments(self.courseId, self.gradingPeriodId)
-    ]);
-    this._initPromise = Promise.all([userPromise, dataPromise]).then(function (results) {
-      var user = results[0];
-      var data = results[1];
+    // Who is grading and the assignment list are applied the moment both are
+    // in, without waiting for the roster: they are all a column read needs
+    // (the comment check needs the instructor, ensureAssignments the
+    // assignment ids), so the columns on screen can be read while a long
+    // roster is still arriving - see whenAssignments().
+    function applyUserAndAssignments(user, assignments) {
       self.instructorId = user ? user.id : null;
       self.instructorNames = user ? [user.name, user.shortName, user.sortableName].filter(Boolean) : [];
       CGP.diag.set('instructorId', self.instructorId);
       CGP.diag.set('instructorNameAliases', self.instructorNames.length);
-      var assignments = data[0] || [];
-      var enrollments = data[1] || [];
 
       assignments.forEach(function (a) {
         if (!a || a.id === undefined) return;
@@ -188,6 +184,21 @@
         });
       });
       self.assignmentOrder = Array.from(self.assignments.keys());
+      self.assignmentsKnown = true;
+      CGP.diag.mark('assignmentsKnown');
+    }
+    var assignmentsPromise = Promise.all([userPromise, reader.assignments(self.courseId)]).then(function (results) {
+      applyUserAndAssignments(results[0], results[1] || []);
+      return self;
+    });
+    // init's caller hears about a failure; this copy must not also surface
+    // as an unhandled rejection.
+    assignmentsPromise.catch(function () { return null; });
+    this._assignmentsPromise = assignmentsPromise;
+    var rosterPromise = reader.studentEnrollments(self.courseId, self.gradingPeriodId);
+    this._initPromise = Promise.all([assignmentsPromise, rosterPromise]).then(function (results) {
+      var enrollments = results[1] || [];
+      CGP.diag.mark('rosterKnown');
 
       enrollments.forEach(function (e) { self._applyEnrollment(e, { scoresToo: totalsGen === self._totalsGen }); });
       // The grading period changed while this read was out: its roster is
@@ -305,8 +316,31 @@
    * for a 30-student class runs a 900-student lecture past any sane page
    * budget. Aim for ~40 pages of 100 per request. */
   GradebookModel.prototype._batchSize = function () {
+    // Read before the roster has arrived (see whenAssignments): the class
+    // size is unknown, so two columns a request - small enough for a large
+    // lecture to fit its page budget (_maxPages), and the screenful is read
+    // as several requests side by side rather than one long one.
+    if (!this.students.size) return 2;
     var students = Math.max(1, this.students.size);
     return Math.max(1, Math.min(8, Math.floor(4000 / students)));
+  };
+
+  /* Pages one submissions read may run to before it counts as truncated.
+   * Generous on purpose: student_ids[]=all can also return students this
+   * roster does not count (concluded or inactive enrollments). With the
+   * roster not known yet, room for 5,000 students a column. */
+  GradebookModel.prototype._maxPages = function (batchSize) {
+    if (!this.students.size) return Math.max(100, batchSize * 50);
+    return Math.ceil((batchSize * this.students.size * 2) / 100) + 10;
+  };
+
+  /* Resolves once who is grading and the assignment list are in - before
+   * model.ready, which also waits for the whole roster. Enough to read
+   * columns (ensureAssignments); painting them still waits for ready. */
+  GradebookModel.prototype.whenAssignments = function () {
+    if (this.assignmentsKnown) return Promise.resolve(this);
+    if (this._assignmentsPromise) return this._assignmentsPromise;
+    return this.init();
   };
 
   GradebookModel.prototype._gen = function (id) {
@@ -343,9 +377,7 @@
 
     var reader = this._reader(opts && opts.priority);
     var batchSize = this._batchSize();
-    // Generous on purpose: student_ids[]=all can also return students this
-    // roster does not count (concluded or inactive enrollments).
-    var maxPages = Math.ceil((batchSize * Math.max(1, this.students.size) * 2) / 100) + 10;
+    var maxPages = this._maxPages(batchSize);
     var batches = util.chunk(wanted, batchSize);
     var jobs = batches.map(function (batch) {
       // Stamped before the request goes out: whatever this fetch returns
@@ -391,6 +423,14 @@
           self.everLoadedAssignments.add(id);
         });
         release();
+        // A comment in this answer shows this Canvas puts comments on the
+        // bulk endpoint, so the per-column double-check has nothing to add
+        // (see verifyVisibleComments).
+        if (rawCommentCount > 0 && !self.bulkCommentsProven) {
+          self.bulkCommentsProven = true;
+          CGP.diag.set('bulkCommentsProven', true);
+        }
+        if (current.length) CGP.diag.mark('firstColumnsLoaded');
         CGP.diag.set('submissionsLoaded', self.cells.size);
         CGP.diag.set('assignmentsLoaded', self.loadedAssignments.size);
         CGP.diag.set('commentPayloads', payloadsWithComments);
@@ -470,6 +510,19 @@
       return self.assignments.has(id) && !self.commentVerifiedAssignments.has(id);
     });
     if (!wanted.length) return Promise.resolve(null);
+    // This Canvas already returned comments on the bulk read (see
+    // ensureAssignments), so it serializes them there: a second read of each
+    // column on screen would only fetch the same threads again, and used to
+    // double the work behind the first screenful. Columns not loaded yet are
+    // left for their own load. A Canvas whose bulk answers never carry a
+    // comment is still double-checked, exactly as before.
+    if (this.bulkCommentsProven) {
+      var covered = wanted.filter(function (id) { return self.everLoadedAssignments.has(id); });
+      covered.forEach(function (id) { self.commentVerifiedAssignments.add(id); });
+      CGP.diag.bump('comments.verifySkipped', covered.length);
+      wanted = wanted.filter(function (id) { return covered.indexOf(id) < 0; });
+      if (!wanted.length) return Promise.resolve(null);
+    }
     var verified = [];
     // A second, defensive read of columns already loaded: it waits behind
     // any column the teacher has scrolled to that is not loaded yet.
@@ -913,7 +966,7 @@
     var readStartedAt = Date.now();
     if (!wanted.length) return Promise.resolve({ submissions: [], readStartedAt: readStartedAt });
     var batchSize = this._batchSize();
-    var maxPages = Math.ceil((batchSize * Math.max(1, this.students.size) * 2) / 100) + 10;
+    var maxPages = this._maxPages(batchSize);
     var gens = {};
     wanted.forEach(function (id) { gens[id] = self._gen(id); });
     return Promise.all(util.chunk(wanted, batchSize).map(function (batch) {
