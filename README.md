@@ -564,19 +564,24 @@ off with *Clicking a student's name opens their overview* in the options page.
 ### Copy the class roster
 
 The **Student Name** column's `⋮` menu has a **Copy Roster** item. It opens a panel with every
-student in the course (the Test Student is never included) and lets you:
+student in the course (the Test Student is never included), on two tabs:
 
-- **Copy emails** - every address on one line, separated by commas (Gmail), semicolons (Outlook),
-  or one per line, ready to paste into a To: or Bcc: field.
-- **Copy table** - a table laid out the way you choose: names as *First Last*, *Last, First*,
-  separate First Name / Last Name columns, first name only, or no names; with or without an Email
-  column and a header row; sorted by last or first name. A preview shows the first few rows. It
-  pastes as a formatted table in Google Docs, Word and Gmail, and as columns in Sheets or Excel.
-- **Download CSV** - the same table as a `.csv` file.
+- **Email addresses** - pick Students, Parents & guardians (the family members linked in Canvas,
+  which Canvas calls observers), or both, and how to separate them: commas (Gmail), semicolons
+  (Outlook) or one per line. The full list shows exactly as it will paste; **Copy emails** copies it,
+  ready for a To: or Bcc: field.
+- **Roster table** - the whole class in one scrolling table. Pick the name layout (*First Last*,
+  *Last, First*, separate First Name / Last Name columns, or First, Last, Email on one line), the
+  sort (last or first name), and the columns: the student's email, and each student's parents' and
+  guardians' names and/or emails (numbered columns, Parent/Guardian 1, 2, ..., blank where a
+  student has none linked). **Copy table** pastes as a formatted table in Google Docs, Word and
+  Gmail, and as columns in Sheets or Excel; **Download CSV** saves the same table. *Include header
+  row* sits beside those two buttons.
 
 Names are split using Canvas's own "Last, First" sort name. Emails are whatever Canvas lets you
-see for each student; the panel says how many have none. Your layout choices are remembered on
-this computer; the roster itself is not.
+see for each student; the panel says how many have none. Parents and guardians are only read from
+Canvas when you ask for them. Your layout choices (and the tab you were on) are remembered as a
+setting; the roster itself is not.
 
 ### Which grades the student can actually see
 
@@ -1107,7 +1112,7 @@ check. The Canvas copy keeps working regardless.
   up to 2,000 characters.
 - **Save** writes only what you changed on that page, so saving on a computer that hadn't caught up
   yet doesn't put its old settings back everywhere.
-- The Copy Roster layout (names, email, header, sort) is a setting too, and travels the same way.
+- The Copy Roster layout (names, sort, columns, header, the tab last used) is a setting too, and travels the same way.
 - A copy loaded with **Load unpacked** is a different extension as far as Chrome is concerned, with
   its own Chrome-sync settings; the Canvas copy is shared between it and the store version.
 - **Export** / **Import** under Sync & Backup still carry settings by hand.

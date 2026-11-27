@@ -779,6 +779,15 @@
     // to the right of it.
     var studentSearch = CGP.StudentSearch ? new CGP.StudentSearch({ api: api, courseId: courseId, settings: settings, isGradebookPage: false }) : null;
     if (studentSearch) studentSearch.start();
+    // Canvas draws the breadcrumb late on some pages; looked at for about
+    // five seconds.
+    if (CGP.tidyCrumbs) {
+      var tidyTries = 0;
+      (function tidy() {
+        if (CGP.tidyCrumbs() || ++tidyTries >= 20) return;
+        setTimeout(tidy, 250);
+      })();
+    }
     CGP.settings.onChange(function () { switcher.start(); if (studentSearch) studentSearch.start(); });
     startSectionCopy(api, courseId);
     startSettingsMirror(api);

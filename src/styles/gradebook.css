@@ -1878,6 +1878,57 @@ html.cgp-on .cgp-crumb-item > .cgp-crumb-toggle {
   vertical-align: middle !important;
 }
 
+/* With the line kept from wrapping, the crumbs after the course name have to
+ * fit in what is left of the bar. Canvas sizes them for a bar that may wrap
+ * (a fixed max-width on each title, or InstUI's "100% / number of crumbs"),
+ * so on a page with four crumbs the last one ran past the end of the bar,
+ * under "View as Student", cut off mid-word, while the one before it was
+ * already shortened with a gap after it. Instead they share the room left:
+ * each shrinks, longest first, and ends in "…" rather than being cut off.
+ * The course crumb (with Switch course and Find student) never shrinks; its
+ * title has its own cap (.cgp-crumb-link). */
+html.cgp-on .ic-app-crumbs,
+html.cgp-on #breadcrumbs,
+html.cgp-on #breadcrumbs ul,
+html.cgp-on #breadcrumbs ol,
+html.cgp-on .ic-app-crumbs ul,
+html.cgp-on .ic-app-crumbs ol {
+  min-width: 0 !important;
+}
+html.cgp-on .ic-app-nav-toggle-and-crumbs > .ic-app-crumbs { flex: 1 1 auto !important; }
+html.cgp-on .ic-app-nav-toggle-and-crumbs > :not(.ic-app-crumbs):not(#breadcrumbs) { flex-shrink: 0; }
+html.cgp-on #breadcrumbs li:not(.cgp-crumb-item),
+html.cgp-on .ic-app-crumbs li:not(.cgp-crumb-item) {
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  overflow: hidden !important;
+}
+html.cgp-on #breadcrumbs li:not(.cgp-crumb-item)::before,
+html.cgp-on #breadcrumbs li:not(.cgp-crumb-item)::after,
+html.cgp-on .ic-app-crumbs li:not(.cgp-crumb-item)::before,
+html.cgp-on .ic-app-crumbs li:not(.cgp-crumb-item)::after { flex: none; }
+html.cgp-on #breadcrumbs li:not(.cgp-crumb-item) > a,
+html.cgp-on .ic-app-crumbs li:not(.cgp-crumb-item) > a {
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+html.cgp-on #breadcrumbs li:not(.cgp-crumb-item) .ellipsible,
+html.cgp-on .ic-app-crumbs li:not(.cgp-crumb-item) .ellipsible,
+html.cgp-on #breadcrumbs li:not(.cgp-crumb-item) [data-cid="TruncateText"] {
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+/* The assignment named twice at the end of the breadcrumb (CGP.tidyCrumbs). */
+html.cgp-on #breadcrumbs li.cgp-crumb-dup,
+html.cgp-on .ic-app-crumbs li.cgp-crumb-dup,
+html.cgp-on nav[aria-label*="crumb" i] li.cgp-crumb-dup { display: none !important; }
+
 /* ------------------------------------------------------- course switcher */
 
 /* A labeled control, not a bare caret, so it still reads as "click me to
@@ -2456,67 +2507,331 @@ html.cgp-on .cgp-stats__list li span { overflow: hidden; text-overflow: ellipsis
 html.cgp-on .cgp-stats__list li b { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 html.cgp-on .cgp-stats__list li i { font-style: normal; font-weight: 400; color: var(--cgp-muted); }
 
-/* "Copy Roster" panel (roster-export.js) - the score panel's shell with a
- * couple of forms inside. */
-html.cgp-on .cgp-roster .cgp-stats__panel { width: min(560px, 100%); }
-html.cgp-on .cgp-roster__section {
-  border-top: 1px solid var(--cgp-hairline);
-  padding-top: 12px;
-  margin-top: 12px;
-}
-html.cgp-on .cgp-roster__row {
+/* "Copy Roster" panel (roster-export.js). The score panel's backdrop, laid
+ * out as a header, two tabs (Email addresses / Roster table), a scrolling
+ * body and a footer whose buttons never scroll away. The Roster table page
+ * widens the panel so every column and every student fits on screen. */
+html.cgp-on .cgp-roster .cgp-stats__panel.cgp-roster__panel {
+  width: min(600px, 100%);
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  overflow: hidden;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  transition: width 140ms ease;
+}
+html.cgp-on .cgp-roster--table .cgp-stats__panel.cgp-roster__panel {
+  width: min(1040px, 100%);
+  height: min(820px, calc(100vh - 32px));
+}
+html.cgp-on .cgp-roster [hidden] { display: none !important; }
+html.cgp-on .cgp-roster__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 22px 12px;
+  margin: 0 !important;
+}
+html.cgp-on .cgp-roster__head-text { min-width: 0; }
+html.cgp-on .cgp-roster__head h2 { overflow-wrap: anywhere; }
+html.cgp-on .cgp-roster__status {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: var(--cgp-ink);
+}
+
+/* The two pages: a tab bar under the title, the current one underlined. */
+html.cgp-on .cgp-roster__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 22px;
+  border-bottom: 1px solid var(--cgp-hairline);
+  flex: none;
+}
+html.cgp-on .cgp-roster__tab {
+  appearance: none;
+  display: inline-flex;
   align-items: center;
-  gap: 8px 16px;
-  margin: 8px 0;
-}
-html.cgp-on .cgp-roster__names {
+  gap: 7px;
+  margin: 0 0 -1px;
+  padding: 9px 12px 10px;
   border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--cgp-ink);
+  cursor: pointer;
+}
+html.cgp-on .cgp-roster__tab svg { width: 18px; height: 18px; flex: none; }
+html.cgp-on .cgp-roster__tab:hover { background: var(--cgp-brand-wash); }
+html.cgp-on .cgp-roster__tab[aria-selected="true"] {
+  color: var(--cgp-brand-dark);
+  border-bottom-color: var(--cgp-brand);
+}
+html.cgp-on .cgp-roster__tab:focus-visible { outline: none; box-shadow: var(--cgp-focus-ring); }
+
+html.cgp-on .cgp-roster__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 22px 18px;
+}
+html.cgp-on .cgp-roster--table .cgp-roster__body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+html.cgp-on .cgp-roster__pane--table:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Small section labels: dark enough to read, not shouting. */
+html.cgp-on .cgp-roster .cgp-roster__label {
+  display: block;
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cgp-ink-strong);
+}
+html.cgp-on .cgp-roster__pane > .cgp-roster__label:not(:first-child) { margin-top: 18px; }
+html.cgp-on .cgp-roster__hint {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--cgp-ink);
+}
+html.cgp-on .cgp-roster__empty { color: var(--cgp-ink); font-size: 13px; margin: 0; }
+
+/* Email addresses: whose addresses, as two selectable tiles (Students,
+ * Parents & guardians), each with its live count. */
+html.cgp-on .cgp-roster__who {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+html.cgp-on .cgp-roster__tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--cgp-line);
+  border-radius: 10px;
+  background: var(--cgp-surface);
+  cursor: pointer;
   margin: 0;
-  padding: 0;
+  transition: border-color 90ms ease, background 90ms ease;
+}
+html.cgp-on .cgp-roster__tile:hover { border-color: var(--cgp-brand); }
+html.cgp-on .cgp-roster__tile:has(input:checked) {
+  border-color: var(--cgp-brand);
+  background: var(--cgp-brand-wash);
+  box-shadow: inset 0 0 0 1px var(--cgp-brand);
+}
+html.cgp-on .cgp-roster__tile:has(input:focus-visible) { box-shadow: var(--cgp-focus-ring); }
+html.cgp-on .cgp-roster__tile input { margin: 0; width: 16px; height: 16px; accent-color: var(--cgp-brand); flex: none; }
+html.cgp-on .cgp-roster__tile-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+html.cgp-on .cgp-roster__tile-title { font-size: 14px; font-weight: 600; color: var(--cgp-ink-strong); }
+html.cgp-on .cgp-roster__tile-count { font-size: 12.5px; color: var(--cgp-ink); }
+
+/* Separator: a segmented control rather than a dropdown, so all three
+ * choices are visible at once. */
+html.cgp-on .cgp-roster__seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  border: 1px solid var(--cgp-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+html.cgp-on .cgp-roster__seg-opt { position: relative; margin: 0; cursor: pointer; }
+html.cgp-on .cgp-roster__seg-opt + .cgp-roster__seg-opt { border-left: 1px solid var(--cgp-line); }
+html.cgp-on .cgp-roster__seg-opt input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+html.cgp-on .cgp-roster__seg-opt span {
+  display: block;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--cgp-ink-strong);
+  white-space: nowrap;
+}
+html.cgp-on .cgp-roster__seg-opt:hover span { background: var(--cgp-brand-wash); }
+html.cgp-on .cgp-roster__seg-opt input:checked + span { background: var(--cgp-brand); color: #fff; font-weight: 600; }
+html.cgp-on .cgp-roster__seg-opt input:focus-visible + span { box-shadow: inset 0 0 0 3px rgba(3, 116, 181, 0.35); }
+
+/* The addresses themselves, exactly as Copy will paste them. */
+html.cgp-on .cgp-roster__addresses {
+  max-height: 168px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--cgp-hairline-strong);
+  border-radius: 8px;
+  background: #f7f9fa;
+  font: 12.5px/1.6 "SFMono-Regular", Menlo, Consolas, monospace;
+  color: var(--cgp-ink-strong);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+html.cgp-on .cgp-roster__addresses--lines { white-space: pre-line; }
+html.cgp-on .cgp-roster__addresses .cgp-roster__empty { font-family: var(--cgp-font); }
+html.cgp-on .cgp-roster__addresses:focus-visible { outline: none; box-shadow: var(--cgp-focus-ring); }
+
+/* Roster table: the choices in one bar above the table. */
+html.cgp-on .cgp-roster__controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
+  align-items: flex-end;
+  gap: 12px 20px;
+  flex: none;
+  padding-bottom: 14px;
 }
-html.cgp-on .cgp-roster__names legend {
-  font-size: 12px;
-  color: var(--cgp-muted);
-  padding: 0;
-  margin-bottom: 4px;
-}
-html.cgp-on .cgp-roster__choice,
 html.cgp-on .cgp-roster__field {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  min-width: 0;
+}
+html.cgp-on .cgp-roster__field select {
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--cgp-ink-strong);
+  padding: 6px 30px 6px 10px;
+  border: 1px solid var(--cgp-line);
+  border-radius: 8px;
+  background-color: var(--cgp-surface);
+  margin: 0;
+  height: 34px;
+  width: auto;
+  max-width: 100%;
+}
+html.cgp-on .cgp-roster__field select:focus-visible { outline: none; border-color: var(--cgp-brand); box-shadow: var(--cgp-focus-ring); }
+html.cgp-on .cgp-roster__field--cols { flex: 1 1 auto; }
+html.cgp-on .cgp-roster__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+html.cgp-on .cgp-roster__chip { position: relative; margin: 0; cursor: pointer; }
+html.cgp-on .cgp-roster__chip input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+html.cgp-on .cgp-roster__chip span {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
-  color: var(--cgp-ink);
-  cursor: pointer;
-  margin: 0;
-}
-html.cgp-on .cgp-roster__choice input { margin: 0; accent-color: var(--cgp-brand); }
-html.cgp-on .cgp-roster__field select {
-  font: inherit;
-  font-size: 13px;
-  padding: 3px 6px;
+  height: 34px;
+  box-sizing: border-box;
+  padding: 0 11px;
   border: 1px solid var(--cgp-line);
-  border-radius: 6px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--cgp-ink-strong);
   background: var(--cgp-surface);
-  margin: 0;
-  height: auto;
-  width: auto;
+  white-space: nowrap;
 }
+html.cgp-on .cgp-roster__chip span::before {
+  content: "+";
+  font-weight: 700;
+  width: 10px;
+  text-align: center;
+}
+html.cgp-on .cgp-roster__chip:hover span { border-color: var(--cgp-brand); }
+html.cgp-on .cgp-roster__chip input:checked + span {
+  background: var(--cgp-brand-wash);
+  border-color: var(--cgp-brand);
+  color: var(--cgp-brand-dark);
+  font-weight: 600;
+}
+html.cgp-on .cgp-roster__chip input:checked + span::before { content: "✓"; }
+html.cgp-on .cgp-roster__chip input:focus-visible + span { box-shadow: var(--cgp-focus-ring); }
+html.cgp-on .cgp-roster__table-status { flex: none; margin: 0 0 10px; }
+
+/* Every student: the wrapper scrolls (both ways), the header row stays. */
+html.cgp-on .cgp-roster__table-wrap {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow: auto;
+  border: 1px solid var(--cgp-hairline-strong);
+  border-radius: 8px;
+}
+html.cgp-on .cgp-roster__table-wrap:focus-visible { outline: none; box-shadow: var(--cgp-focus-ring); }
+html.cgp-on .cgp-roster__table-wrap > .cgp-roster__empty { padding: 14px; }
+html.cgp-on .cgp-roster__table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  font-size: 13px;
+  color: var(--cgp-ink-strong);
+}
+html.cgp-on .cgp-roster__table th,
+html.cgp-on .cgp-roster__table td {
+  text-align: left;
+  padding: 7px 14px 7px 0;
+  border-bottom: 1px solid var(--cgp-hairline);
+  white-space: nowrap;
+}
+html.cgp-on .cgp-roster__table--line td { white-space: normal; }
+html.cgp-on .cgp-roster__table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f1f4f6;
+  font-weight: 700;
+  font-size: 12.5px;
+  border-bottom-color: var(--cgp-hairline-strong);
+}
+html.cgp-on .cgp-roster__thead--off th { color: var(--cgp-muted); font-weight: 600; font-style: italic; }
+html.cgp-on .cgp-roster__table tbody tr:nth-child(even) td { background: #fafbfc; }
+html.cgp-on .cgp-roster__table tbody tr:hover td { background: var(--cgp-row-hover); }
+html.cgp-on .cgp-roster__table .cgp-roster__num {
+  width: 1%;
+  padding: 7px 12px 7px 14px;
+  text-align: right;
+  color: var(--cgp-ink);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+html.cgp-on .cgp-roster__blank { color: var(--cgp-muted); }
+
+/* The footer: what the button does on the left, the buttons on the right. */
+html.cgp-on .cgp-roster__foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  flex-wrap: wrap;
+  padding: 12px 22px;
+  border-top: 1px solid var(--cgp-hairline);
+  background: #f7f9fa;
+}
+html.cgp-on .cgp-roster__foot-note { margin: 0; flex: 1 1 220px; font-size: 12.5px; color: var(--cgp-ink); }
+html.cgp-on .cgp-roster__foot-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-left: auto; }
+html.cgp-on .cgp-roster__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 8px 0 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--cgp-ink-strong);
+  cursor: pointer;
+  white-space: nowrap;
+}
+html.cgp-on .cgp-roster__check input { margin: 0; width: 15px; height: 15px; accent-color: var(--cgp-brand); }
 html.cgp-on .cgp-roster__btn {
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  padding: 6px 14px;
-  border-radius: 6px;
+  padding: 8px 18px;
+  border-radius: 8px;
   border: 1px solid var(--cgp-line);
   background: var(--cgp-surface);
   color: var(--cgp-ink-strong);
   cursor: pointer;
+  white-space: nowrap;
 }
 html.cgp-on .cgp-roster__btn:hover:not(:disabled) { background: var(--cgp-brand-wash); }
 html.cgp-on .cgp-roster__btn--primary {
@@ -2527,52 +2842,13 @@ html.cgp-on .cgp-roster__btn--primary {
 html.cgp-on .cgp-roster__btn--primary:hover:not(:disabled) { background: var(--cgp-brand-dark); }
 html.cgp-on .cgp-roster__btn:disabled { opacity: .45; cursor: default; }
 html.cgp-on .cgp-roster__btn:focus-visible { outline: none; box-shadow: var(--cgp-focus-ring); }
-html.cgp-on .cgp-roster__preview { margin-top: 10px; overflow-x: auto; }
-html.cgp-on .cgp-roster__preview table {
-  border-collapse: collapse;
-  font-size: 12px;
-  width: 100%;
+
+@media (max-width: 560px) {
+  html.cgp-on .cgp-roster__head,
+  html.cgp-on .cgp-roster__body,
+  html.cgp-on .cgp-roster__foot { padding-left: 16px; padding-right: 16px; }
+  html.cgp-on .cgp-roster__tabs { padding: 0 10px; }
 }
-html.cgp-on .cgp-roster__preview th,
-html.cgp-on .cgp-roster__preview td {
-  text-align: left;
-  padding: 4px 10px 4px 0;
-  border-bottom: 1px solid var(--cgp-hairline);
-  white-space: nowrap;
-}
-html.cgp-on .cgp-roster__preview th { font-weight: 600; color: var(--cgp-muted); }
-html.cgp-on .cgp-roster__actions { margin-top: 12px; }
-/* "All email addresses": whose addresses to copy, as two selectable tiles
- * (Students, Parents & guardians), each with its live count. */
-html.cgp-on .cgp-roster__who {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px;
-  margin: 8px 0 4px;
-}
-html.cgp-on .cgp-roster__tile {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  border: 1px solid var(--cgp-line);
-  border-radius: 8px;
-  background: var(--cgp-surface);
-  cursor: pointer;
-  margin: 0;
-  transition: border-color 90ms ease, background 90ms ease;
-}
-html.cgp-on .cgp-roster__tile:hover { border-color: var(--cgp-brand); }
-html.cgp-on .cgp-roster__tile:has(input:checked) {
-  border-color: var(--cgp-brand);
-  background: var(--cgp-brand-wash);
-}
-html.cgp-on .cgp-roster__tile:has(input:focus-visible) { box-shadow: var(--cgp-focus-ring); }
-html.cgp-on .cgp-roster__tile input { margin: 0; accent-color: var(--cgp-brand); flex: none; }
-html.cgp-on .cgp-roster__tile-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-html.cgp-on .cgp-roster__tile-title { font-size: 13px; font-weight: 600; color: var(--cgp-ink-strong); }
-html.cgp-on .cgp-roster__tile-count { font-size: 12px; color: var(--cgp-muted); }
-html.cgp-on .cgp-roster__guardian-note { margin: 4px 0 0; }
 
 /* ===================================== View Options sync (layout.js) ===== */
 
@@ -2710,12 +2986,21 @@ html.cgp-on .cgp-linkcopy__warn { color: #b45309; }
  * Assign To and Edit: icon-only there (its name is its tooltip), so the
  * title keeps its width. The row may wrap instead of squeezing the title. */
 html.cgp-on .cgp-copyto--item { padding: 0 11px; }
-html.cgp-on .cgp-copyto--item .cgp-copyto__label {
+html.cgp-on .cgp-copyto--item:not(.cgp-copyto--side):not(.cgp-copyto--bar) .cgp-copyto__label {
   position: absolute !important; width: 1px; height: 1px; overflow: hidden;
   clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
 }
 html.cgp-on .cgp-copyto-row { flex-wrap: wrap; row-gap: 8px; }
 html.cgp-on .cgp-copyto-title { flex: 1 1 16rem !important; min-width: min(16rem, 100%) !important; overflow-wrap: normal; word-break: normal; }
+/* An assignment's or quiz's page: in the right-hand sidebar under "Edit
+ * Assignment Settings", full width and labelled like the buttons there. */
+html.cgp-on .cgp-copyto--side {
+  display: flex !important;
+  width: 100%;
+  margin: 0 0 8px 0;
+  padding: 0 14px;
+  justify-content: flex-start;
+}
 /* Course home: a full-width sidebar button, like Import Existing Content. */
 html.cgp-on .cgp-copyto--home { display: flex !important; width: 100%; margin: 0 0 8px 0; justify-content: flex-start; }
 html.cgp-on .cgp-copyto-bar { display: flex; justify-content: flex-end; margin: 0 0 10px 0; }

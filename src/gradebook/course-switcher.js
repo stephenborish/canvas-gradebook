@@ -390,5 +390,39 @@
     return inFlight;
   };
 
+  /* Canvas's breadcrumb on an assignment that opens an external tool
+   * (Edpuzzle, ...) ends with the assignment twice: a link to this very
+   * page, then the same title again as the current crumb. With Switch
+   * course and Find student beside the course name there is no room for
+   * both, so the first copy - a link to where the teacher already is - is
+   * hidden. Nothing else in the breadcrumb is touched. Returns how many
+   * crumbs it hid. */
+  function crumbText(el) {
+    return String(el && el.textContent || '').replace(/\s+/g, ' ').trim().replace(/(\u2026|\.\.\.)$/, '').trim().toLowerCase();
+  }
+  CGP.tidyCrumbs = function () {
+    var items = document.querySelectorAll('#breadcrumbs li, .ic-app-crumbs li');
+    if (items.length < 3) return 0;
+    var last = items[items.length - 1];
+    var lastText = crumbText(last);
+    var here = typeof location !== 'undefined' ? String(location.pathname || '').replace(/\/+$/, '') : '';
+    var hidden = 0;
+    for (var i = 1; i < items.length - 1; i++) {
+      var li = items[i];
+      if (li.classList.contains('cgp-crumb-item') || li.classList.contains('cgp-crumb-dup')) continue;
+      var a = li.querySelector('a[href]');
+      if (!a) continue;
+      var path = '';
+      try { path = new URL(a.getAttribute('href'), location.href).pathname.replace(/\/+$/, ''); } catch (e) { continue; }
+      var text = crumbText(li);
+      if (path !== here || !text || lastText.indexOf(text) !== 0) continue;
+      // Only directly before the last crumb.
+      if (i !== items.length - 2) continue;
+      li.classList.add('cgp-crumb-dup');
+      hidden++;
+    }
+    return hidden;
+  };
+
   CGP.CourseSwitcher = CourseSwitcher;
 })();
