@@ -325,7 +325,7 @@
     // size is unknown, so two columns a request - small enough for a large
     // lecture to fit its page budget (_maxPages), and the screenful is read
     // as several requests side by side rather than one long one.
-    if (!this.students.size) return 2;
+    if (!this.ready && !this.students.size) return 2;
     var students = Math.max(1, this.students.size);
     return Math.max(1, Math.min(8, Math.floor(4000 / students)));
   };
@@ -335,7 +335,7 @@
    * roster does not count (concluded or inactive enrollments). With the
    * roster not known yet, room for 5,000 students a column. */
   GradebookModel.prototype._maxPages = function (batchSize) {
-    if (!this.students.size) return Math.max(100, batchSize * 50);
+    if (!this.ready && !this.students.size) return Math.max(100, batchSize * 50);
     return Math.ceil((batchSize * this.students.size * 2) / 100) + 10;
   };
 
@@ -344,8 +344,10 @@
    * columns (ensureAssignments); painting them still waits for ready. */
   GradebookModel.prototype.whenAssignments = function () {
     if (this.assignmentsKnown) return Promise.resolve(this);
-    if (this._assignmentsPromise) return this._assignmentsPromise;
-    return this.init();
+    // No init in flight (never started, or an earlier attempt failed): start
+    // one, so a stale rejected read from that attempt is not handed back.
+    if (!this._initPromise) this.init().catch(function () { return null; });
+    return this._assignmentsPromise || this.init();
   };
 
   GradebookModel.prototype._gen = function (id) {
@@ -769,6 +771,9 @@
     this.pendingAssignments.delete(id);
     this._lowPending.delete(id);
     this.commentVerifiedAssignments.delete(id);
+    // The reload may skip comments (a Post's re-check): until a read WITH
+    // comments lands again, the column is double-checked as before.
+    this.commentsLoadedAssignments.delete(id);
     return this.ensureAssignments([id], opts);
   };
 
