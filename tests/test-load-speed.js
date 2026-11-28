@@ -147,7 +147,7 @@ suite('load speed: the gradebook model', (test) => {
     a.eq(reads.filter((r) => r.name === 'submissions').length, 2, 'nothing read twice once the model is ready');
   });
 
-  test('the comment double-check is skipped once the bulk read has returned comments', async () => {
+  test('the comment double-check is skipped for a column whose bulk answer carried comments', async () => {
     const { api, reads } = recordingApi();
     api.submissionsForAssignments = function (courseId, ids) {
       reads.push({ name: 'submissions', ids: ids.slice() });
@@ -156,14 +156,13 @@ suite('load speed: the gradebook model', (test) => {
     const model = new CGP.GradebookModel(api, '7');
     await model.init();
     await model.ensureAssignments(['50']);
-    a.ok(model.bulkCommentsProven);
     await model.verifyVisibleComments(['50', '51']);
     const verify = reads.filter((r) => r.name === 'verify');
     a.deep(verify.map((r) => r.id), ['51'], 'only the column not loaded yet is read on its own');
     a.ok(model.commentVerifiedAssignments.has('50'), 'the loaded column counts as checked, so paint asks no more');
   });
 
-  test('a column loaded without comments is still double-checked, even once comments are proven', async () => {
+  test('a column loaded without comments is still double-checked', async () => {
     const { api, reads } = recordingApi();
     api.submissionsForAssignments = function (courseId, ids) {
       reads.push({ name: 'submissions', ids: ids.slice() });
@@ -173,9 +172,26 @@ suite('load speed: the gradebook model', (test) => {
     await model.init();
     await model.ensureAssignments(['51'], { includeComments: false });   // Analyze Scores, say
     await model.ensureAssignments(['50']);
-    a.ok(model.bulkCommentsProven);
     await model.verifyVisibleComments(['50', '51']);
     a.deep(reads.filter((r) => r.name === 'verify').map((r) => r.id), ['51'], 'its comments were never read, so it is read now');
+  });
+
+  test('a column whose own bulk answer had no comments is still double-checked, whatever other columns had', async () => {
+    const { api, reads } = recordingApi();
+    api.submissionsForAssignments = function (courseId, ids) {
+      reads.push({ name: 'submissions', ids: ids.slice() });
+      // Column 50 comes back with a comment; 51 with an empty thread, which
+      // some Canvas installs answer for a thread that does have comments.
+      return Promise.resolve([
+        { assignment_id: '50', user_id: '10', submission_comments: [{ id: 'c1', author_id: '1', comment: 'hi' }] },
+        { assignment_id: '51', user_id: '10', submission_comments: [] }
+      ]);
+    };
+    const model = new CGP.GradebookModel(api, '7');
+    await model.init();
+    await model.ensureAssignments(['50', '51']);
+    await model.verifyVisibleComments(['50', '51']);
+    a.deep(reads.filter((r) => r.name === 'verify').map((r) => r.id), ['51'], 'only the column with its own comments skips the second read');
   });
 
   test('a Canvas whose bulk read carries no comments is still double-checked', async () => {
@@ -183,7 +199,6 @@ suite('load speed: the gradebook model', (test) => {
     const model = new CGP.GradebookModel(api, '7');
     await model.init();
     await model.ensureAssignments(['50']);
-    a.ok(!model.bulkCommentsProven);
     await model.verifyVisibleComments(['50']);
     a.eq(reads.filter((r) => r.name === 'verify').length, 1);
   });
