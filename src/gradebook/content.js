@@ -99,6 +99,7 @@
     function startReadingCourse() {
       if (courseReadStarted) return;
       courseReadStarted = true;
+      CGP.diag.mark('courseReadStarted');
       CGP.diag.set('modelInitStartedAt', Math.round(typeof performance !== 'undefined' ? performance.now() : 0));
       model.init().catch(function () { /* retried below, after the grid appears */ });
     }
@@ -341,6 +342,7 @@
     var paint = CGP.util.rafBatch(function () {
       painting = true;
       try {
+        if (model.ready && model.loadedAssignments.size) CGP.diag.mark('firstPaintWithGrades');
         layout.decorateHeaders(model);
         posting.paint();
         indicators.paint();
@@ -528,8 +530,30 @@
       return observer;
     }
 
+    /* The assignment columns Canvas is drawing right now. */
+    function visibleAssignmentIds() {
+      var ids = [];
+      adapter.visibleCells().forEach(function (c) {
+        if (c.columnType === 'assignment' && c.assignmentId && ids.indexOf(String(c.assignmentId)) < 0) {
+          ids.push(String(c.assignmentId));
+        }
+      });
+      return ids;
+    }
+
     return waitForGrid().then(function (ready) {
       if (!ready) return;
+      CGP.diag.mark('gridReady');
+      // The columns on screen are read as soon as the assignment list is in,
+      // alongside the roster rather than after it (model.whenAssignments).
+      // They paint once the model is ready; the read below, after init,
+      // then finds them loaded or in flight and asks for nothing twice.
+      startReadingCourse();
+      model.whenAssignments().then(function () {
+        if (model.ready) return;
+        var early = visibleAssignmentIds();
+        if (early.length) model.ensureAssignments(early);
+      }).catch(function () { /* init's own retry reports it */ });
       indicators.start();
       follower.start();
       selection.start();
@@ -653,6 +677,7 @@
       }
 
       return initWithRetry(0).then(function () {
+        CGP.diag.mark('modelReady');
         CGP.diag.log('model.ready', model.stats());
         if (adapter._lastUnresolvedColumns) adapter.reconcileColumnsWithModel(model);
         if (jumpTo) setTimeout(function () { CGP.revealStudent(jumpTo); }, 350);
@@ -663,12 +688,7 @@
         // Do not wait for a later paint/scroll cycle to discover comments. Load
         // the assignment columns that are on screen right now immediately.
         // This is the data that drives the in-cell instructor-comment bubble.
-        var visibleIds = [];
-        adapter.visibleCells().forEach(function (c) {
-          if (c.columnType === 'assignment' && c.assignmentId && visibleIds.indexOf(String(c.assignmentId)) < 0) {
-            visibleIds.push(String(c.assignmentId));
-          }
-        });
+        var visibleIds = visibleAssignmentIds();
         CGP.diag.set('visibleAssignmentIds', visibleIds.length);
         // ensureAssignments alone already paints values, comment bubbles and
         // every other indicator for the visible columns - it emits 'cells' as
@@ -683,6 +703,7 @@
         // many requests are in flight at once - only which unrelated things
         // no longer queue behind each other for no reason.
         return model.ensureAssignments(visibleIds).then(function () {
+          CGP.diag.mark('visibleColumnsLoaded');
           if (CGP.settings.values.prefetchAllAssignments) {
             setTimeout(function () { model.prefetchRemaining(); }, 1200);
           }

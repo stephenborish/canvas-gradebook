@@ -1123,6 +1123,11 @@ Turn on **Keep a diagnostics log** in the options page, open a gradebook, then c
 **Refresh**. You get course id, student and assignment counts, submissions loaded, instructor
 comments found, mapped and unmapped cells, failed requests, and a recent event log.
 
+For a slow gradebook, the `load.*` facts give the milliseconds from the page starting to load to
+each step: `courseReadStarted`, `assignmentsKnown`, `rosterKnown`, `gridReady`, `modelReady`,
+`firstColumnsLoaded`, `visibleColumnsLoaded` and `firstPaintWithGrades`. The largest gap between
+two neighbours is where the time went.
+
 The **Updates** section shows the installed version (and the one it updated from), when Chrome
 last checked the Web Store, when it will allow the next check, and **Check for updates now**.
 

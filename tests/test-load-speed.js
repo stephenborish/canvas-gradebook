@@ -117,6 +117,92 @@ suite('load speed: the gradebook model', (test) => {
     a.ok(model.ready);
   });
 
+  test('the columns on screen can be read before the roster arrives, and paint once it has', async () => {
+    const { api, reads } = recordingApi();
+    let releaseRoster;
+    api.studentEnrollments = function () {
+      reads.push({ name: 'enrollments' });
+      return new Promise((res) => { releaseRoster = () => res([{ user: { id: '10', name: 'S' }, grades: {} }]); });
+    };
+    api.submissionsForAssignments = function (courseId, ids, opts) {
+      reads.push({ name: 'submissions', ids: ids.slice(), maxPages: opts && opts.maxPages });
+      return Promise.resolve([{ assignment_id: '50', user_id: '10', score: 4 }]);
+    };
+    api.assignments = () => Promise.resolve([{ id: '50', name: 'A' }, { id: '51', name: 'B' }, { id: '52', name: 'C' }]);
+    const model = new CGP.GradebookModel(api, '7');
+    const init = model.init();
+    await model.whenAssignments();
+    a.ok(!model.ready, 'still waiting on the roster');
+    a.ok(model.assignment('50'), 'the assignment list is already in');
+    await model.ensureAssignments(['50', '51', '52']);
+    const early = reads.filter((r) => r.name === 'submissions');
+    a.deep(early.map((r) => r.ids), [['50', '51'], ['52']], 'two columns a request while the class size is unknown');
+    a.ok(early[0].maxPages >= 100, 'room for a large lecture: a read is not cut short for want of a roster');
+    a.ok(model.loadedAssignments.has('50'));
+    releaseRoster();
+    await init;
+    a.ok(model.ready);
+    a.eq(model.cell('50', '10').score, 4, 'the early read is kept');
+    await model.ensureAssignments(['50']);
+    a.eq(reads.filter((r) => r.name === 'submissions').length, 2, 'nothing read twice once the model is ready');
+  });
+
+  test('the comment double-check is skipped for a column whose bulk answer carried comments', async () => {
+    const { api, reads } = recordingApi();
+    api.submissionsForAssignments = function (courseId, ids) {
+      reads.push({ name: 'submissions', ids: ids.slice() });
+      return Promise.resolve([{ assignment_id: '50', user_id: '10', submission_comments: [{ id: 'c1', author_id: '1', comment: 'hi' }] }]);
+    };
+    const model = new CGP.GradebookModel(api, '7');
+    await model.init();
+    await model.ensureAssignments(['50']);
+    await model.verifyVisibleComments(['50', '51']);
+    const verify = reads.filter((r) => r.name === 'verify');
+    a.deep(verify.map((r) => r.id), ['51'], 'only the column not loaded yet is read on its own');
+    a.ok(model.commentVerifiedAssignments.has('50'), 'the loaded column counts as checked, so paint asks no more');
+  });
+
+  test('a column loaded without comments is still double-checked', async () => {
+    const { api, reads } = recordingApi();
+    api.submissionsForAssignments = function (courseId, ids) {
+      reads.push({ name: 'submissions', ids: ids.slice() });
+      return Promise.resolve([{ assignment_id: '50', user_id: '10', submission_comments: [{ id: 'c1', author_id: '1', comment: 'hi' }] }]);
+    };
+    const model = new CGP.GradebookModel(api, '7');
+    await model.init();
+    await model.ensureAssignments(['51'], { includeComments: false });   // Analyze Scores, say
+    await model.ensureAssignments(['50']);
+    await model.verifyVisibleComments(['50', '51']);
+    a.deep(reads.filter((r) => r.name === 'verify').map((r) => r.id), ['51'], 'its comments were never read, so it is read now');
+  });
+
+  test('a column whose own bulk answer had no comments is still double-checked, whatever other columns had', async () => {
+    const { api, reads } = recordingApi();
+    api.submissionsForAssignments = function (courseId, ids) {
+      reads.push({ name: 'submissions', ids: ids.slice() });
+      // Column 50 comes back with a comment; 51 with an empty thread, which
+      // some Canvas installs answer for a thread that does have comments.
+      return Promise.resolve([
+        { assignment_id: '50', user_id: '10', submission_comments: [{ id: 'c1', author_id: '1', comment: 'hi' }] },
+        { assignment_id: '51', user_id: '10', submission_comments: [] }
+      ]);
+    };
+    const model = new CGP.GradebookModel(api, '7');
+    await model.init();
+    await model.ensureAssignments(['50', '51']);
+    await model.verifyVisibleComments(['50', '51']);
+    a.deep(reads.filter((r) => r.name === 'verify').map((r) => r.id), ['51'], 'only the column with its own comments skips the second read');
+  });
+
+  test('a Canvas whose bulk read carries no comments is still double-checked', async () => {
+    const { api, reads } = recordingApi();
+    const model = new CGP.GradebookModel(api, '7');
+    await model.init();
+    await model.ensureAssignments(['50']);
+    await model.verifyVisibleComments(['50']);
+    a.eq(reads.filter((r) => r.name === 'verify').length, 1);
+  });
+
   test('getAll in parallel mode reads every numbered page and keeps their order', async () => {
     const base = 'https://x.instructure.com/api/v1/courses/1/assignments';
     const seen = [];

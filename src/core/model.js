@@ -50,6 +50,12 @@
     // Columns whose pending read is background warming (low priority).
     this._lowPending = new Set();
     this.commentVerifiedAssignments = new Set();
+    // Columns whose own bulk answer carried at least one comment: Canvas
+    // put this column's threads on the bulk endpoint, so only these may skip
+    // the comment double-check - see verifyVisibleComments. A read without
+    // comments (Analyze Scores, the student overview's class figures, a Post
+    // button's re-check) never adds a column here.
+    this.commentsLoadedAssignments = new Set();
     // "assignmentId:userId" -> Date.now() when a local write (a keyboard
     // shortcut, bulk paste, or an added comment) most recently started on
     // that cell. See markLocalWrite / applySubmission below.
@@ -131,24 +137,20 @@
     // paint-signature check in indicators.js already skips unchanged cells
     // correctly) but pure unforced latency sitting in front of the first
     // paint that could show anything at all. All three requests now start
-    // at once; instructorId/instructorNames are only ever read once this
-    // whole Promise.all has settled, same as before.
+    // at once.
     var userPromise = this.api.currentUser();
     var totalsGen = ++this._totalsGen;
     var reader = this._reader();
-    var dataPromise = Promise.all([
-      reader.assignments(self.courseId),
-      reader.studentEnrollments(self.courseId, self.gradingPeriodId)
-    ]);
-    this._initPromise = Promise.all([userPromise, dataPromise]).then(function (results) {
-      var user = results[0];
-      var data = results[1];
+    // Who is grading and the assignment list are applied the moment both are
+    // in, without waiting for the roster: they are all a column read needs
+    // (the comment check needs the instructor, ensureAssignments the
+    // assignment ids), so the columns on screen can be read while a long
+    // roster is still arriving - see whenAssignments().
+    function applyUserAndAssignments(user, assignments) {
       self.instructorId = user ? user.id : null;
       self.instructorNames = user ? [user.name, user.shortName, user.sortableName].filter(Boolean) : [];
       CGP.diag.set('instructorId', self.instructorId);
       CGP.diag.set('instructorNameAliases', self.instructorNames.length);
-      var assignments = data[0] || [];
-      var enrollments = data[1] || [];
 
       assignments.forEach(function (a) {
         if (!a || a.id === undefined) return;
@@ -188,6 +190,21 @@
         });
       });
       self.assignmentOrder = Array.from(self.assignments.keys());
+      self.assignmentsKnown = true;
+      CGP.diag.mark('assignmentsKnown');
+    }
+    var assignmentsPromise = Promise.all([userPromise, reader.assignments(self.courseId)]).then(function (results) {
+      applyUserAndAssignments(results[0], results[1] || []);
+      return self;
+    });
+    // init's caller hears about a failure; this copy must not also surface
+    // as an unhandled rejection.
+    assignmentsPromise.catch(function () { return null; });
+    this._assignmentsPromise = assignmentsPromise;
+    var rosterPromise = reader.studentEnrollments(self.courseId, self.gradingPeriodId);
+    this._initPromise = Promise.all([assignmentsPromise, rosterPromise]).then(function (results) {
+      var enrollments = results[1] || [];
+      CGP.diag.mark('rosterKnown');
 
       enrollments.forEach(function (e) { self._applyEnrollment(e, { scoresToo: totalsGen === self._totalsGen }); });
       // The grading period changed while this read was out: its roster is
@@ -305,8 +322,33 @@
    * for a 30-student class runs a 900-student lecture past any sane page
    * budget. Aim for ~40 pages of 100 per request. */
   GradebookModel.prototype._batchSize = function () {
+    // Read before the roster has arrived (see whenAssignments): the class
+    // size is unknown, so two columns a request - small enough for a large
+    // lecture to fit its page budget (_maxPages), and the screenful is read
+    // as several requests side by side rather than one long one.
+    if (!this.ready && !this.students.size) return 2;
     var students = Math.max(1, this.students.size);
     return Math.max(1, Math.min(8, Math.floor(4000 / students)));
+  };
+
+  /* Pages one submissions read may run to before it counts as truncated.
+   * Generous on purpose: student_ids[]=all can also return students this
+   * roster does not count (concluded or inactive enrollments). With the
+   * roster not known yet, room for 5,000 students a column. */
+  GradebookModel.prototype._maxPages = function (batchSize) {
+    if (!this.ready && !this.students.size) return Math.max(100, batchSize * 50);
+    return Math.ceil((batchSize * this.students.size * 2) / 100) + 10;
+  };
+
+  /* Resolves once who is grading and the assignment list are in - before
+   * model.ready, which also waits for the whole roster. Enough to read
+   * columns (ensureAssignments); painting them still waits for ready. */
+  GradebookModel.prototype.whenAssignments = function () {
+    if (this.assignmentsKnown) return Promise.resolve(this);
+    // No init in flight (never started, or an earlier attempt failed): start
+    // one, so a stale rejected read from that attempt is not handed back.
+    if (!this._initPromise) this.init().catch(function () { return null; });
+    return this._assignmentsPromise || this.init();
   };
 
   GradebookModel.prototype._gen = function (id) {
@@ -343,9 +385,7 @@
 
     var reader = this._reader(opts && opts.priority);
     var batchSize = this._batchSize();
-    // Generous on purpose: student_ids[]=all can also return students this
-    // roster does not count (concluded or inactive enrollments).
-    var maxPages = Math.ceil((batchSize * Math.max(1, this.students.size) * 2) / 100) + 10;
+    var maxPages = this._maxPages(batchSize);
     var batches = util.chunk(wanted, batchSize);
     var jobs = batches.map(function (batch) {
       // Stamped before the request goes out: whatever this fetch returns
@@ -377,20 +417,28 @@
         }
         var payloadsWithComments = 0;
         var rawCommentCount = 0;
+        var commentsIn = {};   // assignmentId -> comments in this answer
         (subs || []).forEach(function (s) {
           if (!s || gens[String(s.assignment_id)] !== self._gen(s.assignment_id)) return;
           if (Array.isArray(s.submission_comments)) {
             payloadsWithComments++;
             rawCommentCount += s.submission_comments.length;
+            if (s.submission_comments.length) {
+              var aid = String(s.assignment_id);
+              commentsIn[aid] = (commentsIn[aid] || 0) + s.submission_comments.length;
+            }
           }
           self.applySubmission(s, { silent: true, staleIfWrittenAfter: fetchStartedAt });
         });
         var current = batch.filter(function (id) { return gens[id] === self._gen(id); });
+        var withComments = !(opts && opts.includeComments === false);
         current.forEach(function (id) {
           self.loadedAssignments.add(id);
           self.everLoadedAssignments.add(id);
+          if (withComments && commentsIn[id]) self.commentsLoadedAssignments.add(id);
         });
         release();
+        if (current.length) CGP.diag.mark('firstColumnsLoaded');
         CGP.diag.set('submissionsLoaded', self.cells.size);
         CGP.diag.set('assignmentsLoaded', self.loadedAssignments.size);
         CGP.diag.set('commentPayloads', payloadsWithComments);
@@ -470,6 +518,22 @@
       return self.assignments.has(id) && !self.commentVerifiedAssignments.has(id);
     });
     if (!wanted.length) return Promise.resolve(null);
+    // A column whose own bulk answer already carried comments (see
+    // ensureAssignments) had its threads serialized there: a second read
+    // would only fetch them again, and used to double the work behind the
+    // first screenful. The proof is per column on purpose - some Canvas
+    // installs answer an empty list on the bulk endpoint for a thread that
+    // has comments, so one column's comments say nothing about another's.
+    // A column whose bulk answer had none, one loaded without comments
+    // (Analyze Scores, the student overview, a Post's re-check) and one not
+    // loaded yet are all still read here, exactly as before.
+    var covered = wanted.filter(function (id) { return self.commentsLoadedAssignments.has(id); });
+    if (covered.length) {
+      covered.forEach(function (id) { self.commentVerifiedAssignments.add(id); });
+      CGP.diag.bump('comments.verifySkipped', covered.length);
+      wanted = wanted.filter(function (id) { return covered.indexOf(id) < 0; });
+      if (!wanted.length) return Promise.resolve(null);
+    }
     var verified = [];
     // A second, defensive read of columns already loaded: it waits behind
     // any column the teacher has scrolled to that is not loaded yet.
@@ -707,6 +771,9 @@
     this.pendingAssignments.delete(id);
     this._lowPending.delete(id);
     this.commentVerifiedAssignments.delete(id);
+    // The reload may skip comments (a Post's re-check): until a read WITH
+    // comments lands again, the column is double-checked as before.
+    this.commentsLoadedAssignments.delete(id);
     return this.ensureAssignments([id], opts);
   };
 
@@ -913,7 +980,7 @@
     var readStartedAt = Date.now();
     if (!wanted.length) return Promise.resolve({ submissions: [], readStartedAt: readStartedAt });
     var batchSize = this._batchSize();
-    var maxPages = Math.ceil((batchSize * Math.max(1, this.students.size) * 2) / 100) + 10;
+    var maxPages = this._maxPages(batchSize);
     var gens = {};
     wanted.forEach(function (id) { gens[id] = self._gen(id); });
     return Promise.all(util.chunk(wanted, batchSize).map(function (batch) {
